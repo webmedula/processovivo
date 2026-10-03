@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * SONDA DO NÚMERO DA MOVIMENTAÇÃO — v1.0.0
+ * SONDA DO NÚMERO DA MOVIMENTAÇÃO — v1.1.0
  *
  * UMA pergunta: o MNI entrega, em algum campo, o número SEQUENCIAL da
  * movimentação que o advogado vê no Projudi?
@@ -39,14 +39,29 @@
  *  - processo em segredo de justiça: aborta ANTES de imprimir qualquer campo;
  *  - `--seco` mostra só o plano: não abre banco, não fala com o tribunal.
  *
+ * NOVO NA v1.1.0 — a hipótese de que o número é a ORDEM DE REGISTRO do ato, que pode
+ * diferir da ordem de `dataHora` (ato registrado depois com data retroativa), com
+ * `identificadorMovimento` como proxy do registro. A sonda compara três ordenações:
+ *   (a) dataHora↑, desempate por identificadorMovimento↑;
+ *   (b) identificadorMovimento↑ puro;
+ *   (c) dataHora↑, desempate pela ordem da resposta (a da v1.0.0);
+ * conta os pares de atos em que (b) e a ordem por dataHora discordam, lista os atos
+ * de uma faixa de posições, e grava uma TABELA NUMÉRICA (só identificadorMovimento,
+ * dataHora e contagem de documentos) em `os.tmpdir()`. Com `--offline=<tabela>` toda
+ * essa análise roda a partir da tabela, sem banco e sem tribunal.
+ *
  * Os termos de `--termos` são comparados em memória com a descrição dos atos; o
  * que sai é só "casa / não casa" por candidato, nunca o texto.
  *
  * Uso:
  *   node scripts/sonda-numero-movimento.mjs <numero-cnj> --numeros=A,B,C \
  *        --datas=AAAA-MM-DD,AAAA-MM-DD,... [--termos=,t1+t2,...] [--janela=N] \
- *        [--workspace=<nome>] [--seco]
+ *        [--workspace=<nome>] [--faixa=A-B] [--seco]
+ *   node scripts/sonda-numero-movimento.mjs --offline=<tabela.json> --numeros=A,B,C \
+ *        --datas=AAAA-MM-DD,... [--janela=N] [--faixa=A-B]
  *
+ *   --offline   lê a tabela gravada por uma consulta anterior (sem banco, sem rede).
+ *   --faixa     posições a listar no item 2 (padrão: do maior número −22 a +3).
  *   --numeros   1 a 3 números conferidos no Projudi.
  *   --datas     uma data por número. A PRIMEIRA é tratada como exata (o dia do
  *               ato); as demais, como JANELAS de ±`--janela` dias (padrão 10),
@@ -57,13 +72,14 @@
  *
  * Requer `npm run build` antes (importa de `dist/`).
  */
-import { writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-export const VERSAO_SONDA = '1.0.0';
+export const VERSAO_SONDA = '1.1.0';
 const DESTINO = join(tmpdir(), 'sonda-numero-movimento-formas.json');
+const DESTINO_TABELA = join(tmpdir(), 'sonda-numero-movimento-tabela.json');
 const JANELA_PADRAO = 10;
 const MAX_NUMEROS = 3;
 const MAX_CANDIDATOS_IMPRESSOS = 40;
@@ -214,7 +230,7 @@ const diaDeDataHora = (dh) =>
  * @param pares saída de `interpretarPares`
  * @returns { abortar?: string, relatorio?: object }
  */
-export function analisar(conteudo, pares) {
+export function analisar(conteudo, pares, faixa = faixaPadrao(pares)) {
   const processo = registro(conteudo?.processo);
   if (!processo) return { abortar: 'a resposta não trouxe <processo>: fora do contrato.' };
 
@@ -457,6 +473,10 @@ export function analisar(conteudo, pares) {
   }
   campos.sort((a, b) => b.nivel - a.nivel);
 
+  // --- v1.1.0: ordenações comparadas, sobre a tabela numérica -------------------------
+  const tabela = tabelaDeMovs(movs);
+  const ordens = analisarOrdens(tabela, pares, faixa);
+
   // --- catálogo em forma serializável --------------------------------------------------------
   const estatistica = (item) => {
     if (item.digitos.length === 0) return undefined;
@@ -530,9 +550,292 @@ export function analisar(conteudo, pares) {
         cronologiaOk: c.cronologiaOk,
         nivel: c.nivel,
       })),
-      conclusao: concluir(pares, campos, posicao),
+      tabela,
+      ordens,
+      conclusao: concluirFinal(pares, campos, ordens),
     },
   };
+}
+
+// =============================================================================
+// v1.1.0 — ordenações comparadas (tabela numérica; serve ao modo --offline)
+// =============================================================================
+
+/** Só o que a análise de ordem precisa: id, dataHora, contagem de documentos. Nada de texto. */
+export function tabelaDeMovs(movs) {
+  return movs.map((m) => ({ id: m.id, dataHora: m.dh, documentos: m.docs.length }));
+}
+
+/** Valida a tabela lida do disco: lança Error se não for o formato da sonda. */
+export function validarTabela(bruta) {
+  const lista_ = bruta?.movimentos;
+  if (!Array.isArray(lista_) || lista_.length === 0) {
+    throw new Error('tabela inválida: falta a lista "movimentos".');
+  }
+  return lista_.map((m, i) => {
+    const id = typeof m?.id === 'string' ? m.id : '';
+    const dataHora = typeof m?.dataHora === 'string' ? m.dataHora : '';
+    const documentos = Number.isInteger(m?.documentos) ? m.documentos : 0;
+    if (!/^\d*$/.test(id) || !/^\d*$/.test(dataHora)) {
+      throw new Error(`tabela inválida na linha ${i + 1}: só dígitos são aceitos.`);
+    }
+    return { id, dataHora, documentos };
+  });
+}
+
+const cmpTexto = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+const idNum = (m) => (/^\d+$/.test(m.id) ? Number(m.id) : Infinity);
+
+export function faixaPadrao(pares) {
+  const maior = Math.max(...pares.map((p) => p.numero));
+  return { de: Math.max(1, maior - 22), ate: maior + 3 };
+}
+
+export function interpretarFaixa(texto, pares) {
+  if (texto === undefined) return faixaPadrao(pares);
+  const m = /^(\d{1,6})-(\d{1,6})$/.exec(texto);
+  if (!m || Number(m[1]) > Number(m[2]) || Number(m[2]) - Number(m[1]) > 100) {
+    throw new Error('--faixa precisa ser A-B, com A ≤ B e no máximo 101 posições.');
+  }
+  return { de: Number(m[1]), ate: Number(m[2]) };
+}
+
+/**
+ * Compara as ordenações (a), (b) e (c) sobre a tabela.
+ *
+ * Candidatos de cada número = atos cujo DIA de `dataHora` cai na janela do par
+ * (a tabela não tem a data das peças, então não há "via peça" aqui).
+ */
+export function analisarOrdens(tabela, pares, faixa) {
+  const movs = tabela.map((m, i) => ({
+    i,
+    id: m.id,
+    dh: m.dataHora,
+    dia: diaDeDataHora(m.dataHora),
+    docs: m.documentos,
+  }));
+  const comData = movs.filter((m) => m.dh !== '');
+  const comId = movs.filter((m) => /^\d+$/.test(m.id));
+
+  const definicoes = [
+    {
+      chave: 'a',
+      nome: '(a) dataHora↑, desempate por identificadorMovimento↑',
+      base: comData,
+      cmp: (x, y) => cmpTexto(x.dh, y.dh) || idNum(x) - idNum(y) || x.i - y.i,
+    },
+    {
+      chave: 'b',
+      nome: '(b) identificadorMovimento↑ puro',
+      base: comId,
+      cmp: (x, y) => idNum(x) - idNum(y) || x.i - y.i,
+    },
+    {
+      chave: 'c',
+      nome: '(c) dataHora↑, desempate pela ordem da resposta (v1.0.0)',
+      base: comData,
+      cmp: (x, y) => cmpTexto(x.dh, y.dh) || x.i - y.i,
+    },
+  ];
+  const ordenadas = {};
+  const posicoes = {};
+  for (const d of definicoes) {
+    const lst = [...d.base].sort(d.cmp);
+    ordenadas[d.chave] = lst;
+    posicoes[d.chave] = new Map(lst.map((m, idx) => [m, idx + 1]));
+  }
+
+  // Atos fora de ordem: posição por dataHora (a) ≠ posição por id (b), na MESMA base.
+  const baseComum = comData.filter((m) => /^\d+$/.test(m.id));
+  const rankA = new Map(
+    [...baseComum].sort(definicoes[0].cmp).map((m, idx) => [m, idx + 1]),
+  );
+  const rankB = new Map(
+    [...baseComum].sort(definicoes[1].cmp).map((m, idx) => [m, idx + 1]),
+  );
+  const deslocados = new Set(baseComum.filter((m) => rankA.get(m) !== rankB.get(m)));
+
+  // Pares em que a ordem por id difere da ordem por dataHora (dataHora iguais não contam).
+  let comparaveis = 0;
+  let invertidos = 0;
+  const arr = baseComum;
+  for (let x = 0; x < arr.length; x++) {
+    for (let y = x + 1; y < arr.length; y++) {
+      if (arr[x].dh === arr[y].dh) continue;
+      comparaveis += 1;
+      const porData = arr[x].dh < arr[y].dh;
+      const porId = idNum(arr[x]) < idNum(arr[y]);
+      if (porData !== porId) invertidos += 1;
+    }
+  }
+
+  const candidatos = pares.map((p) => {
+    const centro = diaParaMs(p.data);
+    return comData.filter(
+      (m) => m.dia !== undefined && Math.abs(diaParaMs(m.dia) - centro) <= p.janela * DIA_MS,
+    );
+  });
+
+  const ordenacoes = definicoes.map((d) => {
+    const pos = posicoes[d.chave];
+    const porPar = pares.map((p, k) => {
+      const lista_ = candidatos[k].filter((m) => pos.has(m));
+      const exatos = lista_.filter((m) => pos.get(m) === p.numero);
+      let proximo;
+      for (const m of lista_) {
+        const delta = pos.get(m) - p.numero;
+        if (proximo === undefined || Math.abs(delta) < Math.abs(proximo.delta)) {
+          proximo = { m, pos: pos.get(m), delta };
+        }
+      }
+      return { candidatos: lista_.length, exatos, proximo };
+    });
+    const reproduzidos = porPar.filter((x) => x.exatos.length > 0);
+    // Cronologia: com os números crescendo, o dataHora dos atos reproduzidos não pode recuar.
+    const escolhidos = pares
+      .map((p, k) => ({ n: p.numero, m: porPar[k].exatos[0] }))
+      .filter((x) => x.m)
+      .sort((a, b) => a.n - b.n);
+    let cronologiaOk = null;
+    if (escolhidos.length >= 2) {
+      cronologiaOk = escolhidos.every((x, i) => i === 0 || x.m.dh >= escolhidos[i - 1].m.dh);
+    }
+
+    // Se faltou exatamente um, o desvio é explicável por ato fora de ordem na faixa entre
+    // a posição do candidato mais próximo e o número?
+    let desvio = null;
+    if (pares.length > 1 && reproduzidos.length === pares.length - 1) {
+      const k = porPar.findIndex((x) => x.exatos.length === 0);
+      const alvo = porPar[k]?.proximo;
+      if (alvo) {
+        const de = Math.min(alvo.pos, pares[k].numero);
+        const ate = Math.max(alvo.pos, pares[k].numero);
+        const noIntervalo = ordenadas[d.chave].filter(
+          (m) => deslocados.has(m) && pos.get(m) >= de && pos.get(m) <= ate,
+        ).length;
+        desvio = {
+          par: k,
+          delta: alvo.delta,
+          atosForaDeOrdemNoIntervalo: noIntervalo,
+          explicavel: Math.abs(alvo.delta) <= 5 && noIntervalo >= 1,
+        };
+      }
+    }
+    return {
+      chave: d.chave,
+      nome: d.nome,
+      total: d.base.length,
+      porPar: porPar.map((x, k) => ({
+        candidatos: x.candidatos,
+        exatos: x.exatos.map((m) => ({ id: m.id, dia: m.dia, dh: m.dh })),
+        proximo: x.proximo
+          ? { pos: x.proximo.pos, delta: x.proximo.delta, id: x.proximo.m.id }
+          : null,
+      })),
+      reproduzidos: reproduzidos.length,
+      cronologiaOk,
+      desvio,
+    };
+  });
+
+  // Listagem da faixa de posições, por ordenação (só posições, dígitos e diferença de rank).
+  const marcas = new Map();
+  pares.forEach((p, k) => candidatos[k].forEach((m) => marcas.set(m, [...(marcas.get(m) ?? []), k])));
+  const listagem = definicoes.map((d) => {
+    const linhas = [];
+    ordenadas[d.chave].forEach((m, idx) => {
+      const pos = idx + 1;
+      if (pos < faixa.de || pos > faixa.ate) return;
+      const ra = rankA.get(m);
+      const rb = rankB.get(m);
+      linhas.push({
+        pos,
+        id: m.id,
+        dh: m.dh,
+        documentos: m.docs,
+        rankA: ra ?? null,
+        rankB: rb ?? null,
+        diferenca: ra !== undefined && rb !== undefined ? rb - ra : null,
+        foraDeOrdem: deslocados.has(m),
+        candidatoDe: (marcas.get(m) ?? []).map((k) => k),
+      });
+    });
+    return { chave: d.chave, nome: d.nome, linhas };
+  });
+
+  return {
+    totais: {
+      movimentos: movs.length,
+      comDataHora: comData.length,
+      comIdentificadorNumerico: comId.length,
+      atosDeslocadosEntreAeB: deslocados.size,
+      paresComparaveis: comparaveis,
+      paresInvertidos: invertidos,
+    },
+    faixa,
+    ordenacoes,
+    listagem,
+    conclusao: concluirOrdens(pares, ordenacoes),
+  };
+}
+
+function concluirOrdens(pares, ordenacoes) {
+  const m = pares.length;
+  const base = ordenacoes.find((o) => o.chave === 'c');
+  const completo = ordenacoes.find((o) => o.reproduzidos === m && o.cronologiaOk !== false);
+  if (completo) {
+    return {
+      nivel: 2,
+      ordenacao: completo.chave,
+      rotulo: `POSIÇÃO — ordenação ${completo.nome}`,
+      confianca: 'CONFIRMADO',
+      motivo: `reproduz os ${m} números conferidos exatamente${completo.cronologiaOk === null ? '' : ', com a cronologia mantida'}`,
+    };
+  }
+  const quase = ordenacoes
+    .filter((o) => m > 1 && o.reproduzidos === m - 1 && o.desvio?.explicavel)
+    .sort((x, y) => Math.abs(x.desvio.delta) - Math.abs(y.desvio.delta))[0];
+  if (quase) {
+    const igual = base && quase.reproduzidos <= base.reproduzidos;
+    return {
+      nivel: 1,
+      ordenacao: quase.chave,
+      rotulo: `POSIÇÃO — ordenação ${quase.nome}`,
+      confianca: `COMPATÍVEL (${quase.reproduzidos} de ${m})`,
+      motivo:
+        `um número fica ${Math.abs(quase.desvio.delta)} posição(ões) ${quase.desvio.delta < 0 ? 'abaixo' : 'acima'} ` +
+        `e há ${quase.desvio.atosForaDeOrdemNoIntervalo} ato(s) fora de ordem nessa faixa` +
+        (igual ? '; NÃO melhora o que a v1.0.0 já havia medido' : '') +
+        '. Não é confirmação',
+    };
+  }
+  const melhor = Math.max(...ordenacoes.map((o) => o.reproduzidos));
+  return {
+    nivel: 0,
+    rotulo: 'NÃO CONFIRMÁVEL',
+    confianca: 'nenhuma',
+    motivo:
+      `a melhor ordenação reproduz ${melhor} de ${m} números` +
+      (base ? ` (a da v1.0.0 reproduz ${base.reproduzidos})` : '') +
+      ', sem desvio explicável por ato fora de ordem',
+  };
+}
+
+function concluirFinal(pares, campos, ordens) {
+  const lista_ = [];
+  for (const c of campos) {
+    const pontos = c.noPar.filter(Boolean).length;
+    lista_.push({
+      nivel: c.nivel,
+      rotulo: `CAMPO PRÓPRIO: ${c.caminho}`,
+      confianca: c.nivel === 2 ? 'CONFIRMADO' : 'COMPATÍVEL (1 ponto)',
+      motivo: `valor igual ao número conferido em ${pontos} de ${pares.length} atos candidatos${c.cronologiaOk ? '' : ' (ordem cronológica NÃO mantida)'}`,
+    });
+  }
+  const o = ordens.conclusao;
+  if (o.nivel > 0) lista_.push(o);
+  lista_.sort((a, b) => b.nivel - a.nivel);
+  return lista_[0] ?? o;
 }
 
 function resumo(v, pares) {
@@ -543,61 +846,6 @@ function resumo(v, pares) {
     cronologiaOk: v.cronologiaOk,
     nivel: v.nivel,
   };
-}
-
-const ROTULO_NIVEL = {
-  2: 'CONFIRMADO',
-  1: 'COMPATÍVEL (1 ponto)',
-};
-
-function concluir(pares, campos, posicao) {
-  const candidatosDeConclusao = [];
-  for (const c of campos) {
-    const pontos = c.noPar.filter(Boolean).length;
-    candidatosDeConclusao.push({
-      rank: c.nivel * 10 + 1,
-      rotulo: `CAMPO PRÓPRIO: ${c.caminho}`,
-      nivel: c.nivel,
-      motivo:
-        c.nivel === 2
-          ? `valor igual ao número conferido em ${pontos} de ${pares.length} atos candidatos, em ordem cronológica crescente`
-          : `valor igual ao número conferido em ${pontos} de ${pares.length} atos candidatos${
-              c.cronologiaOk ? '' : ' (ordem cronológica NÃO mantida)'
-            }`,
-    });
-  }
-  for (const [sentido, v] of [
-    ['CRESCENTE', posicao.crescente],
-    ['DECRESCENTE', posicao.decrescente],
-  ]) {
-    if (v.nivel === 0) continue;
-    candidatosDeConclusao.push({
-      rank: v.nivel * 10,
-      rotulo: `POSIÇÃO ${sentido}`,
-      nivel: v.nivel,
-      motivo:
-        v.nivel === 2
-          ? `a posição reproduz os ${pares.length} números conferidos, em ordem cronológica`
-          : `a posição reproduz ${v.pontos} de ${pares.length} números` +
-            (v.pontos === pares.length && !v.cronologiaOk
-              ? ' (cronologia invertida: contradiz a verdade de campo)'
-              : v.pontos === 1 && pares.length > 1
-                ? ' — só o primeiro bate'
-                : ''),
-    });
-  }
-  candidatosDeConclusao.sort((a, b) => b.rank - a.rank);
-  const melhor = candidatosDeConclusao[0];
-  if (!melhor) {
-    return {
-      rotulo: 'NÃO CONFIRMÁVEL',
-      confianca: 'nenhuma',
-      motivo:
-        'nenhum campo traz o número conferido num ato candidato, e nenhuma ordem por ' +
-        'dataHora reproduz a posição',
-    };
-  }
-  return { rotulo: melhor.rotulo, confianca: ROTULO_NIVEL[melhor.nivel], motivo: melhor.motivo };
 }
 
 // =============================================================================
@@ -688,9 +936,73 @@ export function imprimir(rel, pares, escrever = console.log) {
     }
   }
 
-  escrever('\n== 4. CONCLUSÃO ==');
+  imprimirOrdens(rel.ordens, pares, escrever);
+
+  escrever('\n== 6. CONCLUSÃO ==');
   const c = rel.conclusao;
   escrever(`${c.rotulo} — confiança: ${c.confianca}. ${c.motivo}.`);
+}
+
+/** Itens 4 e 5 (v1.1.0): ordenações comparadas e atos fora de ordem. Só números. */
+export function imprimirOrdens(ordens, pares, escrever = console.log) {
+  const letra = (k) => String.fromCharCode(65 + k);
+  const t = ordens.totais;
+  escrever('\n== 4. ORDENAÇÕES COMPARADAS (posição 1-based dos candidatos) ==');
+  escrever(
+    `movimentos: ${t.movimentos} · com dataHora: ${t.comDataHora} · com identificador numérico: ${t.comIdentificadorNumerico}`,
+  );
+  for (const o of ordens.ordenacoes) {
+    escrever(`  ${o.nome} — ${o.total} atos na ordenação`);
+    o.porPar.forEach((x, k) => {
+      if (x.exatos.length > 0) {
+        escrever(
+          `    ato ${letra(k)}: REPRODUZ (posição = número) em ${x.exatos.length} de ${x.candidatos} candidato(s): ` +
+            x.exatos.map((e) => `${e.dia} id ${e.id || '—'}`).join('; '),
+        );
+      } else if (x.proximo) {
+        escrever(
+          `    ato ${letra(k)}: não reproduz · candidato mais próximo na posição ${x.proximo.pos} ` +
+            `(${x.proximo.delta > 0 ? '+' : ''}${x.proximo.delta}) · ${x.candidatos} candidato(s)`,
+        );
+      } else {
+        escrever(`    ato ${letra(k)}: sem candidatos na janela`);
+      }
+    });
+    escrever(
+      `    reproduzidos: ${o.reproduzidos}/${pares.length} · cronologia mantida: ` +
+        `${o.cronologiaOk === null ? '— (menos de 2 reproduzidos)' : o.cronologiaOk ? 'sim' : 'NÃO'}`,
+    );
+    if (o.desvio) {
+      escrever(
+        `    desvio único: ato ${letra(o.desvio.par)} a ${o.desvio.delta > 0 ? '+' : ''}${o.desvio.delta} · ` +
+          `atos fora de ordem na faixa entre a posição e o número: ${o.desvio.atosForaDeOrdemNoIntervalo} · ` +
+          `explicável: ${o.desvio.explicavel ? 'sim' : 'não'}`,
+      );
+    }
+  }
+
+  escrever('\n== 5. ATOS FORA DE ORDEM ==');
+  escrever(
+    `pares em que a ordem por identificadorMovimento difere da ordem por dataHora: ` +
+      `${t.paresInvertidos} de ${t.paresComparaveis} comparáveis (dataHora iguais não contam)`,
+  );
+  escrever(`atos cuja posição por dataHora(+id) difere da posição por id: ${t.atosDeslocadosEntreAeB}`);
+  escrever(`faixa listada: posições ${ordens.faixa.de} a ${ordens.faixa.ate} (--faixa=A-B para mudar)`);
+  for (const l of ordens.listagem) {
+    escrever(`  ordenação ${l.nome}`);
+    for (const x of l.linhas) {
+      const cand = x.candidatoDe.length
+        ? `  <== candidato do ato ${x.candidatoDe.map(letra).join('/')}`
+        : '';
+      escrever(
+        `    pos ${x.pos} · id ${x.id || '—'} · dataHora ${x.dh || '—'} · docs ${x.documentos}` +
+          ` · rank(a) ${x.rankA ?? '—'} · rank(b) ${x.rankB ?? '—'}` +
+          (x.diferenca === null ? '' : ` · Δ(b−a) ${x.diferenca > 0 ? '+' : ''}${x.diferenca}`) +
+          (x.foraDeOrdem ? ' · FORA DE ORDEM' : '') +
+          cand,
+      );
+    }
+  }
 }
 
 // =============================================================================
@@ -705,6 +1017,8 @@ function lerArgumentos(entrada) {
     termos: valor('termos'),
     janela: valor('janela'),
     workspace: valor('workspace'),
+    offline: valor('offline'),
+    faixa: valor('faixa'),
     posicionais: entrada.filter((a) => !a.startsWith('--')),
   };
 }
@@ -714,7 +1028,9 @@ function uso(mensagem) {
   console.error(
     'Uso: node scripts/sonda-numero-movimento.mjs <numero-cnj> --numeros=A,B,C ' +
       '--datas=AAAA-MM-DD,AAAA-MM-DD,... [--termos=,t1+t2] [--janela=N] ' +
-      '[--workspace=<nome>] [--seco]',
+      '[--workspace=<nome>] [--faixa=A-B] [--seco]\n' +
+      '     node scripts/sonda-numero-movimento.mjs --offline=<tabela.json> --numeros=A,B,C ' +
+      '--datas=AAAA-MM-DD,... [--janela=N] [--faixa=A-B]',
   );
   process.exit(1);
 }
@@ -728,14 +1044,35 @@ function abortar(motivo) {
 async function principal() {
   const args = lerArgumentos(process.argv.slice(2));
   const [numeroBruto] = args.posicionais;
-  if (!numeroBruto) uso('Faltou o número do processo.');
 
   let pares;
+  let faixa;
   try {
     pares = interpretarPares(args);
+    faixa = interpretarFaixa(args.faixa, pares);
   } catch (e) {
     uso(e.message);
   }
+
+  // --- modo --offline: só lê a tabela. Nem banco, nem rede, nem dist/. ---------------
+  if (args.offline) {
+    let tabela;
+    try {
+      tabela = validarTabela(JSON.parse(readFileSync(args.offline, 'utf8')));
+    } catch (e) {
+      uso(`não consegui ler a tabela: ${e.message}`);
+    }
+    console.log(`sonda-numero-movimento v${VERSAO_SONDA} — modo --offline (sem banco, sem tribunal)`);
+    console.log(`tabela: ${tabela.length} movimentos · números conferidos: ${pares.length}\n`);
+    const ordens = analisarOrdens(tabela, pares, faixa);
+    imprimirOrdens(ordens, pares);
+    console.log('\n== 6. CONCLUSÃO ==');
+    const c = ordens.conclusao;
+    console.log(`${c.rotulo} — confiança: ${c.confianca}. ${c.motivo}.`);
+    return;
+  }
+
+  if (!numeroBruto) uso('Faltou o número do processo.');
 
   const { NumeroCNJ } = await import('../dist/domain/entities/NumeroCNJ.js').catch(() => {
     console.error('Não achei dist/. Rode `npm run build` antes.');
@@ -758,6 +1095,7 @@ async function principal() {
   });
   console.log('requisições ao tribunal: 1');
   console.log(`grava só formas em: ${DESTINO}`);
+  console.log(`grava a tabela numérica (id, dataHora, nº de documentos) em: ${DESTINO_TABELA}`);
   if (args.seco) {
     console.log('\n--seco: nada foi aberto nem enviado. Fim.');
     return;
@@ -859,11 +1197,14 @@ async function principal() {
   console.log(`[consulta] ok · ${(ms / 1000).toFixed(1)} s · resposta ${bruta.bytes.length.toLocaleString('pt-BR')} B\n`);
 
   // --- análise e relatório ------------------------------------------------------------
-  const { abortar: motivo, relatorio } = analisar(resposta.conteudo, pares);
+  const { abortar: motivo, relatorio } = analisar(resposta.conteudo, pares, faixa);
   if (motivo) abortar(motivo);
   imprimir(relatorio, pares);
-  writeFileSync(DESTINO, JSON.stringify(relatorio, null, 2));
-  console.log(`\n[formas gravadas em ${DESTINO} — sem texto livre, sem XML, sem senha]`);
+  const { tabela, ...formas } = relatorio;
+  writeFileSync(DESTINO, JSON.stringify(formas, null, 2));
+  writeFileSync(DESTINO_TABELA, JSON.stringify({ versao: VERSAO_SONDA, movimentos: tabela }));
+  console.log(`\n[formas gravadas em ${DESTINO}; tabela em ${DESTINO_TABELA} — sem texto livre, sem XML, sem senha]`);
+  console.log(`[reanálise sem nova consulta: node scripts/sonda-numero-movimento.mjs --offline=${DESTINO_TABELA} --numeros=... --datas=...]`);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
