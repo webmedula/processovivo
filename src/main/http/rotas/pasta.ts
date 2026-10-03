@@ -231,10 +231,10 @@ function visaoDaPeca(p: VisaoDaPeca): Record<string, unknown> {
     rotulo: p.rotulo,
     data: p.data?.toISOString() ?? null,
     movimento: p.movimento ?? null,
-    // Texto do tribunal, como está; número só o `identificadorMovimento`.
+    // Texto do tribunal, como está. SEM número: o `identificadorMovimento` é a
+    // chave interna do vínculo e não é o número que o advogado vê no tribunal.
     movimentacao: p.movimentacao
       ? {
-          numero: p.movimentacao.numero,
           data: p.movimentacao.data.toISOString(),
           descricao: p.movimentacao.descricao,
           complemento: p.movimentacao.complemento ?? null,

@@ -17,7 +17,11 @@ import type { MotivoNaoObtida } from './JobLeitor.js';
  * texto do ato ("ev. 382") é texto do cartório e não entra aqui.
  */
 export interface MovimentacaoDaPeca {
-  /** `identificadorMovimento` do tribunal. Nunca a posição na lista. */
+  /**
+   * `identificadorMovimento` do tribunal: CHAVE INTERNA do vínculo peça → ato.
+   * NÃO é o número da movimentação que o advogado vê no Projudi (erro da
+   * v0.33.2) e nunca sai na API nem na tela.
+   */
   readonly numero: number;
   readonly data: Date;
   /** Descrição do ato, como o tribunal a deu. */

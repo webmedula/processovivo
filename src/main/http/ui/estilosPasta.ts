@@ -95,8 +95,6 @@ body.com-pasta{overflow:hidden}
    foco o texto se abre inteiro (o title só aparece no mouse). */
 #pasta .linha .mov{grid-column:3;display:flex;gap:6px;align-items:baseline;min-width:0;
   font-size:12px;color:var(--tinta2)}
-#pasta .linha .mov-n{flex:none;white-space:nowrap;font-weight:700;
-  font-variant-numeric:tabular-nums}
 #pasta .linha .mov-t{min-width:0;overflow:hidden;overflow-wrap:anywhere;
   display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2}
 #pasta .linha:focus-visible .mov-t{-webkit-line-clamp:unset;line-clamp:unset}

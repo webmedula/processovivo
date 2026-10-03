@@ -997,8 +997,16 @@ Não são detalhes — moldam o código.
 - **A linha da Pasta mostra o ATO que juntou a peça, e só o que o tribunal
   afirmou** (v0.33.2). O vínculo é o mesmo da régua: `<documento movimento="N">`
   ↔ `<movimento identificadorMovimento="N">`, DENTRO da mesma resposta do MNI. O
-  "mov. N" é esse `identificadorMovimento` — nunca a posição na lista, e nunca um
-  número lido do texto: "ev. 382" ou "movimentação nº 382" na descrição é texto
+  **Não há "mov. N" (v0.33.3):** o `identificadorMovimento` é identificador
+  INTERNO do tribunal (ex.: 516017862), NÃO o número sequencial que o advogado vê
+  no Projudi — a 0.33.2 mostrou esse campo como número e estava errada, aprovada
+  sem conferir contra o tribunal. Regra: identificador interno ≠ número que o
+  advogado vê; só vira número na tela com campo afirmado pelo tribunal E conferido
+  contra o sistema dele (derivar pela posição exige o mesmo, e que o sistema receba
+  todos os atos). Hoje nenhuma resposta mapeada traz esse número, então ele não
+  aparece, a API não o devolve e a busca não o procura — o identificador só serve
+  de chave do vínculo (há teste de regressão com 516017862). Número lido do texto:
+  "ev. 382" ou "movimentação nº 382" na descrição é texto
   do cartório (ou da parte), aparece como texto, não vira link e não vira o
   número. A descrição é a do tribunal, só aparada. Os dois lados têm de existir:
   peça que aponta para ato que a resposta não trouxe (ou número repetido, ou
@@ -1009,7 +1017,7 @@ Não são detalhes — moldam o código.
   campo e a linha é a de antes até a próxima carga das peças do processo (sem
   retrocarga: o tribunal é a única fonte, e consultá-lo sem a pessoa pedir é o
   que a regra do MNI proíbe). A busca da lista casa rótulo e descrição por trecho
-  e o NÚMERO por igualdade ("382" não acha 1382). Várias peças do mesmo ato
+  (texto; não há busca por número de movimentação). Várias peças do mesmo ato
   repetem a descrição: agrupar fica para decisão do dono.
 - **A tela da Pasta não deixa a pessoa olhando um "carregando" sem fim** (v0.33.1).
   Cada espera tem nome e limite: "pedindo esta peça" (a janela do debounce de
@@ -1126,8 +1134,8 @@ teste e carência** (v0.28.0), **visual novo a partir do logo** (v0.29.0),
 **calendário: detecção, agenda, tela e feed ICS** (v0.32.0),
 **ajustes dos advogados: Atualizações por processo, peças no topo, providência em 10 dias** (v0.32.1),
 **Pasta digital: backend (v0.33.0) e tela (v0.33.1) — peça aberta ao clique, guarda por peça, montar pasta completa, baixar marcadas**,
-**ato (movimentação) de cada peça na lista da Pasta, com número do tribunal e busca** (v0.33.2),
-Dockerfile multi-stage, CI, 1153 testes.
+**ato (movimentação) de cada peça na lista da Pasta, com descrição e busca por texto; sem número de movimentação** (v0.33.2, corrigida na v0.33.3),
+Dockerfile multi-stage, CI, 1154 testes.
 
 **Pasta digital (v0.33.0, backend):** `GET /v1/processos/:numero/pasta` (lista +
 estado de cada peça + intervalos de página + totais SEM filtro + procedência

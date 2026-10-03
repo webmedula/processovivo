@@ -278,23 +278,27 @@ describe('console — a tela da Pasta digital', () => {
     // Passa por esc() — é texto do tribunal.
     expect(SCRIPT_PASTA).toContain("esc(t)+'</span>'");
     expect(SCRIPT_PASTA).toContain('esc(tituloDaMov(p))');
-    // Sem bloco vazio e sem número inventado: o "mov. N" só sai com `numero`.
+    // Sem bloco vazio, e SEM número de movimentação (v0.33.3): o identificador
+    // interno do tribunal nunca é desenhado, titulado nem buscado.
     expect(SCRIPT_PASTA).toContain("if(!m)return '';");
-    expect(SCRIPT_PASTA).toContain('m.numero!=null?');
+    expect(SCRIPT_PASTA).not.toContain('m.numero');
+    expect(SCRIPT_PASTA).not.toContain('mov-n');
+    expect(SCRIPT_PASTA).not.toContain("'mov. '");
+    expect(SCRIPT_PASTA).not.toContain("' nº '");
     // Texto livre é texto: nenhum <a> nem href é montado a partir da descrição.
     expect(SCRIPT_PASTA).not.toMatch(/<a [^']*mov/);
-    // Até 2 linhas, número sempre à vista, nunca estoura a lista.
+    // Até 2 linhas, nunca estoura a lista.
     expect(ESTILOS_PASTA).toContain('-webkit-line-clamp:2');
-    expect(ESTILOS_PASTA).toContain('#pasta .linha .mov-n{flex:none');
+    expect(ESTILOS_PASTA).not.toContain('mov-n');
     expect(ESTILOS_PASTA).toContain('overflow-wrap:anywhere');
     expect(ESTILOS_PASTA).toContain('#pasta .visor .mov-visor:empty{display:none}');
   });
 
-  it('a busca procura no rótulo, na descrição e no número da movimentação', () => {
+  it('a busca procura no rótulo e na descrição da movimentação, e não por número', () => {
     expect(SCRIPT_PASTA).toContain('function combinaComBusca(p,termo)');
-    expect(SCRIPT_PASTA).toContain('Buscar por rótulo, movimentação ou nº');
-    // Número casa por igualdade ("382" não acha 1382).
-    expect(SCRIPT_PASTA).toContain('String(m.numero)===String(Number(num[1]))');
+    expect(SCRIPT_PASTA).toContain('Buscar por rótulo ou movimentação"');
+    expect(SCRIPT_PASTA).not.toContain('ou nº');
+    expect(SCRIPT_PASTA).not.toContain('pelo número da movimentação');
   });
 
   it('nenhum conteúdo de peça entra no DOM: só texto do sistema, por esc()', () => {

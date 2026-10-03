@@ -516,7 +516,7 @@ describe('API — Pasta digital: a movimentação de cada peça (v0.33.2)', () =
     ...extra,
   });
 
-  it('devolve, por peça, o ato do tribunal (data, texto como está e número) — sem consulta nova', async () => {
+  it('devolve, por peça, o ato do tribunal (data e texto como está, sem número) — sem consulta nova', async () => {
     provedor.movimentos = [
       ato(1, 'Juntada de Petição de Impugnação — ev. 382', {
         complementos: ['tipo_de_documento: petição', 'ref: 12'],
@@ -529,18 +529,32 @@ describe('API — Pasta digital: a movimentação de cada peça (v0.33.2)', () =
     // Com número e complemento: as duas peças do mesmo ato repetem a descrição.
     for (const id of ['a', 'b']) {
       expect(porId[id]?.['movimentacao']).toEqual({
-        numero: 1,
         data: '2026-09-28T13:00:00.000Z',
         descricao: 'Juntada de Petição de Impugnação — ev. 382',
         complemento: 'tipo_de_documento: petição; ref: 12',
       });
     }
-    // O "382" do texto é texto: o número da movimentação continua sendo o do tribunal.
-    expect((porId['a']?.['movimentacao'] as { numero: number }).numero).toBe(1);
+    // Sem número de movimentação na resposta (v0.33.3): o identificador interno
+    // não é o número que o advogado vê no tribunal.
+    expect(porId['a']?.['movimentacao']).not.toHaveProperty('numero');
     // Sem vínculo: sem bloco, e a procedência segue em toda resposta.
     for (const id of ['h', 'c', 's']) expect(porId[id]?.['movimentacao']).toBeNull();
     expect(c['procedencia']).toMatchObject({ aoVivo: false });
     expect(provedor.chamadas.length).toBe(antes);
+  });
+
+  it('o identificador interno do tribunal nunca sai na resposta (regressão da v0.33.2)', async () => {
+    provedor.movimentos = [
+      ato(516017862, 'Juntada de Petição de Impugnação'),
+    ];
+    provedor.pecas = provedor.pecas.map((p) =>
+      p.id === 'a' ? { ...p, movimento: 516017862 } : p,
+    );
+    await carregarPecas();
+    const c = await pasta();
+    const a = c.pecas.find((p) => p.pecaId === 'a');
+    expect(a?.['movimentacao']).toMatchObject({ descricao: 'Juntada de Petição de Impugnação' });
+    expect(JSON.stringify(c.pecas.map((p) => p['movimentacao']))).not.toContain('516017862');
   });
 
   it('sem complemento o campo vem nulo; peça que aponta ato que o tribunal não listou fica sem bloco', async () => {
@@ -548,7 +562,6 @@ describe('API — Pasta digital: a movimentação de cada peça (v0.33.2)', () =
     await carregarPecas();
     const c = await pasta();
     expect(c.pecas.find((p) => p.pecaId === 'a')?.['movimentacao']).toMatchObject({
-      numero: 1,
       descricao: 'Distribuição',
       complemento: null,
     });

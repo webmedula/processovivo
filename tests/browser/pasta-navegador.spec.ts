@@ -122,11 +122,14 @@ describe.skipIf(sem)('Pasta digital — no navegador', { timeout: 60_000 }, () =
     );
   });
 
-  it('cada peça mostra o ato a que pertence: texto do tribunal, "mov. N" e nada onde não há vínculo', async () => {
+  it('cada peça mostra o ato a que pertence: texto do tribunal, SEM número, e nada onde não há vínculo', async () => {
     await abrirTela();
     await abrirPasta();
-    // Com vínculo: o número é o do tribunal, não a posição (p06 é a 6ª peça e o ato 4).
-    expect(await linha('p06').locator('.mov-n').textContent()).toBe('mov. 4');
+    // Nenhum número de movimentação na linha: o identificador interno do
+    // tribunal (516017864 etc.) não é o número que o advogado vê (v0.33.3).
+    expect(await page.locator('#pasta .linha .mov-n').count()).toBe(0);
+    expect(await page.locator('#pasta-lista').textContent()).not.toMatch(/5160178\d\d/);
+    expect(await page.locator('#pasta-lista').textContent()).not.toContain('mov.');
     expect(await linha('p06').locator('.mov-t').textContent()).toBe(
       'Juntada de manifestação sobre o ev. 382 (movimentação nº 5000)',
     );
@@ -137,12 +140,11 @@ describe.skipIf(sem)('Pasta digital — no navegador', { timeout: 60_000 }, () =
     // Várias peças do mesmo ato repetem a descrição (sem agrupar).
     for (const id of ['p01', 'p02', 'p03']) {
       expect(await linha(id).locator('.mov').textContent()).toContain(
-        'mov. 1Juntada de documentos iniciais',
+        'Juntada de documentos iniciais',
       );
     }
-    // Número citado no texto é texto: nada vira link, e o número do ato não muda.
+    // Número citado no texto é texto: nada vira link.
     expect(await page.locator('#pasta .linha .mov a').count()).toBe(0);
-    expect(await linha('p06').locator('.mov-n').textContent()).not.toContain('382');
     // Sem vínculo: a linha é a de antes, sem bloco vazio.
     for (const id of ['p10', 'p11', 'p12']) {
       expect(await linha(id).locator('.mov').count()).toBe(0);
@@ -189,7 +191,8 @@ describe.skipIf(sem)('Pasta digital — no navegador', { timeout: 60_000 }, () =
     await linha('p05').click();
     await page.waitForSelector('#pasta .pagina canvas');
     const cab = (await page.textContent('#pasta-mov')) ?? '';
-    expect(cab).toContain('Movimentação nº 3');
+    expect(cab).toContain('Movimentação · ');
+    expect(cab).not.toMatch(/nº|5160178\d\d/);
     expect(cab).toContain(TEXTO_LONGO);
     // Peça sem vínculo: o cabeçalho some em vez de ficar um vão em branco.
     await linha('p12').click();
@@ -199,7 +202,7 @@ describe.skipIf(sem)('Pasta digital — no navegador', { timeout: 60_000 }, () =
     expect(await page.locator('#pasta-mov').isVisible()).toBe(false);
   });
 
-  it('a busca acha pela descrição e pelo número da movimentação, e o contador diz quantas escondeu', async () => {
+  it('a busca acha pela descrição (e NÃO pelo identificador interno), e o contador diz quantas escondeu', async () => {
     await abrirTela();
     await abrirPasta();
     // Pela descrição (sem acento, como ninguém digita).
@@ -208,12 +211,11 @@ describe.skipIf(sem)('Pasta digital — no navegador', { timeout: 60_000 }, () =
     expect(await page.textContent('#pasta-contagem')).toContain(
       '10 escondidas pelos filtros',
     );
-    // Pelo número: igualdade — "4" acha o ato 4, não o "5000" do texto nem outro ato.
-    await page.fill('#pasta-busca', 'mov. 4');
-    expect(await page.locator('#pasta .linha').count()).toBe(1);
-    expect(await linha('p06').count()).toBe(1);
-    await page.fill('#pasta-busca', '1');
-    expect(await page.locator('#pasta .linha').count()).toBe(3); // só o ato 1, três peças
+    // O identificador interno não é buscável: nem inteiro, nem pedaço.
+    for (const termo of ['516017864', '516017', 'mov. 4']) {
+      await page.fill('#pasta-busca', termo);
+      expect(await page.locator('#pasta .linha').count()).toBe(0);
+    }
     // Texto livre se acha como texto: "382" aparece na descrição de p06.
     await page.fill('#pasta-busca', '382');
     expect(await linha('p06').count()).toBe(1);
@@ -512,7 +514,8 @@ describe.skipIf(sem)('Pasta digital — no navegador', { timeout: 60_000 }, () =
       ),
     ).toBe(true);
     // No celular o cabeçalho do visualizador traz o ato, sem passar da tela.
-    expect(await page.textContent('#pasta-mov')).toContain('Movimentação nº 3');
+    expect(await page.textContent('#pasta-mov')).toContain('Movimentação · ');
+    expect(await page.textContent('#pasta-mov')).not.toMatch(/5160178\d\d/);
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= window.innerWidth,

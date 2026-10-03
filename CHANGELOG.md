@@ -9,6 +9,35 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.33.3] — 2026-10-03
+
+Pasta digital — **corrige o "mov. N" da 0.33.2, que estava errado**. O número
+mostrado (ex.: 516017862) era o `identificadorMovimento` do MNI, um identificador
+INTERNO do tribunal; o que o advogado vê no Projudi é a numeração sequencial do
+ato. Usamos o campo errado e a 0.33.2 foi aprovada sem conferir contra o tribunal.
+
+### Corrigido
+
+- **Nenhum número de movimentação é mais exibido**: saiu da linha da lista, do
+  cabeçalho do visualizador ("Movimentação · data — descrição") e da busca (que
+  não procura mais por número; placeholder e `aria-label` ajustados). A descrição
+  do ato, que estava correta, continua.
+- `GET …/pasta`: `movimentacao` deixa de trazer `numero` (`data`, `descricao`,
+  `complemento`). Quem consumia o campo deve parar.
+
+### Detalhes
+
+- **Por que remover e não derivar:** nenhuma resposta do MNI mapeada pelo projeto
+  traz o número sequencial (atributos de `<movimento>`: `identificadorMovimento`,
+  `dataHora`, `nivelSigilo`, filhos de classificação e `complemento`; de
+  `<documento>`: `idDocumento`, `movimento`, `descricao`, `mimetype`, `dataHora`,
+  `nivelSigilo`). Derivar pela posição exigiria conferir contra o Projudi — a
+  verdade de campo não foi informada — e depender de que o sistema receba todos
+  os atos (atos internos podem não vir). Sem confirmação, fica sem número.
+- O `identificadorMovimento` continua sendo a chave INTERNA do vínculo peça → ato.
+- Regressão: teste com identificador longo (516017862) que não pode aparecer na
+  tela, no cabeçalho, na busca nem na resposta da API.
+
 ## [0.33.2] — 2026-10-03
 
 Pasta digital — **cada peça mostra o ato a que pertence**. Pedido do dono: 111 de

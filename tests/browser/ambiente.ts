@@ -34,9 +34,15 @@ export const CHROMIUM = [
  * real. Rótulos genéricos, com o padrão "Tipo - complemento" do tribunal para
  * exercitar os atalhos por tipo.
  */
+/**
+ * Identificador interno do tribunal (como 516017862 num processo real). Longo de
+ * propósito: se a tela voltar a mostrá-lo como "mov.", o teste vê o dígito.
+ */
+export const BASE_ID_INTERNO = 516017860;
+
 export async function pecasDoTeste(): Promise<PecaFalsa[]> {
   const html = new TextEncoder().encode(HTML_SINTETICO);
-  return [
+  const pecas: PecaFalsa[] = [
     {
       id: 'p01',
       rotulo: 'Petição - inicial',
@@ -92,6 +98,9 @@ export async function pecasDoTeste(): Promise<PecaFalsa[]> {
     },
     { id: 'p12', rotulo: 'Recurso', bytes: await pdfSintetico(1, 'P12'), movimento: 10 },
   ];
+  return pecas.map((p) =>
+    p.movimento !== undefined ? { ...p, movimento: BASE_ID_INTERNO + p.movimento } : p,
+  );
 }
 
 export interface Ambiente {
@@ -110,14 +119,14 @@ export interface Ambiente {
 export async function iniciar(): Promise<Ambiente> {
   const pasta = pastaTemporaria();
   const provedor = new ProvedorDeLoteFalso(await pecasDoTeste());
-  // Os atos do tribunal, SINTÉTICOS. Números altos de propósito (a posição na
-  // lista nunca é o número) e "ev. 382" no texto, que é texto e não referência.
+  // Os atos do tribunal, SINTÉTICOS. Identificadores internos longos de
+  // propósito (nunca podem aparecer na tela como número de movimentação) e "ev. 382" no texto, que é texto e não referência.
   // Os atos 8, 9 e 10 não existem: p10, p11 e p12 apontam para atos que o
   // tribunal não listou, e a linha fica sem bloco.
   const ato = (numero: number, titulo: string, complementos?: string[]) => ({
     data: new Date(Date.UTC(2026, 8, numero + 10, 13, 0, 0)),
     titulo,
-    idExterno: `mni:${numero}`,
+    idExterno: `mni:${BASE_ID_INTERNO + numero}`,
     fonte: 'mni',
     ...(complementos ? { complementos } : {}),
   });

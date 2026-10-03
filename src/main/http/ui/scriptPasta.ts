@@ -111,8 +111,8 @@ function montarPainel(){
     '<div class="corpo">'+
       '<section class="lista" id="pasta-lista" aria-label="Peças do processo">'+
         '<div class="barra">'+
-          '<input id="pasta-busca" type="search" placeholder="Buscar por rótulo, movimentação ou nº" '+
-            'aria-label="Buscar peça pelo rótulo, pela descrição ou pelo número da movimentação" '+
+          '<input id="pasta-busca" type="search" placeholder="Buscar por rótulo ou movimentação" '+
+            'aria-label="Buscar peça pelo rótulo ou pela descrição da movimentação" '+
             'autocomplete="off">'+
           '<label class="so-disp"><input type="checkbox" id="pasta-so-disp"> só disponíveis</label>'+
           '<div class="acoes">'+
@@ -332,7 +332,8 @@ function fechar(){
 /* ---------- a lista ---------- */
 /* A movimentação a que a peça pertence, como o tribunal a escreveu. Os números
    que aparecem DENTRO do texto ("ev. 382") são texto do cartório: aqui só se
-   mostram, nunca viram link nem número da movimentação. */
+   mostram, nunca viram link nem número da movimentação. A tela NÃO mostra número
+   de movimentação nenhum (v0.33.3): o identificadorMovimento é interno. */
 function textoDaMov(p){
   var m=p.movimentacao;
   if(!m)return '';
@@ -341,18 +342,17 @@ function textoDaMov(p){
 function tituloDaMov(p){
   var m=p.movimentacao;
   if(!m)return '';
-  return 'Movimentação'+(m.numero!=null?' nº '+m.numero:'')+' · '+pv().dt(m.data)+
+  return 'Movimentação · '+pv().dt(m.data)+
     (textoDaMov(p)?' — '+textoDaMov(p):'');
 }
-/* "382" acha a movimentação 382 e não a 1382: o número casa por igualdade. Já a
-   descrição casa por trecho — é busca de texto, como no rótulo. */
+/* A busca é de texto (rótulo e descrição, por trecho). Não há busca por número
+   de movimentação: o tribunal não entrega o número que o advogado vê, e o
+   identificador interno nunca é mostrado nem procurado (v0.33.3). */
 function combinaComBusca(p,termo){
   if(normal(p.rotulo).indexOf(termo)>=0)return true;
   var m=p.movimentacao;
   if(!m)return false;
-  if(normal(textoDaMov(p)).indexOf(termo)>=0)return true;
-  var num=/^(?:mov(?:imentacao)?\.?\s*)?(?:n[o\u00ba.]*\s*)?(\d+)$/.exec(termo);
-  return !!num&&m.numero!=null&&String(m.numero)===String(Number(num[1]));
+  return normal(textoDaMov(p)).indexOf(termo)>=0;
 }
 function visiveis(){
   var termo=normal(st.busca).trim();
@@ -386,9 +386,8 @@ function movHtml(p){
   var m=p.movimentacao;
   if(!m)return '';
   var t=textoDaMov(p);
-  if(!t&&m.numero==null)return '';
+  if(!t)return '';
   return '<span class="mov" title="'+esc(tituloDaMov(p))+'">'+
-    (m.numero!=null?'<span class="mov-n">mov. '+esc(String(m.numero))+'</span>':'')+
     (t?'<span class="mov-t">'+esc(t)+'</span>':'')+'</span>';
 }
 
