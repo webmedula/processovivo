@@ -38,10 +38,7 @@ export interface RepositorioCredenciais {
 
   listar(workspace: string): Promise<CredencialCadastrada[]>;
 
-  salvar(
-    workspace: string,
-    credencial: CredencialTribunal,
-  ): Promise<CredencialCadastrada>;
+  salvar(workspace: string, credencial: CredencialTribunal): Promise<CredencialCadastrada>;
 
   remover(workspace: string, tribunal: string): Promise<boolean>;
 

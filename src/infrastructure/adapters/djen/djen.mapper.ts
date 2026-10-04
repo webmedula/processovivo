@@ -220,8 +220,7 @@ function montarProcesso(
   consultadoEm: Date,
 ): Processo | undefined {
   const ordenadas = [...comunicacoes].sort(
-    (a, b) =>
-      b.data_disponibilizacao.localeCompare(a.data_disponibilizacao) || b.id - a.id,
+    (a, b) => b.data_disponibilizacao.localeCompare(a.data_disponibilizacao) || b.id - a.id,
   );
   const maisRecente = ordenadas[0];
   if (!maisRecente) return undefined;

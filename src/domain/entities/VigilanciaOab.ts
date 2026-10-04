@@ -61,7 +61,9 @@ export const DIAS_DE_SOBREPOSICAO = 2;
  * @param agora momento da varredura, injetado para o teste não depender do relógio
  */
 export function desdeQuandoVarrer(vigilancia: VigilanciaOab, agora: Date): Date {
-  const dias = vigilancia.varridaEm ? DIAS_DE_SOBREPOSICAO : DIAS_DA_PRIMEIRA_VARREDURA;
+  const dias = vigilancia.varridaEm
+    ? DIAS_DE_SOBREPOSICAO
+    : DIAS_DA_PRIMEIRA_VARREDURA;
 
   const base = vigilancia.varridaEm ?? agora;
   const desde = new Date(base);

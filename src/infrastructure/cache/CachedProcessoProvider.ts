@@ -88,3 +88,4 @@ export class CachedProcessoProvider implements ProcessoProvider {
     await this.cache.delete(`processo:numero:${numero.digitos}`);
   }
 }
+

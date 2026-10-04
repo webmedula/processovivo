@@ -47,5 +47,10 @@ export interface RepositorioVigilancias {
     processosEncontrados: number,
   ): Promise<void>;
 
-  registrarFalha(workspace: string, oab: string, uf: string, erro: string): Promise<void>;
+  registrarFalha(
+    workspace: string,
+    oab: string,
+    uf: string,
+    erro: string,
+  ): Promise<void>;
 }

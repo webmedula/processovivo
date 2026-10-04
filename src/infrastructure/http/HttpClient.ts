@@ -50,20 +50,14 @@ export interface OpcoesRequisicao {
 }
 
 export class HttpTimeoutError extends Error {
-  constructor(
-    readonly url: string,
-    readonly timeoutMs: number,
-  ) {
+  constructor(readonly url: string, readonly timeoutMs: number) {
     super(`Timeout de ${timeoutMs}ms ao chamar ${url}`);
     this.name = 'HttpTimeoutError';
   }
 }
 
 export class HttpRedeError extends Error {
-  constructor(
-    readonly url: string,
-    causa: unknown,
-  ) {
+  constructor(readonly url: string, causa: unknown) {
     super(`Falha de rede ao chamar ${url}: ${descrever(causa)}`, { cause: causa });
     this.name = 'HttpRedeError';
   }

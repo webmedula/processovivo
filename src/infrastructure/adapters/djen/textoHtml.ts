@@ -102,7 +102,9 @@ const LINHAS_VAZIAS = /\n{3,}/g;
  * o advogado lê metade de uma decisão e conclui o oposto do que ela diz.
  */
 export function limparTextoDoAto(texto: string): string {
-  return decodificarEntidades(texto.replace(BLOCOS, '\n').replace(TAGS, ''))
+  return decodificarEntidades(
+    texto.replace(BLOCOS, '\n').replace(TAGS, ''),
+  )
     .replace(/\r\n?/g, '\n')
     .replace(ESPACOS_HORIZONTAIS, ' ')
     .split('\n')

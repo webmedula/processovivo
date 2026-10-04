@@ -75,7 +75,10 @@ function preferir<C extends string, T>(
   return valor === undefined ? {} : ({ [campo]: valor } as Record<C, T>);
 }
 
-function carimbar(movimentacoes: readonly Movimentacao[], fonte: string): Movimentacao[] {
+function carimbar(
+  movimentacoes: readonly Movimentacao[],
+  fonte: string,
+): Movimentacao[] {
   return movimentacoes.map((m) => (m.fonte ? m : { ...m, fonte }));
 }
 

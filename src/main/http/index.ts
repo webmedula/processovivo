@@ -22,9 +22,7 @@ principal().catch((erro: unknown) => {
     // Erro de configuração previsto: mensagem acionável, sem stack trace —
     // quem lê isso no log do Easypanel precisa saber o que corrigir, não onde
     // o Node estourou.
-    console.error(
-      `\n[Processo Vivo] Configuração de autenticação recusada.\n${erro.message}\n`,
-    );
+    console.error(`\n[Processo Vivo] Configuração de autenticação recusada.\n${erro.message}\n`);
     process.exit(1);
   }
   console.error('[Processo Vivo] Falha ao iniciar:', erro);

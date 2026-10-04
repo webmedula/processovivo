@@ -96,21 +96,23 @@ export class RepositorioVigilanciasSqlite implements RepositorioVigilancias {
     //
     // Com `workspace`, só as dele — é a varredura manual. Sem, todas, que é a
     // agendada.
-    const linhas = (workspace
-      ? this.db
-          .prepare(
-            `SELECT * FROM vigilancias_oab WHERE ativa = 1 AND workspace = ?
+    const linhas = (
+      workspace
+        ? this.db
+            .prepare(
+              `SELECT * FROM vigilancias_oab WHERE ativa = 1 AND workspace = ?
                ORDER BY varrida_em IS NOT NULL, varrida_em ASC
                LIMIT ?`,
-          )
-          .all(workspace, limite)
-      : this.db
-          .prepare(
-            `SELECT * FROM vigilancias_oab WHERE ativa = 1
+            )
+            .all(workspace, limite)
+        : this.db
+            .prepare(
+              `SELECT * FROM vigilancias_oab WHERE ativa = 1
                ORDER BY varrida_em IS NOT NULL, varrida_em ASC
                LIMIT ?`,
-          )
-          .all(limite)) as unknown as LinhaVigilancia[];
+            )
+            .all(limite)
+    ) as unknown as LinhaVigilancia[];
     return linhas.map(paraDominio);
   }
 
@@ -154,7 +156,9 @@ export class RepositorioVigilanciasSqlite implements RepositorioVigilancias {
     uf: string,
   ): VigilanciaOab | undefined {
     const linha = this.db
-      .prepare(`SELECT * FROM vigilancias_oab WHERE workspace = ? AND oab = ? AND uf = ?`)
+      .prepare(
+        `SELECT * FROM vigilancias_oab WHERE workspace = ? AND oab = ? AND uf = ?`,
+      )
       .get(workspace, oab, uf) as unknown as LinhaVigilancia | undefined;
     return linha ? paraDominio(linha) : undefined;
   }

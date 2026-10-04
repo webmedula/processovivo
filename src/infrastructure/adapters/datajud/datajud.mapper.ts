@@ -13,7 +13,10 @@ const NOME_PROVIDER = 'datajud';
  * `movimentos`, `complementosTabelados`) morre neste arquivo. É o único ponto
  * do sistema que precisa mudar quando o CNJ mexer no formato.
  */
-export function mapearProcesso(origem: ProcessoDataJud, consultadoEm: Date): Processo {
+export function mapearProcesso(
+  origem: ProcessoDataJud,
+  consultadoEm: Date,
+): Processo {
   const numero = NumeroCNJ.tentarCriar(origem.numeroProcesso);
   if (!numero) {
     throw new RespostaInvalidaError(

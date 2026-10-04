@@ -269,11 +269,7 @@ export function rotasDeAdmin(opcoes: OpcoesRotasAdmin): FastifyPluginAsync {
             mensagem: 'Esta conta não tinha assinatura para cancelar.',
           };
         }
-        return {
-          email: req.params.email,
-          workspace: ws,
-          status: cancelada.statusEm(new Date()),
-        };
+        return { email: req.params.email, workspace: ws, status: cancelada.statusEm(new Date()) };
       },
     );
 

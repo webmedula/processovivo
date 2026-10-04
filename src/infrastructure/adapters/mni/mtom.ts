@@ -155,7 +155,10 @@ function interpretarParte(bloco: Buffer): ParteMultipart | undefined {
   // O CRLF que antecede o próximo delimitador pertence ao delimitador, não ao
   // conteúdo. Sem tirar, todo PDF sai com dois bytes a mais no fim — o que não
   // impede de abrir, mas quebra qualquer conferência de hash com a origem.
-  if (bytes.length >= 2 && bytes.subarray(bytes.length - 2).toString('ascii') === CRLF) {
+  if (
+    bytes.length >= 2 &&
+    bytes.subarray(bytes.length - 2).toString('ascii') === CRLF
+  ) {
     bytes = bytes.subarray(0, bytes.length - 2);
   }
 

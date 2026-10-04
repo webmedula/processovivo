@@ -21,12 +21,10 @@
  * significativa — `LIKE %termo%` já tolera o que importa.
  */
 export function paraBusca(texto: string): string {
-  return (
-    texto
-      .normalize('NFD')
-      // Remove os diacríticos separados pelo NFD, mantendo a letra base.
-      .replace(/[̀-ͯ]/g, '')
-      .toUpperCase()
-      .trim()
-  );
+  return texto
+    .normalize('NFD')
+    // Remove os diacríticos separados pelo NFD, mantendo a letra base.
+    .replace(/[̀-ͯ]/g, '')
+    .toUpperCase()
+    .trim();
 }

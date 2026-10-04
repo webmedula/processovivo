@@ -79,7 +79,9 @@ export class MockCrawlerAdapter implements ProcessoProvider {
     this.clock = opcoes.clock ?? clockDoSistema;
 
     const fixtures = opcoes.processos ?? PROCESSOS_TJSP;
-    this.porNumero = new Map(fixtures.map((f) => [somenteDigitos(f.numero), f] as const));
+    this.porNumero = new Map(
+      fixtures.map((f) => [somenteDigitos(f.numero), f] as const),
+    );
     this.porOab = opcoes.processosPorOab ?? PROCESSOS_POR_OAB;
   }
 
