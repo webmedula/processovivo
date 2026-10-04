@@ -23,12 +23,7 @@ import { PlanoInvalidoError } from '../errors/index.js';
  * sentido para quem escreveu o código.
  */
 export type RecursoDoPlano =
-  | 'consulta'
-  | 'acompanhamento'
-  | 'vigilancia'
-  | 'calendario'
-  | 'pecas'
-  | 'analiseIa';
+  'consulta' | 'acompanhamento' | 'vigilancia' | 'calendario' | 'pecas' | 'analiseIa';
 
 export interface DescricaoDoRecurso {
   readonly recurso: RecursoDoPlano;
@@ -50,7 +45,12 @@ export interface DescricaoDoRecurso {
 }
 
 export const RECURSOS: readonly DescricaoDoRecurso[] = Object.freeze([
-  { recurso: 'consulta', nome: 'Consulta', frase: 'a consulta de processos', implementado: true },
+  {
+    recurso: 'consulta',
+    nome: 'Consulta',
+    frase: 'a consulta de processos',
+    implementado: true,
+  },
   {
     recurso: 'acompanhamento',
     nome: 'Acompanhamento',
@@ -69,8 +69,18 @@ export const RECURSOS: readonly DescricaoDoRecurso[] = Object.freeze([
     frase: 'o calendário',
     implementado: true,
   },
-  { recurso: 'pecas', nome: 'Peças do processo', frase: 'as peças do processo', implementado: true },
-  { recurso: 'analiseIa', nome: 'Análise com IA', frase: 'a análise com IA', implementado: false },
+  {
+    recurso: 'pecas',
+    nome: 'Peças do processo',
+    frase: 'as peças do processo',
+    implementado: true,
+  },
+  {
+    recurso: 'analiseIa',
+    nome: 'Análise com IA',
+    frase: 'a análise com IA',
+    implementado: false,
+  },
 ] as const);
 
 export function ehRecurso(valor: string): valor is RecursoDoPlano {
@@ -203,7 +213,8 @@ export function validarPlano(plano: Plano): void {
     throw new PlanoInvalidoError('O plano precisa incluir pelo menos um recurso.');
   }
   for (const r of plano.recursos) {
-    if (!ehRecurso(r)) throw new PlanoInvalidoError(`Recurso desconhecido: "${String(r)}".`);
+    if (!ehRecurso(r))
+      throw new PlanoInvalidoError(`Recurso desconhecido: "${String(r)}".`);
   }
   if (new Set(plano.recursos).size !== plano.recursos.length) {
     throw new PlanoInvalidoError('Há recurso repetido no plano.');
@@ -214,7 +225,9 @@ export function validarPlano(plano: Plano): void {
       plano.precoMensalCentavos < 0 ||
       plano.precoMensalCentavos > PRECO_MAXIMO_CENTAVOS)
   ) {
-    throw new PlanoInvalidoError('O preço precisa ser um valor entre R$ 0,00 e R$ 100.000,00.');
+    throw new PlanoInvalidoError(
+      'O preço precisa ser um valor entre R$ 0,00 e R$ 100.000,00.',
+    );
   }
   if (!Number.isInteger(plano.ordem) || plano.ordem < 0 || plano.ordem > 9999) {
     throw new PlanoInvalidoError('A ordem precisa ser um número inteiro entre 0 e 9999.');
@@ -238,7 +251,9 @@ export function planoInclui(plano: Plano, recurso: RecursoDoPlano): boolean {
 
 /** Pela ordem configurada; o código desempata para a lista nunca "pular". */
 export function ordenarPlanos(planos: readonly Plano[]): Plano[] {
-  return [...planos].sort((a, b) => a.ordem - b.ordem || a.codigo.localeCompare(b.codigo));
+  return [...planos].sort(
+    (a, b) => a.ordem - b.ordem || a.codigo.localeCompare(b.codigo),
+  );
 }
 
 /** Planos que podem ser contratados hoje. É o que a tela de preços deve listar. */

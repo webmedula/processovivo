@@ -50,7 +50,10 @@ export const PROCESSOS_TJSP: readonly ProcessoFixture[] = [
     tribunal: 'TJSP',
     vara: '12ª Vara Cível do Foro Central Cível - Comarca de São Paulo',
     classe: 'Procedimento Comum Cível',
-    assuntos: ['Rescisão do Contrato e Devolução do Dinheiro', 'Indenização por Dano Moral'],
+    assuntos: [
+      'Rescisão do Contrato e Devolução do Dinheiro',
+      'Indenização por Dano Moral',
+    ],
     dataDistribuicao: '2023-03-14T09:12:00.000Z',
     grau: 'G1',
     valorCausa: 84500.0,

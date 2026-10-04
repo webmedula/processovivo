@@ -19,6 +19,12 @@ export interface PosicoesDosAtos {
   readonly total: number;
   /** `identificadorMovimento` → posição. Identificador repetido não entra. */
   readonly porIdentificador: ReadonlyMap<number, number>;
+  /**
+   * `dataHora` de CADA ato, na ordem das posições (índice 0 = posição 1), com ou
+   * sem identificador. Base da âncora de calibração: o ato ancorado que mudar de
+   * data numa listagem nova invalida a âncora (v0.35.0).
+   */
+  readonly datas: readonly Date[];
 }
 
 export function calcularPosicoesDosAtos(
@@ -51,5 +57,6 @@ export function calcularPosicoesDosAtos(
   });
   // Identificador repetido é vínculo ambíguo: sem posição, como já era sem ato.
   for (const id of repetidos) porIdentificador.delete(id);
-  return { total: itens.length, porIdentificador };
+  const datas = itens.map((i) => new Date(i.instante));
+  return { total: itens.length, porIdentificador, datas };
 }

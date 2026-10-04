@@ -1,6 +1,7 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { z } from 'zod';
 import type {
+  AncoraGuardada,
   ListagemDaPasta,
   PecaEmCache,
 } from '../../../domain/entities/PastaDigital.js';
@@ -33,6 +34,8 @@ interface LinhaListagem {
   processo_sigiloso: number;
   pecas: string;
   total_atos_recebidos: number | null;
+  datas_dos_atos: string | null;
+  ancoras_invalidadas: number | null;
 }
 
 interface LinhaPeca {
@@ -66,14 +69,16 @@ export class RepositorioDaPastaSqlite implements RepositorioDaPasta {
       .prepare(
         `INSERT INTO pasta_listagens
            (workspace, numero, tribunal, listada_em, processo_sigiloso, pecas,
-            total_atos_recebidos)
-         VALUES (?, ?, ?, ?, ?, ?, ?)
+            total_atos_recebidos, datas_dos_atos, ancoras_invalidadas)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (workspace, numero) DO UPDATE SET
            tribunal = excluded.tribunal,
            listada_em = excluded.listada_em,
            processo_sigiloso = excluded.processo_sigiloso,
            pecas = excluded.pecas,
-           total_atos_recebidos = excluded.total_atos_recebidos`,
+           total_atos_recebidos = excluded.total_atos_recebidos,
+           datas_dos_atos = excluded.datas_dos_atos,
+           ancoras_invalidadas = excluded.ancoras_invalidadas`,
       )
       .run(
         workspace,
@@ -83,6 +88,10 @@ export class RepositorioDaPastaSqlite implements RepositorioDaPasta {
         l.processoSigiloso ? 1 : 0,
         JSON.stringify(pecas),
         l.totalAtosRecebidos ?? null,
+        l.datasDosAtos
+          ? JSON.stringify(l.datasDosAtos.map((d) => d.toISOString()))
+          : null,
+        l.ancorasInvalidadas ?? null,
       );
   }
 
@@ -92,7 +101,8 @@ export class RepositorioDaPastaSqlite implements RepositorioDaPasta {
   ): Promise<ListagemDaPasta | undefined> {
     const linha = this.db
       .prepare(
-        `SELECT numero, tribunal, listada_em, processo_sigiloso, pecas, total_atos_recebidos
+        `SELECT numero, tribunal, listada_em, processo_sigiloso, pecas, total_atos_recebidos,
+                datas_dos_atos, ancoras_invalidadas
            FROM pasta_listagens WHERE workspace = ? AND numero = ?`,
       )
       .get(workspace, numeroProcesso) as unknown as LinhaListagem | undefined;
@@ -105,6 +115,17 @@ export class RepositorioDaPastaSqlite implements RepositorioDaPasta {
       processoSigiloso: linha.processo_sigiloso === 1,
       ...(linha.total_atos_recebidos !== null
         ? { totalAtosRecebidos: linha.total_atos_recebidos }
+        : {}),
+      ...(linha.datas_dos_atos !== null
+        ? {
+            datasDosAtos: z
+              .array(z.string())
+              .parse(JSON.parse(linha.datas_dos_atos))
+              .map((d) => new Date(d)),
+          }
+        : {}),
+      ...(linha.ancoras_invalidadas
+        ? { ancorasInvalidadas: linha.ancoras_invalidadas }
         : {}),
       pecas: pecas.map((p) => ({
         pecaId: p.pecaId,
@@ -211,14 +232,96 @@ export class RepositorioDaPastaSqlite implements RepositorioDaPasta {
     return linhas.map(lerPeca);
   }
 
+  async ancorasDoProcesso(
+    workspace: string,
+    numeroProcesso: string,
+  ): Promise<AncoraGuardada[]> {
+    const linhas = this.db
+      .prepare(
+        `SELECT posicao, numero_projudi, data_hora_do_ato, criada_em
+           FROM pasta_ancoras WHERE workspace = ? AND numero = ? ORDER BY posicao`,
+      )
+      .all(workspace, numeroProcesso) as unknown as Array<{
+      posicao: number;
+      numero_projudi: number;
+      data_hora_do_ato: string;
+      criada_em: string;
+    }>;
+    return linhas.map((l) => ({
+      posicao: l.posicao,
+      numeroProjudi: l.numero_projudi,
+      dataHoraDoAto: new Date(l.data_hora_do_ato),
+      criadaEm: new Date(l.criada_em),
+    }));
+  }
+
+  async guardarAncora(
+    workspace: string,
+    numeroProcesso: string,
+    a: AncoraGuardada,
+  ): Promise<void> {
+    this.db
+      .prepare(
+        `INSERT INTO pasta_ancoras
+           (workspace, numero, posicao, numero_projudi, data_hora_do_ato, criada_em)
+         VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT (workspace, numero, posicao) DO UPDATE SET
+           numero_projudi = excluded.numero_projudi,
+           data_hora_do_ato = excluded.data_hora_do_ato,
+           criada_em = excluded.criada_em`,
+      )
+      .run(
+        workspace,
+        numeroProcesso,
+        a.posicao,
+        a.numeroProjudi,
+        a.dataHoraDoAto.toISOString(),
+        a.criadaEm.toISOString(),
+      );
+  }
+
+  async removerAncora(
+    workspace: string,
+    numeroProcesso: string,
+    posicao: number,
+  ): Promise<boolean> {
+    const r = this.db
+      .prepare(
+        'DELETE FROM pasta_ancoras WHERE workspace = ? AND numero = ? AND posicao = ?',
+      )
+      .run(workspace, numeroProcesso, posicao);
+    return Number(r.changes) > 0;
+  }
+
+  async limparAncoras(workspace: string, numeroProcesso: string): Promise<number> {
+    const r = this.db
+      .prepare('DELETE FROM pasta_ancoras WHERE workspace = ? AND numero = ?')
+      .run(workspace, numeroProcesso);
+    return Number(r.changes);
+  }
+
+  async zerarAncorasInvalidadas(
+    workspace: string,
+    numeroProcesso: string,
+  ): Promise<void> {
+    this.db
+      .prepare(
+        'UPDATE pasta_listagens SET ancoras_invalidadas = NULL WHERE workspace = ? AND numero = ?',
+      )
+      .run(workspace, numeroProcesso);
+  }
+
   async apagarDoWorkspace(workspace: string): Promise<number> {
+    const c = this.db
+      .prepare('DELETE FROM pasta_ancoras WHERE workspace = ?')
+      .run(workspace);
     const a = this.db
       .prepare('DELETE FROM pasta_pecas WHERE workspace = ?')
       .run(workspace);
     const b = this.db
       .prepare('DELETE FROM pasta_listagens WHERE workspace = ?')
       .run(workspace);
-    return Number(a.changes) + Number(b.changes);
+    return Number(a.changes) + Number(b.changes) + Number(c.changes);
   }
 }
 

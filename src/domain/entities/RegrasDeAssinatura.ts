@@ -32,11 +32,16 @@ export const REGRAS_PADRAO: RegrasDeAssinatura = Object.freeze({
   diasDeCarencia: DIAS_DE_CARENCIA_PADRAO,
 });
 
-export function validarRegras(regras: RegrasDeAssinatura, planos: readonly Plano[]): void {
-  if (!Number.isInteger(regras.diasDeTeste) || regras.diasDeTeste < 1 || regras.diasDeTeste > 90) {
-    throw new RegrasDeAssinaturaInvalidasError(
-      'O teste precisa durar de 1 a 90 dias.',
-    );
+export function validarRegras(
+  regras: RegrasDeAssinatura,
+  planos: readonly Plano[],
+): void {
+  if (
+    !Number.isInteger(regras.diasDeTeste) ||
+    regras.diasDeTeste < 1 ||
+    regras.diasDeTeste > 90
+  ) {
+    throw new RegrasDeAssinaturaInvalidasError('O teste precisa durar de 1 a 90 dias.');
   }
   if (
     !Number.isInteger(regras.diasDeCarencia) ||

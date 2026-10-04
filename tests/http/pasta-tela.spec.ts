@@ -7,6 +7,7 @@ import { ESTILOS_PASTA } from '../../src/main/http/ui/estilosPasta.js';
 import { paginaConsole } from '../../src/main/http/ui/pagina.js';
 import { SCRIPT } from '../../src/main/http/ui/script.js';
 import { SCRIPT_PASTA } from '../../src/main/http/ui/scriptPasta.js';
+import { SCRIPT_PASTA_CALIBRACAO } from '../../src/main/http/ui/scriptPastaCalibracao.js';
 import { aplicacaoDeTeste } from '../helpers/aplicacao.js';
 import { ProviderFalso } from '../helpers/fabricas.js';
 import {
@@ -281,11 +282,14 @@ describe('console — a tela da Pasta digital', () => {
     // Sem bloco vazio: sem texto e sem posição, nada é desenhado.
     expect(SCRIPT_PASTA).toContain("if(!m)return '';");
     expect(SCRIPT_PASTA).toContain("if(!t&&pos===null)return '';");
-    // O número é a POSIÇÃO calculada pelo servidor (v0.34.0). O identificador
-    // interno (`m.numero`) nunca é lido pela tela (erro da v0.33.2).
-    expect(SCRIPT_PASTA).not.toContain('m.numero');
-    expect(SCRIPT_PASTA).toContain('m.posicao');
-    expect(SCRIPT_PASTA).toContain("mov. '+pos+'</span>");
+    // O número vem do servidor com o grau de certeza (v0.35.0; a posição desde a
+    // 0.34.0). Nenhum arquivo da tela lê o identificador interno (erro da 0.33.2).
+    for (const codigo of [SCRIPT_PASTA, SCRIPT_PASTA_CALIBRACAO]) {
+      expect(codigo).not.toMatch(/\.identificadorMovimento|\.movimento\b/);
+    }
+    expect(SCRIPT_PASTA_CALIBRACAO).toContain('m.posicao');
+    expect(SCRIPT_PASTA_CALIBRACAO).toContain('m.numero');
+    expect(SCRIPT_PASTA_CALIBRACAO).toContain("mov. '+esc(rotulo(n))");
     // Texto livre é texto: nenhum <a> nem href é montado a partir da descrição.
     expect(SCRIPT_PASTA).not.toMatch(/<a [^']*mov/);
     // Até 2 linhas, nunca estoura a lista.
@@ -300,18 +304,27 @@ describe('console — a tela da Pasta digital', () => {
       'Número calculado pela ordem dos atos recebidos do tribunal. ',
     );
     expect(SCRIPT_PASTA).toContain('Pode ficar abaixo do número do Projudi');
-    expect(SCRIPT_PASTA).toContain('Numeração das movimentações calculada');
+    expect(SCRIPT_PASTA_CALIBRACAO).toContain('Numeração das movimentações calculada');
+    expect(SCRIPT_PASTA_CALIBRACAO).toContain('Calibrada por você com');
+    expect(SCRIPT_PASTA_CALIBRACAO).toContain('Calibração anterior invalidada');
     expect(SCRIPT_PASTA).toContain('v.totalAtosRecebidos');
     // O aviso depende de haver número na lista, e de mais nada.
-    expect(SCRIPT_PASTA).toContain("if(haNumeros()&&typeof v.totalAtosRecebidos==='number')");
+    expect(SCRIPT_PASTA).toContain(
+      "if(haNumeros()&&typeof v.totalAtosRecebidos==='number')",
+    );
     expect(SCRIPT_PASTA).not.toMatch(/n[úu]mero oficial/i);
+    expect(SCRIPT_PASTA_CALIBRACAO).not.toMatch(/n[úu]mero oficial/i);
+    // Com calibração o aviso não some: o texto muda, a condição não.
+    expect(SCRIPT_PASTA).toContain('h+=cal.avisoHtml(v);');
   });
 
   it('a busca procura no rótulo, na descrição e no número (por igualdade sobre a posição)', () => {
     expect(SCRIPT_PASTA).toContain('function combinaComBusca(p,termo)');
     expect(SCRIPT_PASTA).toContain('Buscar por rótulo, movimentação ou nº"');
     expect(SCRIPT_PASTA).toContain('pelo número da movimentação');
-    expect(SCRIPT_PASTA).toContain('pos===Number(num[1])');
+    expect(SCRIPT_PASTA).toContain('cal.combina(p,buscado)');
+    // Faixa: o número buscado dentro dela também acha a linha.
+    expect(SCRIPT_PASTA_CALIBRACAO).toContain('numero>=n.min&&numero<=n.max');
   });
 
   it('nenhum conteúdo de peça entra no DOM: só texto do sistema, por esc()', () => {

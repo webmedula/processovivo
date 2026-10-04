@@ -685,3 +685,18 @@ export class FeedDoCalendarioAusenteError extends DomainError {
     super('Você ainda não tem um feed do calendário. Crie um antes de alterá-lo.');
   }
 }
+
+/**
+ * O número informado do Projudi não serve como âncora de calibração: fora dos
+ * atos recebidos, abaixo da posição, incompatível com os outros já informados
+ * (o deslocamento nunca diminui) ou além do limite por processo. A mensagem diz
+ * qual — é o que a pessoa precisa para conferir o que digitou. 400: a correção
+ * está no que ela mandou.
+ */
+export class CalibracaoDeNumeracaoInvalidaError extends DomainError {
+  readonly codigo = 'CALIBRACAO_DE_NUMERACAO_INVALIDA';
+
+  constructor(motivo: string) {
+    super(motivo);
+  }
+}

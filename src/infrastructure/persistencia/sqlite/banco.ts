@@ -338,6 +338,19 @@ const ESQUEMA = [
    )`,
   `CREATE INDEX IF NOT EXISTS idx_pasta_pecas_expira ON pasta_pecas (expira_em)`,
 
+  // Calibração do número da movimentação (v0.35.0): pares (posição, número no
+  // Projudi) que o ADVOGADO informou. Tabela nova, sem retrocarga: nenhum dado
+  // derivado. `data_hora_do_ato` detecta listagem que mudou sob a âncora.
+  `CREATE TABLE IF NOT EXISTS pasta_ancoras (
+     workspace        TEXT NOT NULL,
+     numero           TEXT NOT NULL,
+     posicao          INTEGER NOT NULL,
+     numero_projudi   INTEGER NOT NULL,
+     data_hora_do_ato TEXT NOT NULL,
+     criada_em        TEXT NOT NULL,
+     PRIMARY KEY (workspace, numero, posicao)
+   )`,
+
   // Calendário (v0.32.0): eventos da agenda do advogado.
   //
   // A chave é (workspace, id): nenhuma consulta chega a um evento sem dizer de
@@ -595,6 +608,14 @@ const COLUNAS_ACRESCENTADAS: ReadonlyArray<{
    * preenche na próxima vez que a tela carrega as peças do processo.
    */
   { tabela: 'pasta_listagens', coluna: 'total_atos_recebidos', tipo: 'INTEGER' },
+  /*
+   * `datas_dos_atos` e `ancoras_invalidadas` (v0.35.0), idem: sem retrocarga. As
+   * datas só existem na resposta do MNI; NULL = "listagem anterior à 0.35.0", e a
+   * calibração pede para recarregar as peças do processo. Nunca se consulta o
+   * tribunal por conta própria.
+   */
+  { tabela: 'pasta_listagens', coluna: 'datas_dos_atos', tipo: 'TEXT' },
+  { tabela: 'pasta_listagens', coluna: 'ancoras_invalidadas', tipo: 'INTEGER' },
   /*
    * `cliente` NÃO tem retrocarga, e a ausência é deliberada.
    *

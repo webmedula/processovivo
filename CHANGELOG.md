@@ -9,6 +9,57 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.35.0] — 2026-10-04
+
+Pasta digital — **calibração do número da movimentação com o Projudi, feita pelo
+advogado**. O número do Projudi conta também os atos bloqueados, que o MNI não
+entrega; a 0.34.0 mostrava a posição com aviso, e isso não bastava. Agora o
+advogado informa um ou mais números que vê no Projudi, e a tela mostra o número
+exato SEMPRE QUE ISSO PUDER SER PROVADO — e uma faixa honesta quando não puder.
+
+### Adicionado
+
+- **Âncoras**: par (posição do ato, número no Projudi) informado pelo advogado.
+  Regra: `número = posição + atos bloqueados antes`; o deslocamento
+  `d = número − posição` é ≥ 0 e nunca diminui. Âncora que contradiz as outras é
+  recusada ("Esse número não é compatível com os outros que você informou.").
+  Até 50 por processo.
+- **`numeroDoProjudi` (domínio, função pura)**: o próprio ato ancorado → exato;
+  entre duas âncoras de mesmo `d` → exato; entre duas de `d` diferente → faixa
+  `min–max`; antes da primeira → exato se `d = 0`, senão faixa `[pos, pos+d]`;
+  depois da última → estimado (`pos + d`). Faixa nunca é arredondada. Sem âncora:
+  a posição, como na 0.34.0.
+- **API** (sem consulta ao tribunal): `PUT /v1/processos/:numero/pasta/calibracao`
+  (`{ numeroProjudi, posicao? }`; sem `posicao` = o último ato recebido, o atalho
+  "último número que você vê no Projudi"), `DELETE …/calibracao` e
+  `DELETE …/calibracao/:posicao`. `GET …/pasta` traz `movimentacao.numero`
+  (`{tipo: posicao|exato|faixa|estimado, …}`) por peça e `calibracao`
+  (âncoras, quantos atos exatos/faixa/estimados, âncoras invalidadas) no topo.
+  Erro novo: `CalibracaoDeNumeracaoInvalidaError` → 400.
+- **Tela** (`ui/scriptPastaCalibracao.ts`; `script.ts` não cresce): bloco
+  "Conferir numeração com o Projudi" no topo; "informar nº" na linha (mouse),
+  tecla **N** na linha focada e botão no cabeçalho do visualizador abrem o mesmo
+  editor. Exato = "mov. 382 ✓ conferido"; faixa = "mov. 380–381"; estimado =
+  "mov. ~386"; sem calibração = "mov. 385" como antes. O aviso do topo muda
+  ("Calibrada por você com N números…") e não some enquanto houver número não
+  exato. Busca por número casa por igualdade e, numa faixa, quando o número está
+  dentro dela (a linha vem rotulada). "Limpar calibração" e remoção individual.
+- **Banco**: tabela `pasta_ancoras` (por workspace) com a `dataHora` do ato;
+  colunas `pasta_listagens.datas_dos_atos` e `ancoras_invalidadas` (migração
+  explícita, sem retrocarga: as datas só existem na resposta do tribunal).
+  Âncora cujo ato mudou de data numa listagem nova é descartada e a tela avisa
+  "Calibração anterior invalidada".
+
+### Detalhes
+
+- Nada é escondido por causa da calibração; "mostrando X de M" segue valendo.
+- Sem calibração a tela é a da 0.34.0. Listagem gravada antes da 0.35.0 não tem
+  as datas: para calibrar é preciso recarregar as peças do processo.
+- Não detecta ato bloqueado sozinha, não usa DataJud e não lê o texto das peças.
+- PUT exige o plano com peças, como o resto da Pasta; remover não exige.
+
+---
+
 ## [0.34.0] — 2026-10-04
 
 Pasta digital — **o número da movimentação volta, agora como a POSIÇÃO do ato**,

@@ -89,9 +89,7 @@ export class RepositorioCredenciaisSqlite implements RepositorioCredenciais {
 
   async listar(workspace: string): Promise<CredencialCadastrada[]> {
     const linhas = this.db
-      .prepare(
-        'SELECT * FROM credenciais_tribunal WHERE workspace = ? ORDER BY tribunal',
-      )
+      .prepare('SELECT * FROM credenciais_tribunal WHERE workspace = ? ORDER BY tribunal')
       .all(workspace) as unknown as LinhaCredencial[];
     return linhas.map(paraCadastrada);
   }
@@ -125,7 +123,9 @@ export class RepositorioCredenciaisSqlite implements RepositorioCredenciais {
         new Date().toISOString(),
       );
 
-    const cadastrada = (await this.listar(workspace)).find((c) => c.tribunal === tribunal);
+    const cadastrada = (await this.listar(workspace)).find(
+      (c) => c.tribunal === tribunal,
+    );
     if (!cadastrada) {
       throw new Error(`credencial de ${tribunal} não foi encontrada após a gravação`);
     }

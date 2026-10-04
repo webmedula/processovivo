@@ -32,7 +32,10 @@ export interface OpcoesAutenticacaoAdmin {
  * `rotasDeAdmin` em si já é a instância filha que `servidor.register()` criou
  * em `servidor.ts`, isolada do resto do servidor.
  */
-export function autenticacaoAdmin(app: FastifyInstance, opcoes: OpcoesAutenticacaoAdmin): void {
+export function autenticacaoAdmin(
+  app: FastifyInstance,
+  opcoes: OpcoesAutenticacaoAdmin,
+): void {
   app.addHook('onRequest', async (requisicao, resposta) => {
     const credencial = lerBasic(requisicao.headers.authorization);
 
@@ -59,19 +62,26 @@ export function autenticacaoAdmin(app: FastifyInstance, opcoes: OpcoesAutenticac
   });
 }
 
-function lerBasic(cabecalho: string | undefined): { usuario: string; senha: string } | undefined {
+function lerBasic(
+  cabecalho: string | undefined,
+): { usuario: string; senha: string } | undefined {
   if (!cabecalho || !cabecalho.startsWith('Basic ')) return undefined;
 
   let decodificado: string;
   try {
-    decodificado = Buffer.from(cabecalho.slice('Basic '.length), 'base64').toString('utf8');
+    decodificado = Buffer.from(cabecalho.slice('Basic '.length), 'base64').toString(
+      'utf8',
+    );
   } catch {
     return undefined;
   }
 
   const indice = decodificado.indexOf(':');
   if (indice === -1) return undefined;
-  return { usuario: decodificado.slice(0, indice), senha: decodificado.slice(indice + 1) };
+  return {
+    usuario: decodificado.slice(0, indice),
+    senha: decodificado.slice(indice + 1),
+  };
 }
 
 /**

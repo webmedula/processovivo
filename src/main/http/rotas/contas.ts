@@ -1,13 +1,19 @@
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import type { ServicoContas, SessaoAberta } from '../../../application/services/ServicoContas.js';
+import type {
+  ServicoContas,
+  SessaoAberta,
+} from '../../../application/services/ServicoContas.js';
 import type { ServicoPecas } from '../../../application/services/ServicoPecas.js';
 import type { Usuario } from '../../../domain/entities/Usuario.js';
 import {
   OperacaoNaoSuportadaError,
   SessaoInvalidaError,
 } from '../../../domain/errors/index.js';
-import { cookieDeSaida, cookieDeSessao } from '../../../infrastructure/seguranca/sessao.js';
+import {
+  cookieDeSaida,
+  cookieDeSessao,
+} from '../../../infrastructure/seguranca/sessao.js';
 import { TAMANHO_MINIMO_SENHA } from '../../../infrastructure/seguranca/senha.js';
 
 export const ROTA_CONTAS = '/v1/contas';

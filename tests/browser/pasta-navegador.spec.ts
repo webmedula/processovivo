@@ -127,8 +127,15 @@ describe.skipIf(sem)('Pasta digital — no navegador', { timeout: 60_000 }, () =
     await abrirPasta();
     // A resposta do tribunal chega em ordem invertida: a posição é cronológica.
     const posicoes: Record<string, string> = {
-      p01: '1', p02: '1', p03: '1', p04: '2', p05: '3', p06: '4', p07: '5',
-      p08: '6', p09: '7',
+      p01: '1',
+      p02: '1',
+      p03: '1',
+      p04: '2',
+      p05: '3',
+      p06: '4',
+      p07: '5',
+      p08: '6',
+      p09: '7',
     };
     for (const [id, n] of Object.entries(posicoes)) {
       expect(await linha(id).locator('.mov-n').textContent()).toBe(`mov. ${n}`);
@@ -593,6 +600,185 @@ describe.skipIf(sem)('Pasta digital — no navegador', { timeout: 60_000 }, () =
       ),
     ).toBe(true);
     expect(await page.locator('#pasta .visor').isVisible()).toBe(false);
+  });
+
+  describe('calibração do número com o Projudi (7 atos recebidos; dados sintéticos)', () => {
+    const aviso = () => page.textContent('#pasta-aviso-num');
+    const numeroDa = (id: string) => linha(id).locator('.mov-n').textContent();
+    async function calibrarPeloUltimo(n: string): Promise<void> {
+      await page.click('#pasta-cal summary');
+      await page.fill('#pasta-cal-ultimo', n);
+      await page.click('#pasta-cal-form-ultimo button[type=submit]');
+      await page.waitForFunction(() =>
+        /Calibrada por você/.test(
+          document.getElementById('pasta-aviso-num')?.textContent ?? '',
+        ),
+      );
+    }
+    async function informarNoAto(id: string, n: string): Promise<void> {
+      await linha(id).focus();
+      await page.keyboard.press('n');
+      await page.fill('#pasta-cal-ato', n);
+      await page.keyboard.press('Enter');
+      await page.waitForFunction(
+        () => (document.getElementById('pasta-cal-editor') as HTMLElement).hidden,
+      );
+    }
+
+    it('sem calibração a tela é a da 0.34.0; o último número deixa faixa, o do ato deixa exato; limpar volta', async () => {
+      await abrirTela();
+      await abrirPasta();
+      expect(await aviso()).toContain('Numeração das movimentações calculada');
+      expect(await numeroDa('p09')).toBe('mov. 7');
+      const chamadasAntes = lotes().length;
+
+      await calibrarPeloUltimo('8');
+      // Último ato: exato e conferido. Os outros: faixa, nunca arredondada.
+      expect(await numeroDa('p09')).toBe('mov. 8');
+      expect(await linha('p09').locator('.mov-ok').textContent()).toContain('conferido');
+      expect(await linha('p09').locator('.mov-ok').getAttribute('title')).toBe(
+        'Calculado a partir dos números que você informou do Projudi',
+      );
+      expect(await linha('p07').locator('.mov-n').innerText()).toContain('mov. 5–6');
+      expect(await linha('p07').locator('.pcal-sr').textContent()).toContain(
+        'entre 5 e 6, ainda não conferida',
+      );
+      expect(await aviso()).toContain('Calibrada por você com 1 número do Projudi');
+      expect(await aviso()).toContain('1 ato exato, 6 com faixa, 0 estimados');
+      expect(await aviso()).toContain('Informe o número de mais um ato para refinar.');
+      // Nada some por causa da calibração.
+      expect(await page.textContent('#pasta-contagem')).toContain('mostrando 12 de 12');
+
+      // Informar o nº de um ato pela lista (tecla N): 5 → 6 deixa 5, 6 e 7 exatos.
+      await informarNoAto('p07', '6');
+      await page.waitForFunction(
+        () =>
+          document.querySelector('#pf-p09 .mov-n')?.textContent === 'mov. 8' &&
+          document.querySelector('#pf-p08 .mov-ok') !== null,
+      );
+      expect(await numeroDa('p07')).toBe('mov. 6');
+      expect(await numeroDa('p08')).toBe('mov. 7');
+      expect(await linha('p06').locator('.mov-n').innerText()).toContain('mov. 4–5');
+      expect(await aviso()).toContain('2 números do Projudi');
+      expect(await aviso()).toContain('3 atos exatos, 4 com faixa');
+
+      // Busca por número: igualdade com o exato e dentro da faixa (rotulada).
+      await page.fill('#pasta-busca', 'mov. 7');
+      expect(await page.locator('#pasta .linha').count()).toBe(1);
+      await page.fill('#pasta-busca', '5');
+      expect(
+        await page.locator('#pasta .linha .mov-ach').first().textContent(),
+      ).toContain('faixa que inclui 5');
+      expect(await page.textContent('#pasta-contagem')).toContain(
+        'escondidas pelos filtros',
+      );
+      await page.fill('#pasta-busca', '');
+
+      // Remover uma âncora e limpar tudo. (Abrir o editor fechou o bloco do topo.)
+      expect(await page.locator('#pasta-cal').getAttribute('open')).toBeNull();
+      await page.click('#pasta-cal summary');
+      await page.click('#pasta-cal [data-remover="5"]');
+      await page.waitForFunction(() =>
+        /1 número do Projudi/.test(
+          document.getElementById('pasta-aviso-num')?.textContent ?? '',
+        ),
+      );
+      await page.click('#pasta-cal-limpar');
+      await page.waitForFunction(() =>
+        /Numeração das movimentações calculada/.test(
+          document.getElementById('pasta-aviso-num')?.textContent ?? '',
+        ),
+      );
+      expect(await numeroDa('p09')).toBe('mov. 7');
+      // Nada disto foi ao tribunal.
+      expect(lotes().length).toBe(chamadasAntes);
+    });
+
+    it('número incompatível é recusado com a mensagem clara, e o campo vazio ou errado é avisado', async () => {
+      await abrirTela();
+      await abrirPasta();
+      await calibrarPeloUltimo('8');
+      await linha('p07').focus();
+      await page.keyboard.press('n');
+      await page.fill('#pasta-cal-ato', '4');
+      await page.keyboard.press('Enter');
+      await page.waitForFunction(() =>
+        /menor que 5/.test(
+          document.getElementById('pasta-cal-ato-msg')?.textContent ?? '',
+        ),
+      );
+      expect(await page.getAttribute('#pasta-cal-ato-msg', 'role')).toBe('alert');
+      await page.fill('#pasta-cal-ato', '7');
+      await page.keyboard.press('Enter');
+      await page.waitForFunction(() =>
+        /não é compatível/.test(
+          document.getElementById('pasta-cal-ato-msg')?.textContent ?? '',
+        ),
+      );
+      await page.fill('#pasta-cal-ato', 'abc');
+      await page.keyboard.press('Enter');
+      await page.waitForFunction(() =>
+        /Informe só o número/.test(
+          document.getElementById('pasta-cal-ato-msg')?.textContent ?? '',
+        ),
+      );
+      // Esc fecha o editor e devolve o foco à linha.
+      await page.keyboard.press('Escape');
+      expect(await page.locator('#pasta-cal-editor').isVisible()).toBe(false);
+      expect(await page.evaluate(() => document.activeElement?.id)).toBe('pf-p07');
+      // O botão do visualizador também abre o editor.
+      await linha('p07').click();
+      await page.click('#pasta-mov-informar');
+      expect(await page.locator('#pasta-cal-ato').isVisible()).toBe(true);
+    });
+
+    it('celular: o editor cabe na tela e o campo tem fonte de 16px (sem zoom do navegador)', async () => {
+      await abrirTela({ viewport: { width: 390, height: 800 } });
+      await abrirPasta();
+      await calibrarPeloUltimo('8');
+      await linha('p07').focus();
+      await page.keyboard.press('n');
+      const caixa = (await page.locator('#pasta-cal-editor').boundingBox())!;
+      expect(caixa.x).toBeGreaterThanOrEqual(0);
+      expect(caixa.x + caixa.width).toBeLessThanOrEqual(390);
+      expect(caixa.y + caixa.height).toBeLessThanOrEqual(800);
+      expect(
+        await page.$eval('#pasta-cal-ato', (el) => getComputedStyle(el).fontSize),
+      ).toBe('16px');
+      expect(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth <= window.innerWidth,
+        ),
+      ).toBe(true);
+    });
+
+    for (const escuro of [false, true]) {
+      it(`acessibilidade (axe) com a calibração e o editor abertos, tema ${escuro ? 'escuro' : 'claro'}`, async () => {
+        await abrirTela({ escuro });
+        await abrirPasta();
+        await calibrarPeloUltimo('8');
+        await informarNoAto('p07', '6');
+        await linha('p06').focus();
+        await page.keyboard.press('n');
+        await linha('p06').click({ position: { x: 20, y: 10 } });
+        await page.addScriptTag({
+          content: (AxeBuilder as unknown as { source: string }).source,
+        });
+        const resultado = await page.evaluate(async () => {
+          const r = await (window as unknown as AxeNaPagina).axe.run(
+            document.getElementById('pasta')!,
+            { rules: { 'color-contrast': { enabled: true } } },
+          );
+          return r.violations.map((v) => ({
+            id: v.id,
+            nos: v.nodes
+              .map((n) => n.target.join(' ') + ' :: ' + (n.any[0]?.message ?? ''))
+              .slice(0, 4),
+          }));
+        });
+        expect(resultado).toEqual([]);
+      });
+    }
   });
 
   for (const escuro of [false, true]) {

@@ -137,8 +137,7 @@ function explicarFalhaSmtp(codigo: string | undefined, erro: unknown): string {
   const bruto = erro instanceof Error ? erro.message : String(erro);
   const texto = bruto.toLowerCase();
 
-  const contem = (...termos: string[]): boolean =>
-    termos.some((t) => texto.includes(t));
+  const contem = (...termos: string[]): boolean => termos.some((t) => texto.includes(t));
 
   // A mensagem vem primeiro: ela carrega a causa real quando o código é
   // ambíguo.

@@ -1,4 +1,8 @@
-import type { ListagemDaPasta, PecaEmCache } from '../entities/PastaDigital.js';
+import type {
+  AncoraGuardada,
+  ListagemDaPasta,
+  PecaEmCache,
+} from '../entities/PastaDigital.js';
 
 /**
  * PORTA da persistência da Pasta digital: o retrato da listagem do tribunal e o
@@ -29,6 +33,24 @@ export interface RepositorioDaPasta {
 
   /** Peças cujo prazo de guarda passou — só o executor da limpeza lê sem workspace. */
   vencidas(agora: Date): Promise<PecaEmCache[]>;
+
+  /** Âncoras de calibração do número do Projudi (v0.35.0), por posição crescente. */
+  ancorasDoProcesso(workspace: string, numeroProcesso: string): Promise<AncoraGuardada[]>;
+  /** Insere ou substitui a âncora da mesma posição. */
+  guardarAncora(
+    workspace: string,
+    numeroProcesso: string,
+    ancora: AncoraGuardada,
+  ): Promise<void>;
+  /** @returns se havia âncora naquela posição. */
+  removerAncora(
+    workspace: string,
+    numeroProcesso: string,
+    posicao: number,
+  ): Promise<boolean>;
+  limparAncoras(workspace: string, numeroProcesso: string): Promise<number>;
+  /** Zera o aviso "calibração anterior invalidada" da listagem gravada. */
+  zerarAncorasInvalidadas(workspace: string, numeroProcesso: string): Promise<void>;
 
   /** Exclusão de conta. @returns quantas linhas saíram. */
   apagarDoWorkspace(workspace: string): Promise<number>;

@@ -27,7 +27,11 @@ describe('posição do ato (ordem cronológica do MNI, 1-based)', () => {
   it('desempata dataHora igual pelo identificador, e a ordem de chegada não interfere', () => {
     const mesma = '2026-09-01T10:00:00Z';
     const um = calcularPosicoesDosAtos([ato(20, mesma), ato(10, mesma), ato(30, mesma)]);
-    const outro = calcularPosicoesDosAtos([ato(30, mesma), ato(10, mesma), ato(20, mesma)]);
+    const outro = calcularPosicoesDosAtos([
+      ato(30, mesma),
+      ato(10, mesma),
+      ato(20, mesma),
+    ]);
     expect(um.porIdentificador.get(10)).toBe(1);
     expect(um.porIdentificador.get(20)).toBe(2);
     expect(um.porIdentificador.get(30)).toBe(3);
@@ -55,6 +59,10 @@ describe('posição do ato (ordem cronológica do MNI, 1-based)', () => {
   });
 
   it('sem atos, total zero', () => {
-    expect(calcularPosicoesDosAtos([])).toEqual({ total: 0, porIdentificador: new Map() });
+    expect(calcularPosicoesDosAtos([])).toEqual({
+      total: 0,
+      porIdentificador: new Map(),
+      datas: [],
+    });
   });
 });

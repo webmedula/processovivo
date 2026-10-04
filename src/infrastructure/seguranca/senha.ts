@@ -83,9 +83,14 @@ export function guardarSenha(senha: string): string {
   // Os parâmetros vão no texto para que a verificação use os DELE, e não os
   // atuais: é o que permite subir o custo no futuro sem derrubar o login de
   // quem já tem conta.
-  return ['scrypt', N, R, P, sal.toString('base64url'), derivada.toString('base64url')].join(
-    '$',
-  );
+  return [
+    'scrypt',
+    N,
+    R,
+    P,
+    sal.toString('base64url'),
+    derivada.toString('base64url'),
+  ].join('$');
 }
 
 /**

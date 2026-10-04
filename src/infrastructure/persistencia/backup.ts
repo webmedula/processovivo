@@ -86,7 +86,10 @@ export function gerarBackup(opcoes: OpcoesBackup): ResultadoBackup {
   // Nome ordenável por texto: ISO com os dois-pontos trocados por hífen, que
   // não vale em nome de arquivo em todo sistema. Ordem alfabética = ordem
   // cronológica, o que faz a poda ser um `slice`.
-  const marca = agora.toISOString().replace(/:/g, '-').replace(/\.\d+Z$/, 'Z');
+  const marca = agora
+    .toISOString()
+    .replace(/:/g, '-')
+    .replace(/\.\d+Z$/, 'Z');
   const caminho = join(destino, `processovivo-${marca}.db`);
 
   const origem = new DatabaseSync(caminhoBanco, { readOnly: true });
@@ -97,10 +100,9 @@ export function gerarBackup(opcoes: OpcoesBackup): ResultadoBackup {
     // ligado. As aspas simples são duplicadas para não fechar a string.
     origem.exec(`VACUUM INTO '${caminho.replace(/'/g, "''")}'`);
   } catch (erro) {
-    throw new BackupFalhouError(
-      erro instanceof Error ? erro.message : String(erro),
-      { cause: erro },
-    );
+    throw new BackupFalhouError(erro instanceof Error ? erro.message : String(erro), {
+      cause: erro,
+    });
   } finally {
     origem.close();
   }

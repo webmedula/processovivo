@@ -103,7 +103,10 @@ export class ServicoAssinaturas {
     const plano = await this.planos.porCodigo(assinatura.plano);
     if (plano) return plano;
     const todos = ordenarPlanos(await this.planos.listar());
-    throw new PlanoDesconhecidoError(assinatura.plano, todos.map((p) => p.codigo));
+    throw new PlanoDesconhecidoError(
+      assinatura.plano,
+      todos.map((p) => p.codigo),
+    );
   }
 
   /**
@@ -167,7 +170,10 @@ export class ServicoAssinaturas {
   }): Promise<Assinatura> {
     if (!(await this.planos.porCodigo(opcoes.plano))) {
       const todos = ordenarPlanos(await this.planos.listar());
-      throw new PlanoDesconhecidoError(opcoes.plano, todos.map((p) => p.codigo));
+      throw new PlanoDesconhecidoError(
+        opcoes.plano,
+        todos.map((p) => p.codigo),
+      );
     }
     const { diasDeCarencia } = await this.regras.ler();
     const agora = this.agora();

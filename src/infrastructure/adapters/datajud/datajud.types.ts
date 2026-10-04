@@ -65,9 +65,7 @@ export const processoDataJudSchema = z
 export const respostaDataJudSchema = z
   .object({
     hits: z.object({
-      total: z
-        .object({ value: z.number(), relation: z.string().optional() })
-        .optional(),
+      total: z.object({ value: z.number(), relation: z.string().optional() }).optional(),
       hits: z.array(
         z.object({
           _id: z.string().optional(),

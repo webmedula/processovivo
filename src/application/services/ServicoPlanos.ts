@@ -90,7 +90,10 @@ export class ServicoPlanos {
     const plano = await this.planos.porCodigo(codigo);
     if (!plano) {
       const todos = await this.listar();
-      throw new PlanoDesconhecidoError(codigo, todos.map((p) => p.codigo));
+      throw new PlanoDesconhecidoError(
+        codigo,
+        todos.map((p) => p.codigo),
+      );
     }
     return plano;
   }
@@ -154,7 +157,10 @@ export class ServicoPlanos {
     validarPlano(plano);
 
     await this.planos.salvar(plano);
-    this.logger.info('plano criado', { codigo, disponivel: plano.disponivelParaContratacao });
+    this.logger.info('plano criado', {
+      codigo,
+      disponivel: plano.disponivelParaContratacao,
+    });
     return plano;
   }
 
@@ -191,12 +197,17 @@ export class ServicoPlanos {
     // as regras pela porta dos fundos.
     const regras = await this.repositorioRegras.ler();
     if (regras.planoDoTeste === codigo) {
-      const catalogo = (await this.planos.listar()).map((p) => (p.codigo === codigo ? novo : p));
+      const catalogo = (await this.planos.listar()).map((p) =>
+        p.codigo === codigo ? novo : p,
+      );
       validarRegras(regras, catalogo);
     }
 
     await this.planos.salvar(novo);
-    this.logger.info('plano alterado', { codigo, disponivel: novo.disponivelParaContratacao });
+    this.logger.info('plano alterado', {
+      codigo,
+      disponivel: novo.disponivelParaContratacao,
+    });
     return novo;
   }
 

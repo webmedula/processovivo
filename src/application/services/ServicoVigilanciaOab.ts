@@ -2,10 +2,7 @@ import { detectarNovidades } from '../../domain/entities/Acompanhamento.js';
 import { fundirProcessos } from '../../domain/entities/fusaoProcessos.js';
 import type { Processo } from '../../domain/entities/Processo.js';
 import type { Movimentacao } from '../../domain/entities/Movimentacao.js';
-import {
-  comoDataDjen,
-  desdeQuandoVarrer,
-} from '../../domain/entities/VigilanciaOab.js';
+import { comoDataDjen, desdeQuandoVarrer } from '../../domain/entities/VigilanciaOab.js';
 import type { VigilanciaOab } from '../../domain/entities/VigilanciaOab.js';
 import type { Logger } from '../../domain/ports/Logger.js';
 import type { RepositorioAcompanhamentos } from '../../domain/ports/RepositorioAcompanhamentos.js';
@@ -202,10 +199,7 @@ export class ServicoVigilanciaOab {
 
     for (const processo of encontrados) {
       const numero = processo.numero.digitos;
-      const existente = await this.acompanhamentos.buscar(
-        vigilancia.workspace,
-        numero,
-      );
+      const existente = await this.acompanhamentos.buscar(vigilancia.workspace, numero);
 
       if (!existente) {
         await this.acompanhamentos.acompanhar(vigilancia.workspace, numero);

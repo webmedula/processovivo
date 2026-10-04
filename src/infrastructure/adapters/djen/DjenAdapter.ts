@@ -127,8 +127,7 @@ export class DjenAdapter implements ProcessoProvider {
     this.baseUrl = (opcoes.baseUrl ?? BASE_URL_PADRAO).replace(/\/+$/, '');
     this.clock = opcoes.clock ?? clockDoSistema;
     this.logger = (opcoes.logger ?? loggerSilencioso).child({ provider: this.nome });
-    this.maxComunicacoesPorOab =
-      opcoes.maxComunicacoesPorOab ?? MAX_COMUNICACOES_POR_OAB;
+    this.maxComunicacoesPorOab = opcoes.maxComunicacoesPorOab ?? MAX_COMUNICACOES_POR_OAB;
     this.http =
       opcoes.httpClient ??
       new HttpClient({
@@ -229,10 +228,14 @@ export class DjenAdapter implements ProcessoProvider {
 
     let resposta;
     try {
-      resposta = await this.http.get(url, {}, {
-        timeoutMs: TIMEOUT_VERIFICACAO_MS,
-        tentativas: 1,
-      });
+      resposta = await this.http.get(
+        url,
+        {},
+        {
+          timeoutMs: TIMEOUT_VERIFICACAO_MS,
+          tentativas: 1,
+        },
+      );
     } catch (erro) {
       return {
         saudavel: false,
