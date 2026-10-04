@@ -9,6 +9,45 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.34.0] — 2026-10-04
+
+Pasta digital — **o número da movimentação volta, agora como a POSIÇÃO do ato**,
+com aviso claro da limitação. Decisão do dono (04/10/2026) depois de ver a tela
+do Projudi e a sonda de numeração.
+
+### Adicionado
+
+- **`mov. N` na linha da peça** (N = posição 1-based do ato na ordem cronológica
+  dos atos que o MNI entregou; desempate estável por `dataHora` e
+  `identificadorMovimento`). Tooltip: "Número calculado pela ordem dos atos
+  recebidos do tribunal. Pode ficar abaixo do número do Projudi se o processo
+  tiver atos bloqueados."
+- **Aviso fixo no topo da Pasta** enquanto houver número na lista: "Numeração das
+  movimentações calculada pelo Processo Vivo a partir de N atos recebidos do
+  tribunal. Se o último número que você vê no Projudi for maior que N, há atos
+  bloqueados que não recebemos…".
+- **Cabeçalho do visualizador**: "Movimentação nº N · data — descrição", com o
+  aviso curto ao lado.
+- **Busca por número**: "382" ou "mov. 382" casa por igualdade com a posição
+  ("382" não acha "1382"); placeholder e `aria-label` voltam a citar o número.
+- `GET …/pasta`: `totalAtosRecebidos` no topo e `movimentacao.posicao` por peça.
+  `identificadorMovimento` continua sem sair como número.
+- Banco: coluna `pasta_listagens.total_atos_recebidos` (migração explícita, sem
+  retrocarga: só o tribunal sabe o N). Listagens gravadas antes ganham os campos
+  na próxima vez que a tela recarrega as peças — sem consulta nova ao tribunal.
+
+### Detalhes
+
+- A posição é calculada sobre a lista COMPLETA de movimentos que já vem na
+  resposta do MNI à listagem de peças (`movimentos: true`), não só os que têm
+  documento. Nenhuma consulta nova.
+- **Limite honesto:** o Projudi conta também atos bloqueados que o MNI não
+  entrega, então a posição só iguala o número do Projudi até o primeiro desses
+  atos. Não há detecção nem calibração (fora do escopo). O mapper do MNI descarta
+  movimento sem `dataHora`, que então também não entra na contagem.
+- `CLAUDE.md`: a regra "não há mov. N" (0.33.3) foi substituída pela regra da
+  posição, preservando o histórico do erro da 0.33.2.
+
 ## [0.33.3] — 2026-10-03
 
 Pasta digital — **corrige o "mov. N" da 0.33.2, que estava errado**. O número

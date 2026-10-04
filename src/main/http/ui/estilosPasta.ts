@@ -95,6 +95,8 @@ body.com-pasta{overflow:hidden}
    foco o texto se abre inteiro (o title só aparece no mouse). */
 #pasta .linha .mov{grid-column:3;display:flex;gap:6px;align-items:baseline;min-width:0;
   font-size:12px;color:var(--tinta2)}
+#pasta .linha .mov-n{flex:none;white-space:nowrap;font-weight:700;
+  font-variant-numeric:tabular-nums}
 #pasta .linha .mov-t{min-width:0;overflow:hidden;overflow-wrap:anywhere;
   display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2}
 #pasta .linha:focus-visible .mov-t{-webkit-line-clamp:unset;line-clamp:unset}
@@ -122,6 +124,7 @@ body.com-pasta{overflow:hidden}
   background:var(--papel);border-bottom:1px solid var(--linha2);overflow:auto;
   overflow-wrap:anywhere;max-height:5.5em}
 #pasta .visor .mov-visor:empty{display:none}
+#pasta .visor .mov-visor .mov-aviso{margin-left:8px;font-size:11.5px;font-style:italic}
 #pasta .visor .estado{padding:10px 14px;border-bottom:1px solid var(--linha2);
   font-size:13.5px;color:var(--tinta2);background:var(--papel);max-height:34vh;overflow:auto}
 #pasta .visor .estado:empty{display:none}

@@ -23,6 +23,13 @@ export interface MovimentacaoDaPeca {
    * v0.33.2) e nunca sai na API nem na tela.
    */
   readonly numero: number;
+  /**
+   * Posição do ato (1-based) na ordem cronológica dos atos que o MNI entregou
+   * (v0.34.0). Número CALCULADO por nós — pode ficar abaixo do do Projudi se
+   * houver atos bloqueados que o MNI não entrega. Ausente em listagem gravada
+   * antes da 0.34.0, até a tela recarregar as peças.
+   */
+  readonly posicao?: number;
   readonly data: Date;
   /** Descrição do ato, como o tribunal a deu. */
   readonly descricao: string;
@@ -66,6 +73,11 @@ export interface ListagemDaPasta {
   /** O PROCESSO inteiro está sob segredo de justiça: nada dele é guardado. */
   readonly processoSigiloso: boolean;
   readonly pecas: readonly PecaListada[];
+  /**
+   * Quantos atos o MNI entregou na resposta que originou esta listagem
+   * (v0.34.0): é o "N" do aviso da Pasta. Ausente em listagem anterior.
+   */
+  readonly totalAtosRecebidos?: number;
 }
 
 /** Como o arquivo guardado foi produzido a partir do que o tribunal entregou. */

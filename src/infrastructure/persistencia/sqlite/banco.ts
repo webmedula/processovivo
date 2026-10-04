@@ -589,6 +589,13 @@ const COLUNAS_ACRESCENTADAS: ReadonlyArray<{
 }> = [
   { tabela: 'acompanhamentos', coluna: 'partes_texto', tipo: 'TEXT' },
   /*
+   * `total_atos_recebidos` (v0.34.0) NÃO tem retrocarga: o "N" só existe na
+   * resposta do MNI, e consultar o tribunal sem a pessoa pedir é o que a regra
+   * do MNI proíbe. NULL é a verdade ("listagem anterior à 0.34.0"): a coluna se
+   * preenche na próxima vez que a tela carrega as peças do processo.
+   */
+  { tabela: 'pasta_listagens', coluna: 'total_atos_recebidos', tipo: 'INTEGER' },
+  /*
    * `cliente` NÃO tem retrocarga, e a ausência é deliberada.
    *
    * A regra deste repositório manda retrocarregar coluna nova, e ela existe

@@ -138,7 +138,9 @@ export async function iniciar(): Promise<Ambiente> {
     ato(5, 'Juntada de documento técnico'),
     ato(6, 'Conclusos para decisão'),
     ato(7, 'Publicado ato do juízo'),
-  ];
+    // Fora de ordem de propósito: a posição vem da ordem cronológica, não da
+    // ordem em que o tribunal respondeu.
+  ].reverse();
   const processo = umProcesso({
     numero: NumeroCNJ.criar(PROCESSO_TJGO),
     tribunal: 'TJGO',

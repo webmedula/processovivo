@@ -111,8 +111,8 @@ function montarPainel(){
     '<div class="corpo">'+
       '<section class="lista" id="pasta-lista" aria-label="Peças do processo">'+
         '<div class="barra">'+
-          '<input id="pasta-busca" type="search" placeholder="Buscar por rótulo ou movimentação" '+
-            'aria-label="Buscar peça pelo rótulo ou pela descrição da movimentação" '+
+          '<input id="pasta-busca" type="search" placeholder="Buscar por rótulo, movimentação ou nº" '+
+            'aria-label="Buscar peça pelo rótulo, pela descrição ou pelo número da movimentação" '+
             'autocomplete="off">'+
           '<label class="so-disp"><input type="checkbox" id="pasta-so-disp"> só disponíveis</label>'+
           '<div class="acoes">'+
@@ -332,8 +332,18 @@ function fechar(){
 /* ---------- a lista ---------- */
 /* A movimentação a que a peça pertence, como o tribunal a escreveu. Os números
    que aparecem DENTRO do texto ("ev. 382") são texto do cartório: aqui só se
-   mostram, nunca viram link nem número da movimentação. A tela NÃO mostra número
-   de movimentação nenhum (v0.33.3): o identificadorMovimento é interno. */
+   mostram, nunca viram link nem número da movimentação. O "mov. N" é a POSIÇÃO
+   do ato na ordem dos atos recebidos (v0.34.0), calculada pelo servidor — nunca
+   o identificadorMovimento (erro da v0.33.2), que a API nem entrega. */
+var AVISO_CURTO='Número calculado pela ordem dos atos recebidos do tribunal. '+
+  'Pode ficar abaixo do número do Projudi se o processo tiver atos bloqueados.';
+function posicaoDaMov(p){
+  var m=p.movimentacao;
+  return m&&typeof m.posicao==='number'&&m.posicao>0?m.posicao:null;
+}
+function haNumeros(){
+  return ((st.visao&&st.visao.pecas)||[]).some(function(p){return posicaoDaMov(p)!==null});
+}
 function textoDaMov(p){
   var m=p.movimentacao;
   if(!m)return '';
@@ -342,17 +352,20 @@ function textoDaMov(p){
 function tituloDaMov(p){
   var m=p.movimentacao;
   if(!m)return '';
-  return 'Movimentação · '+pv().dt(m.data)+
+  var pos=posicaoDaMov(p);
+  return 'Movimentação'+(pos!==null?' nº '+pos:'')+' · '+pv().dt(m.data)+
     (textoDaMov(p)?' — '+textoDaMov(p):'');
 }
-/* A busca é de texto (rótulo e descrição, por trecho). Não há busca por número
-   de movimentação: o tribunal não entrega o número que o advogado vê, e o
-   identificador interno nunca é mostrado nem procurado (v0.33.3). */
+/* "382" acha a movimentação 382 e não a 1382: o número casa por IGUALDADE, sobre
+   a posição. Já a descrição casa por trecho — é busca de texto, como no rótulo. */
 function combinaComBusca(p,termo){
   if(normal(p.rotulo).indexOf(termo)>=0)return true;
   var m=p.movimentacao;
   if(!m)return false;
-  return normal(textoDaMov(p)).indexOf(termo)>=0;
+  if(normal(textoDaMov(p)).indexOf(termo)>=0)return true;
+  var pos=posicaoDaMov(p);
+  var num=/^(?:mov(?:imentacao)?\.?\s*)?(?:n[o\u00ba.]*\s*)?(\d+)$/.exec(termo);
+  return pos!==null&&!!num&&pos===Number(num[1]);
 }
 function visiveis(){
   var termo=normal(st.busca).trim();
@@ -385,9 +398,10 @@ function paginasDe(p){
 function movHtml(p){
   var m=p.movimentacao;
   if(!m)return '';
-  var t=textoDaMov(p);
-  if(!t)return '';
+  var t=textoDaMov(p), pos=posicaoDaMov(p);
+  if(!t&&pos===null)return '';
   return '<span class="mov" title="'+esc(tituloDaMov(p))+'">'+
+    (pos!==null?'<span class="mov-n" title="'+esc(AVISO_CURTO)+'">mov. '+pos+'</span>':'')+
     (t?'<span class="mov-t">'+esc(t)+'</span>':'')+'</span>';
 }
 
@@ -522,6 +536,15 @@ function desenharAviso(){
   if(v.listagem&&v.listagem.processoSigiloso){
     h+='<div class="pausa"><strong>Processo em segredo de justiça.</strong> Nenhuma peça é '+
       'guardada aqui; baixe-as individualmente pela linha do tempo.</div>';
+  }
+  if(haNumeros()&&typeof v.totalAtosRecebidos==='number'){
+    /* Sempre que houver número na lista: sem este aviso o "mov. N" passaria por
+       número do Projudi, e ele só é igual até o primeiro ato bloqueado. */
+    h+='<div class="nota num-aviso" id="pasta-aviso-num">Numeração das movimentações calculada '+
+      'pelo Processo Vivo a partir de <strong>'+v.totalAtosRecebidos+'</strong> atos recebidos do '+
+      'tribunal. Se o último número que você vê no Projudi for maior que '+v.totalAtosRecebidos+
+      ', há atos bloqueados que não recebemos e os números mais recentes podem estar abaixo '+
+      'dos do Projudi.</div>';
   }
   h+=blocoDaMontagem(v.montagem);
   h+=blocoDasSelecionadas(v.selecionadas);
@@ -709,7 +732,16 @@ function atualizarVisor(){
   if(st.modo==='tudo'){mostrarTudo();return}
   var p=st.peca?pecaDe(st.peca):null;
   nome.textContent=p?(p.ordem+1)+'. '+p.rotulo:'';
-  var mv=$('pasta-mov'); if(mv)mv.textContent=p?tituloDaMov(p):'';
+  var mv=$('pasta-mov');
+  if(mv){
+    mv.textContent=p?tituloDaMov(p):'';
+    if(p&&posicaoDaMov(p)!==null){
+      var av=document.createElement('span');
+      av.className='mov-aviso';av.title=AVISO_CURTO;
+      av.textContent='número calculado; pode ficar abaixo do Projudi';
+      mv.appendChild(av);
+    }
+  }
   if(!p){
     estadoDoVisor('<div class="vazio-visor">Escolha uma peça na lista. Só ela será pedida ao tribunal; '+
       'o resto da pasta não é baixado sem você pedir.</div>');
