@@ -507,7 +507,7 @@ describe('API — Pasta digital sem leitor montado', () => {
   });
 });
 
-describe('API — Pasta digital: a movimentação de cada peça (v0.33.2)', () => {
+describe('API — Pasta digital: a movimentação de cada peça (v0.33.2) e a posição do ato (v0.34.0)', () => {
   const ato = (numero: number, titulo: string, extra = {}) => ({
     data: new Date('2026-09-28T13:00:00Z'),
     titulo,
@@ -529,13 +529,13 @@ describe('API — Pasta digital: a movimentação de cada peça (v0.33.2)', () =
     // Com número e complemento: as duas peças do mesmo ato repetem a descrição.
     for (const id of ['a', 'b']) {
       expect(porId[id]?.['movimentacao']).toEqual({
+        posicao: 1,
         data: '2026-09-28T13:00:00.000Z',
         descricao: 'Juntada de Petição de Impugnação — ev. 382',
         complemento: 'tipo_de_documento: petição; ref: 12',
       });
     }
-    // Sem número de movimentação na resposta (v0.33.3): o identificador interno
-    // não é o número que o advogado vê no tribunal.
+    // `numero` (o identificador interno) nunca sai; só a posição calculada.
     expect(porId['a']?.['movimentacao']).not.toHaveProperty('numero');
     // Sem vínculo: sem bloco, e a procedência segue em toda resposta.
     for (const id of ['h', 'c', 's']) expect(porId[id]?.['movimentacao']).toBeNull();
@@ -543,7 +543,7 @@ describe('API — Pasta digital: a movimentação de cada peça (v0.33.2)', () =
     expect(provedor.chamadas.length).toBe(antes);
   });
 
-  it('o identificador interno do tribunal nunca sai na resposta (regressão da v0.33.2)', async () => {
+  it('o identificador interno do tribunal nunca sai como número (regressão da v0.33.2)', async () => {
     provedor.movimentos = [
       ato(516017862, 'Juntada de Petição de Impugnação'),
     ];
@@ -553,8 +553,80 @@ describe('API — Pasta digital: a movimentação de cada peça (v0.33.2)', () =
     await carregarPecas();
     const c = await pasta();
     const a = c.pecas.find((p) => p.pecaId === 'a');
-    expect(a?.['movimentacao']).toMatchObject({ descricao: 'Juntada de Petição de Impugnação' });
+    expect(a?.['movimentacao']).toMatchObject({
+      descricao: 'Juntada de Petição de Impugnação',
+      posicao: 1,
+    });
     expect(JSON.stringify(c.pecas.map((p) => p['movimentacao']))).not.toContain('516017862');
+  });
+
+  it('a posição segue a ordem cronológica, mesmo com os atos fora de ordem na resposta', async () => {
+    const em = (dia: number): Date => new Date(Date.UTC(2026, 8, dia, 13, 0, 0));
+    provedor.pecas = provedor.pecas.map((p) =>
+      p.id === 'a' ? { ...p, movimento: 900000003 } : p.id === 'b' ? { ...p, movimento: 900000001 } : p,
+    );
+    // Cronologia: 900000001 (dia 1), 900000002 (dia 5), 900000003 (dia 9).
+    provedor.movimentos = [
+      ato(900000003, 'Terceiro', { data: em(9) }),
+      ato(900000001, 'Primeiro', { data: em(1) }),
+      ato(900000002, 'Segundo', { data: em(5) }),
+    ];
+    await carregarPecas();
+    const c = await pasta();
+    expect(c['totalAtosRecebidos']).toBe(3);
+    const porId = Object.fromEntries(c.pecas.map((p) => [p.pecaId, p]));
+    expect(porId['a']?.['movimentacao']).toMatchObject({ posicao: 3 });
+    expect(porId['b']?.['movimentacao']).toMatchObject({ posicao: 1 });
+  });
+
+  it('desempate estável: atos na mesma dataHora ordenam pelo identificador, não pela ordem da resposta', async () => {
+    provedor.pecas = provedor.pecas.map((p) =>
+      p.id === 'a' ? { ...p, movimento: 20 } : p.id === 'b' ? { ...p, movimento: 10 } : p,
+    );
+    const mesmaHora = new Date('2026-09-28T13:00:00Z');
+    provedor.movimentos = [
+      ato(20, 'Vinte', { data: mesmaHora }),
+      ato(10, 'Dez', { data: mesmaHora }),
+    ];
+    await carregarPecas();
+    let c = await pasta();
+    expect(c.pecas.find((p) => p.pecaId === 'b')?.['movimentacao']).toMatchObject({ posicao: 1 });
+    expect(c.pecas.find((p) => p.pecaId === 'a')?.['movimentacao']).toMatchObject({ posicao: 2 });
+    // A ordem em que o tribunal respondeu não muda o resultado.
+    provedor.movimentos = [...provedor.movimentos].reverse();
+    await carregarPecas();
+    c = await pasta();
+    expect(c.pecas.find((p) => p.pecaId === 'b')?.['movimentacao']).toMatchObject({ posicao: 1 });
+    expect(c.pecas.find((p) => p.pecaId === 'a')?.['movimentacao']).toMatchObject({ posicao: 2 });
+  });
+
+  it('totalAtosRecebidos conta TODOS os atos da resposta, também os sem peça — e fica nulo sem listagem ou sem atos', async () => {
+    expect((await pasta())['totalAtosRecebidos']).toBeNull(); // nada carregado
+    provedor.movimentos = [ato(1, 'Um'), ato(2, 'Dois', { data: new Date('2026-09-29T13:00:00Z') }), ato(3, 'Três', { data: new Date('2026-09-30T13:00:00Z') })];
+    await carregarPecas();
+    expect((await pasta())['totalAtosRecebidos']).toBe(3);
+    provedor.movimentos = [];
+    await carregarPecas();
+    const vazio = await pasta();
+    expect(vazio['totalAtosRecebidos']).toBeNull();
+    expect(vazio.pecas.every((p) => p['movimentacao'] === null)).toBe(true);
+  });
+
+  it('lacuna (o sistema recebe um ato a menos que o Projudi): a posição continua sendo a dos atos recebidos', async () => {
+    // O Projudi teria 4 atos; o MNI entrega 3 (um bloqueado entre o 1º e o 2º).
+    // A API só sabe de 3 — e diz 3, para a tela avisar.
+    provedor.pecas = provedor.pecas.map((p) =>
+      p.id === 'a' ? { ...p, movimento: 7 } : p,
+    );
+    provedor.movimentos = [
+      ato(5, 'Primeiro', { data: new Date('2026-09-01T13:00:00Z') }),
+      ato(6, 'Segundo recebido', { data: new Date('2026-09-10T13:00:00Z') }),
+      ato(7, 'Terceiro recebido', { data: new Date('2026-09-20T13:00:00Z') }),
+    ];
+    await carregarPecas();
+    const c = await pasta();
+    expect(c['totalAtosRecebidos']).toBe(3);
+    expect(c.pecas.find((p) => p.pecaId === 'a')?.['movimentacao']).toMatchObject({ posicao: 3 });
   });
 
   it('sem complemento o campo vem nulo; peça que aponta ato que o tribunal não listou fica sem bloco', async () => {
@@ -577,6 +649,8 @@ describe('API — Pasta digital: a movimentação de cada peça (v0.33.2)', () =
     await carregarPecas();
     const c = await pasta();
     expect(c.pecas.every((p) => p['movimentacao'] === null)).toBe(true);
+    // Sem vínculo confiável, sem posição — mas o total recebido continua dito.
+    expect(c['totalAtosRecebidos']).toBe(2);
   });
 
   it('o ato do A nunca aparece para o B — cada workspace lê a SUA listagem', async () => {
@@ -598,5 +672,17 @@ describe('API — Pasta digital: a movimentação de cada peça (v0.33.2)', () =
       descricao: 'Ato visto pela advogada A',
     });
     expect(JSON.stringify(doA)).not.toContain('advogado B');
+  });
+
+  it('posição e total do A nunca vazam para o B', async () => {
+    provedor.movimentos = [ato(1, 'Ato do A'), ato(2, 'Outro do A', { data: new Date('2026-09-29T13:00:00Z') })];
+    await carregarPecas(A);
+    const doB = await pasta(B);
+    expect(doB['totalAtosRecebidos']).toBeNull();
+    expect(doB.pecas).toEqual([]);
+    provedor.movimentos = [ato(1, 'Ato do B')];
+    await carregarPecas(B);
+    expect((await pasta(B))['totalAtosRecebidos']).toBe(1);
+    expect((await pasta(A))['totalAtosRecebidos']).toBe(2);
   });
 });

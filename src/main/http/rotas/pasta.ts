@@ -206,6 +206,9 @@ function visaoDaPasta(v: VisaoDaPasta): Record<string, unknown> {
       listadaEm: v.listagem?.listadaEm.toISOString() ?? null,
       aoVivo: false,
     },
+    // Quantos atos o MNI entregou: base do aviso de numeração da tela. null =
+    // listagem gravada antes da 0.34.0 (ou sem movimentos na resposta).
+    totalAtosRecebidos: v.totalAtosRecebidos ?? null,
     pausadoAte: v.pausadoAte?.toISOString() ?? null,
     totais: {
       pecas: v.pecas.length,
@@ -231,10 +234,12 @@ function visaoDaPeca(p: VisaoDaPeca): Record<string, unknown> {
     rotulo: p.rotulo,
     data: p.data?.toISOString() ?? null,
     movimento: p.movimento ?? null,
-    // Texto do tribunal, como está. SEM número: o `identificadorMovimento` é a
-    // chave interna do vínculo e não é o número que o advogado vê no tribunal.
+    // Texto do tribunal, como está. `posicao` é CALCULADA por nós (ordem dos atos
+    // recebidos); o `identificadorMovimento` é a chave interna do vínculo e
+    // nunca sai aqui como número.
     movimentacao: p.movimentacao
       ? {
+          posicao: p.movimentacao.posicao ?? null,
           data: p.movimentacao.data.toISOString(),
           descricao: p.movimentacao.descricao,
           complemento: p.movimentacao.complemento ?? null,

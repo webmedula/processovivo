@@ -2,6 +2,7 @@ import { NumeroCNJ } from '../../domain/entities/NumeroCNJ.js';
 import type { Movimentacao } from '../../domain/entities/Movimentacao.js';
 import type { Peca } from '../../domain/entities/Peca.js';
 import { numeroDoMovimento } from '../../domain/entities/linhaDoTempo.js';
+import { calcularPosicoesDosAtos } from '../../domain/entities/posicaoDoAto.js';
 import {
   DESCRICAO_DO_MOTIVO,
   ESTADOS_ATIVOS,
@@ -84,6 +85,8 @@ export interface VisaoDaPeca {
 }
 
 export interface VisaoDaPasta {
+  /** Atos que o MNI entregou na listagem gravada; base do aviso de numeração. */
+  readonly totalAtosRecebidos: number | undefined;
   /** `undefined`: a tela ainda não carregou as peças do processo. */
   readonly listagem:
     | {
@@ -221,7 +224,8 @@ export class ServicoPasta {
   ): Promise<void> {
     try {
       const cnj = NumeroCNJ.criar(numeroProcesso);
-      const atosPorNumero = indexarAtos(atos.movimentos ?? []);
+      const posicoes = calcularPosicoesDosAtos(atos.movimentos ?? []);
+      const atosPorNumero = indexarAtos(atos.movimentos ?? [], posicoes.porIdentificador);
       const pecas: PecaListada[] = achatarPecas(atos.pecas).map((p, ordem) => ({
         pecaId: p.id,
         ordem,
@@ -241,6 +245,8 @@ export class ServicoPasta {
         listadaEm: this.clock.agora(),
         processoSigiloso: (atos.nivelSigiloDoProcesso ?? 0) > 0,
         pecas,
+        // Sem movimentos na resposta não há "N" a afirmar: ausente, não zero.
+        ...(posicoes.total > 0 ? { totalAtosRecebidos: posicoes.total } : {}),
       });
     } catch (erro) {
       this.logger.warn('pasta: não foi possível gravar a listagem', {
@@ -262,6 +268,7 @@ export class ServicoPasta {
     const selecionadas = jobs.find((j) => j.finalidade === 'selecionadas');
     if (!listagem) {
       return {
+        totalAtosRecebidos: undefined,
         listagem: undefined,
         pecas: [],
         pausadoAte,
@@ -359,6 +366,7 @@ export class ServicoPasta {
       });
 
     return {
+      totalAtosRecebidos: listagem.totalAtosRecebidos,
       listagem: {
         tribunal: listagem.tribunal,
         listadaEm: listagem.listadaEm,
@@ -908,6 +916,7 @@ function estadosDosJobs(
  */
 function indexarAtos(
   movimentos: readonly Movimentacao[],
+  posicoes: ReadonlyMap<number, number>,
 ): Map<number, MovimentacaoDaPeca> {
   const mapa = new Map<number, MovimentacaoDaPeca>();
   const repetidos = new Set<number>();
@@ -922,8 +931,10 @@ function indexarAtos(
       .map((c) => c.trim())
       .filter((c) => c !== '')
       .join('; ');
+    const posicao = posicoes.get(numero);
     mapa.set(numero, {
       numero,
+      ...(posicao !== undefined ? { posicao } : {}),
       data: m.data,
       descricao: m.titulo.trim(),
       ...(complemento ? { complemento } : {}),

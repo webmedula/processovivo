@@ -278,27 +278,40 @@ describe('console — a tela da Pasta digital', () => {
     // Passa por esc() — é texto do tribunal.
     expect(SCRIPT_PASTA).toContain("esc(t)+'</span>'");
     expect(SCRIPT_PASTA).toContain('esc(tituloDaMov(p))');
-    // Sem bloco vazio, e SEM número de movimentação (v0.33.3): o identificador
-    // interno do tribunal nunca é desenhado, titulado nem buscado.
+    // Sem bloco vazio: sem texto e sem posição, nada é desenhado.
     expect(SCRIPT_PASTA).toContain("if(!m)return '';");
+    expect(SCRIPT_PASTA).toContain("if(!t&&pos===null)return '';");
+    // O número é a POSIÇÃO calculada pelo servidor (v0.34.0). O identificador
+    // interno (`m.numero`) nunca é lido pela tela (erro da v0.33.2).
     expect(SCRIPT_PASTA).not.toContain('m.numero');
-    expect(SCRIPT_PASTA).not.toContain('mov-n');
-    expect(SCRIPT_PASTA).not.toContain("'mov. '");
-    expect(SCRIPT_PASTA).not.toContain("' nº '");
+    expect(SCRIPT_PASTA).toContain('m.posicao');
+    expect(SCRIPT_PASTA).toContain("mov. '+pos+'</span>");
     // Texto livre é texto: nenhum <a> nem href é montado a partir da descrição.
     expect(SCRIPT_PASTA).not.toMatch(/<a [^']*mov/);
     // Até 2 linhas, nunca estoura a lista.
     expect(ESTILOS_PASTA).toContain('-webkit-line-clamp:2');
-    expect(ESTILOS_PASTA).not.toContain('mov-n');
+    expect(ESTILOS_PASTA).toContain('#pasta .linha .mov-n');
     expect(ESTILOS_PASTA).toContain('overflow-wrap:anywhere');
     expect(ESTILOS_PASTA).toContain('#pasta .visor .mov-visor:empty{display:none}');
   });
 
-  it('a busca procura no rótulo e na descrição da movimentação, e não por número', () => {
+  it('o número vem com o aviso de atos bloqueados: tooltip, cabeçalho e aviso fixo — nunca "oficial"', () => {
+    expect(SCRIPT_PASTA).toContain(
+      'Número calculado pela ordem dos atos recebidos do tribunal. ',
+    );
+    expect(SCRIPT_PASTA).toContain('Pode ficar abaixo do número do Projudi');
+    expect(SCRIPT_PASTA).toContain('Numeração das movimentações calculada');
+    expect(SCRIPT_PASTA).toContain('v.totalAtosRecebidos');
+    // O aviso depende de haver número na lista, e de mais nada.
+    expect(SCRIPT_PASTA).toContain("if(haNumeros()&&typeof v.totalAtosRecebidos==='number')");
+    expect(SCRIPT_PASTA).not.toMatch(/n[úu]mero oficial/i);
+  });
+
+  it('a busca procura no rótulo, na descrição e no número (por igualdade sobre a posição)', () => {
     expect(SCRIPT_PASTA).toContain('function combinaComBusca(p,termo)');
-    expect(SCRIPT_PASTA).toContain('Buscar por rótulo ou movimentação"');
-    expect(SCRIPT_PASTA).not.toContain('ou nº');
-    expect(SCRIPT_PASTA).not.toContain('pelo número da movimentação');
+    expect(SCRIPT_PASTA).toContain('Buscar por rótulo, movimentação ou nº"');
+    expect(SCRIPT_PASTA).toContain('pelo número da movimentação');
+    expect(SCRIPT_PASTA).toContain('pos===Number(num[1])');
   });
 
   it('nenhum conteúdo de peça entra no DOM: só texto do sistema, por esc()', () => {

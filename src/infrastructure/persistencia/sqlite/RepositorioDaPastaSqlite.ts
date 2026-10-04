@@ -16,6 +16,7 @@ const pecaListadaSchema = z.object({
   movimentacao: z
     .object({
       numero: z.number().int(),
+      posicao: z.number().int().positive().optional(),
       data: z.string(),
       descricao: z.string(),
       complemento: z.string().optional(),
@@ -31,6 +32,7 @@ interface LinhaListagem {
   listada_em: string;
   processo_sigiloso: number;
   pecas: string;
+  total_atos_recebidos: number | null;
 }
 
 interface LinhaPeca {
@@ -63,13 +65,15 @@ export class RepositorioDaPastaSqlite implements RepositorioDaPasta {
     this.db
       .prepare(
         `INSERT INTO pasta_listagens
-           (workspace, numero, tribunal, listada_em, processo_sigiloso, pecas)
-         VALUES (?, ?, ?, ?, ?, ?)
+           (workspace, numero, tribunal, listada_em, processo_sigiloso, pecas,
+            total_atos_recebidos)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (workspace, numero) DO UPDATE SET
            tribunal = excluded.tribunal,
            listada_em = excluded.listada_em,
            processo_sigiloso = excluded.processo_sigiloso,
-           pecas = excluded.pecas`,
+           pecas = excluded.pecas,
+           total_atos_recebidos = excluded.total_atos_recebidos`,
       )
       .run(
         workspace,
@@ -78,6 +82,7 @@ export class RepositorioDaPastaSqlite implements RepositorioDaPasta {
         l.listadaEm.toISOString(),
         l.processoSigiloso ? 1 : 0,
         JSON.stringify(pecas),
+        l.totalAtosRecebidos ?? null,
       );
   }
 
@@ -87,7 +92,7 @@ export class RepositorioDaPastaSqlite implements RepositorioDaPasta {
   ): Promise<ListagemDaPasta | undefined> {
     const linha = this.db
       .prepare(
-        `SELECT numero, tribunal, listada_em, processo_sigiloso, pecas
+        `SELECT numero, tribunal, listada_em, processo_sigiloso, pecas, total_atos_recebidos
            FROM pasta_listagens WHERE workspace = ? AND numero = ?`,
       )
       .get(workspace, numeroProcesso) as unknown as LinhaListagem | undefined;
@@ -98,6 +103,9 @@ export class RepositorioDaPastaSqlite implements RepositorioDaPasta {
       tribunal: linha.tribunal,
       listadaEm: new Date(linha.listada_em),
       processoSigiloso: linha.processo_sigiloso === 1,
+      ...(linha.total_atos_recebidos !== null
+        ? { totalAtosRecebidos: linha.total_atos_recebidos }
+        : {}),
       pecas: pecas.map((p) => ({
         pecaId: p.pecaId,
         ordem: p.ordem,
@@ -109,6 +117,9 @@ export class RepositorioDaPastaSqlite implements RepositorioDaPasta {
           ? {
               movimentacao: {
                 numero: p.movimentacao.numero,
+                ...(p.movimentacao.posicao !== undefined
+                  ? { posicao: p.movimentacao.posicao }
+                  : {}),
                 data: new Date(p.movimentacao.data),
                 descricao: p.movimentacao.descricao,
                 ...(p.movimentacao.complemento !== undefined

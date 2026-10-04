@@ -81,6 +81,7 @@ interface Montagem {
   readonly fila: FilaDeJobsSqlite;
   readonly armazem: ArmazemEmDisco;
   readonly repositorio: RepositorioDaPastaSqlite;
+  readonly db: ReturnType<typeof abrirBanco>;
   readonly logger: LoggerGravador;
   /** As esperas do debounce (em ms), na ordem. */
   readonly debounces: number[];
@@ -180,6 +181,7 @@ async function montar(
     fila,
     armazem,
     repositorio,
+    db,
     logger,
     debounces,
     fecharPortao: () => {
@@ -302,7 +304,7 @@ describe('ServicoPasta — a lista', () => {
         idExterno: 'mni:1',
         fonte: 'mni',
       },
-      // Posição na lista NÃO é número: o ato 2 não é "o segundo" de nada.
+      // Sem identificador: conta na posição dos outros, mas não se liga a peça.
       { data: new Date('2026-09-29T13:00:00Z'), titulo: 'Sem número', fonte: 'mni' },
     ];
     await m.registrarListagem();
@@ -310,11 +312,13 @@ describe('ServicoPasta — a lista', () => {
     const a = v.pecas.find((p) => p.pecaId === 'a');
     expect(a?.movimentacao).toEqual({
       numero: 1,
+      posicao: 1,
       data: new Date('2026-09-28T13:00:00Z'),
       descricao: 'Juntada de documento (ev. 382)',
       complemento: 'tipo: x',
     });
     expect(v.pecas.find((p) => p.pecaId === 'b')?.movimentacao?.numero).toBe(1);
+    expect(v.totalAtosRecebidos).toBe(2);
     // Peça sem `movimento` na ficha: sem bloco, nada inventado.
     expect(v.pecas.find((p) => p.pecaId === 'c')?.movimentacao).toBeUndefined();
 
@@ -324,6 +328,32 @@ describe('ServicoPasta — a lista', () => {
     const depois = await m.pasta.visao(A, PROCESSO_TJGO);
     expect(depois.pecas.every((p) => p.movimentacao === undefined)).toBe(true);
     expect(depois.pecas.map((p) => p.pecaId)).toEqual(v.pecas.map((p) => p.pecaId));
+    expect(depois.totalAtosRecebidos).toBeUndefined();
+  });
+
+  it('listagem gravada antes da 0.34.0 (sem posição nem total) lê sem erro e some os campos novos', async () => {
+    const m = await montar(await pecasPadrao());
+    await m.registrarListagem();
+    // Retrato como a 0.33.3 gravou: ato com identificador e sem `posicao`, coluna nula.
+    const antigo = JSON.stringify([
+      {
+        pecaId: 'a',
+        ordem: 0,
+        rotulo: 'Petição',
+        sigilosa: false,
+        movimento: 1,
+        movimentacao: { numero: 1, data: '2026-09-28T13:00:00.000Z', descricao: 'Ato' },
+      },
+    ]);
+    m.db
+      .prepare(
+        'UPDATE pasta_listagens SET pecas = ?, total_atos_recebidos = NULL WHERE workspace = ?',
+      )
+      .run(antigo, A);
+    const v = await m.pasta.visao(A, PROCESSO_TJGO);
+    expect(v.totalAtosRecebidos).toBeUndefined();
+    expect(v.pecas[0]?.movimentacao?.posicao).toBeUndefined();
+    expect(v.pecas[0]?.movimentacao?.descricao).toBe('Ato');
   });
 
   it('informa a pausa do tribunal (403) sem bater na porta fechada', async () => {
