@@ -78,6 +78,25 @@ export interface ListagemDaPasta {
    * (v0.34.0): é o "N" do aviso da Pasta. Ausente em listagem anterior.
    */
   readonly totalAtosRecebidos?: number;
+  /**
+   * `dataHora` de cada ato recebido, na ordem das posições (v0.35.0). Base para
+   * guardar e conferir a âncora de calibração sem consultar o tribunal. Ausente
+   * em listagem anterior à 0.35.0: sem ela não se aceita âncora nova.
+   */
+  readonly datasDosAtos?: readonly Date[];
+  /**
+   * Quantas âncoras a ÚLTIMA listagem invalidou (o ato naquela posição mudou de
+   * data). A tela avisa "calibração anterior invalidada" até a pessoa agir.
+   */
+  readonly ancorasInvalidadas?: number;
+}
+
+/** Par informado pelo advogado, com a data do ato para detectar listagem que mudou. */
+export interface AncoraGuardada {
+  readonly posicao: number;
+  readonly numeroProjudi: number;
+  readonly dataHoraDoAto: Date;
+  readonly criadaEm: Date;
 }
 
 /** Como o arquivo guardado foi produzido a partir do que o tribunal entregou. */

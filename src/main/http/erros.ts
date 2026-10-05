@@ -13,6 +13,7 @@ import {
   FeedDoCalendarioNaoEncontradoError,
   TransicaoDeEventoInvalidaError,
   JobDoLeitorNaoEncontradoError,
+  CalibracaoDeNumeracaoInvalidaError,
   ListagemDaPastaAusenteError,
   PecaDaPastaNaoEncontradaError,
   PecaSigilosaNaoGuardadaError,
@@ -146,7 +147,10 @@ export function mapearErro(erro: unknown): RespostaDeErro {
     return { status: 410, corpo: { erro: erro.codigo, mensagem: erro.message } };
   }
 
-  if (erro instanceof PecasForaDoPdfError) {
+  if (
+    erro instanceof PecasForaDoPdfError ||
+    erro instanceof CalibracaoDeNumeracaoInvalidaError
+  ) {
     return { status: 400, corpo: { erro: erro.codigo, mensagem: erro.message } };
   }
 

@@ -530,13 +530,16 @@ describe('API — Pasta digital: a movimentação de cada peça (v0.33.2) e a po
     for (const id of ['a', 'b']) {
       expect(porId[id]?.['movimentacao']).toEqual({
         posicao: 1,
+        // Sem calibração o número é a posição, dita como tal (v0.35.0).
+        numero: { tipo: 'posicao', n: 1 },
         data: '2026-09-28T13:00:00.000Z',
         descricao: 'Juntada de Petição de Impugnação — ev. 382',
         complemento: 'tipo_de_documento: petição; ref: 12',
       });
     }
-    // `numero` (o identificador interno) nunca sai; só a posição calculada.
-    expect(porId['a']?.['movimentacao']).not.toHaveProperty('numero');
+    // O identificador interno nunca sai como número: `numero` é o objeto com o
+    // grau de certeza, e a chave interna não aparece em lugar nenhum.
+    expect(JSON.stringify(porId['a']?.['movimentacao'])).not.toContain('identificador');
     // Sem vínculo: sem bloco, e a procedência segue em toda resposta.
     for (const id of ['h', 'c', 's']) expect(porId[id]?.['movimentacao']).toBeNull();
     expect(c['procedencia']).toMatchObject({ aoVivo: false });

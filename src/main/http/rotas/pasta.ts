@@ -4,6 +4,7 @@ import type { ServicoAssinaturas } from '../../../application/services/ServicoAs
 import type {
   EstimativaDeBusca,
   ServicoPasta,
+  VisaoDaCalibracao,
   VisaoDaPasta,
   VisaoDaPeca,
 } from '../../../application/services/ServicoPasta.js';
@@ -24,6 +25,21 @@ const MAX_PECAS = 5000;
 
 const corpoSelecao = z.object({
   pecas: z.array(z.string().min(1).max(100)).min(1).max(MAX_PECAS),
+});
+
+/*
+ * `posicao` ausente = o último ato recebido (o atalho "último número que você vê
+ * no Projudi"). Zod só confere o formato; o que o número significa (maior ou
+ * igual à posição, compatível com os outros) é regra do domínio.
+ */
+const corpoCalibracao = z.object({
+  numeroProjudi: z.number().int().positive().max(1_000_000),
+  posicao: z.number().int().positive().max(1_000_000).optional(),
+});
+
+const paramsPosicao = z.object({
+  numero: z.string(),
+  posicao: z.coerce.number().int().positive().max(1_000_000),
 });
 
 type ParamsPeca = { numero: string; pecaId: string };
@@ -79,6 +95,53 @@ export function rotasDaPasta(
       async (req) => {
         const visao = await exigirServico().visao(workspaceDe(req), req.params.numero);
         return visaoDaPasta(visao);
+      },
+    );
+
+    /*
+     * Calibração do número com o Projudi (v0.35.0). Nenhuma destas rotas toca o
+     * tribunal: guardam o que o advogado leu na tela do Projudi. PUT exige o
+     * plano da Pasta; limpar o que é dele não — trancar a remoção por assinatura
+     * vencida seria deixá-lo preso a um número que ele quer tirar.
+     */
+    servidor.put<{ Params: { numero: string }; Body: unknown }>(
+      '/v1/processos/:numero/pasta/calibracao',
+      async (req) => {
+        await exigirPlano(req);
+        const corpo = corpoCalibracao.parse(req.body ?? {});
+        const ws = workspaceDe(req);
+        const r =
+          corpo.posicao === undefined
+            ? await exigirServico().calibrarPeloUltimoNumero(
+                ws,
+                req.params.numero,
+                corpo.numeroProjudi,
+              )
+            : await exigirServico().calibrar(
+                ws,
+                req.params.numero,
+                corpo.posicao,
+                corpo.numeroProjudi,
+              );
+        return visaoDaCalibracao(r);
+      },
+    );
+
+    servidor.delete<{ Params: { numero: string } }>(
+      '/v1/processos/:numero/pasta/calibracao',
+      async (req) =>
+        visaoDaCalibracao(
+          await exigirServico().limparCalibracao(workspaceDe(req), req.params.numero),
+        ),
+    );
+
+    servidor.delete<{ Params: { numero: string; posicao: string } }>(
+      '/v1/processos/:numero/pasta/calibracao/:posicao',
+      async (req) => {
+        const { numero, posicao } = paramsPosicao.parse(req.params);
+        return visaoDaCalibracao(
+          await exigirServico().removerAncora(workspaceDe(req), numero, posicao),
+        );
       },
     );
 
@@ -170,6 +233,21 @@ export function rotasDaPasta(
   };
 }
 
+function visaoDaCalibracao(c: VisaoDaCalibracao): Record<string, unknown> {
+  return {
+    ancoras: c.ancoras.map((a) => ({
+      posicao: a.posicao,
+      numeroProjudi: a.numeroProjudi,
+      dataHoraDoAto: a.dataHoraDoAto.toISOString(),
+      criadaEm: a.criadaEm.toISOString(),
+    })),
+    atos: c.atos,
+    // Âncoras que a última listagem descartou: a tela avisa "calibração anterior
+    // invalidada" em vez de sumir com o número em silêncio.
+    invalidadas: c.invalidadas,
+  };
+}
+
 function visaoDaEstimativa(e: EstimativaDeBusca): Record<string, unknown> {
   return {
     total: e.total,
@@ -209,6 +287,7 @@ function visaoDaPasta(v: VisaoDaPasta): Record<string, unknown> {
     // Quantos atos o MNI entregou: base do aviso de numeração da tela. null =
     // listagem gravada antes da 0.34.0 (ou sem movimentos na resposta).
     totalAtosRecebidos: v.totalAtosRecebidos ?? null,
+    calibracao: v.calibracao ? visaoDaCalibracao(v.calibracao) : null,
     pausadoAte: v.pausadoAte?.toISOString() ?? null,
     totais: {
       pecas: v.pecas.length,
@@ -240,6 +319,10 @@ function visaoDaPeca(p: VisaoDaPeca): Record<string, unknown> {
     movimentacao: p.movimentacao
       ? {
           posicao: p.movimentacao.posicao ?? null,
+          // O número do Projudi com o grau de certeza: `posicao` (sem calibração),
+          // `exato` (provado pelas âncoras), `faixa` ou `estimado`. Nunca o
+          // identificadorMovimento, que continua chave interna.
+          numero: p.numeroNoProjudi ?? null,
           data: p.movimentacao.data.toISOString(),
           descricao: p.movimentacao.descricao,
           complemento: p.movimentacao.complemento ?? null,

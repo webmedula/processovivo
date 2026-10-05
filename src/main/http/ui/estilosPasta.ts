@@ -100,7 +100,53 @@ body.com-pasta{overflow:hidden}
 #pasta .linha .mov-t{min-width:0;overflow:hidden;overflow-wrap:anywhere;
   display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2}
 #pasta .linha:focus-visible .mov-t{-webkit-line-clamp:unset;line-clamp:unset}
+#pasta .linha .mov-n.faixa{text-decoration:underline dotted;text-underline-offset:3px}
+#pasta .linha .mov-n.estimado{font-style:italic}
+#pasta .linha .mov-ok{flex:none;white-space:nowrap;font-size:11.5px;font-weight:700;
+  color:var(--verde-tinta)}
+#pasta .linha .mov-ach{flex:none;white-space:nowrap;font-size:11.5px;font-style:italic}
+#pasta .linha .mov-cal{flex:none;white-space:nowrap;font-size:11.5px;margin-left:auto;
+  color:var(--acento);cursor:pointer;text-decoration:underline}
 #pasta .linha .pp{font-variant-numeric:tabular-nums;color:var(--acento);font-weight:700}
+
+/* ---------- calibração do número com o Projudi (v0.35.0) ---------- */
+#pasta .pcal-sr{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;
+  clip:rect(0,0,0,0);white-space:nowrap;border:0}
+#pasta>.pcal-caixa{flex-shrink:0;border-bottom:1px solid var(--linha);max-height:32vh;
+  overflow:auto}
+#pasta>.pcal-caixa:empty{display:none}
+#pasta .pcal summary{padding:8px 14px;cursor:pointer;font-weight:700;font-size:13.5px;
+  color:var(--tinta);min-height:24px}
+#pasta .pcal summary:focus-visible,#pasta .pcal .bt:focus-visible,
+#pasta .pcal input:focus-visible,#pasta .pcal-editor input:focus-visible,
+#pasta .pcal-editor .bt:focus-visible,#pasta .pcal-bt:focus-visible{outline:3px solid var(--acento);
+  outline-offset:2px}
+#pasta .pcal .pcal-n{font-weight:400;color:var(--tinta2)}
+#pasta .pcal-corpo{padding:0 14px 12px;font-size:13px;color:var(--tinta2)}
+#pasta .pcal-ajuda{margin:4px 0 8px;font-size:12.5px;color:var(--tinta2)}
+#pasta .pcal label,#pasta .pcal-editor label{display:block;font-size:13px;color:var(--tinta);
+  margin-bottom:4px}
+#pasta .pcal-linha{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+#pasta .pcal-linha input{flex:1 1 140px;min-width:0;min-height:40px;padding:6px 12px;
+  font-size:16px;max-width:240px}
+#pasta .pcal-linha .bt{min-height:40px}
+#pasta .pcal-lista{list-style:none;margin:10px 0 8px;padding:0;display:flex;flex-direction:column;
+  gap:6px}
+#pasta .pcal-lista li{display:flex;gap:8px;align-items:center;justify-content:space-between;
+  flex-wrap:wrap}
+#pasta .pcal-lista .bt{min-height:36px}
+#pasta .pcal-msg{margin-top:6px;font-size:13px;min-height:0}
+#pasta .pcal-msg:empty{display:none}
+#pasta .pcal-msg.ok{color:var(--verde-tinta)}
+#pasta .pcal-msg.erro{color:var(--erro)}
+/* Em fluxo, entre o bloco do topo e a lista: flutuando, cobria as linhas de que a
+   pessoa precisa para conferir o número. No celular, com a peça aberta, o topo
+   some e este bloco continua — é por ele que se informa o número do ato lido. */
+#pasta>.pcal-editor{flex-shrink:0;background:var(--papel);border-bottom:1px solid var(--linha);
+  padding:10px 14px;font-size:13px;color:var(--tinta2);max-height:28vh;overflow:auto}
+#pasta>.pcal-editor[hidden]{display:none}
+#pasta .pcal-editor .pcal-linha input{font-size:16px}
+#pasta .visor .mov-visor .pcal-bt{margin-left:8px;min-height:32px;padding:0 10px;font-size:12.5px}
 
 /* ---------- o divisor ---------- */
 #pasta .divisor{flex:none;width:10px;margin:0 -5px;position:relative;cursor:col-resize;
@@ -161,7 +207,8 @@ body.com-pasta{overflow:hidden}
   #pasta .visor{display:none}
   body.pasta-lendo #pasta .lista{display:none}
   body.pasta-lendo #pasta .visor{display:flex}
-  body.pasta-lendo #pasta>.topo,body.pasta-lendo #pasta>.aviso{display:none}
+  body.pasta-lendo #pasta>.topo,body.pasta-lendo #pasta>.aviso,
+  body.pasta-lendo #pasta>.pcal-caixa{display:none}
   #pasta .topo-visor .voltar{display:inline-flex}
   #pasta .visor .estado{max-height:26vh}
 }

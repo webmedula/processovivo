@@ -2,6 +2,15 @@ import { NumeroCNJ } from '../../domain/entities/NumeroCNJ.js';
 import type { Movimentacao } from '../../domain/entities/Movimentacao.js';
 import type { Peca } from '../../domain/entities/Peca.js';
 import { numeroDoMovimento } from '../../domain/entities/linhaDoTempo.js';
+import {
+  motivoDeRecusaDaAncora,
+  numeroDoProjudi,
+  resumirNumeracao,
+} from '../../domain/entities/numeracaoDoProjudi.js';
+import type {
+  NumeroDoProjudi,
+  ResumoDaNumeracao,
+} from '../../domain/entities/numeracaoDoProjudi.js';
 import { calcularPosicoesDosAtos } from '../../domain/entities/posicaoDoAto.js';
 import {
   DESCRICAO_DO_MOTIVO,
@@ -10,6 +19,7 @@ import {
 } from '../../domain/entities/JobLeitor.js';
 import type { JobLeitor, MotivoNaoObtida } from '../../domain/entities/JobLeitor.js';
 import type {
+  AncoraGuardada,
   EstadoDaPecaNaPasta,
   ListagemDaPasta,
   MovimentacaoDaPeca,
@@ -19,6 +29,7 @@ import type {
 import {
   CredencialTribunalInvalidaError,
   DomainError,
+  CalibracaoDeNumeracaoInvalidaError,
   ListagemDaPastaAusenteError,
   MniBloqueadoError,
   PastaSemPecasParaJuntarError,
@@ -63,6 +74,11 @@ export interface VisaoDaPeca {
   readonly movimento: number | undefined;
   /** O ato que juntou a peça, quando o vínculo foi confirmado nos dois lados. */
   readonly movimentacao: MovimentacaoDaPeca | undefined;
+  /**
+   * O número do ato como o Projudi o mostraria, com o grau de certeza (v0.35.0):
+   * `exato` só quando provado pelas âncoras do advogado. Ausente sem posição.
+   */
+  readonly numeroNoProjudi: NumeroDoProjudi | undefined;
   readonly mimetype: string | undefined;
   readonly estado: EstadoDaPecaNaPasta;
   readonly motivo: MotivoNaoObtida | undefined;
@@ -84,7 +100,17 @@ export interface VisaoDaPeca {
   readonly intervalo: { readonly inicial: number; readonly final: number } | undefined;
 }
 
+/** A calibração do processo: o que o advogado informou e o que isso resolveu. */
+export interface VisaoDaCalibracao {
+  readonly ancoras: readonly AncoraGuardada[];
+  readonly atos: ResumoDaNumeracao;
+  /** Âncoras que a última listagem invalidou (o ato mudou de data). */
+  readonly invalidadas: number;
+}
+
 export interface VisaoDaPasta {
+  /** `undefined` sem listagem ou sem atos recebidos. */
+  readonly calibracao: VisaoDaCalibracao | undefined;
   /** Atos que o MNI entregou na listagem gravada; base do aviso de numeração. */
   readonly totalAtosRecebidos: number | undefined;
   /** `undefined`: a tela ainda não carregou as peças do processo. */
@@ -239,6 +265,11 @@ export class ServicoPasta {
           : {}),
         ...(p.mimetype !== undefined ? { mimetype: p.mimetype } : {}),
       }));
+      const invalidadas = await this.invalidarAncorasQueMudaram(
+        workspace,
+        cnj.digitos,
+        posicoes.datas,
+      );
       await this.repositorio.guardarListagem(workspace, {
         numeroProcesso: cnj.digitos,
         tribunal: cnj.siglaTribunal ?? '',
@@ -246,13 +277,127 @@ export class ServicoPasta {
         processoSigiloso: (atos.nivelSigiloDoProcesso ?? 0) > 0,
         pecas,
         // Sem movimentos na resposta não há "N" a afirmar: ausente, não zero.
-        ...(posicoes.total > 0 ? { totalAtosRecebidos: posicoes.total } : {}),
+        ...(posicoes.total > 0
+          ? { totalAtosRecebidos: posicoes.total, datasDosAtos: posicoes.datas }
+          : {}),
+        ...(invalidadas > 0 ? { ancorasInvalidadas: invalidadas } : {}),
       });
     } catch (erro) {
       this.logger.warn('pasta: não foi possível gravar a listagem', {
         erro: erro instanceof Error ? erro.message : String(erro),
       });
     }
+  }
+
+  /**
+   * Descarta as âncoras cujo ato, na listagem nova, tem outra `dataHora` (ou
+   * deixou de existir): a posição passou a apontar para outro ato, e número
+   * calculado sobre âncora errada seria pior que não calibrar. Devolve quantas
+   * a tela deve avisar — as de agora somadas às que a pessoa ainda não viu.
+   */
+  private async invalidarAncorasQueMudaram(
+    workspace: string,
+    numero: string,
+    datas: readonly Date[],
+  ): Promise<number> {
+    const ancoras = await this.repositorio.ancorasDoProcesso(workspace, numero);
+    let agoraInvalidadas = 0;
+    for (const a of ancoras) {
+      const atual = datas[a.posicao - 1];
+      if (atual && atual.getTime() === a.dataHoraDoAto.getTime()) continue;
+      await this.repositorio.removerAncora(workspace, numero, a.posicao);
+      agoraInvalidadas++;
+    }
+    if (agoraInvalidadas > 0) {
+      this.logger.info('pasta: calibração invalidada por listagem nova', {
+        invalidadas: agoraInvalidadas,
+      });
+    }
+    const anterior = await this.repositorio.obterListagem(workspace, numero);
+    return agoraInvalidadas + (anterior?.ancorasInvalidadas ?? 0);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Calibração do número com o Projudi (v0.35.0). Nada aqui toca o tribunal.
+
+  /**
+   * Informa o número que o Projudi mostra para o ato na `posicao`. Substitui a
+   * âncora daquela posição. Recusa o que contradiz as outras já informadas.
+   *
+   * @throws {ListagemDaPastaAusenteError | CalibracaoDeNumeracaoInvalidaError}
+   */
+  async calibrar(
+    workspace: string,
+    numeroProcesso: string,
+    posicao: number,
+    numeroProjudi: number,
+  ): Promise<VisaoDaCalibracao> {
+    const numero = NumeroCNJ.criar(numeroProcesso).digitos;
+    const listagem = await this.repositorio.obterListagem(workspace, numero);
+    const total = listagem?.totalAtosRecebidos;
+    // Sem as datas não há como provar depois que a âncora ainda vale: recarregar
+    // as peças do processo as grava (listagem anterior à 0.35.0).
+    if (!listagem || total === undefined || !listagem.datasDosAtos) {
+      throw new ListagemDaPastaAusenteError(numero);
+    }
+    const existentes = await this.repositorio.ancorasDoProcesso(workspace, numero);
+    const motivo = motivoDeRecusaDaAncora({ posicao, numeroProjudi }, existentes, total);
+    if (motivo) throw new CalibracaoDeNumeracaoInvalidaError(motivo);
+    const dataHoraDoAto = listagem.datasDosAtos[posicao - 1];
+    if (!dataHoraDoAto) throw new ListagemDaPastaAusenteError(numero);
+    await this.repositorio.guardarAncora(workspace, numero, {
+      posicao,
+      numeroProjudi,
+      dataHoraDoAto,
+      criadaEm: this.clock.agora(),
+    });
+    await this.repositorio.zerarAncorasInvalidadas(workspace, numero);
+    return this.calibracao(workspace, numero);
+  }
+
+  /** Atalho: o último número que a pessoa vê no Projudi vale para o último ato recebido. */
+  async calibrarPeloUltimoNumero(
+    workspace: string,
+    numeroProcesso: string,
+    numeroProjudi: number,
+  ): Promise<VisaoDaCalibracao> {
+    const numero = NumeroCNJ.criar(numeroProcesso).digitos;
+    const listagem = await this.repositorio.obterListagem(workspace, numero);
+    if (!listagem || listagem.totalAtosRecebidos === undefined) {
+      throw new ListagemDaPastaAusenteError(numero);
+    }
+    return this.calibrar(workspace, numero, listagem.totalAtosRecebidos, numeroProjudi);
+  }
+
+  async removerAncora(
+    workspace: string,
+    numeroProcesso: string,
+    posicao: number,
+  ): Promise<VisaoDaCalibracao> {
+    const numero = NumeroCNJ.criar(numeroProcesso).digitos;
+    await this.repositorio.removerAncora(workspace, numero, posicao);
+    await this.repositorio.zerarAncorasInvalidadas(workspace, numero);
+    return this.calibracao(workspace, numero);
+  }
+
+  async limparCalibracao(
+    workspace: string,
+    numeroProcesso: string,
+  ): Promise<VisaoDaCalibracao> {
+    const numero = NumeroCNJ.criar(numeroProcesso).digitos;
+    await this.repositorio.limparAncoras(workspace, numero);
+    await this.repositorio.zerarAncorasInvalidadas(workspace, numero);
+    return this.calibracao(workspace, numero);
+  }
+
+  async calibracao(
+    workspace: string,
+    numeroProcesso: string,
+  ): Promise<VisaoDaCalibracao> {
+    const numero = NumeroCNJ.criar(numeroProcesso).digitos;
+    const listagem = await this.repositorio.obterListagem(workspace, numero);
+    const ancoras = await this.repositorio.ancorasDoProcesso(workspace, numero);
+    return montarCalibracao(ancoras, listagem?.totalAtosRecebidos ?? 0, listagem);
   }
 
   /**
@@ -268,6 +413,7 @@ export class ServicoPasta {
     const selecionadas = jobs.find((j) => j.finalidade === 'selecionadas');
     if (!listagem) {
       return {
+        calibracao: undefined,
         totalAtosRecebidos: undefined,
         listagem: undefined,
         pecas: [],
@@ -279,6 +425,8 @@ export class ServicoPasta {
     }
 
     const agora = this.clock.agora();
+    const ancoras = await this.repositorio.ancorasDoProcesso(workspace, numero);
+    const totalAtos = listagem.totalAtosRecebidos ?? 0;
     const guardadas = await this.guarda.doProcesso(workspace, numero);
     const k = chave(workspace, numero);
     const noAr = this.emVoo.get(k);
@@ -299,6 +447,10 @@ export class ServicoPasta {
           data: p.data,
           movimento: p.movimento,
           movimentacao: p.movimentacao,
+          numeroNoProjudi:
+            p.movimentacao?.posicao !== undefined && totalAtos > 0
+              ? numeroDoProjudi(p.movimentacao.posicao, ancoras, totalAtos)
+              : undefined,
           mimetype: p.mimetype,
           motivo: undefined,
           descricaoDoMotivo: undefined,
@@ -366,6 +518,8 @@ export class ServicoPasta {
       });
 
     return {
+      calibracao:
+        totalAtos > 0 ? montarCalibracao(ancoras, totalAtos, listagem) : undefined,
       totalAtosRecebidos: listagem.totalAtosRecebidos,
       listagem: {
         tribunal: listagem.tribunal,
@@ -942,4 +1096,16 @@ function indexarAtos(
   }
   for (const n of repetidos) mapa.delete(n);
   return mapa;
+}
+
+function montarCalibracao(
+  ancoras: readonly AncoraGuardada[],
+  total: number,
+  listagem: ListagemDaPasta | undefined,
+): VisaoDaCalibracao {
+  return {
+    ancoras,
+    atos: resumirNumeracao(ancoras, total),
+    invalidadas: listagem?.ancorasInvalidadas ?? 0,
+  };
 }

@@ -80,7 +80,8 @@ desenho quebrou. Use a porta.
 ```
 src/
 ├── domain/                      # o núcleo, sem I/O
-│   ├── entities/                # Processo, Movimentacao, Parte, NumeroCNJ, Oab
+│   ├── entities/                # Processo, Movimentacao, Parte, NumeroCNJ, Oab,
+│   │                            #   posicaoDoAto + numeracaoDoProjudi (Pasta digital)
 │   ├── errors/                  # hierarquia de DomainError
 │   ├── ports/                   # ProcessoProvider, RepositorioAcompanhamentos, Cache…
 │   └── usecases/                # BuscarProcessoPorNumero, BuscarProcessosPorOab
@@ -211,6 +212,7 @@ interface ProcessoProvider {
 | `PecaDaPastaNaoEncontradaError` | a peça não está na pasta DESTE workspace (não existe, venceu ou é de outro) | 404; mesma resposta para os três casos |
 | `PecaSigilosaNaoGuardadaError` | pediu para guardar peça com `nivelSigilo > 0` | 403; o download avulso pela linha do tempo continua |
 | `PastaSemPecasParaJuntarError` | montar/baixar sem nenhuma peça guardável (lista vazia ou só sigilosas) | 409; não monta PDF vazio |
+| `CalibracaoDeNumeracaoInvalidaError` | número do Projudi informado não serve como âncora (fora dos atos, abaixo da posição, incompatível com os outros, acima de 50) | 400; a mensagem diz qual — conferir o que foi digitado |
 | `FeedDoCalendarioNaoEncontradoError` | token do feed inválido, revogado, assinatura bloqueada ou plano sem o recurso | 404 com o MESMO corpo seco nos quatro casos |
 
 **A distinção que sustenta o produto:** "esse processo não existe" ≠ "não
@@ -1012,8 +1014,8 @@ Não são detalhes — moldam o código.
   (`dataHora`, desempate por `identificadorMovimento`, depois ordem de chegada —
   `calcularPosicoesDosAtos`), contada sobre a lista COMPLETA de movimentos da
   resposta, não só os que têm documento; **nunca** o `identificadorMovimento`,
-  que a API não devolve (`movimentacao` traz `posicao`, `data`, `descricao`,
-  `complemento`; nunca `numero`). (2) O **aviso de atos bloqueados é obrigatório**
+  que a API não devolve (`movimentacao` traz `posicao`, `numero` — o objeto com o grau de certeza da
+  v0.35.0, NUNCA o identificador interno —, `data`, `descricao`, `complemento`). (2) O **aviso de atos bloqueados é obrigatório**
   e nunca se esconde enquanto houver número na lista: aviso fixo no topo da Pasta
   ("calculada a partir de N atos recebidos… se o último número no Projudi for
   maior que N, há atos bloqueados…", com `totalAtosRecebidos` do `GET …/pasta`),
@@ -1037,6 +1039,35 @@ Não são detalhes — moldam o código.
   tribunal é a única fonte, e consultá-lo sem a pessoa pedir é o que a regra do
   MNI proíbe). Várias peças do mesmo ato repetem a descrição: agrupar fica para
   decisão do dono.
+- **O número só é EXATO quando provado por âncoras do advogado** (v0.35.0, a
+  extensão da regra acima). Âncora = par (posição, número no Projudi) que o
+  ADVOGADO leu na tela do Projudi; `numeroDoProjudi` (`domain/entities/
+  numeracaoDoProjudi.ts`) é a função pura que decide, e a tela só mostra o que
+  ela devolveu, com o rótulo: **exato** (o próprio ato ancorado, ou entre duas
+  âncoras de MESMO deslocamento `d = número − posição`; antes da primeira com
+  `d = 0`), **faixa** `min–max` (entre âncoras de `d` diferente, ou antes da
+  primeira com `d > 0` — nunca arredondada, nunca "o mais provável"),
+  **estimado** (depois da última âncora: pode haver ato novo e novo bloqueado) e
+  **posição** (sem âncora, o texto da 0.34.0 com o aviso). Invariantes: `d ≥ 0`
+  e não decrescente — âncora que os contradiz é recusada (400), nunca guardada;
+  no máximo 50 por processo; por workspace (toda consulta filtra por ele).
+  **Nunca "oficial"**, em lugar nenhum: só `exato` leva o selo "✓ conferido", e
+  o aviso do topo NÃO some enquanto houver número que não seja exato.
+  **Motivo (histórico, não se apaga):** a 0.33.2 mostrou o `identificadorMovimento`
+  como número e foi aprovada sem conferir; a sonda e a tela do Projudi
+  (04/10/2026) mostraram que o número do Projudi conta os atos bloqueados que o
+  MNI não entrega; a 0.34.0 mostrou a posição com aviso, e o dono quis o número
+  do Projudi — que só quem olha o Projudi sabe. Por isso o dado vem do
+  advogado, não de heurística: **sem detectar bloqueado sozinho, sem DataJud,
+  sem extrair "ev. 382" do texto das peças, sem consulta nova ao tribunal.** A
+  âncora guarda a `dataHora` do ato (a listagem guarda a de TODOS os atos em
+  `datas_dos_atos`); se numa listagem nova o ato naquela posição tem outra
+  data, a âncora é descartada e a tela diz "calibração anterior invalidada" —
+  número exato sobre âncora que mudou de lugar é pior que posição com aviso.
+  Calibrar exige listagem com as datas (anterior à 0.35.0: recarregar as peças).
+  A ação "informar nº" na linha é só para o mouse (`aria-hidden`: botão dentro
+  de `option` é controle aninhado); o teclado usa a tecla N e o botão do
+  cabeçalho do visualizador.
 - **A tela da Pasta não deixa a pessoa olhando um "carregando" sem fim** (v0.33.1).
   Cada espera tem nome e limite: "pedindo esta peça" (a janela do debounce de
   400 ms), "aguardando a fila do tribunal" (o pedido já saiu da tela e espera a
@@ -1152,8 +1183,8 @@ teste e carência** (v0.28.0), **visual novo a partir do logo** (v0.29.0),
 **calendário: detecção, agenda, tela e feed ICS** (v0.32.0),
 **ajustes dos advogados: Atualizações por processo, peças no topo, providência em 10 dias** (v0.32.1),
 **Pasta digital: backend (v0.33.0) e tela (v0.33.1) — peça aberta ao clique, guarda por peça, montar pasta completa, baixar marcadas**,
-**ato (movimentação) de cada peça na lista da Pasta, com descrição** (v0.33.2) **e o número da movimentação calculado pela posição do ato, com aviso de atos bloqueados** (v0.34.0; a 0.33.3 havia removido o número errado da 0.33.2),
-Dockerfile multi-stage, CI, 1168 testes.
+**ato (movimentação) de cada peça na lista da Pasta, com descrição** (v0.33.2) **e o número da movimentação calculado pela posição do ato, com aviso de atos bloqueados** (v0.34.0; a 0.33.3 havia removido o número errado da 0.33.2), **calibração do número com o Projudi feita pelo advogado: exato quando provado, faixa ou estimado quando não** (v0.35.0),
+Dockerfile multi-stage, CI, 1207 testes.
 
 **Pasta digital (v0.33.0, backend):** `GET /v1/processos/:numero/pasta` (lista +
 estado de cada peça + intervalos de página + totais SEM filtro + procedência

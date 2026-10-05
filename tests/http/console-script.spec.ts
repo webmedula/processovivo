@@ -3,6 +3,7 @@ import globals from 'globals';
 import { describe, expect, it } from 'vitest';
 import { SCRIPT } from '../../src/main/http/ui/script.js';
 import { SCRIPT_PASTA } from '../../src/main/http/ui/scriptPasta.js';
+import { SCRIPT_PASTA_CALIBRACAO } from '../../src/main/http/ui/scriptPastaCalibracao.js';
 import { SCRIPT_CALENDARIO } from '../../src/main/http/ui/calendario.js';
 
 /*
@@ -31,6 +32,7 @@ import { SCRIPT_CALENDARIO } from '../../src/main/http/ui/calendario.js';
 describe.each([
   ['console', SCRIPT],
   ['pasta digital', SCRIPT_PASTA],
+  ['calibração da pasta', SCRIPT_PASTA_CALIBRACAO],
   ['calendário', SCRIPT_CALENDARIO],
 ])('console web — o JavaScript da interface (%s)', (_nome, codigo) => {
   const linter = new Linter();

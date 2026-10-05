@@ -57,6 +57,14 @@ function novoEstado(numero){
     ultimoAviso:'',ultimoEstado:'',redimensionar:null,gatilho:null,pedidoFalhou:null,pdfUrl:''};
 }
 
+/* A calibração do número com o Projudi (v0.35.0) mora em scriptPastaCalibracao.ts. */
+var cal=window.__pvPastaCal;
+cal.definir({
+  numero:function(){return st.numero},
+  visao:function(){return st.visao},
+  recarregar:function(){return recarregar()}
+});
+
 function pv(){return window.__pv}
 function $(i){return document.getElementById(i)}
 function esc(s){return pv().esc(s)}
@@ -108,6 +116,9 @@ function montarPainel(){
       '<button class="bt bt2" id="pasta-tudo" disabled>Ver tudo seguido</button>'+
     '</div>'+
     '<div class="aviso" id="pasta-aviso" role="status" aria-live="polite"></div>'+
+    '<div class="pcal-caixa" id="pasta-cal-caixa"></div>'+
+    '<div class="pcal-editor" id="pasta-cal-editor" hidden role="group" '+
+      'aria-label="Informar o número do ato no Projudi"></div>'+
     '<div class="corpo">'+
       '<section class="lista" id="pasta-lista" aria-label="Peças do processo">'+
         '<div class="barra">'+
@@ -318,6 +329,7 @@ function receber(r){
 
 function fechar(){
   pararPoll();
+  cal.reiniciar();
   if(st.clique&&st.clique.timer)clearTimeout(st.clique.timer);
   if(st.redimensionar)window.removeEventListener('resize',st.redimensionar);
   if(st.observador)st.observador.disconnect();
@@ -332,18 +344,15 @@ function fechar(){
 /* ---------- a lista ---------- */
 /* A movimentação a que a peça pertence, como o tribunal a escreveu. Os números
    que aparecem DENTRO do texto ("ev. 382") são texto do cartório: aqui só se
-   mostram, nunca viram link nem número da movimentação. O "mov. N" é a POSIÇÃO
-   do ato na ordem dos atos recebidos (v0.34.0), calculada pelo servidor — nunca
-   o identificadorMovimento (erro da v0.33.2), que a API nem entrega. */
+   mostram, nunca viram link nem número da movimentação. O "mov. N" vem do
+   servidor com o grau de certeza (v0.35.0): posicao (calculada, 0.34.0),
+   exato (provado pelos números que o advogado informou do Projudi), faixa
+   ou estimado — nunca o identificadorMovimento (erro da v0.33.2). A
+   apresentação mora em scriptPastaCalibracao.ts. */
 var AVISO_CURTO='Número calculado pela ordem dos atos recebidos do tribunal. '+
   'Pode ficar abaixo do número do Projudi se o processo tiver atos bloqueados.';
-function posicaoDaMov(p){
-  var m=p.movimentacao;
-  return m&&typeof m.posicao==='number'&&m.posicao>0?m.posicao:null;
-}
-function haNumeros(){
-  return ((st.visao&&st.visao.pecas)||[]).some(function(p){return posicaoDaMov(p)!==null});
-}
+function posicaoDaMov(p){return cal.posicaoDe(p)}
+function haNumeros(){return cal.haNumeros(st.visao)}
 function textoDaMov(p){
   var m=p.movimentacao;
   if(!m)return '';
@@ -352,20 +361,24 @@ function textoDaMov(p){
 function tituloDaMov(p){
   var m=p.movimentacao;
   if(!m)return '';
-  var pos=posicaoDaMov(p);
-  return 'Movimentação'+(pos!==null?' nº '+pos:'')+' · '+pv().dt(m.data)+
+  return 'Movimentação'+cal.rotuloDoTitulo(p)+' · '+pv().dt(m.data)+
     (textoDaMov(p)?' — '+textoDaMov(p):'');
 }
-/* "382" acha a movimentação 382 e não a 1382: o número casa por IGUALDADE, sobre
-   a posição. Já a descrição casa por trecho — é busca de texto, como no rótulo. */
+/* "382" acha a movimentação 382 e não a 1382: o número casa por IGUALDADE com o
+   número exato, estimado ou a posição — e, numa faixa, quando o número buscado
+   está dentro dela. Já a descrição casa por trecho — é busca de texto, como no
+   rótulo. */
+function numeroBuscado(termo){
+  var num=/^(?:mov(?:imentacao)?\.?\s*)?(?:n[o\u00ba.]*\s*)?(\d+)$/.exec(termo);
+  return num?Number(num[1]):null;
+}
 function combinaComBusca(p,termo){
   if(normal(p.rotulo).indexOf(termo)>=0)return true;
   var m=p.movimentacao;
   if(!m)return false;
   if(normal(textoDaMov(p)).indexOf(termo)>=0)return true;
-  var pos=posicaoDaMov(p);
-  var num=/^(?:mov(?:imentacao)?\.?\s*)?(?:n[o\u00ba.]*\s*)?(\d+)$/.exec(termo);
-  return pos!==null&&!!num&&pos===Number(num[1]);
+  var buscado=numeroBuscado(termo);
+  return buscado!==null&&cal.combina(p,buscado);
 }
 function visiveis(){
   var termo=normal(st.busca).trim();
@@ -400,9 +413,17 @@ function movHtml(p){
   if(!m)return '';
   var t=textoDaMov(p), pos=posicaoDaMov(p);
   if(!t&&pos===null)return '';
+  var buscado=numeroBuscado(normal(st.busca).trim());
   return '<span class="mov" title="'+esc(tituloDaMov(p))+'">'+
-    (pos!==null?'<span class="mov-n" title="'+esc(AVISO_CURTO)+'">mov. '+pos+'</span>':'')+
-    (t?'<span class="mov-t">'+esc(t)+'</span>':'')+'</span>';
+    (pos!==null?cal.htmlNumero(p,buscado):'')+
+    (t?'<span class="mov-t">'+esc(t)+'</span>':'')+
+    /* Só para o mouse: quem usa teclado aperta N na linha, e o botão do
+       visualizador faz o mesmo. Um botão aqui dentro de um "option" seria
+       controle interativo aninhado, que leitor de tela não alcança. */
+    (pos!==null&&typeof st.visao.totalAtosRecebidos==='number'
+      ?'<span class="mov-cal" data-cal="1" aria-hidden="true" '+
+        'title="Informar o nº deste ato no Projudi (tecla N)">informar nº</span>':'')+
+    '</span>';
 }
 
 function linhaHtml(p){
@@ -487,6 +508,10 @@ function aoClicarNaLista(ev){
   var id=l.getAttribute('data-id');
   st.foco=id;
   if(ev.target.getAttribute&&ev.target.getAttribute('data-cx')){alternarMarca(id);return}
+  if(ev.target.getAttribute&&ev.target.getAttribute('data-cal')){
+    var pc=pecaDe(id); if(pc)cal.abrirEditor(pc);
+    return;
+  }
   abrirPeca(id,false);
 }
 function alternarMarca(id){
@@ -500,6 +525,13 @@ function aoTeclarNaLista(ev){
   var v=visiveis(), id=l.getAttribute('data-id');
   var i=-1; v.forEach(function(p,k){if(p.pecaId===id)i=k});
   var alvo=null;
+  if((ev.key==='n'||ev.key==='N')&&!ev.ctrlKey&&!ev.metaKey&&!ev.altKey){
+    var pn=pecaDe(id);
+    if(pn&&posicaoDaMov(pn)!==null&&typeof st.visao.totalAtosRecebidos==='number'){
+      ev.preventDefault();cal.abrirEditor(pn);
+    }
+    return;
+  }
   if(ev.key==='ArrowDown')alvo=Math.min(v.length-1,i+1);
   else if(ev.key==='ArrowUp')alvo=Math.max(0,i-1);
   else if(ev.key==='Home')alvo=0;
@@ -539,12 +571,10 @@ function desenharAviso(){
   }
   if(haNumeros()&&typeof v.totalAtosRecebidos==='number'){
     /* Sempre que houver número na lista: sem este aviso o "mov. N" passaria por
-       número do Projudi, e ele só é igual até o primeiro ato bloqueado. */
-    h+='<div class="nota num-aviso" id="pasta-aviso-num">Numeração das movimentações calculada '+
-      'pelo Processo Vivo a partir de <strong>'+v.totalAtosRecebidos+'</strong> atos recebidos do '+
-      'tribunal. Se o último número que você vê no Projudi for maior que '+v.totalAtosRecebidos+
-      ', há atos bloqueados que não recebemos e os números mais recentes podem estar abaixo '+
-      'dos do Projudi.</div>';
+       número do Projudi, e ele só é igual até o primeiro ato bloqueado. Com a
+       calibração o texto muda, mas o aviso não some enquanto houver número
+       que não seja exato. */
+    h+=cal.avisoHtml(v);
   }
   h+=blocoDaMontagem(v.montagem);
   h+=blocoDasSelecionadas(v.selecionadas);
@@ -672,6 +702,7 @@ function recarregar(){
 function desenharTudo(){
   if(!st.aberta||!st.visao)return;
   desenharAviso();
+  cal.desenhar(false);
   desenharLista();
   atualizarVisor();
 }
@@ -734,12 +765,28 @@ function atualizarVisor(){
   nome.textContent=p?(p.ordem+1)+'. '+p.rotulo:'';
   var mv=$('pasta-mov');
   if(mv){
-    mv.textContent=p?tituloDaMov(p):'';
-    if(p&&posicaoDaMov(p)!==null){
-      var av=document.createElement('span');
-      av.className='mov-aviso';av.title=AVISO_CURTO;
-      av.textContent='número calculado; pode ficar abaixo do Projudi';
-      mv.appendChild(av);
+    /* Refeito só quando muda: a consulta de andamento roda a cada 2 s, e
+       recriar o botão tiraria o foco de quem está nele. */
+    var sigMov=p?tituloDaMov(p)+'|'+cal.avisoDoVisor(p)+'|'+(typeof st.visao.totalAtosRecebidos):'';
+    if(mv.getAttribute('data-sig')!==sigMov){
+      mv.setAttribute('data-sig',sigMov);
+      mv.textContent=p?tituloDaMov(p):'';
+      if(p&&posicaoDaMov(p)!==null){
+        var avt=cal.avisoDoVisor(p);
+        if(avt){
+          var av=document.createElement('span');
+          av.className='mov-aviso';av.title=AVISO_CURTO;
+          av.textContent=avt;
+          mv.appendChild(av);
+        }
+        if(typeof st.visao.totalAtosRecebidos==='number'){
+          var bi=document.createElement('button');
+          bi.type='button';bi.className='bt bt2 pcal-bt';bi.id='pasta-mov-informar';
+          bi.textContent='Informar o nº deste ato no Projudi';
+          bi.addEventListener('click',function(){cal.abrirEditor(p)});
+          mv.appendChild(bi);
+        }
+      }
     }
   }
   if(!p){
