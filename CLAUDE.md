@@ -904,8 +904,8 @@ Não são detalhes — moldam o código.
   `toString()`). Só a exibição encurta; dado e API seguem inteiros e nenhuma
   atualização some.
 - **Atualizações: uma linha por processo, janela de 15 dias** (v0.32.1; desde a v0.37.0 a linha é uma linha de TABELA, ver a regra da v0.37.0,
-  `NOVIDADES_JANELA_DIAS`). "+N anteriores" expande na própria linha, a tela diz
-  quantas atualizações mais antigas ficaram de fora e oferece "Todas". A janela
+  `NOVIDADES_JANELA_DIAS`). A tela diz quantas atualizações mais antigas ficaram de
+  fora da janela e oferece "Todas" (o "+N anteriores" da v0.32.1 saiu na v0.37.1). A janela
   decide pela hora em que o sistema PERCEBEU (`detectadaEm`), nunca pela data do
   ato — a primeira varredura de um processo antigo detecta atos de meses atrás.
   `exigeAcao` só marca; o único critério que tira atualização da tela é o tempo.
@@ -921,15 +921,14 @@ Não são detalhes — moldam o código.
   `pendenciaJanelaDias`; a tela nunca escreve o número), e o texto do filtro nunca
   fala em prazo; (2) a tela só ordena, filtra por escolha da pessoa e pagina, e
   **diz quantos ficaram de fora** ("Mostrando X de Y processos", "N atualizações mais
-  antigas não mostradas · Ver todas", "mostrando X de N" nas anteriores) — `exigeAcao`
-  continua só marcando; (3) **Partes e Classe vêm do retrato que o acompanhamento já
+  antigas não mostradas · Ver todas") — `exigeAcao` continua só marcando; (3) **Partes e Classe vêm do retrato que o acompanhamento já
   guarda** (`processo.partes` do DJEN, `processo.classe` do DataJud): sem consulta nova
   ao tribunal, sem migração, sem dedução do texto de peça — fonte que não trouxe
   mostra "—", e um polo só mostra "A × —", nunca "A × B" inventado; (4) "Data do ato"
   e "Detectado" são colunas separadas e rotuladas, e a janela de 15 dias decide por
   `detectadaEm`; (5) **o estado dos filtros, da página e da ordenação vive na página
   (variável do módulo), nunca em `localStorage`** — recarregar volta ao padrão;
-  (6) as regras puras (contar, filtrar, ordenar, paginar, fatiar as anteriores, texto
+  (6) as regras puras (contar, filtrar, ordenar, paginar, texto
   das partes) moram em `ui/tabelaAtualizacoes.ts` e vão ao navegador por `toString()`,
   como `trechoDeTexto`: o teste exercita a MESMA função — por isso cada uma é
   autocontida; (7) `script.ts` não cresceu (encolheu): a tela mora em
@@ -945,6 +944,30 @@ Não são detalhes — moldam o código.
   consulta com a senha do advogado). "Abrir pasta" na tabela pede a Pasta
   (`pedirAbertura`, validade de 60 s e um processo só) e a Pasta abre quando a tela
   do processo desenha o botão dela.
+- **A tabela não tem "+N anteriores" nem aviso de anterior; "Detectado" é enxuto; a
+  descrição do ato perde a repetição só na EXIBIÇÃO** (v0.37.1, decisão do dono). (1)
+  Cada processo é UMA linha com a atualização mais recente e mais nada: saíram o
+  expansor, a lista de anteriores, o "mostrar mais 20" e o "há anterior que pede
+  providência". A regra de ouro ficou em UMA frase no nível da página ("Cada processo
+  mostra a atualização mais recente. As anteriores estão em 'Abrir processo'."), sem
+  contagem por processo, e só aparece quando algum processo da lista tem mais de uma
+  atualização no período; a mensagem "N atualizações mais antigas não mostradas (fora
+  dos últimos 15 dias) · Ver todas" continua. "Não lida" (atualização não vista do
+  processo) e "Pede providência" (`estadoDaPasta`, janela de 10 dias) não mudaram.
+  (2) **`GET /v1/novidades` não envia mais as anteriores:** `grupos[].anteriores`
+  saiu e entrou `grupos[].quantidade` (atualizações do processo no período); `novidades`
+  (achatado) traz só a mais recente de cada processo. `total`, `naoVistas` e
+  `foraDaJanela` continuam contando ATUALIZAÇÕES, então os contadores não mudam —
+  um processo com 300 atualizações trafega 1 item. (3) A coluna "Detectado" mostra só
+  "hoje" / "há 1 dia" / "há N dias"; a frase completa ("detectado há 11 dias") vai no
+  `title` e em texto para leitor de tela, e no empilhado do celular o rótulo vem do
+  `data-rotulo`. (4) **`descricaoDoAto`** (`domain/entities/descricaoDoAto.ts`, pura e
+  autocontida, injetada por `toString()`): `A — A - detalhe` vira `A - detalhe` e
+  `A — A` vira `A`, comparando sem caixa, acento e espaço repetido; nunca corta,
+  resume ou reescreve além disso. É usada na lista da Pasta (peças e movimentações
+  sem peça), no cabeçalho do visualizador e no título da atualização na tabela. **O
+  original continua no `title`/tooltip, na busca (casa com o original e o enxuto),
+  nos dados guardados e na API** — nada muda no banco nem no contrato.
 - **Encerramento se decide pelo ato MAIS RECENTE, nunca pelo histórico.**
   Processo arquivado e depois desarquivado tem os dois atos nos autos; procurar
   "existe arquivamento" marcaria como encerrada a pasta que voltou a correr — e
@@ -1277,8 +1300,8 @@ teste e carência** (v0.28.0), **visual novo a partir do logo** (v0.29.0),
 **calendário: detecção, agenda, tela e feed ICS** (v0.32.0),
 **ajustes dos advogados: Atualizações por processo, peças no topo, providência em 10 dias** (v0.32.1),
 **Pasta digital: backend (v0.33.0) e tela (v0.33.1) — peça aberta ao clique, guarda por peça, montar pasta completa, baixar marcadas**,
-**ato (movimentação) de cada peça na lista da Pasta, com descrição** (v0.33.2) **e o número da movimentação calculado pela posição do ato, com aviso de atos bloqueados** (v0.34.0; a 0.33.3 havia removido o número errado da 0.33.2), **calibração do número com o Projudi feita pelo advogado: exato quando provado, faixa ou estimado quando não** (v0.35.0), **página inicial: Últimas atualizações mostra só o trecho do texto e o trilho de peças baixadas não estoura a largura** (v0.35.1), **Pasta: número da movimentação no lugar do índice; página inicial: "detectado há N dias" e cartão "pede providência"** (v0.35.2), **Pasta: lista em altura total com avisos compactados** (v0.35.3), **Pasta: todas as movimentações na lista, inclusive as sem peça, com lacuna de numeração provada e lista mais larga** (v0.36.0), **página inicial: tabela de últimas atualizações, uma linha por processo, com filtros que contam no lugar dos cartões; histórico de peças baixadas dentro da Pasta** (v0.37.0),
-Dockerfile multi-stage, CI, 1367 testes.
+**ato (movimentação) de cada peça na lista da Pasta, com descrição** (v0.33.2) **e o número da movimentação calculado pela posição do ato, com aviso de atos bloqueados** (v0.34.0; a 0.33.3 havia removido o número errado da 0.33.2), **calibração do número com o Projudi feita pelo advogado: exato quando provado, faixa ou estimado quando não** (v0.35.0), **página inicial: Últimas atualizações mostra só o trecho do texto e o trilho de peças baixadas não estoura a largura** (v0.35.1), **Pasta: número da movimentação no lugar do índice; página inicial: "detectado há N dias" e cartão "pede providência"** (v0.35.2), **Pasta: lista em altura total com avisos compactados** (v0.35.3), **Pasta: todas as movimentações na lista, inclusive as sem peça, com lacuna de numeração provada e lista mais larga** (v0.36.0), **página inicial: tabela de últimas atualizações, uma linha por processo, com filtros que contam no lugar dos cartões; histórico de peças baixadas dentro da Pasta** (v0.37.0), **tabela sem "+N anteriores", "Detectado" enxuto e descrição do ato sem repetição na exibição** (v0.37.1),
+Dockerfile multi-stage, CI, 1378 testes.
 
 **Pasta digital (v0.33.0, backend):** `GET /v1/processos/:numero/pasta` (lista +
 estado de cada peça + intervalos de página + totais SEM filtro + procedência

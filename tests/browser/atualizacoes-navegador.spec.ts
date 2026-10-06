@@ -17,7 +17,7 @@ import type { GrupoSintetico } from '../helpers/atualizacoesSinteticas.js';
 
 /*
  * A página inicial (v0.37.0) NUM NAVEGADOR: tabela de uma linha por processo,
- * filtros com contador, ordenação, paginação, "+N anteriores", copiar número.
+ * filtros com contador, ordenação, paginação, copiar número. Sem "+N anteriores" (v0.37.1).
  * O servidor e o console são os reais; só as respostas de /v1/novidades e
  * /v1/facetas recebem dados SINTÉTICOS por cima (números com DV válido mas
  * inventados, partes e classes fictícias), sem nada de tela real.
@@ -247,9 +247,12 @@ describe.skipIf(sem)(
       expect(await l.locator('.c-data').getAttribute('data-rotulo')).toBe('Data do ato');
       expect(await l.locator('.c-det').getAttribute('data-rotulo')).toBe('Detectado');
       const dataAto = (await l.locator('.c-data').innerText()).trim();
-      const detectado = (await l.locator('.c-det').innerText()).trim();
+      const detectado = (
+        (await l.locator('.c-det [aria-hidden="true"]').textContent()) ?? ''
+      ).trim();
       expect(dataAto).toMatch(/^\d{2}\/\d{2}\/\d{4}$/);
-      expect(detectado).toBe('detectado há 1 dia');
+      // O cabeçalho já diz "Detectado": a célula só diz "há 1 dia" (v0.37.1).
+      expect(detectado).toBe('há 1 dia');
       expect(await l.locator('.c-sit').innerText()).toContain('Não lida');
       // Ações com nome acessível.
       const nomesAcoes = await l
@@ -308,124 +311,142 @@ describe.skipIf(sem)(
         });
       expect(linhasVisuais).toBeLessThanOrEqual(3);
       expect(await page.locator('.nvt-linha .nov-abrir').count()).toBe(1);
-      // As anteriores expandidas também vêm em trecho; sem texto, nenhum bloco vazio.
-      await page.click('[data-acao="mais"]');
-      expect(await page.locator('.nvt-ant .nov-txt').count()).toBe(1);
+      // Sem texto, nenhum bloco vazio. Uma linha, a atualização mais recente e mais nada.
       expect(await page.locator('.nov-trecho:empty').count()).toBe(0);
-      expect(await page.locator('.nvt-tabela').innerText()).not.toContain(TEXTO_FIM);
-      // Nada foi escondido: as três atualizações continuam na tela (1 linha + 2 anteriores).
       expect(await page.locator('.nvt-linha').count()).toBe(1);
-      expect(await page.locator('.nvt-item').count()).toBe(2);
     });
 
-    it('"detectado há N dias": hoje, 1 dia e plural, na linha e nas anteriores; a data do ato fica na coluna própria', async () => {
-      const numero = numeroValido(2004);
-      const g = grupo(numero, novidade(numero, 'A', { diasDetectada: 0, diasAto: 9 }), [
-        novidade(numero, 'B', { diasDetectada: 1 }),
-        novidade(numero, 'C', { diasDetectada: 11 }),
-      ]);
-      await abrir({ grupos: [g] });
-      expect((await page.locator('.nvt-linha .c-det').innerText()).trim()).toBe(
-        'detectado hoje',
-      );
-      await page.click('[data-acao="mais"]');
-      expect(await page.locator('.nvt-item .nvt-item-det').allTextContents()).toEqual([
-        'detectado há 1 dia',
-        'detectado há 11 dias',
-      ]);
-      expect(
-        await page.locator('.nvt-item .nvt-item-data').first().textContent(),
-      ).toContain('Data do ato');
-      const corpo = await page.locator('.nvt-tabela').innerText();
-      expect(corpo).not.toMatch(/(?<!detectado )há \d+ dias?/);
+    it('coluna "Detectado" enxuta: "hoje", "há 1 dia", "há 11 dias"; a frase completa vai no title e no texto para leitor de tela', async () => {
+      const gs = [
+        { d: 0, curto: 'hoje', completo: 'detectado hoje' },
+        { d: 1, curto: 'há 1 dia', completo: 'detectado há 1 dia' },
+        { d: 11, curto: 'há 11 dias', completo: 'detectado há 11 dias' },
+      ].map((c, i) => {
+        const numero = numeroValido(2004 + i);
+        return {
+          c,
+          g: grupo(numero, novidade(numero, 'A', { diasDetectada: c.d, diasAto: 12 })),
+        };
+      });
+      await abrir({ grupos: gs.map((x) => x.g) });
+      for (const [i, { c }] of gs.entries()) {
+        const celula = linhas().nth(i).locator('.c-det');
+        expect((await celula.locator('[aria-hidden="true"]').textContent())?.trim()).toBe(
+          c.curto,
+        );
+        expect(await celula.locator('.nvt-sr').textContent()).toBe(c.completo);
+        expect(await celula.locator('span[title]').first().getAttribute('title')).toContain(
+          c.completo,
+        );
+      }
+      // O que se VÊ nunca repete o cabeçalho: "detectado" só existe no texto para leitor de tela.
+      const visiveis = await page
+        .locator('.c-det [aria-hidden="true"]')
+        .allTextContents();
+      expect(visiveis.join(' ')).not.toMatch(/detectado/i);
     });
 
     /* --------------------------------------------------------- uma linha por processo */
 
-    it('uma linha por processo, mesmo com 300 atualizações; "+300 anteriores" abre 20 e pagina de 20 em 20', async () => {
+    it('uma linha por processo, mesmo com 300 atualizações: sem "+N anteriores", sem aviso por linha e sem expansor', async () => {
       const numero = numeroValido(3001);
       const principal = novidade(numero, 'Sentença', { conteudo: 'Texto do ato.' });
       const anteriores = Array.from({ length: 300 }, (_, i) =>
         novidade(numero, `Movimento anterior ${i + 1}`, {
           diasDetectada: 1 + (i % 10),
           vista: i % 2 === 0,
+          exigeAcao: i === 3,
         }),
       );
       await abrir({
         grupos: [grupo(numero, principal, anteriores), ...carteira(2).map((g) => g)],
       });
       expect(await linhas().count()).toBe(3);
-      const exp = page.locator('[data-acao="mais"]').first();
-      expect((await exp.textContent())?.trim()).toBe('+300 anteriores');
-      expect(await exp.getAttribute('aria-expanded')).toBe('false');
-      const alvo = await exp.getAttribute('aria-controls');
-      expect(alvo).toBeTruthy();
-      expect(await page.locator('#' + alvo).count()).toBe(1);
-      expect(await page.locator('#' + alvo).isHidden()).toBe(true);
-
-      await exp.click();
-      const aberto = page.locator('[data-acao="mais"]').first();
-      expect(await aberto.getAttribute('aria-expanded')).toBe('true');
-      expect(await page.locator('#' + alvo).isVisible()).toBe(true);
-      expect(await page.locator('#' + alvo + ' .nvt-item').count()).toBe(20);
-      expect(await page.locator('#' + alvo + ' .nvt-ant-topo').innerText()).toContain(
-        'mostrando 20 de 300',
+      const tabela = await page.locator('.nvt-tabela').innerText();
+      expect(tabela).not.toMatch(/\+\d+ anteriore/);
+      expect(tabela).not.toContain('há anterior');
+      expect(await page.locator('[data-acao="mais"], [data-acao="maisl"]').count()).toBe(0);
+      expect(await page.locator('.nvt-ant, .nvt-item').count()).toBe(0);
+      // A situação continua a regra de sempre: atualização não vista do processo.
+      expect(await linhas().first().locator('.c-sit').innerText()).toContain(
+        '151 não lidas',
       );
-      expect(await linhas().count()).toBe(3);
-
-      await page.click('[data-acao="maisl"]');
-      expect(await page.locator('#' + alvo + ' .nvt-item').count()).toBe(40);
-      expect(await page.locator('#' + alvo + ' .nvt-ant-topo').innerText()).toContain(
-        'mostrando 40 de 300',
-      );
-      expect(await page.locator('[data-acao="maisl"]').textContent()).toContain(
-        'Mostrar mais 20',
-      );
-      expect(await page.locator('#nvt-live').textContent()).toBe(
-        'Mostrando 40 de 300 atualizações anteriores.',
-      );
-
-      // Recolher volta ao estado fechado, sem perder o contador.
-      await page.locator('[data-acao="mais"]').first().click();
-      expect(
-        await page.locator('[data-acao="mais"]').first().getAttribute('aria-expanded'),
-      ).toBe('false');
-      expect(await page.locator('#' + alvo).isHidden()).toBe(true);
+      expect(await linhas().first().locator('.c-sit .selo.am').count()).toBe(0);
     });
 
-    it('o expansor funciona só com o teclado (Enter) e devolve o foco ao mesmo botão', async () => {
+    it('a frase da regra de ouro é UMA, da página: aparece quando algum processo tem mais de uma atualização, sem contagem', async () => {
+      const FRASE =
+        "Cada processo mostra a atualização mais recente. As anteriores estão em 'Abrir processo'.";
       const numero = numeroValido(3002);
-      const g = grupo(numero, novidade(numero, 'A'), [
-        novidade(numero, 'B', { diasDetectada: 2 }),
-      ]);
-      await abrir({ grupos: [g] });
-      await page.focus('[data-acao="mais"]');
-      await page.keyboard.press('Enter');
-      expect(await page.locator('[data-acao="mais"]').getAttribute('aria-expanded')).toBe(
-        'true',
+      await abrir({
+        grupos: [
+          grupo(numero, novidade(numero, 'A'), [
+            novidade(numero, 'B', { diasDetectada: 2 }),
+          ]),
+          ...carteira(3),
+        ],
+      });
+      expect(await page.locator('.nov-ant').count()).toBe(1);
+      expect((await page.locator('.nov-ant').innerText()).trim()).toBe(FRASE);
+      expect(await page.locator('.nov-ant').innerText()).not.toMatch(/\d/);
+      // Abaixo dos filtros e acima da tabela.
+      const [filtros, frase, tabela] = await page.evaluate(() =>
+        ['.nvt-filtros', '.nov-ant', '.nvt-wrap'].map(
+          (s) => document.querySelector(s)!.getBoundingClientRect().top,
+        ),
       );
-      expect(
-        await page.evaluate(() => document.activeElement?.getAttribute('data-foco')),
-      ).toMatch(/^mais-/);
-      expect(await page.locator('.nvt-item').count()).toBe(1);
+      expect(filtros).toBeLessThan(frase!);
+      expect(frase).toBeLessThan(tabela!);
     });
 
-    it('a marca "há anterior que pede providência" aparece fechada e a anterior continua marcada depois de aberta', async () => {
+    it('sem processo com mais de uma atualização no período, a frase não aparece', async () => {
+      const unicos = [numeroValido(3005), numeroValido(3006)].map((n) =>
+        grupo(n, novidade(n, 'Conclusos para decisão')),
+      );
+      await abrir({ grupos: unicos });
+      expect(await page.locator('.nov-ant').count()).toBe(0);
+    });
+
+    it('a mensagem "N atualizações mais antigas não mostradas" convive com a frase da página', async () => {
       const numero = numeroValido(3003);
-      const g = grupo(numero, novidade(numero, 'Juntada'), [
-        novidade(numero, 'Despacho', { diasDetectada: 3, exigeAcao: true }),
-      ]);
-      await abrir({ grupos: [g] });
-      expect(await page.locator('.c-acoes').innerText()).toContain(
-        'há anterior que pede providência',
+      await abrir({
+        grupos: [grupo(numero, novidade(numero, 'A'), [novidade(numero, 'B')])],
+        foraDaJanela: 308,
+      });
+      expect(await page.locator('.nov-fora').innerText()).toContain(
+        '308 atualizações mais antigas não mostradas (fora dos últimos 15 dias).',
       );
-      await page.click('[data-acao="mais"]');
-      expect(await page.locator('.c-acoes').innerText()).not.toContain(
-        'há anterior que pede providência',
-      );
-      expect(await page.locator('.nvt-item .selo.am').innerText()).toBe(
-        'pede providência',
-      );
+      expect(await page.locator('.nov-ant').count()).toBe(1);
+    });
+
+    it('Ações: só os dois botões, sem texto, dentro da linha em 1920, 1366, 1280 e 1024', async () => {
+      for (const largura of [1920, 1366, 1280, 1024]) {
+        await abrir({ grupos: carteira(3) }, { largura });
+        const m = await page.evaluate(() => {
+          const l = document.querySelector('.nvt-linha .c-acoes')!;
+          const cel = l.getBoundingClientRect();
+          const bs = Array.from(l.querySelectorAll('button')).map((b) =>
+            b.getBoundingClientRect(),
+          );
+          return {
+            n: bs.length,
+            texto: l.textContent?.trim(),
+            dentro: bs.every((b) => b.left >= cel.left - 0.5 && b.right <= cel.right + 0.5),
+            mesmaLinha: new Set(bs.map((b) => Math.round(b.top))).size,
+          };
+        });
+        expect(m).toEqual({ n: 2, texto: '', dentro: true, mesmaLinha: 1 });
+        await ctx.close();
+      }
+    });
+
+    it('descrição sem repetição: a linha mostra a versão enxuta e o title guarda a original', async () => {
+      const numero = numeroValido(3004);
+      const original = 'Juntada -> Petição — Juntada -> Petição - DOCUMENTO SINTÉTICO';
+      await abrir({ grupos: [grupo(numero, novidade(numero, original))] });
+      const tit = linhas().first().locator('.c-atu .nvt-tit');
+      expect(await tit.textContent()).toBe('Juntada -> Petição - DOCUMENTO SINTÉTICO');
+      expect(await tit.getAttribute('title')).toBe(original);
     });
 
     /* ---------------------------------------------------------------------- copiar */
@@ -845,7 +866,7 @@ describe.skipIf(sem)(
 
     const tamanhos = [1920, 1366, 1280, 1024, 768, 390];
     for (const largura of tamanhos) {
-      it(`sem rolagem horizontal em ${largura}px, com texto longo e processo com 300 anteriores aberto`, async () => {
+      it(`sem rolagem horizontal em ${largura}px, com texto longo e processo com 300 atualizações`, async () => {
         const longo = 'ArquivoOuNomeSemEspaco' + 'abcdefghij'.repeat(12);
         const numero = numeroValido(8001);
         const grupos = [
@@ -863,7 +884,6 @@ describe.skipIf(sem)(
           ...carteira(24),
         ];
         await abrir({ grupos, foraDaJanela: 3 }, { largura });
-        await page.click('[data-acao="mais"]');
         const m = await page.evaluate(() => ({
           sw: document.documentElement.scrollWidth,
           cw: document.documentElement.clientWidth,
@@ -1005,7 +1025,6 @@ describe.skipIf(sem)(
             ...carteira(6),
           ];
           await abrir({ grupos, foraDaJanela: 2 }, { largura, escuro });
-          await page.click('[data-acao="mais"]');
           await page.addScriptTag({
             content: (AxeBuilder as unknown as { source: string }).source,
           });

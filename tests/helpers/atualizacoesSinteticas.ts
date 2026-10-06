@@ -43,7 +43,8 @@ export interface GrupoSintetico {
     motivoProvidencia: string | null;
   } | null;
   maisRecente: NovidadeSintetica;
-  anteriores: NovidadeSintetica[];
+  /** Como a API: só a contagem do período, nunca as anteriores (v0.37.1). */
+  quantidade: number;
   naoVistas: number;
 }
 
@@ -87,7 +88,7 @@ export function grupo(
     numero,
     processo,
     maisRecente: principal,
-    anteriores,
+    quantidade: 1 + anteriores.length,
     naoVistas: [principal, ...anteriores].filter((n) => !n.vista).length,
   };
 }
@@ -118,7 +119,7 @@ export function respostaNovidades(
 ): Record<string, unknown> {
   const naoVistas = grupos.reduce((n, g) => n + g.naoVistas, 0);
   return {
-    total: grupos.reduce((n, g) => n + 1 + g.anteriores.length, 0),
+    total: grupos.reduce((n, g) => n + g.quantidade, 0),
     naoVistas,
     acompanhados: grupos.length,
     janelaDias: 15,

@@ -10,8 +10,10 @@
  *   `foraDaJanela`): a tela não reagrupa nem reclassifica;
  * - filtros, ordenação e paginação moram em `tabelaAtualizacoes.ts` (funções puras,
  *   injetadas aqui por `toString()` e exercitadas pelos testes);
- * - nada é descartado: "+N anteriores" expande na própria linha, em lotes de 20, e
- *   diz "mostrando X de N";
+ * - uma linha por processo, com a atualização mais recente e mais nada: não há
+ *   "+N anteriores" nem aviso por linha (v0.37.1). A regra de ouro vira UMA frase no
+ *   nível da página ("as anteriores estão em 'Abrir processo'"), só quando algum
+ *   processo tem mais de uma atualização no período;
  * - quem esconde linha diz quantas escondeu: "mostrando X de Y processos" e "N
  *   atualizações mais antigas não mostradas", sempre com a saída ao lado;
  * - triagem ordena, nunca esconde: `exigeAcao` só MARCA. O filtro "Pedem
@@ -26,10 +28,10 @@
  * tsc; `tests/http/console-script.spec.ts` roda o ESLint aqui dentro. Todo
  * texto vindo do servidor passa por `esc()`.
  */
+import { descricaoDoAto } from '../../../domain/entities/descricaoDoAto.js';
 import { trechoDeTexto } from './trechoDeTexto.js';
 import {
   contarSituacoes,
-  fatiaDeAnteriores,
   filtrarPorSituacao,
   ordenarGrupos,
   paginar,
@@ -49,11 +51,11 @@ var filtrarPorSituacao=${filtrarPorSituacao.toString()};
 var proximaOrdem=${proximaOrdem.toString()};
 var ordenarGrupos=${ordenarGrupos.toString()};
 var paginar=${paginar.toString()};
-var fatiaDeAnteriores=${fatiaDeAnteriores.toString()};
+var descricaoDoAto=${descricaoDoAto.toString()};
 var textoDePartes=${textoDePartes.toString()};
 
 /* Só a escolha da sessão: some quando a página recarrega. */
-var S={situacao:'todas',ordem:null,porPagina:25,pagina:1,abertos:{},lote:{},foco:''};
+var S={situacao:'todas',ordem:null,porPagina:25,pagina:1,foco:''};
 var R=null,O=null,corpo=null,live=null;
 
 var SITUACOES=[['todas','Todas'],['naoLidas','Não lidas'],['providencia','Pedem providência']];
@@ -71,15 +73,18 @@ var ICO_ULTIMA=svg('<path d="m6 17 5-5-5-5"/><path d="m13 17 5-5-5-5"/>');
 function esc(s){return pv().esc(s)}
 function digitos(n){return String(n||'').replace(/\D/g,'')}
 
-/* O "há N dias" desta lista conta desde a DETECÇÃO, nunca desde a data do ato: sem
-   o verbo, as duas datas lado a lado pareciam contradizer-se. "ontem" vira "há 1
-   dia" para seguir o mesmo molde. */
-function detectadoHa(iso){
+/* O "há N dias" desta lista conta desde a DETECÇÃO, nunca desde a data do ato. A
+   célula mostra só "há 11 dias" (o cabeçalho já diz "Detectado"); a frase completa
+   vai no title e no texto para leitor de tela. "ontem" vira "há 1 dia" para seguir
+   o mesmo molde. */
+function detectadoCurto(iso){
   var h=pv().humano(iso);
   if(!h)return '';
-  if(h==='hoje')return 'detectado hoje';
-  if(h==='ontem')return 'detectado há 1 dia';
-  return 'detectado '+h;
+  return h==='ontem'?'há 1 dia':h;
+}
+function detectadoHa(iso){
+  var c=detectadoCurto(iso);
+  return c?'detectado '+c:'';
 }
 
 /* Só o começo do texto do ato; o inteiro está no processo (v0.35.1). As
@@ -114,7 +119,10 @@ function celulaPartes(g){
 }
 
 function celulaAtualizacao(n){
-  return '<td class="c-atu" data-rotulo="Atualização"><div class="nvt-tit'+(n.vista?'':' nl')+'">'+esc(n.titulo)+'</div>'+notaDoAto(n)+'</td>';
+  /* Só a exibição perde a repetição do tipo; o original fica no title. */
+  var enxuto=descricaoDoAto(n.titulo);
+  return '<td class="c-atu" data-rotulo="Atualização"><div class="nvt-tit'+(n.vista?'':' nl')+'"'+
+    (enxuto!==n.titulo?' title="'+esc(n.titulo)+'"':'')+'>'+esc(enxuto)+'</div>'+notaDoAto(n)+'</td>';
 }
 
 function celulaSituacao(g){
@@ -126,55 +134,24 @@ function celulaSituacao(g){
 }
 
 function celulaAcoes(g){
-  var m=pv().mascara(g.numero),n=g.anteriores.length,aberto=!!S.abertos[g.numero];
-  var h='<td class="c-acoes" data-rotulo="Ações"><div class="nvt-acoes">'+
+  var m=pv().mascara(g.numero);
+  return '<td class="c-acoes" data-rotulo="Ações"><div class="nvt-acoes">'+
     '<button type="button" class="nvt-ic" data-acao="abrir" data-num="'+esc(g.numero)+'" data-foco="abrir-'+esc(g.numero)+'" aria-label="Abrir o processo '+esc(m)+'" title="Abrir o processo">'+ICO_ABRIR+'</button>'+
-    '<button type="button" class="nvt-ic" data-acao="pasta" data-num="'+esc(g.numero)+'" data-foco="pasta-'+esc(g.numero)+'" aria-label="Abrir a pasta digital do processo '+esc(m)+'" title="Abrir a pasta digital">'+ICO_PASTA+'</button>';
-  if(n>0){
-    h+='<button type="button" class="nvt-exp" data-acao="mais" data-num="'+esc(g.numero)+'" data-foco="mais-'+esc(g.numero)+'"'+
-      ' aria-expanded="'+(aberto?'true':'false')+'" aria-controls="'+idAnteriores(g)+'"'+
-      (aberto?' aria-label="Recolher as atualizações anteriores"':'')+'>'+
-      (aberto?'Recolher':'+'+n+' anterior'+(n>1?'es':''))+'</button>';
-    if(!aberto&&g.anteriores.some(function(a){return a.exigeAcao}))
-      h+='<span class="selo am">há anterior que pede providência</span>';
-  }
-  return h+'</div></td>';
-}
-
-function idAnteriores(g){return 'nvt-ant-'+digitos(g.numero)}
-
-function itemAnterior(n){
-  return '<li class="nvt-item'+(n.vista?'':' nl')+'">'+
-    '<div class="nvt-item-data"><span class="nvt-rot-mini">Data do ato</span> <time datetime="'+esc(n.data)+'" title="'+esc(pv().dth(n.data))+'">'+esc(pv().dt(n.data))+'</time></div>'+
-    '<div class="nvt-item-corpo"><div class="nvt-tit'+(n.vista?'':' nl')+'">'+esc(n.titulo)+
-    (n.exigeAcao?' '+seloProvidencia(''):'')+'</div>'+notaDoAto(n)+'</div>'+
-    '<div class="nvt-item-det" title="Quando o Processo Vivo percebeu este ato.">'+esc(detectadoHa(n.detectadaEm))+'</div></li>';
-}
-
-function linhaDasAnteriores(g,colunas){
-  var id=idAnteriores(g);
-  if(!S.abertos[g.numero])return '<tr class="nvt-ant" id="'+id+'" role="row" hidden><td colspan="'+colunas+'" role="cell"></td></tr>';
-  var f=fatiaDeAnteriores(g.anteriores.length,S.lote[g.numero]);
-  return '<tr class="nvt-ant" id="'+id+'" role="row"><td colspan="'+colunas+'" role="cell">'+
-    '<div class="nvt-ant-topo"><strong>Atualizações anteriores deste processo</strong> '+
-    '<span class="nota">mostrando '+f.mostrando+' de '+f.total+'</span></div>'+
-    '<ul class="nvt-lista">'+g.anteriores.slice(0,f.mostrando).map(itemAnterior).join('')+'</ul>'+
-    (f.faltam>0?'<div class="nvt-ant-pe"><button type="button" class="nov-btn" data-acao="maisl" data-num="'+esc(g.numero)+
-      '" data-foco="maisl-'+esc(g.numero)+'">Mostrar mais '+f.proximoLote+'</button> <span class="nota">faltam '+f.faltam+'</span></div>':'')+
-    '</td></tr>';
+    '<button type="button" class="nvt-ic" data-acao="pasta" data-num="'+esc(g.numero)+'" data-foco="pasta-'+esc(g.numero)+'" aria-label="Abrir a pasta digital do processo '+esc(m)+'" title="Abrir a pasta digital">'+ICO_PASTA+'</button>'+
+    '</div></td>';
 }
 
 function linha(g){
-  var n=g.maisRecente,colunas=9;
+  var n=g.maisRecente;
   var h='<tr class="nvt-linha" role="row" data-processo="'+esc(g.numero)+'">'+
     celulaProcesso(g)+celulaPartes(g)+celulaAtualizacao(n)+
     '<td class="c-trib" data-rotulo="Tribunal">'+esc(g.processo&&g.processo.tribunal?g.processo.tribunal:'—')+
     (g.processo&&g.processo.classe?'<span class="nvt-classe-mini">'+esc(g.processo.classe)+'</span>':'')+'</td>'+
     '<td class="c-classe" data-rotulo="Classe">'+(g.processo&&g.processo.classe?'<span class="nvt-classe">'+esc(g.processo.classe)+'</span>':'<span class="nvt-vazio">—</span>')+'</td>'+
     '<td class="c-data" data-rotulo="Data do ato"><time datetime="'+esc(n.data)+'" title="'+esc(pv().dth(n.data))+'">'+esc(pv().dt(n.data))+'</time></td>'+
-    '<td class="c-det" data-rotulo="Detectado"><span title="'+esc('Quando o Processo Vivo percebeu este ato ('+pv().dth(n.detectadaEm)+'). A data do ato está na coluna ao lado.')+'">'+esc(detectadoHa(n.detectadaEm))+'</span></td>'+
+    '<td class="c-det" data-rotulo="Detectado"><span title="'+esc(detectadoHa(n.detectadaEm)+'. Quando o Processo Vivo percebeu este ato ('+pv().dth(n.detectadaEm)+'). A data do ato está na coluna ao lado.')+'">'+
+      '<span aria-hidden="true">'+esc(detectadoCurto(n.detectadaEm))+'</span><span class="nvt-sr">'+esc(detectadoHa(n.detectadaEm))+'</span></span></td>'+
     celulaSituacao(g)+celulaAcoes(g)+'</tr>';
-  if(g.anteriores.length>0)h+=linhaDasAnteriores(g,colunas);
   return h;
 }
 
@@ -246,6 +223,13 @@ function avisoDeOcultas(){
     ' (fora dos últimos '+R.janelaPadraoDias+' dias). <button type="button" class="nov-btn" data-acao="periodo" data-janela="todas" data-foco="ver-todas">Ver todas</button></div>';
 }
 
+/* A regra de ouro em UMA frase, no nível da página: sem contagem por processo e sem
+   alarme. Só existe se algum processo da lista tem mais de uma atualização no período. */
+function avisoDeAnteriores(linhas){
+  if(!linhas.some(function(g){return g.quantidade>1}))return '';
+  return "<div class='nota nov-ant'>Cada processo mostra a atualização mais recente. As anteriores estão em 'Abrir processo'.</div>";
+}
+
 function rodape(pg){
   var h='<nav class="nvt-pag" aria-label="Paginação das atualizações">'+
     '<label class="nvt-por">Itens por página <select data-sel="porpagina" data-foco="porpagina">'+
@@ -297,6 +281,7 @@ function desenhar(anunciarMudanca){
   if(!base.length)h+=semBase();
   else if(!filtrados.length)h+=semResultado(base.length);
   else{
+    h+=avisoDeAnteriores(filtrados);
     h+='<div class="nvt-wrap"><table class="nvt-tabela" role="table"><caption class="nvt-sr">Últimas atualizações dos processos</caption>'+
       cabecalho()+'<tbody>'+ordenados.slice(pg.inicio,pg.fim).map(linha).join('')+'</tbody></table></div>'+rodape(pg);
   }
@@ -369,16 +354,6 @@ function aoClicar(ev){
     desenhar(true);return;
   }
   if(acao==='ord'){S.ordem=proximaOrdem(S.ordem,el.getAttribute('data-chave'));S.pagina=1;desenhar(true);return}
-  if(acao==='mais'){S.abertos[num]=!S.abertos[num];desenhar(false);return}
-  if(acao==='maisl'){
-    var g=R.grupos.filter(function(x){return x.numero===num})[0];
-    var f=fatiaDeAnteriores(g.anteriores.length,S.lote[num]);
-    S.lote[num]=f.mostrando+f.proximoLote;
-    desenhar(false);
-    var f2=fatiaDeAnteriores(g.anteriores.length,S.lote[num]);
-    anunciar('Mostrando '+f2.mostrando+' de '+f2.total+' atualizações anteriores.');
-    return;
-  }
   if(acao==='pagina'){
     var tot=Math.ceil(filtrarPorSituacao(R.grupos,S.situacao).length/S.porPagina)||1;
     var v=el.getAttribute('data-vai');

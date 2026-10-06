@@ -21,7 +21,8 @@ interface NovidadeJson {
 interface GrupoJson {
   numero: string;
   maisRecente: NovidadeJson;
-  anteriores: NovidadeJson[];
+  quantidade: number;
+  anteriores?: unknown;
   naoVistas: number;
 }
 interface RespostaNovidades {
@@ -111,7 +112,8 @@ describe('GET /v1/novidades — uma linha por processo, com janela', () => {
     expect(r.grupos).toHaveLength(2);
     expect(r.janelaDias).toBe(15);
     const a = r.grupos.find((g) => g.maisRecente.titulo === 'Sentença');
-    expect(a?.anteriores.map((x) => x.titulo)).toEqual(['Despacho']);
+    expect(a?.quantidade).toBe(2);
+    expect(a?.anteriores).toBeUndefined();
     expect(a?.naoVistas).toBe(2);
   });
 
@@ -142,7 +144,22 @@ describe('GET /v1/novidades — uma linha por processo, com janela', () => {
     expect(r.naoVistas).toBe(3);
   });
 
-  it('marca a atualização anterior que pede providência, sem usá-la como filtro', async () => {
+  it('não trafega as atualizações anteriores: só a mais recente e a contagem do período', async () => {
+    for (let i = 1; i <= 30; i++) await semear(NUMERO_TJSP_A, i % 14 || 1, `Ato ${i}`);
+
+    const r = await ler();
+    const g = r.grupos[0];
+    expect(r.grupos).toHaveLength(1);
+    expect(g?.quantidade).toBe(30);
+    expect(g?.anteriores).toBeUndefined();
+    // O achatado também vem enxuto: um item por processo, e o total continua contando atos.
+    const achatado = (r as unknown as { novidades: unknown[]; total: number }).novidades;
+    expect(achatado).toHaveLength(1);
+    expect((r as unknown as { total: number }).total).toBe(30);
+    expect(r.naoVistas).toBe(30);
+  });
+
+  it('o ato anterior que pede providência continua sem filtrar nem aparecer como linha', async () => {
     const digitos = NumeroCNJ.criar(NUMERO_TJSP_A).digitos;
     await repo.acompanhar(WS, digitos);
     await repo.registrarSincronizacao(WS, digitos, processo(NUMERO_TJSP_A, []), [
@@ -159,8 +176,7 @@ describe('GET /v1/novidades — uma linha por processo, com janela', () => {
     const g = r.grupos[0];
     expect(g?.maisRecente.titulo).toBe('Juntada');
     expect(g?.maisRecente.exigeAcao).toBe(false);
-    expect(g?.anteriores[0]?.titulo).toBe('Despacho');
-    expect(g?.anteriores[0]?.exigeAcao).toBe(true);
+    expect(g?.quantidade).toBe(2);
   });
 
   it('a janela de pendência chega à tela pelas facetas — um valor só', async () => {
