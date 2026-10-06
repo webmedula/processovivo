@@ -329,38 +329,6 @@ button.bt3:hover{color:var(--erro)}
 .selo.ok{background:var(--verde-bg);color:var(--verde-tinta)}
 .selo.neutro{background:var(--neutro-bg);color:var(--tinta3)}
 
-/* ---------- feed ---------- */
-/* Um bloco de data à esquerda, o ato no meio, o quando à direita. A data em
-   bloco é o que o olho usa para achar "o que chegou hoje" numa lista longa. */
-.feed{padding:0;overflow:hidden}
-.feed-topo{display:flex;justify-content:space-between;align-items:center;gap:12px;
-  flex-wrap:wrap;padding:16px 20px;border-bottom:1px solid var(--linha)}
-.feed-topo h3{margin:0;font-size:17px;font-weight:800}
-.feed-topo .chips{margin:0;align-items:center}
-.feed-topo select{width:auto;min-height:36px;padding:0 10px;font-size:13px}
-.nov{display:grid;grid-template-columns:52px minmax(0,1fr) auto;gap:16px;
-  align-items:center;padding:13px 20px;border-top:1px solid var(--linha2)}
-.nov:first-of-type{border-top:0}
-.nov .q{display:flex;flex-direction:column;align-items:center;justify-content:center;
-  height:48px;border-radius:10px;background:var(--papel2);border:1px solid var(--linha)}
-.nov .q b{font-size:17px;line-height:1;font-weight:800;color:var(--tinta)}
-.nov .q span{font-size:11px;font-weight:700;color:var(--tinta3);text-transform:uppercase}
-.nov .t{font-weight:700;font-size:14.5px;line-height:1.4;overflow-wrap:anywhere}
-.nov .p{font-size:12.5px;color:var(--tinta2);margin-top:3px;cursor:pointer;
-  font-family:var(--mono);font-weight:600}
-.nov .p:hover{color:var(--acento)}
-.nov .lado{display:flex;flex-direction:column;align-items:flex-end;gap:5px;
-  font-size:12px;color:var(--tinta3);white-space:nowrap}
-/* Não lida: um ponto azul antes do título. Fundo colorido em várias linhas de
-   uma vez vira ruído e some com o destaque do que pede providência. */
-.nov.nl .t::before{content:"";display:inline-block;width:7px;height:7px;
-  border-radius:50%;background:var(--novo);margin-right:8px;vertical-align:2px}
-.feed .vazio{box-shadow:none;border:0;margin:0}
-@media (max-width:560px){
-  .nov{grid-template-columns:44px minmax(0,1fr);padding:12px 14px}
-  .nov .lado{grid-column:2;align-items:flex-start;flex-direction:row}
-}
-
 /* ---------- detalhe ---------- */
 .capa{background:var(--papel);border:1px solid var(--linha);
   border-radius:var(--r) var(--r) 0 0;border-bottom:0;padding:20px 18px 18px}
@@ -400,39 +368,6 @@ h3.sec{font-size:12px;font-weight:700;text-transform:uppercase;
 .cabeca{margin-bottom:24px}
 .kicker{font-size:13.5px;font-weight:600;color:var(--tinta3);margin-bottom:6px}
 .alerta-txt{color:var(--atencao);font-weight:600}
-
-.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));
-  gap:16px;margin-bottom:22px}
-.card{background:var(--papel);border:1px solid var(--linha);border-radius:var(--r);
-  padding:20px;box-shadow:var(--sombra);display:flex;flex-direction:column;gap:8px}
-.card .k{order:-1;font-size:13.5px;font-weight:700;color:var(--tinta2);
-  display:flex;align-items:center;gap:8px}
-.card .v{font-size:38px;font-weight:800;letter-spacing:-.03em;line-height:1;
-  font-variant-numeric:tabular-nums}
-/* O card de providência só muda de cor quando há providência. Card colorido em
-   zero é alarme permanente, e alarme permanente deixa de ser alarme. */
-.card.al .k,.card.al .v{color:var(--atencao)}
-.card.al .k::before{content:"";width:8px;height:8px;border-radius:2px;
-  background:var(--atencao-ponto)}
-.card.nv .k,.card.nv .v{color:var(--novo)}
-.card.nv .k::before{content:"";width:8px;height:8px;border-radius:50%;
-  background:var(--novo)}
-
-/* O trilho NÃO tem largura reservada quando não há conteúdo: quem monta a
-   coluna só usa esta grade se houver bloco para pôr nela. Vão em branco no meio
-   da página não é lido como "ainda não há dados". */
-.duas-colunas{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,320px);gap:20px;align-items:start}
-/* Item de grade não encolhe abaixo do conteúdo: um nome de arquivo sem espaço
-   empurrava o trilho para fora da página. A causa é o min-width automático. */
-.duas-colunas>*{min-width:0}
-.trilho .cartao{margin-bottom:16px}
-.baixa{padding:9px 0;border-top:1px solid var(--linha2)}
-.baixa:first-of-type{border-top:0}
-.baixa .t{font-size:13.5px;font-weight:500;line-height:1.35;overflow-wrap:anywhere}
-.baixa .t-sub{overflow-wrap:anywhere}
-@media (max-width:1040px){
-  .duas-colunas{grid-template-columns:1fr}
-}
 
 /* ---------- carteira em tabela ---------- */
 /* Substituiu os cartões empilhados na v0.25.0: com 142 pastas, quatro linhas
@@ -572,7 +507,6 @@ h3.sec{font-size:12px;font-weight:700;text-transform:uppercase;
   .acao{grid-template-columns:1fr;gap:2px}
   .vig{grid-template-columns:1fr;align-items:start}
   .ev{grid-template-columns:1fr;gap:2px}
-  .nov{grid-template-columns:1fr;gap:3px}
   .capa .num{font-size:20px}
   .nav button{padding:8px 10px;font-size:13px}
 }

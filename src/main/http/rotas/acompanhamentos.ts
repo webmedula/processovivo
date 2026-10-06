@@ -131,9 +131,54 @@ function novidadeJson(n: Novidade): Record<string, unknown> {
   };
 }
 
-function grupoJson(g: GrupoDeNovidades): Record<string, unknown> {
+/** Teto de nomes por polo na lista; o total real vai junto, para a tela dizer quantos faltam. */
+const MAX_NOMES_POR_POLO = 20;
+
+/**
+ * O que a tabela de Atualizações mostra do PROCESSO (v0.37.0), lido do retrato já
+ * guardado no acompanhamento — nenhuma consulta nova ao tribunal.
+ *
+ * `partes` só carrega o que a fonte entregou (o DJEN, quando há publicação): vazio
+ * é "a fonte não sabe", nunca dedução do texto de peça. `pedeProvidencia` é
+ * `estadoDaPasta` — a MESMA regra, e a mesma janela, do selo da carteira e do card
+ * que esta tabela substituiu.
+ */
+function infoDoProcesso(
+  a: AcompanhamentoResumido,
+  pendenciaJanelaDias: number,
+  agora: Date,
+): Record<string, unknown> {
+  const p = a.processo;
+  const nomes = (polo: 'ATIVO' | 'PASSIVO'): Record<string, unknown> => {
+    const todos = (p?.partes ?? []).filter((x) => x.polo === polo).map((x) => x.nome);
+    return { nomes: todos.slice(0, MAX_NOMES_POR_POLO), total: todos.length };
+  };
+  const estado = estadoDaPasta(
+    {
+      ...(a.erro !== undefined ? { erro: a.erro } : {}),
+      ...(a.sincronizadoEm !== undefined ? { sincronizadoEm: a.sincronizadoEm } : {}),
+      novidadesNaoVistas: a.novidadesNaoVistas,
+      ...(p ? { movimentacoes: p.movimentacoes } : {}),
+    },
+    agora,
+    pendenciaJanelaDias,
+  );
+  return {
+    tribunal: p?.tribunal ?? null,
+    classe: p?.classe ?? null,
+    partes: { ativo: nomes('ATIVO'), passivo: nomes('PASSIVO') },
+    pedeProvidencia: estado.rotulo === 'PROVIDENCIA',
+    motivoProvidencia: estado.rotulo === 'PROVIDENCIA' ? (estado.motivo ?? null) : null,
+  };
+}
+
+function grupoJson(
+  g: GrupoDeNovidades,
+  processo: Record<string, unknown> | undefined,
+): Record<string, unknown> {
   return {
     numero: g.numero,
+    processo: processo ?? null,
     maisRecente: novidadeJson(g.maisRecente),
     anteriores: g.anteriores.map(novidadeJson),
     naoVistas: g.naoVistas,
@@ -302,7 +347,16 @@ export function rotasDeAcompanhamento(
         limite: q.limite ? Number(q.limite) : LIMITE_DE_LEITURA_DAS_NOVIDADES,
       });
       const janelaDias = todas ? undefined : janelas.novidadesJanelaDias;
-      const agrupadas = agruparNovidades(lista, agora(), janelaDias);
+      const instante = agora();
+      const agrupadas = agruparNovidades(lista, instante, janelaDias);
+      // Sempre do workspace de quem pediu: a carteira de outro nunca entra aqui.
+      const infoPorNumero = new Map<string, Record<string, unknown>>();
+      for (const a of await servico.listar(ws)) {
+        infoPorNumero.set(
+          a.numero,
+          infoDoProcesso(a, janelas.pendenciaJanelaDias, instante),
+        );
+      }
       return {
         total: agrupadas.dentroDaJanela,
         // Contam ATUALIZAÇÕES não vistas, não linhas: o menu e o painel
@@ -322,8 +376,10 @@ export function rotasDeAcompanhamento(
         // quantas atualizações mais antigas não estão na lista.
         janelaDias: janelaDias ?? null,
         janelaPadraoDias: janelas.novidadesJanelaDias,
+        // O filtro "Pedem providência" diz de quantos dias é: um valor só, do servidor.
+        pendenciaJanelaDias: janelas.pendenciaJanelaDias,
         foraDaJanela: agrupadas.foraDaJanela,
-        grupos: agrupadas.grupos.map(grupoJson),
+        grupos: agrupadas.grupos.map((g) => grupoJson(g, infoPorNumero.get(g.numero))),
         novidades: agrupadas.grupos.flatMap((g) =>
           [g.maisRecente, ...g.anteriores].map(novidadeJson),
         ),

@@ -116,8 +116,12 @@ function montarPainel(){
       '<span class="montar-wrap"><button class="bt" id="pasta-montar">Montar pasta completa</button>'+
         '<span class="dica-montar" id="pasta-dica-montar" role="tooltip"></span></span>'+
       '<button class="bt bt2" id="pasta-tudo" disabled>Ver tudo seguido</button>'+
+      '<button class="bt bt2" id="pasta-baixadas-bt" aria-expanded="false" aria-controls="pasta-baixadas">Peças baixadas</button>'+
     '</div>'+
     '<div class="aviso" id="pasta-aviso" role="status" aria-live="polite"></div>'+
+    /* Histórico dos downloads avulsos deste processo (v0.37.0): fechado por padrão,
+       mora em scriptPastaBaixadas.ts e só lê o nosso servidor. */
+    '<section class="pbx" id="pasta-baixadas" aria-label="Peças baixadas deste processo" hidden></section>'+
     '<div class="pcal-caixa" id="pasta-cal-caixa"></div>'+
     '<div class="pcal-editor" id="pasta-cal-editor" hidden role="group" '+
       'aria-label="Informar o número do ato no Projudi"></div>'+
@@ -189,6 +193,9 @@ function ligarEventos(){
   $('pasta-fechar').addEventListener('click',fechar);
   $('pasta-montar').addEventListener('click',pedirMontagem);
   $('pasta-tudo').addEventListener('click',alternarTudo);
+  $('pasta-baixadas-bt').addEventListener('click',function(){
+    window.__pvPastaBaixadas.alternar(st.numero,this,$('pasta-baixadas'));
+  });
   /* Escape fecha a dica sem tirar o foco do botão (WCAG 1.4.13); ela volta ao
      sair e entrar de novo. */
   var mw=document.querySelector('#pasta .montar-wrap');
@@ -1345,7 +1352,13 @@ function pularOcorrencia(d){
 }
 
 /* ---------- os ganchos ---------- */
+/* "Abrir pasta" na tabela de Atualizações (v0.37.0): a tabela pede, e a Pasta abre
+   quando a tela do processo termina de desenhar o botão dela. O pedido vale por
+   60 s e por UM processo — sem isso, abrir o processo outro dia abriria a Pasta sozinha. */
+var aberturaPedida=null;
+
 window.__pvPasta={
+  pedirAbertura:function(numero){aberturaPedida={n:soDigitos(numero),ate:Date.now()+60000}},
   /* Chamado pelo console depois de pintar o cartão das peças. Só liga o botão:
      nada é injetado na tela do processo. */
   aposDesenhar:function(numero){
@@ -1355,10 +1368,15 @@ window.__pvPasta={
       b.setAttribute('data-ligado','1');
       b.addEventListener('click',abrirPasta);
     }
+    if(aberturaPedida){
+      var pedida=aberturaPedida;aberturaPedida=null;
+      if(b&&pedida.n===soDigitos(numero)&&Date.now()<pedida.ate&&!st.aberta)abrirPasta();
+    }
     /* "Atualizar" recarregou as peças do processo: a Pasta aberta lê a lista nova. */
     if(st.aberta)recarregar();
   },
   trocouProcesso:function(numero){
+    if(aberturaPedida&&aberturaPedida.n!==soDigitos(numero))aberturaPedida=null;
     if(soDigitos(numero)!==soDigitos(st.numero))fechar();
   },
   fechar:fechar

@@ -168,3 +168,168 @@ describe('GET /v1/novidades — uma linha por processo, com janela', () => {
     expect(r.json().pendenciaJanelaDias).toBe(10);
   });
 });
+
+interface InfoDoProcessoJson {
+  tribunal: string | null;
+  classe: string | null;
+  partes: {
+    ativo: { nomes: string[]; total: number };
+    passivo: { nomes: string[]; total: number };
+  };
+  pedeProvidencia: boolean;
+  motivoProvidencia: string | null;
+}
+interface GrupoComProcesso {
+  numero: string;
+  processo: InfoDoProcessoJson | null;
+}
+
+describe('GET /v1/novidades — o que a tabela mostra do processo (v0.37.0)', () => {
+  let db: DatabaseSync;
+  let servidor: FastifyInstance;
+  let repo: RepositorioAcompanhamentosSqlite;
+
+  beforeEach(async () => {
+    db = abrirBanco(':memory:');
+    repo = new RepositorioAcompanhamentosSqlite(db);
+    const servico = new ServicoAcompanhamento({
+      repositorio: repo,
+      provider: new ProviderFalso({ nome: 'falso' }),
+      logger: loggerSilencioso,
+    });
+    servidor = Fastify();
+    servidor.decorateRequest('workspace', undefined);
+    // O workspace de cada chamada vem do cabeçalho de teste, como viria da chave.
+    servidor.addHook('onRequest', async (req) => {
+      req.workspace = String(req.headers['x-ws'] ?? WS);
+    });
+    await servidor.register(
+      rotasDeAcompanhamento(
+        servico,
+        { novidadesJanelaDias: 15, pendenciaJanelaDias: 10 },
+        () => AGORA,
+      ),
+    );
+  });
+  afterEach(async () => {
+    await servidor.close();
+    db.close();
+  });
+
+  const parte = (nome: string, polo: 'ATIVO' | 'PASSIVO') => ({
+    nome,
+    polo,
+    tipoPessoa: 'DESCONHECIDO' as const,
+    advogados: [],
+  });
+
+  async function semear(
+    ws: string,
+    numero: string,
+    movs: Movimentacao[],
+    partes: ReturnType<typeof parte>[] = [],
+    classe: string | null = 'Procedimento Comum Cível',
+  ): Promise<void> {
+    const digitos = NumeroCNJ.criar(numero).digitos;
+    await repo.acompanhar(ws, digitos);
+    await repo.registrarSincronizacao(
+      ws,
+      digitos,
+      new Processo({
+        numero: NumeroCNJ.criar(numero),
+        tribunal: 'TJSP',
+        ...(classe ? { classe } : {}),
+        partes,
+        movimentacoes: movs,
+        procedencia: { provider: 'teste', consultadoEm: AGORA, deCache: false },
+      }),
+      movs,
+    );
+    db.prepare('UPDATE novidades SET detectada_em = data').run();
+  }
+
+  async function ler(
+    ws: string,
+  ): Promise<{ grupos: GrupoComProcesso[]; pendenciaJanelaDias: number }> {
+    const r = await servidor.inject({
+      method: 'GET',
+      url: '/v1/novidades',
+      headers: { 'x-ws': ws },
+    });
+    expect(r.statusCode).toBe(200);
+    return r.json();
+  }
+
+  it('entrega tribunal, classe e partes do retrato já guardado, por polo', async () => {
+    await semear(
+      WS,
+      NUMERO_TJSP_A,
+      [mov(dia(1), 'Juntada')],
+      [parte('Autora Sintética', 'ATIVO'), parte('Empresa Fictícia Ltda', 'PASSIVO')],
+    );
+    const r = await ler(WS);
+    expect(r.grupos[0]?.processo).toMatchObject({
+      tribunal: 'TJSP',
+      classe: 'Procedimento Comum Cível',
+      partes: {
+        ativo: { nomes: ['Autora Sintética'], total: 1 },
+        passivo: { nomes: ['Empresa Fictícia Ltda'], total: 1 },
+      },
+    });
+    expect(r.pendenciaJanelaDias).toBe(10);
+  });
+
+  it('fonte sem partes nem classe devolve vazio — nada é deduzido', async () => {
+    await semear(WS, NUMERO_TJSP_A, [mov(dia(1), 'Juntada')], [], null);
+    const p = (await ler(WS)).grupos[0]?.processo;
+    expect(p?.classe).toBeNull();
+    expect(p?.partes.ativo).toEqual({ nomes: [], total: 0 });
+    expect(p?.partes.passivo).toEqual({ nomes: [], total: 0 });
+  });
+
+  it('corta a lista de nomes no teto e diz o total real', async () => {
+    const muitas = Array.from({ length: 30 }, (_, i) => parte(`Parte ${i}`, 'ATIVO'));
+    await semear(WS, NUMERO_TJSP_A, [mov(dia(1), 'Juntada')], muitas);
+    const ativo = (await ler(WS)).grupos[0]?.processo?.partes.ativo;
+    expect(ativo?.total).toBe(30);
+    expect(ativo?.nomes).toHaveLength(20);
+  });
+
+  it('"pede providência" é a regra do selo da carteira: ato recente que exige ação, dentro da janela de 10 dias', async () => {
+    const intimacao = 'Intime-se a parte autora para manifestar-se no prazo de 5 dias.';
+    await semear(WS, NUMERO_TJSP_A, [mov(dia(2), 'Despacho', intimacao)]);
+    await semear(WS, NUMERO_TJSP_B, [mov(dia(14), 'Despacho', intimacao)]);
+    const grupos = (await ler(WS)).grupos;
+    const a = grupos.find((g) => g.numero === NumeroCNJ.criar(NUMERO_TJSP_A).digitos);
+    const b = grupos.find((g) => g.numero === NumeroCNJ.criar(NUMERO_TJSP_B).digitos);
+    expect(a?.processo?.pedeProvidencia).toBe(true);
+    expect(a?.processo?.motivoProvidencia).toContain('nos últimos 10 dias');
+    // O mesmo ato, fora da janela de pendência: não marca (a marca da linha do tempo continua).
+    expect(b?.processo?.pedeProvidencia).toBe(false);
+    expect(b?.processo?.motivoProvidencia).toBeNull();
+  });
+
+  it('isolamento: partes, classe e estado do processo de outro workspace nunca aparecem', async () => {
+    await semear(
+      'ws-a',
+      NUMERO_TJSP_A,
+      [mov(dia(1), 'Juntada')],
+      [parte('Parte do A', 'ATIVO')],
+    );
+    await semear(
+      'ws-b',
+      NUMERO_TJSP_A,
+      [mov(dia(1), 'Juntada')],
+      [parte('Parte do B', 'ATIVO')],
+      'Classe do B',
+    );
+    const a = await ler('ws-a');
+    const b = await ler('ws-b');
+    expect(JSON.stringify(a)).not.toContain('Parte do B');
+    expect(JSON.stringify(a)).not.toContain('Classe do B');
+    expect(JSON.stringify(b)).not.toContain('Parte do A');
+    expect(b.grupos[0]?.processo?.classe).toBe('Classe do B');
+    // Um workspace sem nenhum acompanhamento recebe tela vazia, não a carteira alheia.
+    expect((await ler('ws-c')).grupos).toEqual([]);
+  });
+});

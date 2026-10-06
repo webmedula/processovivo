@@ -9,6 +9,76 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.37.0] — 2026-10-06
+
+A página inicial (Atualizações) deixa de ser um painel de cartões com uma coluna de
+peças e passa a ser uma **tabela de últimas atualizações, uma linha por processo**,
+no estilo de uma lista de comunicações de tribunal: larga, legível, com filtros que
+contam e paginação.
+
+### Alterado
+
+- **Sai o painel de quatro cartões** ("Processos ativos", "Pedem providência",
+  "Novidades não lidas", "Peças baixadas hoje") **e a coluna "Peças baixadas"**. A
+  página fica: título e situação da sincronização (inalterados), barra de filtros,
+  tabela e paginação. A tabela usa toda a largura disponível.
+- **Os cartões viram filtros com contador**, sobre a base já escolhida (período +
+  tribunal): Situação — "Todas (N)", "Não lidas (N)" e "Pedem providência (N)". Os
+  números contam **processos**, não atualizações. "Pedem providência" usa a MESMA
+  regra e a mesma janela de 10 dias do selo da carteira e do cartão antigo
+  (`estadoDaPasta`); o texto nunca fala em prazo. Ao filtrar, a tela diz "Mostrando
+  X de Y processos" e oferece "Limpar filtros"; a mensagem sobre atualizações mais
+  antigas que a janela de 15 dias ("N … não mostradas · Ver todas") continua.
+- **Tabela de verdade** (`<table>`, `<th scope="col">`, `caption`): Processo (número
+  CNJ monoespaçado, link, botão copiar com confirmação em região `aria-live`, sem
+  `alert`), Partes (polo ativo × passivo, até 2 linhas, texto completo no tooltip),
+  Atualização (rótulo + trecho curto de 220 caracteres, regra da 0.35.1), Tribunal,
+  Classe, **Data do ato** e **Detectado** (o "detectado há N dias" da 0.35.2) em
+  colunas separadas e rotuladas, Situação (selos "Não lida" e "Pede providência") e
+  Ações (abrir processo, abrir Pasta digital, "+N anteriores").
+- **"+N anteriores" expande na própria linha** (`aria-expanded`/`aria-controls`),
+  em lotes de 20 com "Mostrar mais 20" e sempre "mostrando X de N" — um processo com
+  300 atualizações continua sendo uma linha. A regra de agrupamento, a janela de 15
+  dias e a marca "há anterior que pede providência" não mudaram.
+- **Ordenação por cabeçalho** (Processo, Tribunal, Data do ato, Detectado; `aria-sort`;
+  1º clique ordena, 2º inverte, 3º volta à ordem de chegada — a ordem atual da página
+  continua sendo o padrão) e **paginação** (10, 25 ou 50 por página; "X–Y de Z
+  processos"; primeira, anterior, próxima, última). Só ordenam, nunca escondem. A
+  escolha vale só na sessão da página (nada em `localStorage`).
+- **Layout:** cabeçalho fixo ao rolar; sem rolagem horizontal em 1920, 1366, 1280,
+  1024, 768 e 390 px. Abaixo de 1024 px cada processo vira um bloco empilhado, com
+  rótulos e alvos de toque de 44 px, e um seletor "Ordenar por" no lugar dos
+  cabeçalhos. De 1024 a 1279 px a coluna Classe vira uma linha sob o Tribunal (a
+  lateral de 256 px come a largura). Temas claro e escuro, foco visível,
+  `prefers-reduced-motion`, axe sem violações. O texto de apoio da tela usa
+  `--tinta2` (o `--tinta3` global mede 4,2:1 sobre o fundo claro).
+- **Estados:** sem processos acompanhados ("Nenhum processo acompanhado ainda" +
+  "Buscar processo"), sem resultado no filtro (quantos existem sem filtro + "Limpar
+  filtros"), carregando (esqueleto) e erro ("Tentar de novo").
+- **"Abrir pasta"** na linha abre o processo e já abre a Pasta digital (pedido de uma
+  vez só, com validade de 60 s e por processo).
+
+### Adicionado
+
+- **Histórico de peças baixadas dentro da Pasta digital:** botão "Peças baixadas" no
+  topo da Pasta abre uma gaveta com, só do processo aberto, o rótulo, o tamanho, a
+  data e hora do download e "há N dias". Lê `GET /v1/pecas-baixadas?numero=` (já
+  existia: isolado por workspace e por processo, só metadado). A gaveta diz que o
+  arquivo não fica guardado ali — é o registro dos downloads avulsos feitos pela linha
+  do tempo — e não oferece baixar de novo. Não consulta o tribunal.
+- **`GET /v1/novidades` devolve, por processo (`grupos[].processo`):** tribunal,
+  classe, partes por polo (nomes, até 20 por polo, com o total), `pedeProvidencia` e o
+  motivo — tudo do retrato que o acompanhamento já guarda, sem consulta nova ao
+  tribunal e sem migração. Mais `pendenciaJanelaDias` na resposta, para o filtro
+  dizer de quantos dias é. Partes e classe são o que a fonte entregou (DJEN e
+  DataJud); processo que ainda não sincronizou, ou fonte que não sabe, mostra "—".
+
+### Removido
+
+- Da página inicial: os quatro cartões e a coluna "Peças baixadas" (o histórico mudou
+  para a Pasta). `GET /v1/painel` continua devolvendo `cards` e `pecasBaixadas`
+  (a tela deixou de usá-los; remover é decisão à parte), e nenhum dado foi apagado.
+
 ## [0.36.0] — 2026-10-06
 
 A lista da Pasta digital passa a mostrar **todas as movimentações** do processo, não

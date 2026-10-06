@@ -903,12 +903,48 @@ Não são detalhes — moldam o código.
   cortou (`ui/trechoDeTexto.ts`, função pura injetada no console por
   `toString()`). Só a exibição encurta; dado e API seguem inteiros e nenhuma
   atualização some.
-- **Atualizações: uma linha por processo, janela de 15 dias** (v0.32.1,
+- **Atualizações: uma linha por processo, janela de 15 dias** (v0.32.1; desde a v0.37.0 a linha é uma linha de TABELA, ver a regra da v0.37.0,
   `NOVIDADES_JANELA_DIAS`). "+N anteriores" expande na própria linha, a tela diz
   quantas atualizações mais antigas ficaram de fora e oferece "Todas". A janela
   decide pela hora em que o sistema PERCEBEU (`detectadaEm`), nunca pela data do
   ato — a primeira varredura de um processo antigo detecta atos de meses atrás.
   `exigeAcao` só marca; o único critério que tira atualização da tela é o tempo.
+- **A página inicial é uma TABELA, uma linha por processo; filtros com contador
+  substituem os cartões; o histórico de peças baixadas vive na Pasta** (v0.37.0).
+  Saíram os quatro cartões e a coluna "Peças baixadas" (a tela não usa mais
+  `cards` nem `pecasBaixadas` de `GET /v1/painel`; a rota segue devolvendo os dois,
+  e nenhum dado foi apagado). Regras que ficam: (1) os filtros de Situação contam
+  **processos**, sobre a base já escolhida (período + tribunal) — "Não lidas" é
+  processo com atualização ainda não vista; "Pedem providência" é `estadoDaPasta ===
+  'PROVIDENCIA'`, a MESMA regra e a MESMA janela do selo da carteira (o servidor a
+  entrega pronta em `grupos[].processo.pedeProvidencia` e a janela em
+  `pendenciaJanelaDias`; a tela nunca escreve o número), e o texto do filtro nunca
+  fala em prazo; (2) a tela só ordena, filtra por escolha da pessoa e pagina, e
+  **diz quantos ficaram de fora** ("Mostrando X de Y processos", "N atualizações mais
+  antigas não mostradas · Ver todas", "mostrando X de N" nas anteriores) — `exigeAcao`
+  continua só marcando; (3) **Partes e Classe vêm do retrato que o acompanhamento já
+  guarda** (`processo.partes` do DJEN, `processo.classe` do DataJud): sem consulta nova
+  ao tribunal, sem migração, sem dedução do texto de peça — fonte que não trouxe
+  mostra "—", e um polo só mostra "A × —", nunca "A × B" inventado; (4) "Data do ato"
+  e "Detectado" são colunas separadas e rotuladas, e a janela de 15 dias decide por
+  `detectadaEm`; (5) **o estado dos filtros, da página e da ordenação vive na página
+  (variável do módulo), nunca em `localStorage`** — recarregar volta ao padrão;
+  (6) as regras puras (contar, filtrar, ordenar, paginar, fatiar as anteriores, texto
+  das partes) moram em `ui/tabelaAtualizacoes.ts` e vão ao navegador por `toString()`,
+  como `trechoDeTexto`: o teste exercita a MESMA função — por isso cada uma é
+  autocontida; (7) `script.ts` não cresceu (encolheu): a tela mora em
+  `ui/atualizacoes.ts` + `ui/estilosAtualizacoes.ts`. Em 1024–1279 px a lateral de
+  256 px come a largura e a coluna Classe vira linha sob o Tribunal; abaixo de 1024
+  cada processo é um bloco empilhado. O texto de apoio da tela usa `--tinta2` (o
+  `--tinta3` global mede 4,2:1). **Histórico de peças baixadas na Pasta:** botão
+  "Peças baixadas" abre uma gaveta (`ui/scriptPastaBaixadas.ts`) com rótulo, tamanho,
+  data e hora e "há N dias", SÓ do processo aberto (`GET /v1/pecas-baixadas?numero=`,
+  isolado por workspace e por processo, só metadado). É o registro dos downloads
+  AVULSOS pela linha do tempo — a peça aberta pela Pasta tem o estado dela na lista —,
+  diz que o arquivo não fica guardado ali e não oferece baixar de novo (seria outra
+  consulta com a senha do advogado). "Abrir pasta" na tabela pede a Pasta
+  (`pedirAbertura`, validade de 60 s e um processo só) e a Pasta abre quando a tela
+  do processo desenha o botão dela.
 - **Encerramento se decide pelo ato MAIS RECENTE, nunca pelo histórico.**
   Processo arquivado e depois desarquivado tem os dois atos nos autos; procurar
   "existe arquivamento" marcaria como encerrada a pasta que voltou a correr — e
@@ -1241,8 +1277,8 @@ teste e carência** (v0.28.0), **visual novo a partir do logo** (v0.29.0),
 **calendário: detecção, agenda, tela e feed ICS** (v0.32.0),
 **ajustes dos advogados: Atualizações por processo, peças no topo, providência em 10 dias** (v0.32.1),
 **Pasta digital: backend (v0.33.0) e tela (v0.33.1) — peça aberta ao clique, guarda por peça, montar pasta completa, baixar marcadas**,
-**ato (movimentação) de cada peça na lista da Pasta, com descrição** (v0.33.2) **e o número da movimentação calculado pela posição do ato, com aviso de atos bloqueados** (v0.34.0; a 0.33.3 havia removido o número errado da 0.33.2), **calibração do número com o Projudi feita pelo advogado: exato quando provado, faixa ou estimado quando não** (v0.35.0), **página inicial: Últimas atualizações mostra só o trecho do texto e o trilho de peças baixadas não estoura a largura** (v0.35.1), **Pasta: número da movimentação no lugar do índice; página inicial: "detectado há N dias" e cartão "pede providência"** (v0.35.2), **Pasta: lista em altura total com avisos compactados** (v0.35.3), **Pasta: todas as movimentações na lista, inclusive as sem peça, com lacuna de numeração provada e lista mais larga** (v0.36.0),
-Dockerfile multi-stage, CI, 1281 testes.
+**ato (movimentação) de cada peça na lista da Pasta, com descrição** (v0.33.2) **e o número da movimentação calculado pela posição do ato, com aviso de atos bloqueados** (v0.34.0; a 0.33.3 havia removido o número errado da 0.33.2), **calibração do número com o Projudi feita pelo advogado: exato quando provado, faixa ou estimado quando não** (v0.35.0), **página inicial: Últimas atualizações mostra só o trecho do texto e o trilho de peças baixadas não estoura a largura** (v0.35.1), **Pasta: número da movimentação no lugar do índice; página inicial: "detectado há N dias" e cartão "pede providência"** (v0.35.2), **Pasta: lista em altura total com avisos compactados** (v0.35.3), **Pasta: todas as movimentações na lista, inclusive as sem peça, com lacuna de numeração provada e lista mais larga** (v0.36.0), **página inicial: tabela de últimas atualizações, uma linha por processo, com filtros que contam no lugar dos cartões; histórico de peças baixadas dentro da Pasta** (v0.37.0),
+Dockerfile multi-stage, CI, 1367 testes.
 
 **Pasta digital (v0.33.0, backend):** `GET /v1/processos/:numero/pasta` (lista +
 estado de cada peça + intervalos de página + totais SEM filtro + procedência
@@ -1341,7 +1377,7 @@ continuam apontando para o CyberPanel, que é onde mora a caixa
 próprio convivem sem conflito porque os registros do provedor ficam todos em
 subdomínios.
 
-**Painel (v0.26.0):** data por extenso, hora e a frase da última verificação no
+**Painel (v0.26.0; os cartões e o trilho saíram na v0.37.0 — ver a regra da página inicial em §8):** data por extenso, hora e a frase da última verificação no
 topo; três cards (ativos, pedem providência, peças baixadas hoje); e um trilho à
 direita com o que já foi puxado do tribunal, montado só quando tem conteúdo. O
 registro de downloads que sustenta isso também marca "já baixado" na régua, o
