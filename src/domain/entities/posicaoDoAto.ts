@@ -25,6 +25,12 @@ export interface PosicoesDosAtos {
    * data numa listagem nova invalida a âncora (v0.35.0).
    */
   readonly datas: readonly Date[];
+  /**
+   * Posição de CADA movimento da entrada, pelo índice dela (v0.36.0): é o que
+   * deixa a lista da Pasta mostrar também os atos sem identificador e os de
+   * identificador repetido, que `porIdentificador` não alcança.
+   */
+  readonly posicaoPorIndice: readonly number[];
 }
 
 export function calcularPosicoesDosAtos(
@@ -58,5 +64,9 @@ export function calcularPosicoesDosAtos(
   // Identificador repetido é vínculo ambíguo: sem posição, como já era sem ato.
   for (const id of repetidos) porIdentificador.delete(id);
   const datas = itens.map((i) => new Date(i.instante));
-  return { total: itens.length, porIdentificador, datas };
+  const posicaoPorIndice: number[] = new Array<number>(itens.length).fill(0);
+  itens.forEach((item, i) => {
+    posicaoPorIndice[item.indice] = i + 1;
+  });
+  return { total: itens.length, porIdentificador, datas, posicaoPorIndice };
 }

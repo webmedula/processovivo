@@ -93,7 +93,7 @@ function htmlCelula(p){
   var n=numeroVisivel(p);
   return '<span class="ord'+(n?' '+n.tipo:' sem')+'"'+(n?' title="'+esc(explicacao(n))+'"':'')+'>'+
     '<span aria-hidden="true">'+esc(curtoDe(p))+'</span>'+
-    '<span class="pcal-sr">'+esc(nomeAcessivel(p))+'.</span></span>';
+    '<span class="pcal-sr">'+esc(nomeAcessivel(p)+(p.semPeca?', sem peça':''))+'.</span></span>';
 }
 /* O grau de certeza ao lado do rótulo, na linha de metadados (o número em si já
    está na coluna, não se repete). Faixa e estimado dizem a palavra: não dependem
@@ -138,7 +138,8 @@ function combina(p,numero){
   return n.n===numero;
 }
 function haNumeros(visao){
-  return ((visao&&visao.pecas)||[]).some(function(p){return numeroDe(p)!==null});
+  var atos=((visao&&visao.atosSemPeca)||[]).length>0;
+  return atos||((visao&&visao.pecas)||[]).some(function(p){return numeroDe(p)!==null});
 }
 
 /* O aviso do topo. Sem calibração: o texto da 0.34.0. Calibrada: o que as

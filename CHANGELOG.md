@@ -9,6 +9,55 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.36.0] — 2026-10-06
+
+A lista da Pasta digital passa a mostrar **todas as movimentações** do processo, não
+só as que têm peça. Num processo de 386 movimentações no Projudi (385 recebidas) a
+lista tinha 279 linhas e a numeração parecia pular (386 → 382): atos sem documento
+— conclusos, intimações, certidões — ficavam escondidos sem aviso.
+
+### Adicionado
+
+- **Uma linha por movimentação.** A movimentação sem peça é igual à de peça — número
+  (exato / faixa / estimado / posição, "✓ conferido", "informar nº"), data e
+  descrição —, com o selo "Sem peça" no lugar do estado e sem caixa de seleção.
+  Atos com várias peças seguem em várias linhas, com o mesmo número. A ordem é a da
+  lista de antes; o ato sem peça entra na posição cronológica dele.
+- **Clique em movimentação sem peça:** cabeçalho "Mov. N · Movimentação" e a
+  mensagem "Esta movimentação não tem peça (documento) anexada." Nenhuma consulta
+  ao tribunal; a calibração do número continua disponível.
+- **Contagem e filtros que dizem quantos são de cada tipo:** "X de M linhas · P
+  peças · S sem peça"; chip "Sem peça (N)" (filtra); "só disponíveis" esconde as
+  sem peça e informa quantas; a busca casa a descrição e o número delas. Todas,
+  Nenhuma, Baixar PDF e Montar pasta completa continuam só sobre peças.
+- **Lacuna de numeração, só quando provada:** entre dois atos vizinhos com número
+  EXATO e salto maior que 1, uma linha discreta "nº 368 · ato não recebido do
+  tribunal (provavelmente bloqueado)". Nunca em faixa ou estimado; não é linha
+  (não conta, não abre) e some quando há filtro, dizendo quantas ocultou.
+- **Listagem anterior à 0.36.0:** aviso "Esta lista tem só as peças" com o botão
+  "Atualizar as peças" (o fluxo de sempre), sem erro e sem tela vazia.
+- **Dados:** coluna `pasta_listagens.atos` (migração explícita, sem retrocarga):
+  posição, data/hora, descrição e complemento de cada ato, gravados da mesma
+  resposta do MNI. Só metadado do ato; mesmo workspace, mesma linha e mesma
+  política de segredo da listagem. `GET …/pasta` ganha `todasAsMovimentacoes`,
+  `atosSemPeca`, `lacunas`, `linhas` e `totais.atosSemPeca`.
+
+### Alterado
+
+- **Lista mais larga:** de 400 px fixos para `clamp(440px, 32vw, 520px)` (440 em
+  1366 px, 520 de 1625 px em diante); o divisor arrastável continua. O visualizador
+  mantém no mínimo 320 px. Sem rolagem horizontal em 1366, 1280, 1024, 768 e 390.
+- **Descrição em até 2 linhas** (texto inteiro no mouse, no foco da linha e no
+  cabeçalho do visualizador) e **placeholder da busca** encurtado para "Buscar
+  rótulo, movimentação ou nº", sem corte em 1366 px.
+
+### Não mudou
+
+Cálculo da numeração (0.35.0), fila, limitador, cache de peças, isolamento por
+workspace, PDF montado, leitor, calendário e planos.
+
+---
+
 ## [0.35.3] — 2026-10-06
 
 Layout da Pasta digital, pedido pelo dono depois de usar a Pasta com um processo

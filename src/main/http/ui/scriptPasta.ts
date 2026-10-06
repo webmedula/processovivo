@@ -50,7 +50,7 @@ var MAX_DESENHADAS=24;
 var st=novoEstado('');
 function novoEstado(numero){
   return {numero:numero,visao:null,aberta:false,sel:{},foco:null,peca:null,modo:'peca',
-    busca:'',soDisp:false,clique:null,espera:null,timer:null,erroPoll:0,erroVisao:null,
+    busca:'',soDisp:false,soSem:false,linhas:[],porId:{},clique:null,espera:null,timer:null,erroPoll:0,erroVisao:null,
     carga:0,pdf:null,lib:null,pdfDe:'',zoom:'largura',escala:1,larguraBase:0,alturaBase:0,
     desenhadas:[],observador:null,pagina:1,textos:{},achadas:{id:0,termo:'',paginas:[],i:-1},
     baixando:null,previa:null,msgBaixar:'',confirmouMontar:false,montando:false,
@@ -88,11 +88,9 @@ function normal(t){
   return String(t||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
 }
 function n_pecas(n){return n+' '+(n===1?'peça':'peças')}
-function pecaDe(id){
-  var l=(st.visao&&st.visao.pecas)||[];
-  for(var i=0;i<l.length;i++){if(l[i].pecaId===id)return l[i]}
-  return null;
-}
+/* A linha pelo id: peça OU movimentação sem peça (v0.36.0). Só as peças entram em
+   seleção, pedido e PDF — quem precisa disso confere \`semPeca\`. */
+function pecaDe(id){return st.porId[id]||null}
 function ativoJob(j){
   return !!j&&(j.estado==='na_fila'||j.estado==='baixando'||j.estado==='montando'||
     j.estado==='pausado_por_bloqueio');
@@ -124,11 +122,11 @@ function montarPainel(){
     '<div class="pcal-editor" id="pasta-cal-editor" hidden role="group" '+
       'aria-label="Informar o número do ato no Projudi"></div>'+
     '<div class="corpo">'+
-      '<section class="lista" id="pasta-lista" aria-label="Lista de peças">'+
+      '<section class="lista" id="pasta-lista" aria-label="Lista de peças e movimentações">'+
         '<div class="barra">'+
           '<div class="filtro-linha">'+
-            '<input id="pasta-busca" type="search" placeholder="Buscar por rótulo, movimentação ou nº" '+
-              'aria-label="Buscar peça pelo rótulo, pela descrição ou pelo número da movimentação" '+
+            '<input id="pasta-busca" type="search" placeholder="Buscar rótulo, movimentação ou nº" '+
+              'aria-label="Buscar pelo rótulo da peça, pela descrição ou pelo número da movimentação" '+
               'autocomplete="off">'+
             '<label class="so-disp"><input type="checkbox" id="pasta-so-disp"> só disponíveis</label>'+
           '</div>'+
@@ -138,13 +136,13 @@ function montarPainel(){
               '<button class="bt bt2" id="pasta-nenhuma">Nenhuma</button>'+
               '<button class="bt" id="pasta-baixar-pdf" disabled>Baixar PDF</button>'+
             '</div>'+
-            '<div class="chips" id="pasta-atalhos" role="group" aria-label="Marcar por tipo"></div>'+
+            '<div class="chips" id="pasta-atalhos" role="group" aria-label="Marcar peças por tipo ou ver só as movimentações sem peça"></div>'+
             '<div class="contagem" id="pasta-contagem" aria-live="polite"></div>'+
           '</div>'+
         '</div>'+
         '<div id="pasta-baixar-caixa"></div>'+
         '<div class="itens" id="pasta-itens" role="listbox" aria-multiselectable="true" '+
-          'aria-label="Peças, na ordem dos autos"></div>'+
+          'aria-label="Peças e movimentações, na ordem dos autos"></div>'+
       '</section>'+
       '<div class="divisor" id="pasta-divisor" role="separator" aria-orientation="vertical" '+
         'tabindex="0" aria-label="Ajustar a largura da lista" title="Arraste para ajustar"></div>'+
@@ -208,7 +206,7 @@ function ligarEventos(){
      evento: com a lista congelada, mudar o filtro depois de desenhar mandaria
      o conjunto antigo. */
   $('pasta-todas').addEventListener('click',function(){
-    visiveis().forEach(function(p){if(p.estado!=='sigilo')st.sel[p.pecaId]=1});
+    visiveis().forEach(function(p){if(p.estado!=='sigilo'&&!p.semPeca)st.sel[p.pecaId]=1});
     desenharLista();
   });
   $('pasta-nenhuma').addEventListener('click',function(){st.sel={};desenharLista()});
@@ -331,8 +329,34 @@ function falhaDaListagem(e){
   if(b)b.addEventListener('click',function(){carregarListagem(true)});
 }
 
+/* A lista inteira (v0.36.0): as linhas de peça, as movimentações sem peça e os
+   marcadores de lacuna, na ordem que o servidor deu. Atos sem peça viram linhas
+   "de mentira" com o mesmo formato (\`movimentacao\`, \`data\`, \`rotulo\`), de modo que o
+   número, o selo e o cabeçalho do visualizador são os mesmos código das peças.
+   Nada aqui consulta o tribunal. */
+function montarLinhas(r){
+  var porId={}, atos={}, lac={}, linhas=[];
+  (r.pecas||[]).forEach(function(p){porId[p.pecaId]=p});
+  (r.atosSemPeca||[]).forEach(function(a){
+    var l={pecaId:'ato-'+a.posicao,semPeca:true,incerto:!!a.vinculoIncerto,rotulo:'Movimentação',
+      data:a.data,estado:'sem_peca',
+      movimentacao:{posicao:a.posicao,numero:a.numero,data:a.data,descricao:a.descricao,
+        complemento:a.complemento}};
+    atos[a.posicao]=l;porId[l.pecaId]=l;
+  });
+  (r.lacunas||[]).forEach(function(l){lac[l.depoisDaPosicao]=l});
+  (r.linhas||[]).forEach(function(l){
+    if(l.tipo==='peca'&&porId[l.pecaId])linhas.push(porId[l.pecaId]);
+    else if(l.tipo==='ato'&&atos[l.posicao])linhas.push(atos[l.posicao]);
+    else if(l.tipo==='lacuna'&&lac[l.depoisDaPosicao])
+      linhas.push({lacuna:true,de:lac[l.depoisDaPosicao].de,ate:lac[l.depoisDaPosicao].ate});
+  });
+  /* Resposta sem a lista nova: só as peças, como era. */
+  if(!linhas.length)linhas=(r.pecas||[]).slice();
+  st.porId=porId;st.linhas=linhas;
+}
 function receber(r){
-  st.visao=r;st.erroPoll=0;
+  st.visao=r;st.erroPoll=0;montarLinhas(r);
   /* Marcas de peças que sumiram da lista (ou ficaram sob sigilo) não ficam. */
   Object.keys(st.sel).forEach(function(id){
     var p=pecaDe(id); if(!p||p.estado==='sigilo')delete st.sel[id];
@@ -387,17 +411,24 @@ function numeroBuscado(termo){
   return num?Number(num[1]):null;
 }
 function combinaComBusca(p,termo){
-  if(normal(p.rotulo).indexOf(termo)>=0)return true;
+  /* O rótulo "Movimentação" das linhas sem peça casaria com qualquer busca por
+     "movimentação": para elas só valem a descrição e o número. */
+  if(!p.semPeca&&normal(p.rotulo).indexOf(termo)>=0)return true;
   var m=p.movimentacao;
   if(!m)return false;
   if(normal(textoDaMov(p)).indexOf(termo)>=0)return true;
   var buscado=numeroBuscado(termo);
   return buscado!==null&&cal.combina(p,buscado);
 }
+/* As linhas que passam pelos filtros: peças e movimentações sem peça (os
+   marcadores de lacuna não contam como linha e só aparecem sem filtro). */
+function todasAsLinhas(){return st.linhas.filter(function(l){return !l.lacuna})}
+function filtrando(){return !!(normal(st.busca).trim()||st.soDisp||st.soSem)}
 function visiveis(){
   var termo=normal(st.busca).trim();
-  return ((st.visao&&st.visao.pecas)||[]).filter(function(p){
+  return todasAsLinhas().filter(function(p){
     if(st.soDisp&&p.estado!=='disponivel')return false;
+    if(st.soSem&&!p.semPeca)return false;
     if(termo&&!combinaComBusca(p,termo))return false;
     return true;
   });
@@ -407,6 +438,7 @@ function marcadas(){
     return st.sel[p.pecaId]&&p.estado!=='sigilo'}).map(function(p){return p.pecaId});
 }
 function rotuloDoEstado(p){
+  if(p.semPeca)return p.incerto?{t:'Peça não vinculada',c:'neutro'}:{t:'Sem peça',c:'neutro'};
   if(p.estado==='nao_obtida'){
     if(p.motivo==='bloqueio_do_tribunal')return{t:'Pausada pelo tribunal',c:'pr'};
     if(p.motivo==='sem_habilitacao')return{t:'Sem habilitação',c:'al'};
@@ -440,15 +472,29 @@ function movHtml(p){
     '</span>';
 }
 
+/* O marcador de lacuna (v0.36.0): um número que o Projudi tem e o MNI não
+   entregou, PROVADO pelos números que o advogado informou. Não é linha de dado:
+   não tem seleção nem abre nada, e "provavelmente" porque quem decide o que é
+   um ato bloqueado é o tribunal, não nós. */
+function lacunaHtml(l){
+  var um=l.de===l.ate;
+  var t=(um?'nº '+l.de:'nºs '+l.de+'–'+l.ate)+' · '+(um?'ato não recebido do tribunal '+
+    '(provavelmente bloqueado)':'atos não recebidos do tribunal (provavelmente bloqueados)');
+  return '<div class="lacuna" role="option" aria-disabled="true" aria-selected="false">'+esc(t)+'</div>';
+}
 function linhaHtml(p){
+  if(p.lacuna)return lacunaHtml(p);
   var e=rotuloDoEstado(p), marcada=!!st.sel[p.pecaId], sig=p.estado==='sigilo';
   var atual=st.peca===p.pecaId;
   var pg=paginasDe(p);
   return '<div class="linha'+(atual?' atual':'')+(marcada?' marcada':'')+'" role="option" '+
     'id="pf-'+esc(p.pecaId)+'" data-id="'+esc(p.pecaId)+'" tabindex="'+
-    (st.foco===p.pecaId?'0':'-1')+'" aria-selected="'+(marcada?'true':'false')+'"'+
+    (st.foco===p.pecaId?'0':'-1')+'"'+(p.semPeca?' data-sem-peca="1"':
+      ' aria-selected="'+(marcada?'true':'false')+'"')+
     (atual?' aria-current="true"':'')+(sig?' aria-disabled="true"':'')+'>'+
-    '<span class="cx" aria-hidden="true" data-cx="1"></span>'+
+    /* Movimentação sem peça não tem o que marcar: o espaço fica, a caixa não. */
+    (p.semPeca?'<span class="cxv" aria-hidden="true"></span>':
+      '<span class="cx" aria-hidden="true" data-cx="1"></span>')+
     cal.htmlCelula(p)+
     '<span class="rot" title="'+esc(p.rotulo)+'">'+esc(p.rotulo)+'</span>'+
     '<span class="meta"><span class="data">'+esc(pv().dt(p.data))+'</span>'+
@@ -458,24 +504,38 @@ function linhaHtml(p){
 
 function desenharLista(){
   var itens=$('pasta-itens'); if(!itens||!st.visao)return;
-  var v=visiveis(), total=st.visao.pecas.length;
+  var v=visiveis(), total=todasAsLinhas().length;
+  var nPecas=st.visao.pecas.length, nSem=total-nPecas;
+  var mostra={};v.forEach(function(p){mostra[p.pecaId]=1});
+  /* Marcador de lacuna só sem filtro: com filtro ele ficaria solto entre linhas
+     que não são as vizinhas dele. A contagem diz que ficou de fora. */
+  var lacunas=st.linhas.filter(function(l){return l.lacuna});
+  var itensDaTela=st.linhas.filter(function(l){
+    return l.lacuna?!filtrando():!!mostra[l.pecaId]});
   /* O foco e a rolagem sobrevivem ao redesenho: a lista é refeita a cada
      consulta de andamento, e perder o lugar a cada dois segundos tornaria
      impossível navegar por teclado. */
   var tinhaFoco=itens.contains(document.activeElement);
   var rolagem=itens.scrollTop;
   if(!st.foco||!v.some(function(p){return p.pecaId===st.foco}))st.foco=v.length?v[0].pecaId:null;
-  itens.innerHTML=v.length?v.map(linhaHtml).join(''):
-    '<div class="vazio-lista">'+(total?'Nenhuma peça combina com o filtro.':
+  itens.innerHTML=v.length?itensDaTela.map(linhaHtml).join(''):
+    '<div class="vazio-lista">'+(total?'Nenhuma linha combina com o filtro.':
       'O tribunal não listou nenhuma peça neste processo.')+'</div>';
   itens.scrollTop=rolagem;
   if(tinhaFoco&&st.foco){var f=$('pf-'+st.foco); if(f)f.focus({preventScroll:true})}
 
   var n=marcadas().length, ocultas=total-v.length;
-  $('pasta-contagem').innerHTML='<strong>'+n+'</strong> '+(n===1?'marcada':'marcadas')+' de '+
-    total+' · mostrando '+v.length+' de '+total+
-    (ocultas?' <span class="filtro-ativo">('+ocultas+' escondidas pelos filtros)</span>':'');
-  var sel=v.filter(function(p){return p.estado!=='sigilo'}).length;
+  /* "M" inclui as movimentações sem peça, e a conta diz de quantas de cada tipo. */
+  var ocLac=filtrando()?lacunas.length:0;
+  var escondidas=(ocultas?ocultas+' escondida'+(ocultas===1?'':'s'):'')+
+    (ocultas&&ocLac?' e ':'')+(ocLac?ocLac+' marcador'+(ocLac===1?'':'es')+' de ato não recebido':'');
+  $('pasta-contagem').innerHTML='<strong>'+n+'</strong> '+(n===1?'marcada':'marcadas')+
+    ' · mostrando '+v.length+' de '+total+' linhas · '+n_pecas(nPecas)+
+    /* Curto de propósito: a linha cabe em 440 px sem quebrar (a lista perderia uma linha). */
+    (st.visao.todasAsMovimentacoes?' · <span title="'+nSem+' movimentaç'+(nSem===1?'ão':'ões')+
+      ' sem peça (documento) anexada">'+nSem+' sem peça</span>':'')+
+    (escondidas?' <span class="filtro-ativo">('+escondidas+' pelos filtros)</span>':'');
+  var sel=v.filter(function(p){return p.estado!=='sigilo'&&!p.semPeca}).length;
   $('pasta-todas').textContent='Todas ('+sel+')';
   var bp=$('pasta-baixar-pdf');
   bp.textContent='Baixar PDF ('+n+')';
@@ -502,7 +562,13 @@ function desenharAtalhos(){
     h+='<button class="chip'+(todas?' on':'')+'" data-grupo="'+i+'" aria-pressed="'+
       (todas?'true':'false')+'">'+esc(g.rotulo)+' ('+g.ids.length+')</button>';
   });
+  /* "Sem peça (N)" não marca nada — não há o que baixar —, FILTRA a lista. */
+  var nSem=todasAsLinhas().filter(function(l){return l.semPeca}).length;
+  if(nSem)h+='<button class="chip'+(st.soSem?' on':'')+'" id="pasta-chip-sem" aria-pressed="'+
+    (st.soSem?'true':'false')+'">Sem peça ('+nSem+')</button>';
   el.innerHTML=h;
+  var cs=$('pasta-chip-sem');
+  if(cs)cs.addEventListener('click',function(){st.soSem=!st.soSem;desenharLista()});
   el.querySelectorAll('[data-grupo]').forEach(function(b){
     b.addEventListener('click',function(){
       var g=gs[Number(b.getAttribute('data-grupo'))]; if(!g)return;
@@ -529,7 +595,7 @@ function aoClicarNaLista(ev){
   abrirPeca(id,false);
 }
 function alternarMarca(id){
-  var p=pecaDe(id); if(!p||p.estado==='sigilo')return;
+  var p=pecaDe(id); if(!p||p.semPeca||p.estado==='sigilo')return;
   if(st.sel[id])delete st.sel[id]; else st.sel[id]=1;
   desenharLista();
 }
@@ -583,6 +649,13 @@ function desenharAviso(){
     h+='<div class="pausa"><strong>Processo em segredo de justiça.</strong> Nenhuma peça é '+
       'guardada aqui; baixe-as individualmente pela linha do tempo.</div>';
   }
+  if(!v.todasAsMovimentacoes&&v.listagem){
+    /* Listagem gravada antes da 0.36.0: tem só as peças. A lista não finge estar
+       completa, e o botão é o fluxo de sempre (a consulta completa ao tribunal). */
+    h+='<div class="proc" id="pasta-aviso-atos"><strong>Esta lista tem só as peças.</strong> '+
+      'Atualize as peças para carregar todas as movimentações do processo. '+
+      '<button class="bt bt2" id="pasta-atualizar-lista">Atualizar as peças</button></div>';
+  }
   if(haNumeros()&&typeof v.totalAtosRecebidos==='number'){
     /* Sempre que houver número na lista: sem este aviso o "mov. N" passaria por
        número do Projudi, e ele só é igual até o primeiro ato bloqueado. Com a
@@ -608,6 +681,8 @@ function desenharAviso(){
   }
   if(h!==st.ultimoAviso){
     st.ultimoAviso=h;el.innerHTML=h;
+    var au=$('pasta-atualizar-lista');
+    if(au)au.addEventListener('click',function(){carregarListagem(true)});
   }
   var tudo=$('pasta-tudo'), m=v.montagem;
   var pronto=!!m&&(m.estado==='pronto'||m.estado==='parcial');
@@ -738,6 +813,8 @@ function abrirPeca(id,imediato){
   if(st.clique&&st.clique.timer){clearTimeout(st.clique.timer);st.clique=null}
   if(st.modo==='tudo'&&p.intervalo){desenharLista();atualizarVisor();irParaPagina(p.intervalo.inicial);return}
   st.modo='peca';
+  /* Movimentação sem peça: só mostra o ato. Nenhum pedido, nenhuma espera. */
+  if(p.semPeca){desenharLista();atualizarVisor();return}
   if(p.estado==='disponivel'||p.estado==='sigilo'||p.estado==='na_fila'||p.estado==='baixando'){
     /* Já guardada, sigilosa, ou já na fila/no ar: não há o que pedir. Se já
        está esperando, a tela só passa a acompanhar. */
@@ -816,6 +893,13 @@ function atualizarVisor(){
     estadoDoVisor('<div class="vazio-visor">Escolha uma peça na lista. Só ela será pedida ao tribunal; '+
       'o resto da pasta não é baixado sem você pedir.</div>');
     return;
+  }
+  if(p.semPeca){
+    estadoDoVisor('<div class="vazio-visor">'+(p.incerto
+      ?'O tribunal repetiu o identificador desta movimentação, e não dá para dizer se ela '+
+        'tem peça. Confira as peças vizinhas na lista.'
+      :'Esta movimentação não tem peça (documento) anexada.')+'</div>');
+    ocultarPdf();return;
   }
   if(st.pedidoFalhou&&st.pedidoFalhou.id===p.pecaId&&p.estado!=='disponivel'){
     var e=st.pedidoFalhou.e;

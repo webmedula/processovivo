@@ -27,6 +27,16 @@ const pecaListadaSchema = z.object({
   sigilosa: z.boolean(),
 });
 
+/** Um ato da listagem como vai ao banco (v0.36.0): chaves curtas, ~150 bytes por ato. */
+const atoGuardadoSchema = z.object({
+  p: z.number().int().positive(),
+  d: z.string(),
+  t: z.string(),
+  c: z.string().optional(),
+  i: z.number().int().optional(),
+  v: z.literal(true).optional(),
+});
+
 interface LinhaListagem {
   numero: string;
   tribunal: string;
@@ -36,6 +46,7 @@ interface LinhaListagem {
   total_atos_recebidos: number | null;
   datas_dos_atos: string | null;
   ancoras_invalidadas: number | null;
+  atos: string | null;
 }
 
 interface LinhaPeca {
@@ -69,8 +80,8 @@ export class RepositorioDaPastaSqlite implements RepositorioDaPasta {
       .prepare(
         `INSERT INTO pasta_listagens
            (workspace, numero, tribunal, listada_em, processo_sigiloso, pecas,
-            total_atos_recebidos, datas_dos_atos, ancoras_invalidadas)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            total_atos_recebidos, datas_dos_atos, ancoras_invalidadas, atos)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (workspace, numero) DO UPDATE SET
            tribunal = excluded.tribunal,
            listada_em = excluded.listada_em,
@@ -78,7 +89,8 @@ export class RepositorioDaPastaSqlite implements RepositorioDaPasta {
            pecas = excluded.pecas,
            total_atos_recebidos = excluded.total_atos_recebidos,
            datas_dos_atos = excluded.datas_dos_atos,
-           ancoras_invalidadas = excluded.ancoras_invalidadas`,
+           ancoras_invalidadas = excluded.ancoras_invalidadas,
+           atos = excluded.atos`,
       )
       .run(
         workspace,
@@ -92,6 +104,18 @@ export class RepositorioDaPastaSqlite implements RepositorioDaPasta {
           ? JSON.stringify(l.datasDosAtos.map((d) => d.toISOString()))
           : null,
         l.ancorasInvalidadas ?? null,
+        l.atos
+          ? JSON.stringify(
+              l.atos.map((a) => ({
+                p: a.posicao,
+                d: a.data.toISOString(),
+                t: a.descricao,
+                ...(a.complemento !== undefined ? { c: a.complemento } : {}),
+                ...(a.identificador !== undefined ? { i: a.identificador } : {}),
+                ...(a.vinculoIncerto ? { v: true } : {}),
+              })),
+            )
+          : null,
       );
   }
 
@@ -102,7 +126,7 @@ export class RepositorioDaPastaSqlite implements RepositorioDaPasta {
     const linha = this.db
       .prepare(
         `SELECT numero, tribunal, listada_em, processo_sigiloso, pecas, total_atos_recebidos,
-                datas_dos_atos, ancoras_invalidadas
+                datas_dos_atos, ancoras_invalidadas, atos
            FROM pasta_listagens WHERE workspace = ? AND numero = ?`,
       )
       .get(workspace, numeroProcesso) as unknown as LinhaListagem | undefined;
@@ -122,6 +146,21 @@ export class RepositorioDaPastaSqlite implements RepositorioDaPasta {
               .array(z.string())
               .parse(JSON.parse(linha.datas_dos_atos))
               .map((d) => new Date(d)),
+          }
+        : {}),
+      ...(linha.atos !== null
+        ? {
+            atos: z
+              .array(atoGuardadoSchema)
+              .parse(JSON.parse(linha.atos))
+              .map((a) => ({
+                posicao: a.p,
+                data: new Date(a.d),
+                descricao: a.t,
+                ...(a.c !== undefined ? { complemento: a.c } : {}),
+                ...(a.i !== undefined ? { identificador: a.i } : {}),
+                ...(a.v ? { vinculoIncerto: true as const } : {}),
+              })),
           }
         : {}),
       ...(linha.ancoras_invalidadas

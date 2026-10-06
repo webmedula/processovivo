@@ -63,6 +63,7 @@ describe('posição do ato (ordem cronológica do MNI, 1-based)', () => {
       total: 0,
       porIdentificador: new Map(),
       datas: [],
+      posicaoPorIndice: [],
     });
   });
 });

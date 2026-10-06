@@ -152,6 +152,7 @@ describe('API — Pasta digital: a lista', () => {
     ]);
     expect(c['totais']).toEqual({
       pecas: 5,
+      atosSemPeca: 0,
       disponiveis: 0,
       sigilosas: 1,
       naFila: 0,

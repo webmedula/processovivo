@@ -858,6 +858,37 @@ Não são detalhes — moldam o código.
   houver número não exato) ficam sempre à vista; a estimativa do "Montar pasta
   completa" mora numa dica junto do botão (foco e mouse), não numa linha fixa.
   `tests/browser/pasta-layout-navegador.spec.ts` mede cinco larguras.
+- **A lista da Pasta mostra TODAS as movimentações recebidas** (v0.36.0): as sem peça
+  têm o selo "Sem peça", não têm seleção e nunca disparam consulta; contagens dizem
+  quantas são de cada tipo. Antes a lista era só de peças e o número "pulava" (386 →
+  382), escondendo atos sem aviso. **Dados:** `pasta_listagens.atos` (JSON, uma
+  entrada por ato: posição, data/hora, descrição, complemento, identificador interno
+  e `vinculoIncerto`) é gravado junto da listagem, a partir da MESMA resposta do MNI
+  que já trazia os movimentos — nenhuma consulta nova e nenhum conteúdo de peça.
+  Mesma linha da listagem: mesmo workspace, mesmo ciclo de vida e **mesma política de
+  segredo** (a listagem de processo sigiloso é gravada e as peças ficam `sigilo`;
+  os atos seguem a mesma regra, não há exceção própria). Sem retrocarga, de
+  propósito: listagem anterior à 0.36.0 tem `atos` nulo, `todasAsMovimentacoes:
+  false`, e a Pasta diz "atualize as peças para carregar todas as movimentações"
+  com o botão do fluxo "Atualizar" — nunca tela vazia, nunca consulta por conta
+  própria. **Junção:** `linhasDaPasta.ts` (puro) separa os atos sem peça (nenhuma peça
+  da listagem aponta para o identificador dele), intercala-os às peças pela posição
+  (a ordem das peças da lista é mantida; ato com várias peças continua em várias
+  linhas) e `GET …/pasta` devolve `atosSemPeca`, `lacunas` e `linhas` (a ordem). O
+  identificador interno nunca sai. Identificador REPETIDO na resposta marca
+  `vinculoIncerto`: a linha diz "Peça não vinculada", não "Sem peça" — afirmar
+  ausência de peça sem saber é a mesma confusão de "não existe" × "não consegui
+  ver". **Tela:** "M linhas" inclui as sem peça ("X de M linhas · P peças · S sem
+  peça"); o chip "Sem peça (N)" FILTRA (não marca nada); "só disponíveis" esconde as
+  sem peça e a contagem diz quantas; Todas/Nenhuma/Baixar PDF/Montar atuam só sobre
+  peças; a busca casa descrição e número das sem peça (não o rótulo genérico
+  "Movimentação"). **Lacuna de numeração:** `lacunasDeNumeracao` só afirma quando os
+  dois atos vizinhos têm número EXATO e o número salta mais de 1 ("nº 368 · ato não
+  recebido do tribunal (provavelmente bloqueado)"); nunca em faixa, estimado ou
+  posição; o marcador não é linha (não conta, não abre, não tem foco) e só aparece
+  sem filtro — a contagem diz quando ficou de fora. Largura da lista:
+  `clamp(440px, 32vw, 520px)` (era 400 px), com o divisor arrastável de antes; sem
+  virtualização (1.000 linhas medidas em ~1 s, teste de navegador).
 - **A lista da Pasta não exibe índice sequencial; o número exibido à esquerda é
   sempre o da movimentação** (v0.35.2), nos formatos `386`, `380–381`, `~386` ou a
   posição, e "—" quando não há número — nunca o índice (que segue como chave
@@ -1210,8 +1241,8 @@ teste e carência** (v0.28.0), **visual novo a partir do logo** (v0.29.0),
 **calendário: detecção, agenda, tela e feed ICS** (v0.32.0),
 **ajustes dos advogados: Atualizações por processo, peças no topo, providência em 10 dias** (v0.32.1),
 **Pasta digital: backend (v0.33.0) e tela (v0.33.1) — peça aberta ao clique, guarda por peça, montar pasta completa, baixar marcadas**,
-**ato (movimentação) de cada peça na lista da Pasta, com descrição** (v0.33.2) **e o número da movimentação calculado pela posição do ato, com aviso de atos bloqueados** (v0.34.0; a 0.33.3 havia removido o número errado da 0.33.2), **calibração do número com o Projudi feita pelo advogado: exato quando provado, faixa ou estimado quando não** (v0.35.0), **página inicial: Últimas atualizações mostra só o trecho do texto e o trilho de peças baixadas não estoura a largura** (v0.35.1), **Pasta: número da movimentação no lugar do índice; página inicial: "detectado há N dias" e cartão "pede providência"** (v0.35.2), **Pasta: lista em altura total com avisos compactados** (v0.35.3),
-Dockerfile multi-stage, CI, 1239 testes.
+**ato (movimentação) de cada peça na lista da Pasta, com descrição** (v0.33.2) **e o número da movimentação calculado pela posição do ato, com aviso de atos bloqueados** (v0.34.0; a 0.33.3 havia removido o número errado da 0.33.2), **calibração do número com o Projudi feita pelo advogado: exato quando provado, faixa ou estimado quando não** (v0.35.0), **página inicial: Últimas atualizações mostra só o trecho do texto e o trilho de peças baixadas não estoura a largura** (v0.35.1), **Pasta: número da movimentação no lugar do índice; página inicial: "detectado há N dias" e cartão "pede providência"** (v0.35.2), **Pasta: lista em altura total com avisos compactados** (v0.35.3), **Pasta: todas as movimentações na lista, inclusive as sem peça, com lacuna de numeração provada e lista mais larga** (v0.36.0),
+Dockerfile multi-stage, CI, 1281 testes.
 
 **Pasta digital (v0.33.0, backend):** `GET /v1/processos/:numero/pasta` (lista +
 estado de cada peça + intervalos de página + totais SEM filtro + procedência

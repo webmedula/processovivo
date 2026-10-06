@@ -10,7 +10,7 @@
  */
 export const ESTILOS_PASTA = `
 /* ---------- pasta digital: a tela inteira à direita da lateral ---------- */
-:root{--pasta-lista-w:400px}
+:root{--pasta-lista-w:clamp(440px,32vw,520px)}
 /* Altura total (v0.35.3): a página por baixo não rola nem tem altura além da janela;
    rolam só a lista e o visualizador, cada um por dentro. */
 html:has(body.com-pasta){overflow:hidden}
@@ -96,6 +96,13 @@ body.com-pasta{overflow:hidden;height:100vh;height:100dvh}
 #pasta .linha.atual{background:var(--acento-bg)}
 #pasta .linha:focus-visible{outline:2px solid var(--acento);outline-offset:-2px}
 #pasta .linha[aria-disabled=true] .rot{color:var(--tinta2)}
+/* Movimentação sem peça (v0.36.0): o mesmo molde, sem caixa — o espaço da caixa fica
+   para os números alinharem com as linhas de peça. */
+#pasta .linha .cxv{width:20px;height:20px;flex:none}
+#pasta .linha[data-sem-peca] .rot{color:var(--tinta2);font-weight:500}
+#pasta .lacuna{padding:3px 12px 3px 40px;border-top:1px dashed var(--linha2);
+  font-size:12px;font-style:italic;color:var(--tinta2);background:var(--papel2);
+  overflow-wrap:anywhere}
 #pasta .linha .cx{width:20px;height:20px;border:2px solid var(--tinta3);border-radius:5px;
   background:var(--papel);position:relative;flex:none}
 #pasta .linha.marcada .cx{background:var(--acento);border-color:var(--acento)}

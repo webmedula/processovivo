@@ -61,6 +61,31 @@ export interface PecaListada {
 }
 
 /**
+ * UM ato do processo como o MNI o entregou, COM ou SEM peça (v0.36.0): é o que
+ * permite à Pasta listar todas as movimentações. Só metadado do ato — nunca o
+ * conteúdo de peça. Guardado em `pasta_listagens.atos`, pelo mesmo prazo, dono
+ * e política de segredo da listagem.
+ */
+export interface AtoListado {
+  /** Posição (1-based) na ordem cronológica dos atos recebidos (v0.34.0). */
+  readonly posicao: number;
+  readonly data: Date;
+  /** Descrição do ato, como o tribunal a deu (só aparada). */
+  readonly descricao: string;
+  readonly complemento?: string;
+  /**
+   * `identificadorMovimento`: CHAVE INTERNA do vínculo com as peças. Nunca sai
+   * na API nem na tela. Ausente: o ato não tem identificador (não pode ter peça).
+   */
+  readonly identificador?: number;
+  /**
+   * O identificador se repete na resposta: não dá para dizer quais peças são
+   * deste ato. A tela não afirma "sem peça" para ele.
+   */
+  readonly vinculoIncerto?: boolean;
+}
+
+/**
  * O retrato da listagem do tribunal, gravado quando a tela carrega as peças do
  * processo. Abrir a Pasta lê DAQUI e não consulta o tribunal de novo: cada
  * consulta ao MNI são dezenas de segundos e uma oportunidade de recusa contra
@@ -84,6 +109,11 @@ export interface ListagemDaPasta {
    * em listagem anterior à 0.35.0: sem ela não se aceita âncora nova.
    */
   readonly datasDosAtos?: readonly Date[];
+  /**
+   * TODOS os atos recebidos (v0.36.0). Ausente em listagem anterior à 0.36.0 — a
+   * tela diz "atualize as peças"; presente e vazio = a resposta não trouxe atos.
+   */
+  readonly atos?: readonly AtoListado[];
   /**
    * Quantas âncoras a ÚLTIMA listagem invalidou (o ato naquela posição mudou de
    * data). A tela avisa "calibração anterior invalidada" até a pessoa agir.
