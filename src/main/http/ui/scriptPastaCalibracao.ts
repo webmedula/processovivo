@@ -70,29 +70,51 @@ function explicacao(n){
   return AVISO_CURTO;
 }
 
-/* "mov. N" da linha. O texto para leitor de tela diz o grau de certeza; o visual
-   (aria-hidden) é o curto. */
-function htmlNumero(p,buscado){
-  var n=numeroDe(p);
+/* A coluna do número, à esquerda do rótulo (v0.35.2): o número da movimentação
+   ocupa o lugar do índice sequencial da lista, que o advogado lia como número do
+   ato no Projudi. O visual é aria-hidden e o texto para leitor de tela diz o grau
+   de certeza ("380–381" lido em voz alta viraria "380 a 381" sem dizer que é faixa).
+   Sem número: "—" discreto, nunca o índice. */
+/* Sem posição (listagem anterior à 0.34.0) a linha é a de antes: sem número, "—". */
+function numeroVisivel(p){return posicaoDe(p)===null?null:numeroDe(p)}
+function curtoDe(p){
+  var n=numeroVisivel(p);
+  return n?rotulo(n):'—';
+}
+function nomeAcessivel(p){
+  var n=numeroVisivel(p);
+  if(!n)return 'Movimentação sem número';
+  if(n.tipo==='faixa')return 'Movimentação, faixa '+n.min+' a '+n.max+', não conferida';
+  if(n.tipo==='estimado')return 'Movimentação estimada '+n.n+', não conferida';
+  if(n.tipo==='exato')return 'Movimentação '+n.n+', conferida';
+  return 'Movimentação '+n.n+', calculada pela posição, não conferida';
+}
+function htmlCelula(p){
+  var n=numeroVisivel(p);
+  return '<span class="ord'+(n?' '+n.tipo:' sem')+'"'+(n?' title="'+esc(explicacao(n))+'"':'')+'>'+
+    '<span aria-hidden="true">'+esc(curtoDe(p))+'</span>'+
+    '<span class="pcal-sr">'+esc(nomeAcessivel(p))+'.</span></span>';
+}
+/* O grau de certeza ao lado do rótulo, na linha de metadados (o número em si já
+   está na coluna, não se repete). Faixa e estimado dizem a palavra: não dependem
+   do estilo do número. */
+function htmlSelo(p,buscado){
+  var n=numeroVisivel(p);
   if(!n)return '';
-  var h;
-  if(n.tipo==='faixa'||n.tipo==='estimado'){
-    /* "380–381" lido em voz alta vira "380 a 381" sem dizer que é faixa: o
-       texto para leitor de tela diz o grau de certeza; o visual é o curto. */
-    h='<span class="mov-n '+n.tipo+'" title="'+esc(explicacao(n))+'">'+
-      '<span aria-hidden="true">mov. '+esc(rotulo(n))+'</span>'+
-      '<span class="pcal-sr">'+esc(porExtenso(n))+'</span></span>';
-  }else{
-    h='<span class="mov-n '+n.tipo+'" title="'+esc(explicacao(n))+'">mov. '+esc(rotulo(n))+'</span>';
-  }
+  var h='';
   if(n.tipo==='exato'){
     h+='<span class="mov-ok" title="'+esc(TITULO_EXATO)+'"><span aria-hidden="true">✓ </span>conferido</span>';
+  }else if(n.tipo==='faixa'||n.tipo==='estimado'){
+    h+='<span class="mov-grau" aria-hidden="true" title="'+esc(explicacao(n))+'">'+
+      (n.tipo==='faixa'?'faixa':'estimado')+'</span>';
   }
   if(n.tipo==='faixa'&&buscado!==null&&buscado>=n.min&&buscado<=n.max){
     h+='<span class="mov-ach">faixa que inclui '+buscado+'</span>';
   }
   return h;
 }
+/* "Mov. 369" / "Mov. 380–381" / "Mov. ~386" / "Mov. —" do cabeçalho do visualizador. */
+function rotuloDoVisor(p){return 'Mov. '+curtoDe(p)}
 function rotuloDoTitulo(p){
   var n=numeroDe(p);
   if(!n)return '';
@@ -302,7 +324,11 @@ function reiniciar(){ed=null;limparMsg();assinaturaAnterior=''}
 window.__pvPastaCal={
   ctx:null,
   numeroDe:numeroDe,
-  htmlNumero:htmlNumero,
+  htmlCelula:htmlCelula,
+  htmlSelo:htmlSelo,
+  nomeAcessivel:nomeAcessivel,
+  rotuloDoVisor:rotuloDoVisor,
+  curtoDe:curtoDe,
   rotuloDoTitulo:rotuloDoTitulo,
   avisoDoVisor:avisoDoVisor,
   combina:combina,

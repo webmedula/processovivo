@@ -15,7 +15,8 @@ import type { Ambiente } from './ambiente.js';
  */
 const sem = CHROMIUM === undefined;
 const NUMERO = '5818922-04.2026.8.09.0011';
-const NOME_LONGO = ('arquivosinteticosemespaco' + 'abcdefghij').repeat(3).slice(0, 120) + '.pdf';
+const NOME_LONGO =
+  ('arquivosinteticosemespaco' + 'abcdefghij').repeat(3).slice(0, 120) + '.pdf';
 const TEXTO_FIM = 'FIM-DO-TEXTO-DA-DECISAO';
 const DECISAO =
   'Julgo procedente o pedido formulado na inicial para condenar a parte ré. '.repeat(40) +
@@ -63,20 +64,26 @@ describe.skipIf(sem)('Página inicial — no navegador', { timeout: 60_000 }, ()
       }
     }, CHAVE);
     const agora = new Date().toISOString();
-    const nov = (titulo: string, conteudo: string | null, vista = false) => ({
+    const diasAtras = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString();
+    const nov = (
+      titulo: string,
+      conteudo: string | null,
+      vista = false,
+      detectadaEm = agora,
+    ) => ({
       id: Math.floor(Math.random() * 1e9),
       numero: NUMERO,
       data: agora,
       titulo,
       codigoTpu: null,
       conteudo,
-      detectadaEm: agora,
+      detectadaEm,
       exigeAcao: false,
       vista,
     });
     const principal = nov('Sentença', DECISAO);
-    const anterior = nov('Decisão interlocutória', DECISAO);
-    const vazia = nov('Conclusos para despacho', null);
+    const anterior = nov('Decisão interlocutória', DECISAO, false, diasAtras(1));
+    const vazia = nov('Conclusos para despacho', null, false, diasAtras(11));
     await ctx.route('**/v1/novidades**', async (rota) => {
       const real = (await (await rota.fetch()).json()) as Record<string, unknown>;
       await rota.fulfill({
@@ -134,10 +141,13 @@ describe.skipIf(sem)('Página inicial — no navegador', { timeout: 60_000 }, ()
       await page.locator('.nov-txt > span[aria-hidden="true"]').first().textContent(),
     ).toBe('…');
     // No máximo 3 linhas visuais.
-    const linhas = await page.locator('.nov-txt').first().evaluate((el) => {
-      const lh = parseFloat(getComputedStyle(el).lineHeight) || 18;
-      return Math.round(el.getBoundingClientRect().height / lh);
-    });
+    const linhas = await page
+      .locator('.nov-txt')
+      .first()
+      .evaluate((el) => {
+        const lh = parseFloat(getComputedStyle(el).lineHeight) || 18;
+        return Math.round(el.getBoundingClientRect().height / lh);
+      });
     expect(linhas).toBeLessThanOrEqual(3);
     // Quem quer ler abre o processo.
     expect(await page.locator('.nov-abrir').count()).toBeGreaterThan(0);
@@ -148,6 +158,37 @@ describe.skipIf(sem)('Página inicial — no navegador', { timeout: 60_000 }, ()
     expect(await page.locator('.nov-grupo').innerText()).not.toContain(TEXTO_FIM);
     // Nada foi escondido: as três atualizações continuam na tela.
     expect(await page.locator('.nov-grupo .nov').count()).toBe(3);
+  });
+
+  it('"detectado há N dias" nos três lugares (destaque, anterior, anterior expandida), com hoje/singular/plural', async () => {
+    await abrir(1280);
+    const textos = () => page.locator('.nov .lado > span:last-child').allTextContents();
+    // Fechado: só a atualização em destaque (detectada agora).
+    expect(
+      await page.locator('.nov-grupo > .nov .lado > span:last-child').allTextContents(),
+    ).toEqual(['detectado hoje']);
+    await page.click('[data-mais]');
+    expect(await textos()).toEqual([
+      'detectado hoje',
+      'detectado há 1 dia',
+      'detectado há 11 dias',
+    ]);
+    // A data do ato continua no quadro à esquerda; o tooltip explica a diferença.
+    expect(
+      await page.locator('.nov .lado > span:last-child').first().getAttribute('title'),
+    ).toBe(
+      'Quando o Processo Vivo percebeu este ato. A data do ato está no quadro à esquerda.',
+    );
+    expect(await page.locator('.nov-grupo').innerText()).not.toMatch(
+      /(?<!detectado )há \d+ dias?/,
+    );
+  });
+
+  it('o cartão "Pedem providência" não fala de prazo', async () => {
+    await abrir(1280);
+    const corpo = (await page.locator('body').innerText()).toLowerCase();
+    expect(corpo).not.toContain('abre prazo');
+    expect(corpo).toMatch(/ato dos últimos \d+ dias que pede providência/);
   });
 
   for (const largura of [1280, 1024, 768, 390]) {
@@ -169,15 +210,17 @@ describe.skipIf(sem)('Página inicial — no navegador', { timeout: 60_000 }, ()
   for (const escuro of [false, true]) {
     it(`axe sem violações no tema ${escuro ? 'escuro' : 'claro'}`, async () => {
       await abrir(1280, escuro);
-      await page.addScriptTag({ content: (AxeBuilder as unknown as { source: string }).source });
+      await page.addScriptTag({
+        content: (AxeBuilder as unknown as { source: string }).source,
+      });
       const r = await page.evaluate(() =>
         (window as unknown as AxeNaPagina).axe.run(document.querySelector('.feed')!, {
           rules: { 'color-contrast': { enabled: true } },
         }),
       );
-      expect(r.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.target).join(' ')}`)).toEqual(
-        [],
-      );
+      expect(
+        r.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.target).join(' ')}`),
+      ).toEqual([]);
     });
   }
 });

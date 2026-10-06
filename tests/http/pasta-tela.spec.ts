@@ -289,12 +289,12 @@ describe('console — a tela da Pasta digital', () => {
     }
     expect(SCRIPT_PASTA_CALIBRACAO).toContain('m.posicao');
     expect(SCRIPT_PASTA_CALIBRACAO).toContain('m.numero');
-    expect(SCRIPT_PASTA_CALIBRACAO).toContain("mov. '+esc(rotulo(n))");
+    expect(SCRIPT_PASTA_CALIBRACAO).toContain('esc(curtoDe(p))');
     // Texto livre é texto: nenhum <a> nem href é montado a partir da descrição.
     expect(SCRIPT_PASTA).not.toMatch(/<a [^']*mov/);
     // Até 2 linhas, nunca estoura a lista.
     expect(ESTILOS_PASTA).toContain('-webkit-line-clamp:2');
-    expect(ESTILOS_PASTA).toContain('#pasta .linha .mov-n');
+    expect(ESTILOS_PASTA).toContain('#pasta .linha .ord');
     expect(ESTILOS_PASTA).toContain('overflow-wrap:anywhere');
     expect(ESTILOS_PASTA).toContain('#pasta .visor .mov-visor:empty{display:none}');
   });

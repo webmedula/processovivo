@@ -415,7 +415,7 @@ function movHtml(p){
   if(!t&&pos===null)return '';
   var buscado=numeroBuscado(normal(st.busca).trim());
   return '<span class="mov" title="'+esc(tituloDaMov(p))+'">'+
-    (pos!==null?cal.htmlNumero(p,buscado):'')+
+    (pos!==null?cal.htmlSelo(p,buscado):'')+
     (t?'<span class="mov-t">'+esc(t)+'</span>':'')+
     /* Só para o mouse: quem usa teclado aperta N na linha, e o botão do
        visualizador faz o mesmo. Um botão aqui dentro de um "option" seria
@@ -435,7 +435,7 @@ function linhaHtml(p){
     (st.foco===p.pecaId?'0':'-1')+'" aria-selected="'+(marcada?'true':'false')+'"'+
     (atual?' aria-current="true"':'')+(sig?' aria-disabled="true"':'')+'>'+
     '<span class="cx" aria-hidden="true" data-cx="1"></span>'+
-    '<span class="ord">'+(p.ordem+1)+'</span>'+
+    cal.htmlCelula(p)+
     '<span class="rot" title="'+esc(p.rotulo)+'">'+esc(p.rotulo)+'</span>'+
     '<span class="meta"><span class="data">'+esc(pv().dt(p.data))+'</span>'+
     '<span class="selo '+e.c+'">'+e.t+'</span>'+
@@ -762,7 +762,9 @@ function atualizarVisor(){
   var nome=$('pasta-nome'); if(!nome)return;
   if(st.modo==='tudo'){mostrarTudo();return}
   var p=st.peca?pecaDe(st.peca):null;
-  nome.textContent=p?(p.ordem+1)+'. '+p.rotulo:'';
+  nome.textContent=p?cal.rotuloDoVisor(p)+' · '+p.rotulo:'';
+  if(p)nome.setAttribute('aria-label',cal.nomeAcessivel(p)+': '+p.rotulo);
+  else nome.removeAttribute('aria-label');
   var mv=$('pasta-mov');
   if(mv){
     /* Refeito só quando muda: a consulta de andamento roda a cada 2 s, e
@@ -1185,7 +1187,7 @@ function atualizarOnde(){
   ((st.visao&&st.visao.pecas)||[]).forEach(function(p){
     if(p.intervalo&&st.pagina>=p.intervalo.inicial&&st.pagina<=p.intervalo.final)achada=p;
   });
-  onde.innerHTML=achada?'<strong>'+esc(achada.rotulo)+'</strong> · peça '+(achada.ordem+1)+
+  onde.innerHTML=achada?'<strong>'+esc(achada.rotulo)+'</strong> · '+esc(cal.rotuloDoVisor(achada))+
     ' · '+esc(paginasDe(achada)):'';
 }
 
