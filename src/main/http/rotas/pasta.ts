@@ -7,6 +7,7 @@ import type {
   VisaoDaCalibracao,
   VisaoDaPasta,
   VisaoDaPeca,
+  VisaoDoAtoSemPeca,
 } from '../../../application/services/ServicoPasta.js';
 import {
   OperacaoNaoSuportadaError,
@@ -287,10 +288,20 @@ function visaoDaPasta(v: VisaoDaPasta): Record<string, unknown> {
     // Quantos atos o MNI entregou: base do aviso de numeração da tela. null =
     // listagem gravada antes da 0.34.0 (ou sem movimentos na resposta).
     totalAtosRecebidos: v.totalAtosRecebidos ?? null,
+    // false = listagem gravada antes da 0.36.0: só há peças, e a tela pede para
+    // atualizá-las em vez de mostrar uma lista que parece completa e não é.
+    todasAsMovimentacoes: v.todasAsMovimentacoes,
+    atosSemPeca: v.atosSemPeca.map(visaoDoAto),
+    // Número(s) do Projudi que o MNI não entregou, PROVADOS pelas âncoras
+    // (número exato dos dois lados). Nunca afirma bloqueio com certeza.
+    lacunas: v.lacunas,
+    // A ordem da lista (peças, atos sem peça e lacunas); a tela só a desenha.
+    linhas: v.linhas,
     calibracao: v.calibracao ? visaoDaCalibracao(v.calibracao) : null,
     pausadoAte: v.pausadoAte?.toISOString() ?? null,
     totais: {
       pecas: v.pecas.length,
+      atosSemPeca: v.atosSemPeca.length,
       disponiveis: conta('disponivel'),
       sigilosas: conta('sigilo'),
       naFila: conta('na_fila') + conta('baixando'),
@@ -303,6 +314,18 @@ function visaoDaPasta(v: VisaoDaPasta): Record<string, unknown> {
     montagem: v.montagem ? visaoDoJob(v.montagem) : null,
     selecionadas: v.selecionadas ? visaoDoJob(v.selecionadas) : null,
     pecas: v.pecas.map(visaoDaPeca),
+  };
+}
+
+function visaoDoAto(a: VisaoDoAtoSemPeca): Record<string, unknown> {
+  return {
+    posicao: a.posicao,
+    // Mesmo contrato do número das peças; o identificador interno nunca sai.
+    numero: a.numeroNoProjudi,
+    data: a.data.toISOString(),
+    descricao: a.descricao,
+    complemento: a.complemento ?? null,
+    vinculoIncerto: a.vinculoIncerto,
   };
 }
 

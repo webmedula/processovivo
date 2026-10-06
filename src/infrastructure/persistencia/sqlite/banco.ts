@@ -617,6 +617,15 @@ const COLUNAS_ACRESCENTADAS: ReadonlyArray<{
   { tabela: 'pasta_listagens', coluna: 'datas_dos_atos', tipo: 'TEXT' },
   { tabela: 'pasta_listagens', coluna: 'ancoras_invalidadas', tipo: 'INTEGER' },
   /*
+   * `atos` (v0.36.0), idem: SEM retrocarga, de propósito. Os atos sem peça só
+   * existem na resposta do MNI; NULL = "listagem anterior à 0.36.0", e a Pasta
+   * pede para atualizar as peças do processo — nunca se consulta o tribunal por
+   * conta própria. É a MESMA linha da listagem: mesmo dono (workspace), mesma
+   * regra de segredo e o mesmo tratamento no backup. Só metadado do ato, nunca
+   * conteúdo de peça.
+   */
+  { tabela: 'pasta_listagens', coluna: 'atos', tipo: 'TEXT' },
+  /*
    * `cliente` NÃO tem retrocarga, e a ausência é deliberada.
    *
    * A regra deste repositório manda retrocarregar coluna nova, e ela existe

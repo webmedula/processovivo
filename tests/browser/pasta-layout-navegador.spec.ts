@@ -244,7 +244,7 @@ describe.skipIf(sem)(
       ).toBe(true);
       // As regiões rolantes têm nome e entram na ordem de tabulação.
       expect(await page.getAttribute('#pasta-lista', 'aria-label')).toBe(
-        'Lista de peças',
+        'Lista de peças e movimentações',
       );
       expect(await page.getAttribute('#pasta-visor', 'aria-label')).toBe(
         'Visualizador da peça',

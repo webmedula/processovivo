@@ -320,7 +320,7 @@ describe('console — a tela da Pasta digital', () => {
 
   it('a busca procura no rótulo, na descrição e no número (por igualdade sobre a posição)', () => {
     expect(SCRIPT_PASTA).toContain('function combinaComBusca(p,termo)');
-    expect(SCRIPT_PASTA).toContain('Buscar por rótulo, movimentação ou nº"');
+    expect(SCRIPT_PASTA).toContain('Buscar rótulo, movimentação ou nº"');
     expect(SCRIPT_PASTA).toContain('pelo número da movimentação');
     expect(SCRIPT_PASTA).toContain('cal.combina(p,buscado)');
     // Faixa: o número buscado dentro dela também acha a linha.

@@ -18,8 +18,18 @@ import {
   ESTADOS_COM_ARQUIVO,
 } from '../../domain/entities/JobLeitor.js';
 import type { JobLeitor, MotivoNaoObtida } from '../../domain/entities/JobLeitor.js';
+import {
+  atosSemPeca,
+  intercalarLinhas,
+  lacunasDeNumeracao,
+} from '../../domain/entities/linhasDaPasta.js';
+import type {
+  LacunaDeNumeracao,
+  LinhaDaPasta,
+} from '../../domain/entities/linhasDaPasta.js';
 import type {
   AncoraGuardada,
+  AtoListado,
   EstadoDaPecaNaPasta,
   ListagemDaPasta,
   MovimentacaoDaPeca,
@@ -108,7 +118,28 @@ export interface VisaoDaCalibracao {
   readonly invalidadas: number;
 }
 
+/** Um ato SEM peça na lista (v0.36.0): metadado do ato, nunca o identificador interno. */
+export interface VisaoDoAtoSemPeca {
+  readonly posicao: number;
+  /** Número do Projudi com o grau de certeza, como nas linhas de peça. */
+  readonly numeroNoProjudi: NumeroDoProjudi;
+  readonly data: Date;
+  readonly descricao: string;
+  readonly complemento: string | undefined;
+  /** Identificador repetido: não se afirma "sem peça" para este ato. */
+  readonly vinculoIncerto: boolean;
+}
+
 export interface VisaoDaPasta {
+  /**
+   * A listagem gravada traz TODOS os atos (v0.36.0). `false`: gravada antes da
+   * 0.36.0 — a tela pede para atualizar as peças, não mostra tela vazia.
+   */
+  readonly todasAsMovimentacoes: boolean;
+  readonly atosSemPeca: readonly VisaoDoAtoSemPeca[];
+  readonly lacunas: readonly LacunaDeNumeracao[];
+  /** A ordem da lista: peças, atos sem peça e lacunas, intercalados. */
+  readonly linhas: readonly LinhaDaPasta[];
   /** `undefined` sem listagem ou sem atos recebidos. */
   readonly calibracao: VisaoDaCalibracao | undefined;
   /** Atos que o MNI entregou na listagem gravada; base do aviso de numeração. */
@@ -280,6 +311,9 @@ export class ServicoPasta {
         ...(posicoes.total > 0
           ? { totalAtosRecebidos: posicoes.total, datasDosAtos: posicoes.datas }
           : {}),
+        // Sempre presente numa listagem nova (vazio = a resposta não trouxe atos):
+        // é o que distingue "sem atos" de "listagem anterior à 0.36.0".
+        atos: listarAtos(atos.movimentos ?? [], posicoes.posicaoPorIndice),
         ...(invalidadas > 0 ? { ancorasInvalidadas: invalidadas } : {}),
       });
     } catch (erro) {
@@ -413,6 +447,10 @@ export class ServicoPasta {
     const selecionadas = jobs.find((j) => j.finalidade === 'selecionadas');
     if (!listagem) {
       return {
+        todasAsMovimentacoes: false,
+        atosSemPeca: [],
+        lacunas: [],
+        linhas: [],
         calibracao: undefined,
         totalAtosRecebidos: undefined,
         listagem: undefined,
@@ -517,7 +555,21 @@ export class ServicoPasta {
         };
       });
 
+    const todos = listagem.atos !== undefined;
+    const semPeca = todos ? atosSemPeca(listagem.atos ?? [], listagem.pecas) : [];
+    const lacunas = todos ? lacunasDeNumeracao(ancoras, totalAtos) : [];
     return {
+      todasAsMovimentacoes: todos,
+      atosSemPeca: semPeca.map((a): VisaoDoAtoSemPeca => ({
+        posicao: a.posicao,
+        numeroNoProjudi: numeroDoProjudi(a.posicao, ancoras, totalAtos),
+        data: a.data,
+        descricao: a.descricao,
+        complemento: a.complemento,
+        vinculoIncerto: a.vinculoIncerto === true,
+      })),
+      lacunas,
+      linhas: intercalarLinhas(listagem.pecas, semPeca, lacunas),
       calibracao:
         totalAtos > 0 ? montarCalibracao(ancoras, totalAtos, listagem) : undefined,
       totalAtosRecebidos: listagem.totalAtosRecebidos,
@@ -1096,6 +1148,39 @@ function indexarAtos(
   }
   for (const n of repetidos) mapa.delete(n);
   return mapa;
+}
+
+/**
+ * Todos os atos da resposta, com ou sem peça (v0.36.0). Identificador repetido
+ * marca `vinculoIncerto`: a tela não afirma "sem peça" para ele, porque as peças
+ * que apontam para esse número não se sabe de qual dos atos são.
+ */
+function listarAtos(
+  movimentos: readonly Movimentacao[],
+  posicaoPorIndice: readonly number[],
+): AtoListado[] {
+  const contagem = new Map<number, number>();
+  for (const m of movimentos) {
+    const id = numeroDoMovimento(m);
+    if (id !== undefined) contagem.set(id, (contagem.get(id) ?? 0) + 1);
+  }
+  return movimentos.map((m, indice) => {
+    const id = numeroDoMovimento(m);
+    const complemento = (m.complementos ?? [])
+      .map((c) => c.trim())
+      .filter((c) => c !== '')
+      .join('; ');
+    return {
+      posicao: posicaoPorIndice[indice] as number,
+      data: m.data,
+      descricao: m.titulo.trim(),
+      ...(complemento ? { complemento } : {}),
+      ...(id !== undefined ? { identificador: id } : {}),
+      ...(id !== undefined && (contagem.get(id) ?? 0) > 1
+        ? { vinculoIncerto: true }
+        : {}),
+    };
+  });
 }
 
 function montarCalibracao(

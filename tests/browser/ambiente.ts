@@ -116,7 +116,9 @@ export interface Ambiente {
  * debounce do servidor é real (400 ms); a pausa de 3 s do leitor é instantânea
  * — o que se mede aqui é a tela e o NÚMERO de lotes que o tribunal recebe.
  */
-export async function iniciar(opcoes: { pecasExtras?: number } = {}): Promise<Ambiente> {
+export async function iniciar(
+  opcoes: { pecasExtras?: number; atosSemPeca?: boolean } = {},
+): Promise<Ambiente> {
   const pasta = pastaTemporaria();
   const todas = await pecasDoTeste();
   // Pasta grande (v0.35.3): peças sintéticas a mais, penduradas nos mesmos atos,
@@ -155,6 +157,22 @@ export async function iniciar(opcoes: { pecasExtras?: number } = {}): Promise<Am
     // Fora de ordem de propósito: a posição vem da ordem cronológica, não da
     // ordem em que o tribunal respondeu.
   ].reverse();
+  if (opcoes.atosSemPeca) {
+    // Três atos SEM peça (v0.36.0), um deles no meio da linha do tempo: depois do
+    // ato 2 e antes do 3 (posição 3 entre os recebidos), os outros dois no fim.
+    const livre = (numero: number, data: Date, titulo: string) => ({
+      data,
+      titulo,
+      idExterno: `mni:${BASE_ID_INTERNO + numero}`,
+      fonte: 'mni',
+    });
+    provedor.movimentos = [
+      livre(31, new Date(Date.UTC(2026, 8, 13, 1, 0, 0)), 'Intimação sintética de teste'),
+      livre(32, new Date(Date.UTC(2026, 8, 22, 13, 0, 0)), TEXTO_LONGO),
+      livre(33, new Date(Date.UTC(2026, 8, 23, 13, 0, 0)), 'Concluso ao juiz sintético'),
+      ...provedor.movimentos,
+    ] as typeof provedor.movimentos;
+  }
   const processo = umProcesso({
     numero: NumeroCNJ.criar(PROCESSO_TJGO),
     tribunal: 'TJGO',
