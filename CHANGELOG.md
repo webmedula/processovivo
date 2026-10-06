@@ -9,6 +9,43 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.35.3] — 2026-10-06
+
+Layout da Pasta digital, pedido pelo dono depois de usar a Pasta com um processo
+de ~280 peças: a lista começava na metade de baixo da janela.
+
+### Alterado
+
+- **A lista sobe e ocupa a altura da janela.** A Pasta passa a ter `100dvh` e a
+  página por baixo deixa de ter altura além da janela (`documentElement.scrollHeight
+  <= clientHeight`): rolam só a lista e o visualizador, cada um por dentro. Onde a
+  primeira linha começava (1366×768 / 1920×1080, medido com 40 peças sintéticas
+  a mais): **553 → 277 px** e **534 → 277 px**; linhas inteiras visíveis:
+  **2 → 5** e **5 → 10** (a massa de teste tem descrições de 2 linhas; com linhas
+  compactas cabem 6 em 768 px).
+- **Avisos compactados, sem perder nenhum.** Mesmo texto, fonte de 12 px e
+  espaçamento menor numa faixa só. "Lista obtida do tribunal… não é consulta ao
+  vivo" e o aviso da numeração (0.34.0/0.35.0) continuam sempre à vista; nada foi
+  recolhido.
+- **A estimativa do "Montar pasta completa" saiu da faixa de avisos** e foi para
+  uma dica ao lado do botão: aparece no mouse e no foco do teclado, descreve o
+  botão (`aria-describedby`, `role="tooltip"`) e fecha com Escape. O texto é o
+  mesmo.
+- **Busca e "só disponíveis" na mesma linha; ações (Todas/Nenhuma/Baixar PDF),
+  chips menores e o contador "N marcadas de M · mostrando X de M" no mesmo fluxo**,
+  sem rolagem horizontal. A linha da lista ficou mais baixa (padding menor).
+- Cabeçalho da Pasta, avisos, "Conferir numeração", busca e ações ficam fixos; só
+  as linhas rolam. A barra do visualizador (zoom, página, buscar no texto, baixar)
+  já era fixa, e agora há teste. A região da lista passou a se chamar "Lista de
+  peças" e o visualizador, "Visualizador da peça".
+
+### Testes
+
+- `tests/browser/pasta-layout-navegador.spec.ts`: 1920×1080, 1366×768, 1024×768,
+  768×1024 e 390×844 (sem rolagem horizontal, página parada, lista rolando por
+  dentro, primeira linha no alto), avisos obrigatórios à vista, dica por foco,
+  lista que não pula ao marcar, barra do visualizador fixa e axe nos dois temas.
+
 ## [0.35.2] — 2026-10-06
 
 Três ajustes de interface pedidos pelo dono: um na Pasta digital, dois na página inicial.
