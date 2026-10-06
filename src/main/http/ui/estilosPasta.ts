@@ -19,7 +19,7 @@ body.com-pasta{overflow:hidden;height:100vh;height:100dvh}
   flex-direction:column;min-width:0;overflow:hidden;background:var(--papel);
   box-shadow:-6px 0 18px rgba(11,25,44,.08)}
 #pasta>*{min-width:0}
-#pasta>.topo,#pasta>.aviso{flex-shrink:0}
+#pasta>.topo,#pasta>.aviso,#pasta>.pbx{flex-shrink:0}
 #pasta .topo{display:flex;align-items:center;gap:8px;padding:5px 14px;
   border-bottom:1px solid var(--linha);flex-wrap:wrap}
 #pasta .topo h3{margin:0;font-size:15px;font-weight:800;flex-grow:1;min-width:0;
@@ -55,6 +55,20 @@ body.com-pasta{overflow:hidden;height:100vh;height:100dvh}
 #pasta .nota{color:var(--tinta2)}
 /* O selo neutro do console mede 4,2:1 (axe); aqui o texto é pequeno e usa --tinta2. */
 #pasta .selo.neutro{color:var(--tinta2)}
+
+/* Histórico de peças baixadas (v0.37.0): gaveta fechada por padrão; aberta, limita a
+   própria altura e rola por dentro, como o aviso — a lista da Pasta continua com o resto. */
+#pasta .pbx{max-height:34vh;overflow:auto;padding:8px 14px 10px;border-bottom:1px solid var(--linha);
+  background:var(--papel2);font-size:13px;color:var(--tinta2)}
+#pasta .pbx[hidden]{display:none}
+#pasta .pbx-nota{line-height:1.4;margin-bottom:6px}
+#pasta .pbx-conta{font-weight:600;color:var(--tinta);margin-bottom:4px}
+#pasta .pbx-lista{list-style:none;margin:0;padding:0}
+#pasta .pbx-item{padding:6px 0;border-top:1px solid var(--linha2);min-width:0}
+#pasta .pbx-item:first-child{border-top:0}
+#pasta .pbx-rotulo{color:var(--tinta);font-weight:600;overflow-wrap:anywhere}
+#pasta .pbx-det{display:flex;flex-wrap:wrap;gap:2px 12px;font-size:12.5px}
+#pasta .pbx-vazio{padding:4px 0}
 
 #pasta>.corpo{flex:1 1 auto;min-height:0;display:flex}
 

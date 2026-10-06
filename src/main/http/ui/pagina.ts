@@ -4,6 +4,7 @@ import { ESTILOS_PASTA } from './estilosPasta.js';
 import { SCRIPT } from './script.js';
 import { SCRIPT_PASTA } from './scriptPasta.js';
 import { SCRIPT_PASTA_CALIBRACAO } from './scriptPastaCalibracao.js';
+import { SCRIPT_PASTA_BAIXADAS } from './scriptPastaBaixadas.js';
 import { ESTILOS_CALENDARIO, SCRIPT_CALENDARIO } from './calendario.js';
 import { ESTILOS_ATUALIZACOES, SCRIPT_ATUALIZACOES } from './atualizacoes.js';
 
@@ -109,6 +110,7 @@ export function paginaConsole(versao: string): string {
 
 <script>${SCRIPT}</script>
 <script>${SCRIPT_PASTA_CALIBRACAO}</script>
+<script>${SCRIPT_PASTA_BAIXADAS}</script>
 <script>${SCRIPT_PASTA}</script>
 <script>${SCRIPT_CALENDARIO}</script>
 <script>${SCRIPT_ATUALIZACOES}</script>

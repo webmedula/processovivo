@@ -4,7 +4,9 @@ import { describe, expect, it } from 'vitest';
 import { SCRIPT } from '../../src/main/http/ui/script.js';
 import { SCRIPT_PASTA } from '../../src/main/http/ui/scriptPasta.js';
 import { SCRIPT_PASTA_CALIBRACAO } from '../../src/main/http/ui/scriptPastaCalibracao.js';
+import { SCRIPT_PASTA_BAIXADAS } from '../../src/main/http/ui/scriptPastaBaixadas.js';
 import { SCRIPT_CALENDARIO } from '../../src/main/http/ui/calendario.js';
+import { SCRIPT_ATUALIZACOES } from '../../src/main/http/ui/atualizacoes.js';
 
 /*
  * O console é JavaScript dentro de uma string.
@@ -33,7 +35,9 @@ describe.each([
   ['console', SCRIPT],
   ['pasta digital', SCRIPT_PASTA],
   ['calibração da pasta', SCRIPT_PASTA_CALIBRACAO],
+  ['peças baixadas da pasta', SCRIPT_PASTA_BAIXADAS],
   ['calendário', SCRIPT_CALENDARIO],
+  ['atualizações (tabela)', SCRIPT_ATUALIZACOES],
 ])('console web — o JavaScript da interface (%s)', (_nome, codigo) => {
   const linter = new Linter();
 

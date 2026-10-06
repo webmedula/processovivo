@@ -46,11 +46,26 @@ describe('tela de Atualizações — uma linha por processo', () => {
     expect(html).toContain(SCRIPT_ATUALIZACOES.trim().slice(0, 40));
     expect(html).toContain(ESTILOS_ATUALIZACOES.trim().slice(0, 40));
     const v = corpoDe('verNovidades');
-    expect(v).toContain('window.__pvAtualizacoes.corpo(');
-    expect(v).toContain('window.__pvAtualizacoes.alternancia(');
-    expect(v).toContain('window.__pvAtualizacoes.ligar(');
-    // A tela não reagrupa nem reclassifica: o markup das linhas mora no módulo.
+    expect(v).toContain('window.__pvAtualizacoes.esqueleto(');
+    expect(v).toContain('window.__pvAtualizacoes.montar(');
+    // A tela não reagrupa nem reclassifica: a tabela e os filtros moram no módulo.
+    expect(SCRIPT).not.toContain('nvt-');
     expect(SCRIPT).not.toContain('nov-grupo');
+  });
+
+  it('os cartões do topo e a coluna "Peças baixadas" saíram da página inicial (v0.37.0)', () => {
+    for (const fantasma of [
+      'cardsDoPainel',
+      'blocoPecasBaixadas',
+      'Processos ativos',
+      'Peças baixadas hoje',
+      'class="trilho"',
+      'duas-colunas',
+    ]) {
+      expect(SCRIPT, fantasma).not.toContain(fantasma);
+      expect(SCRIPT_ATUALIZACOES, fantasma).not.toContain(fantasma);
+    }
+    expect(ESTILOS_ATUALIZACOES).not.toContain('.baixa');
   });
 
   it('a janela e o aviso de ocultas são do módulo: "Todas" e "N mais antigas não mostradas"', () => {
@@ -105,10 +120,15 @@ describe('tela do processo — ordem e janela de pendência', () => {
     );
   });
 
-  it('o card do painel diz a janela que veio do servidor, não um número escrito na tela', () => {
-    const cards = corpoDe('cardsDoPainel');
-    expect(cards).toContain('c.pendenciaJanelaDias');
-    expect(cards).not.toContain('30 dias');
+  it('o filtro "Pedem providência" diz a janela que veio do servidor, não um número escrito na tela', () => {
+    expect(SCRIPT_ATUALIZACOES).toContain('R.pendenciaJanelaDias');
+    expect(SCRIPT_ATUALIZACOES).not.toMatch(/\b(10|30) dias/);
+  });
+
+  it('o texto do filtro e dos selos nunca fala em prazo', () => {
+    // A palavra pode aparecer em comentário do arquivo, mas não em texto que vai à tela.
+    const textos = SCRIPT_ATUALIZACOES.match(/'[^'\n]*'/g) ?? [];
+    expect(textos.filter((t) => /prazo/i.test(t))).toEqual([]);
   });
 });
 

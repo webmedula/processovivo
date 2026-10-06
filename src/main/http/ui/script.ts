@@ -236,19 +236,18 @@ window.__processovivo_ir=ir;
 /* ---------------- aba: novidades ---------------- */
 function verNovidades(){
   var alvo=$('conteudo');
-  alvo.innerHTML='<div class="cartao"><span class="gira"></span>Carregando…</div>';
-  var q=[];
-  if($('f-nv-naovistas')&&$('f-nv-naovistas').classList.contains('on'))q.push('naoVistas=true');
-  var trib=window.__f_nv_trib||''; if(trib)q.push('tribunal='+encodeURIComponent(trib));
+  /* A tabela e os filtros moram em ui/atualizacoes.ts; aqui ficam o cabeçalho e a carga. */
+  alvo.innerHTML=window.__pvAtualizacoes.esqueleto();
+  var trib=window.__f_nv_trib||'';
+  var q=trib?'tribunal='+encodeURIComponent(trib):'';
   /* A janela de tempo NÃO conta como filtro para o texto de "vazio": ela tem aviso próprio. */
   var jan=window.__f_nv_janela==='todas'?'&janela=todas':'';
 
-  /* Duas chamadas em paralelo, e o painel NÃO derruba a tela se falhar: os
-     cards são resumo, o feed é o conteúdo. Trocar a tela inteira por um erro
-     porque a contagem não veio seria perder o que funciona por causa do que
-     enfeita. */
+  /* Duas chamadas em paralelo, e o painel NÃO derruba a tela se falhar: ele só
+     informa a verificação. Trocar a tela inteira por um erro porque a frase de
+     cima não veio seria perder o que funciona por causa do que enfeita. */
   Promise.all([
-    api('/v1/novidades?'+q.join('&')+jan),
+    api('/v1/novidades?'+q+jan),
     api('/v1/painel').catch(function(){return null})
   ]).then(function(res){
     var r=res[0], pn=res[1];
@@ -270,69 +269,28 @@ function verNovidades(){
         '<div class="sub">'+resumoDaVerificacao(ver,acomp,r)+'</div></div>'+
         '<div class="acoes">'+seloDeVerificacao(ver,acomp);
     if(r.naoVistas>0)h+='<button class="bt bt2" id="marcar">Marcar todas como lidas</button>';
-    h+='<button class="bt bt2" id="sincronizar">'+ICONE_ATUALIZAR+'Verificar agora</button></div></div></div>';
-
-    if(pn&&pn.cards)h+=cardsDoPainel(pn.cards,r.naoVistas);
-
-    /* Duas colunas, e o trilho só existe se tiver conteúdo.
-       Reservar espaço para bloco vazio foi erro meu na v0.22.0 — a página
-       ficou com um vão em branco no meio, e ninguém entende vão em branco como
-       "ainda não há dados". */
-    var temTrilho=!!(pn&&pn.pecasBaixadas&&pn.pecasBaixadas.length);
-    h+='<div class="'+(temTrilho?'duas-colunas':'')+'"><div>';
-
-    h+='<div class="cartao feed"><div class="feed-topo"><h3>Últimas atualizações</h3>'+
-       '<div class="chips">'+window.__pvAtualizacoes.alternancia(r)+'<button class="chip'+
-       (window.__f_nv_nv?' on':'')+'" id="f-nv-naovistas">Só não lidas</button>'+
-       '<select id="f-nv-trib" aria-label="Tribunal">'+
-       '<option value="">Todos os tribunais</option>'+
-       estado.facetas.tribunais.map(function(t){
-         return '<option value="'+esc(t)+'"'+(trib===t?' selected':'')+'>'+esc(t)+'</option>'}).join('')+
-       '</select></div></div>';
-
-    if(!r.grupos.length){
-      /* Três estados diferentes, e confundi-los foi o defeito: "não tenho
-         processo", "tenho processos e nada mudou" e "o filtro escondeu". O
-         segundo é INFORMAÇÃO — silêncio verificado —, não ausência dela. */
-      h+=r.foraDaJanela>0
-        ? vazio('🔔','Nenhuma atualização nos últimos '+r.janelaPadraoDias+' dias',
-            'Há atualizações mais antigas — elas não foram descartadas.')
-        : q.length
-        ? vazio('🔔','Nenhuma atualização com os filtros atuais',
-            'Ajuste os filtros acima para ver mais.')
-        : acomp===0
-          ? vazio('🔔','Você ainda não acompanha nenhum processo',
-              'Adicione um processo pelo número e o Processo Vivo passa a verificar sozinho, avisando quando houver movimentação nova.',
-              '<button class="bt" onclick="window.__processovivo_ir(\'buscar\')">Buscar processo</button>')
-          : vazio('✓','Nenhuma movimentação nova',
-              'Seus '+acomp+' processo(s) foram verificados e nada mudou desde a última consulta. Esta tela mostra só o que é NOVO — para ver a carteira inteira, abra Meus processos.',
-              '<button class="bt bt2" onclick="window.__processovivo_ir(\'processos\')">Ver meus processos</button>');
-    }
-    h+=window.__pvAtualizacoes.corpo(r,window.__f_nv_abertos);
-    h+='</div></div>';
-    if(temTrilho)h+='<aside class="trilho">'+blocoPecasBaixadas(pn.pecasBaixadas)+'</aside>';
-    h+='</div>';
+    h+='<button class="bt bt2" id="sincronizar">'+ICONE_ATUALIZAR+'Verificar agora</button></div></div></div>'+
+      '<div id="nv-tabela"></div>';
     alvo.innerHTML=h;
+
+    window.__pvAtualizacoes.montar($('nv-tabela'),r,{
+      tribunais:estado.facetas.tribunais,
+      tribunal:trib,
+      aoMudar:function(m){
+        if(m.janela!==undefined)window.__f_nv_janela=m.janela;
+        if(m.tribunal!==undefined)window.__f_nv_trib=m.tribunal;
+        verNovidades();
+      }
+    });
 
     if($('marcar'))$('marcar').addEventListener('click',function(){
       api('/v1/novidades/marcar-vistas',{method:'POST',body:{}})
         .then(function(){atualizarBolha();verNovidades()})});
     $('sincronizar').addEventListener('click',dispararSync);
-    $('f-nv-naovistas').addEventListener('click',function(){
-      window.__f_nv_nv=!window.__f_nv_nv;
-      this.classList.toggle('on');verNovidades()});
-    $('f-nv-trib').addEventListener('change',function(){
-      window.__f_nv_trib=this.value;verNovidades()});
-    window.__f_nv_abertos=window.__f_nv_abertos||{};
-    window.__pvAtualizacoes.ligar(alvo,r,function(j){window.__f_nv_janela=j;verNovidades()},window.__f_nv_abertos);
-
-    /* Aqui NÃO há restauração de foco, e é de propósito: esta tela não tem
-       campo de texto — só um chip e um select, que não perdem digitação. O
-       bloco que fazia isso foi copiado da tela de processos, onde existe um
-       "f" com o estado do filtro; aqui esse "f" nunca existiu, e a linha
-       lançava ReferenceError DEPOIS de pintar o conteúdo, fazendo o "catch"
-       abaixo trocar a tela inteira por uma caixa de erro. */
-  }).catch(function(e){alvo.innerHTML=erroBloco(e)});
+  }).catch(function(e){
+    alvo.innerHTML=erroBloco(e)+'<p><button class="bt bt2" id="nv-tentar">Tentar de novo</button></p>';
+    $('nv-tentar').addEventListener('click',verNovidades);
+  });
 }
 
 function dispararSync(){
@@ -354,34 +312,6 @@ function dispararSync(){
       },4000);
     })
     .catch(function(e){b.disabled=false;b.textContent='Verificar agora';alert(explicar(e))});
-}
-
-/**
- * Os três cards do painel.
- *
- * Todos saem de dado que existe. A referência visual que originou esta tela
- * trazia "Prazos em 48h", e esse não entrou: não há prazo cadastrado em lugar
- * nenhum do sistema. O que temos perto é "pedem providência" — o ato que ABRE
- * um prazo, não o prazo —, e o card diz exatamente isso. Um sistema que anuncia
- * contagem de prazo sem contar prazo, para advogado, não volta como reclamação
- * de interface.
- */
-function cardsDoPainel(c,naoLidas){
-  var arquivadas=(c.totalPastas||0)-(c.ativos||0);
-  return '<div class="cards">'+
-    card(c.ativos,'Processos ativos',
-      arquivadas>0?arquivadas+' arquivado(s) fora da conta':'')+
-    card(c.pedemProvidencia,'Pedem providência',
-      'ato dos últimos '+c.pendenciaJanelaDias+' dias que pede providência','al')+
-    card(naoLidas,'Novidades não lidas','movimentação nova ainda não aberta','nv')+
-    card(c.baixadasHoje,'Peças baixadas hoje','')+
-    '</div>';
-}
-function card(valor,rotulo,nota,cls){
-  return '<div class="card'+(cls&&valor>0?' '+cls:'')+'">'+
-    '<div class="v">'+(valor||0)+'</div>'+
-    '<div class="k">'+esc(rotulo)+'</div>'+
-    (nota?'<div class="t-sub">'+esc(nota)+'</div>':'')+'</div>';
 }
 
 /**
@@ -426,25 +356,6 @@ function seloDeVerificacao(ver,acomp){
   if(!ver.ultimaEm)return '<span class="vigia neutro"><span class="ponto-vivo"></span>Aguardando a primeira verificação</span>';
   return '<span class="vigia"><span class="ponto-vivo"></span>Verificado às '+
     esc(horaDe(ver.ultimaEm))+'</span>';
-}
-
-/** O trilho da direita: o que já foi puxado do tribunal. */
-function blocoPecasBaixadas(lista){
-  var h='<div class="cartao"><h3 class="sec">Peças baixadas</h3>';
-  lista.forEach(function(p){
-    h+='<div class="baixa">'+
-      '<div class="t">'+esc(p.rotulo)+'</div>'+
-      '<div class="t-sub"><button class="lnh" data-abrir="'+esc(p.numero)+'">'+
-        esc(mascara(p.numero))+'</button> · '+tamanho(p.bytes)+' · '+
-        esc(horaDe(p.baixadaEm))+' '+esc(humano(p.baixadaEm))+'</div>'+
-      '</div>';
-  });
-  /* Sem botão de rebaixar aqui, e não é esquecimento: baixar de novo custa
-     outra consulta ao tribunal de dezenas de segundos, e um botão convidativo
-     no painel faria isso acontecer por engano. Quem quer o arquivo de novo
-     abre o processo, onde a régua mostra o que já foi puxado. */
-  return h+'<div class="nota">O arquivo não fica guardado aqui — isto é o '+
-    'registro do que você já puxou.</div></div>';
 }
 
 /* ---------------- aba: meus processos ---------------- */
@@ -1112,6 +1023,7 @@ function atualizarRotuloLote(lista){
 function abrir(numero){
   if(window.__pvPasta)window.__pvPasta.trocouProcesso(numero);
   estado.detalhe=numero;pintarNav();
+  $('conteudo').classList.remove('env-larga');
   var alvo=$('conteudo');
   alvo.innerHTML='<div class="cartao"><span class="gira"></span>Carregando…</div>';
 
@@ -1149,7 +1061,7 @@ function abrir(numero){
 window.__processovivo_abrir=abrir;
 /* O que a Pasta digital (scriptPasta.ts) e o calendário (calendario.ts) usam do console.
    Um objeto pequeno e explícito: eles não leem o estado da tela por dentro. */
-window.__pv={api:api,esc:esc,explicar:explicar,dth:dth,erroBloco:erroBloco,vazio:vazio,abrir:abrir,chave:function(){return estado.chave},dt:dt,diaMes:diaMes,humano:humano,mascara:mascara};
+window.__pv={api:api,esc:esc,explicar:explicar,dth:dth,erroBloco:erroBloco,vazio:vazio,abrir:abrir,chave:function(){return estado.chave},dt:dt,diaMes:diaMes,humano:humano,mascara:mascara,tamanho:tamanho};
 
 function ligarBotoesDetalhe(numero,acompanhado){
   var b=$('acompanhar');
@@ -2361,6 +2273,7 @@ function salvarNotificacao(ativa){
 
 function render(){
   if(estado.detalhe)return;
+  $('conteudo').classList.toggle('env-larga',estado.aba==='novidades');
   if(estado.aba==='novidades')return verNovidades();
   if(estado.aba==='processos')return verProcessos();
   if(estado.aba==='vigilancia')return verVigilancia();
