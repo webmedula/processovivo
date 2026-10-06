@@ -9,6 +9,41 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.35.1] — 2026-10-06
+
+Página inicial — dois ajustes pedidos pelo dono depois de usar o sistema.
+
+### Alterado
+
+- **"Últimas atualizações" mostra só o começo do texto do ato**: até ~220
+  caracteres, cortado em limite de palavra, com "…" (em `aria-hidden`) e no
+  máximo 3 linhas. O texto completo continua nos dados e na API; quem quer ler
+  abre o processo ("Abrir processo", que só aparece quando houve corte). Vale
+  para a atualização em destaque e para as anteriores expandidas. Não mudou
+  contagem de não lidas, janela de 15 dias, "+N anteriores", "pede providência"
+  nem a ordem, e nenhuma atualização deixa de aparecer. A função é pura e mora em
+  `ui/trechoDeTexto.ts`; o console recebe o texto dela (`toString()`), então o
+  teste exercita a mesma função que roda no navegador. `script.ts` não cresceu.
+
+### Corrigido
+
+- **"Peças baixadas" empurrava a coluna da direita para fora da página** quando o
+  nome do arquivo era comprido e sem espaço. Causa: item de grade não encolhe
+  abaixo do conteúdo (`min-width: auto`). Correção: `minmax(0, …)` nas colunas de
+  `.duas-colunas` e de `.app`, `min-width: 0` nos filhos e `overflow-wrap:
+  anywhere` no nome do arquivo, na linha de metadados e no título da atualização.
+  O nome continua inteiro na tela, quebrado em linhas (sem truncar).
+
+### Testes
+
+- `tests/http/trecho-de-texto.spec.ts` (unidade) e
+  `tests/browser/inicio-navegador.spec.ts` (Chromium: decisão de ~3.000
+  caracteres mostra só o trecho; nome de 120 caracteres sem rolagem horizontal
+  em 1280, 1024, 768 e 390 px; axe nos temas claro e escuro). Os testes de largura
+  falham sem a correção de CSS.
+
+---
+
 ## [0.35.0] — 2026-10-04
 
 Pasta digital — **calibração do número da movimentação com o Projudi, feita pelo

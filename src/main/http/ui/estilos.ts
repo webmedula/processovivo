@@ -87,7 +87,7 @@ a{color:var(--acento);text-decoration:none}
    que é informação que antes exigia abrir a tela para descobrir.
    Desde a v0.29.0 ela é azul-marinho nos DOIS temas: é onde a marca mora, e o
    logo em branco sobre o marinho é a versão que o dono do produto desenhou. */
-.app{display:grid;grid-template-columns:auto 1fr;align-items:start}
+.app{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:start}
 /* Sem isto, a tabela larga (que rola dentro do próprio cartão) alargava a
    página inteira no celular: item de grade não encolhe abaixo do conteúdo. */
 .app>*{min-width:0}
@@ -345,7 +345,7 @@ button.bt3:hover{color:var(--erro)}
   height:48px;border-radius:10px;background:var(--papel2);border:1px solid var(--linha)}
 .nov .q b{font-size:17px;line-height:1;font-weight:800;color:var(--tinta)}
 .nov .q span{font-size:11px;font-weight:700;color:var(--tinta3);text-transform:uppercase}
-.nov .t{font-weight:700;font-size:14.5px;line-height:1.4}
+.nov .t{font-weight:700;font-size:14.5px;line-height:1.4;overflow-wrap:anywhere}
 .nov .p{font-size:12.5px;color:var(--tinta2);margin-top:3px;cursor:pointer;
   font-family:var(--mono);font-weight:600}
 .nov .p:hover{color:var(--acento)}
@@ -421,11 +421,15 @@ h3.sec{font-size:12px;font-weight:700;text-transform:uppercase;
 /* O trilho NÃO tem largura reservada quando não há conteúdo: quem monta a
    coluna só usa esta grade se houver bloco para pôr nela. Vão em branco no meio
    da página não é lido como "ainda não há dados". */
-.duas-colunas{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:20px;align-items:start}
+.duas-colunas{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,320px);gap:20px;align-items:start}
+/* Item de grade não encolhe abaixo do conteúdo: um nome de arquivo sem espaço
+   empurrava o trilho para fora da página. A causa é o min-width automático. */
+.duas-colunas>*{min-width:0}
 .trilho .cartao{margin-bottom:16px}
 .baixa{padding:9px 0;border-top:1px solid var(--linha2)}
 .baixa:first-of-type{border-top:0}
-.baixa .t{font-size:13.5px;font-weight:500;line-height:1.35}
+.baixa .t{font-size:13.5px;font-weight:500;line-height:1.35;overflow-wrap:anywhere}
+.baixa .t-sub{overflow-wrap:anywhere}
 @media (max-width:1040px){
   .duas-colunas{grid-template-columns:1fr}
 }

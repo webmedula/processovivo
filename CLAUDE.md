@@ -845,6 +845,17 @@ Não são detalhes — moldam o código.
   pedem providência ("veja na linha do tempo"); a linha do tempo continua
   marcando todos: sair do topo não é sumir. Não é cálculo de prazo e não se
   apresenta como tal.
+- **Grade nunca sem `minmax(0, …)` e `min-width: 0`** (v0.35.1). Item de grade não
+  encolhe abaixo do conteúdo: um nome de arquivo de 120 caracteres sem espaço em
+  "Peças baixadas" empurrou o trilho para fora da página. Texto vindo de fora
+  (nome de arquivo, título) leva `overflow-wrap: anywhere`, e o nome NÃO se trunca
+  com "…". `tests/browser/inicio-navegador.spec.ts` mede `scrollWidth` em quatro
+  larguras.
+- **Atualizações mostram só o TRECHO do texto do ato** (v0.35.1): ~220 caracteres,
+  em limite de palavra, 3 linhas, "…" em `aria-hidden`, "Abrir processo" quando
+  cortou (`ui/trechoDeTexto.ts`, função pura injetada no console por
+  `toString()`). Só a exibição encurta; dado e API seguem inteiros e nenhuma
+  atualização some.
 - **Atualizações: uma linha por processo, janela de 15 dias** (v0.32.1,
   `NOVIDADES_JANELA_DIAS`). "+N anteriores" expande na própria linha, a tela diz
   quantas atualizações mais antigas ficaram de fora e oferece "Todas". A janela
@@ -1183,7 +1194,7 @@ teste e carência** (v0.28.0), **visual novo a partir do logo** (v0.29.0),
 **calendário: detecção, agenda, tela e feed ICS** (v0.32.0),
 **ajustes dos advogados: Atualizações por processo, peças no topo, providência em 10 dias** (v0.32.1),
 **Pasta digital: backend (v0.33.0) e tela (v0.33.1) — peça aberta ao clique, guarda por peça, montar pasta completa, baixar marcadas**,
-**ato (movimentação) de cada peça na lista da Pasta, com descrição** (v0.33.2) **e o número da movimentação calculado pela posição do ato, com aviso de atos bloqueados** (v0.34.0; a 0.33.3 havia removido o número errado da 0.33.2), **calibração do número com o Projudi feita pelo advogado: exato quando provado, faixa ou estimado quando não** (v0.35.0),
+**ato (movimentação) de cada peça na lista da Pasta, com descrição** (v0.33.2) **e o número da movimentação calculado pela posição do ato, com aviso de atos bloqueados** (v0.34.0; a 0.33.3 havia removido o número errado da 0.33.2), **calibração do número com o Projudi feita pelo advogado: exato quando provado, faixa ou estimado quando não** (v0.35.0), **página inicial: Últimas atualizações mostra só o trecho do texto e o trilho de peças baixadas não estoura a largura** (v0.35.1),
 Dockerfile multi-stage, CI, 1207 testes.
 
 **Pasta digital (v0.33.0, backend):** `GET /v1/processos/:numero/pasta` (lista +

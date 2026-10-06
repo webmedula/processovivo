@@ -20,9 +20,24 @@
  * tsc; `tests/http/console-script.spec.ts` roda o ESLint aqui dentro. Todo
  * texto vindo do servidor passa por `esc()`.
  */
+import { trechoDeTexto } from './trechoDeTexto.js';
+
 export const SCRIPT_ATUALIZACOES = String.raw`
 (function(){
 var pv=function(){return window.__pv};
+/* A MESMA função que os testes exercitam (ui/trechoDeTexto.ts), injetada como texto. */
+var trechoDeTexto=${trechoDeTexto.toString()};
+
+/* Só o começo do texto do ato; o inteiro está no processo (v0.35.1). As
+   reticências ficam fora do texto lido: aria-hidden, para não virar "ponto ponto ponto". */
+function notaDoAto(n){
+  var p=pv(),t=trechoDeTexto(n.conteudo);
+  if(!t.texto)return '';
+  return '<div class="nota nov-trecho"><div class="nov-txt">'+p.esc(t.texto)+
+    (t.cortado?'<span aria-hidden="true">…</span>':'')+'</div>'+
+    (t.cortado?'<button class="lnh nov-abrir" data-abrir="'+p.esc(n.numero)+
+      '" aria-label="Abrir o processo para ler o texto completo">Abrir processo</button>':'')+'</div>';
+}
 
 function linha(n,ehPrincipal){
   var p=pv(),dm=p.diaMes(n.data);
@@ -30,7 +45,7 @@ function linha(n,ehPrincipal){
     '<div class="q" title="'+p.esc(p.dt(n.data))+'"><b>'+p.esc(dm[0])+'</b><span>'+p.esc(dm[1])+'</span></div>'+
     '<div style="min-width:0">'+
     '<div class="t">'+p.esc(n.titulo)+'</div>'+
-    (n.conteudo?'<div class="nota">'+p.esc(n.conteudo)+'</div>':'')+
+    notaDoAto(n)+
     (ehPrincipal?'<div class="p" data-abrir="'+p.esc(n.numero)+'">'+p.mascara(n.numero)+'</div>':'')+
     '</div>'+
     '<div class="lado">'+(n.vista?'':'<span class="selo nv">novo</span>')+
@@ -117,5 +132,11 @@ export const ESTILOS_ATUALIZACOES = `
 .nov.ant .t{font-weight:600;font-size:14px}
 .nov-fora{padding:12px 20px;border-top:1px solid var(--linha2)}
 .selo.am{background:var(--atencao-bg);color:var(--atencao)}
+/* O clamp é só rede de segurança (220 caracteres em coluna estreita passam de 3
+   linhas); o botão fica FORA do bloco cortado para nunca ser comido por ele. */
+.nov-txt{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;line-clamp:3;
+  overflow:hidden;overflow-wrap:anywhere}
+.nov-trecho{margin-top:4px}
+.nov-trecho .nov-abrir{display:block;margin-top:3px;color:var(--acento);font-weight:600}
 @media (max-width:560px){.nov-mais{padding-left:14px}}
 `;
