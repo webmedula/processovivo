@@ -112,7 +112,11 @@ function montarPainel(){
     '<div class="topo">'+
       '<button class="bt bt2" id="pasta-fechar">&larr; Fechar a pasta</button>'+
       '<h3 id="pasta-titulo-geral">Pasta digital</h3>'+
-      '<button class="bt" id="pasta-montar">Montar pasta completa</button>'+
+      /* A estimativa do "Montar" mora aqui, ao lado do botão (v0.35.3): linha fixa no
+         topo comia altura da lista. Aparece no mouse, no foco do teclado e é lida
+         como descrição do botão — a informação continua antes do clique. */
+      '<span class="montar-wrap"><button class="bt" id="pasta-montar">Montar pasta completa</button>'+
+        '<span class="dica-montar" id="pasta-dica-montar" role="tooltip"></span></span>'+
       '<button class="bt bt2" id="pasta-tudo" disabled>Ver tudo seguido</button>'+
     '</div>'+
     '<div class="aviso" id="pasta-aviso" role="status" aria-live="polite"></div>'+
@@ -120,19 +124,23 @@ function montarPainel(){
     '<div class="pcal-editor" id="pasta-cal-editor" hidden role="group" '+
       'aria-label="Informar o número do ato no Projudi"></div>'+
     '<div class="corpo">'+
-      '<section class="lista" id="pasta-lista" aria-label="Peças do processo">'+
+      '<section class="lista" id="pasta-lista" aria-label="Lista de peças">'+
         '<div class="barra">'+
-          '<input id="pasta-busca" type="search" placeholder="Buscar por rótulo, movimentação ou nº" '+
-            'aria-label="Buscar peça pelo rótulo, pela descrição ou pelo número da movimentação" '+
-            'autocomplete="off">'+
-          '<label class="so-disp"><input type="checkbox" id="pasta-so-disp"> só disponíveis</label>'+
-          '<div class="acoes">'+
-            '<button class="bt bt2" id="pasta-todas">Todas</button>'+
-            '<button class="bt bt2" id="pasta-nenhuma">Nenhuma</button>'+
-            '<button class="bt" id="pasta-baixar-pdf" disabled>Baixar PDF</button>'+
+          '<div class="filtro-linha">'+
+            '<input id="pasta-busca" type="search" placeholder="Buscar por rótulo, movimentação ou nº" '+
+              'aria-label="Buscar peça pelo rótulo, pela descrição ou pelo número da movimentação" '+
+              'autocomplete="off">'+
+            '<label class="so-disp"><input type="checkbox" id="pasta-so-disp"> só disponíveis</label>'+
           '</div>'+
-          '<div class="chips" id="pasta-atalhos" aria-label="Marcar por tipo"></div>'+
-          '<div class="contagem" id="pasta-contagem" aria-live="polite"></div>'+
+          '<div class="acoes-chips">'+
+            '<div class="acoes">'+
+              '<button class="bt bt2" id="pasta-todas">Todas</button>'+
+              '<button class="bt bt2" id="pasta-nenhuma">Nenhuma</button>'+
+              '<button class="bt" id="pasta-baixar-pdf" disabled>Baixar PDF</button>'+
+            '</div>'+
+            '<div class="chips" id="pasta-atalhos" role="group" aria-label="Marcar por tipo"></div>'+
+            '<div class="contagem" id="pasta-contagem" aria-live="polite"></div>'+
+          '</div>'+
         '</div>'+
         '<div id="pasta-baixar-caixa"></div>'+
         '<div class="itens" id="pasta-itens" role="listbox" aria-multiselectable="true" '+
@@ -140,7 +148,7 @@ function montarPainel(){
       '</section>'+
       '<div class="divisor" id="pasta-divisor" role="separator" aria-orientation="vertical" '+
         'tabindex="0" aria-label="Ajustar a largura da lista" title="Arraste para ajustar"></div>'+
-      '<section class="visor" id="pasta-visor" aria-label="Visualizador">'+
+      '<section class="visor" id="pasta-visor" aria-label="Visualizador da peça">'+
         '<div class="topo-visor">'+
           '<button class="bt bt2 voltar" id="pasta-voltar">&larr; lista de peças</button>'+
           '<strong id="pasta-nome" class="nome"></strong>'+
@@ -183,6 +191,12 @@ function ligarEventos(){
   $('pasta-fechar').addEventListener('click',fechar);
   $('pasta-montar').addEventListener('click',pedirMontagem);
   $('pasta-tudo').addEventListener('click',alternarTudo);
+  /* Escape fecha a dica sem tirar o foco do botão (WCAG 1.4.13); ela volta ao
+     sair e entrar de novo. */
+  var mw=document.querySelector('#pasta .montar-wrap');
+  mw.addEventListener('keydown',function(ev){if(ev.key==='Escape')mw.classList.add('dica-fechada')});
+  mw.addEventListener('mouseleave',function(){mw.classList.remove('dica-fechada')});
+  $('pasta-montar').addEventListener('blur',function(){mw.classList.remove('dica-fechada')});
   $('pasta-voltar').addEventListener('click',voltarParaLista);
   $('pasta-busca').addEventListener('input',function(){
     st.busca=$('pasta-busca').value;desenharLista();
@@ -578,12 +592,19 @@ function desenharAviso(){
   }
   h+=blocoDaMontagem(v.montagem);
   h+=blocoDasSelecionadas(v.selecionadas);
+  var dica='';
   if(!ativoJob(v.montagem)&&v.estimativaDaMontagem&&!(v.listagem&&v.listagem.processoSigiloso)){
     var e=v.estimativaDaMontagem;
-    h+='<div class="nota">'+(e.abuscar
+    dica=e.abuscar
       ?'Montar a pasta completa busca '+n_pecas(e.abuscar)+' no tribunal ('+faixa(e)+
         '), uma consulta de cada vez'+(e.emGuarda?'; '+e.emGuarda+' já estão guardadas':'')+'.'
-      :'Todas as peças disponíveis já estão guardadas: montar não consulta o tribunal.')+'</div>';
+      :'Todas as peças disponíveis já estão guardadas: montar não consulta o tribunal.';
+  }
+  var dm=$('pasta-dica-montar');
+  if(dm){
+    dm.textContent=dica;
+    if(dica)$('pasta-montar').setAttribute('aria-describedby','pasta-dica-montar');
+    else $('pasta-montar').removeAttribute('aria-describedby');
   }
   if(h!==st.ultimoAviso){
     st.ultimoAviso=h;el.innerHTML=h;

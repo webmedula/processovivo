@@ -116,9 +116,23 @@ export interface Ambiente {
  * debounce do servidor é real (400 ms); a pausa de 3 s do leitor é instantânea
  * — o que se mede aqui é a tela e o NÚMERO de lotes que o tribunal recebe.
  */
-export async function iniciar(): Promise<Ambiente> {
+export async function iniciar(opcoes: { pecasExtras?: number } = {}): Promise<Ambiente> {
   const pasta = pastaTemporaria();
-  const provedor = new ProvedorDeLoteFalso(await pecasDoTeste());
+  const todas = await pecasDoTeste();
+  // Pasta grande (v0.35.3): peças sintéticas a mais, penduradas nos mesmos atos,
+  // para a lista passar da altura da janela e rolar por dentro.
+  const extras = await Promise.all(
+    Array.from({ length: opcoes.pecasExtras ?? 0 }, async (_, i) => {
+      const n = String(i + 1).padStart(3, '0');
+      return {
+        id: `x${n}`,
+        rotulo: ['Outros', 'Certidão', 'Petição - juntada'][i % 3] as string,
+        bytes: await pdfSintetico(1, `X${n}`),
+        movimento: BASE_ID_INTERNO + 1 + (i % 7),
+      };
+    }),
+  );
+  const provedor = new ProvedorDeLoteFalso([...todas, ...extras]);
   // Os atos do tribunal, SINTÉTICOS. Identificadores internos longos de
   // propósito (nunca podem aparecer na tela como número de movimentação) e "ev. 382" no texto, que é texto e não referência.
   // Os atos 8, 9 e 10 não existem: p10, p11 e p12 apontam para atos que o

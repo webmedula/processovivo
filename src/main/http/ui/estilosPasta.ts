@@ -11,26 +11,38 @@
 export const ESTILOS_PASTA = `
 /* ---------- pasta digital: a tela inteira à direita da lateral ---------- */
 :root{--pasta-lista-w:400px}
-body.com-pasta{overflow:hidden}
-#pasta{position:fixed;top:0;right:0;bottom:0;left:256px;z-index:40;display:flex;
+/* Altura total (v0.35.3): a página por baixo não rola nem tem altura além da janela;
+   rolam só a lista e o visualizador, cada um por dentro. */
+html:has(body.com-pasta){overflow:hidden}
+body.com-pasta{overflow:hidden;height:100vh;height:100dvh}
+#pasta{position:fixed;top:0;right:0;bottom:0;height:100vh;height:100dvh;left:256px;z-index:40;display:flex;
   flex-direction:column;min-width:0;overflow:hidden;background:var(--papel);
   box-shadow:-6px 0 18px rgba(11,25,44,.08)}
 #pasta>*{min-width:0}
 #pasta>.topo,#pasta>.aviso{flex-shrink:0}
-#pasta .topo{display:flex;align-items:center;gap:8px;padding:10px 14px;
+#pasta .topo{display:flex;align-items:center;gap:8px;padding:5px 14px;
   border-bottom:1px solid var(--linha);flex-wrap:wrap}
 #pasta .topo h3{margin:0;font-size:15px;font-weight:800;flex-grow:1;min-width:0;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#pasta .topo .bt,#pasta .topo .bt2{min-height:40px}
+#pasta .topo .bt,#pasta .topo .bt2{min-height:32px}
+#pasta .montar-wrap{position:relative;display:inline-flex}
+/* Dica do "Montar pasta completa": no mouse e no foco do teclado, nunca fixa. */
+#pasta .dica-montar{display:none;position:absolute;top:calc(100% + 6px);right:0;z-index:5;
+  width:min(340px,70vw);padding:8px 10px;border:1px solid var(--linha);border-radius:8px;
+  background:var(--papel);color:var(--tinta2);font-size:12.5px;line-height:1.4;
+  box-shadow:0 6px 18px rgba(11,25,44,.18)}
+#pasta .montar-wrap:hover:not(.dica-fechada) .dica-montar:not(:empty),
+#pasta .montar-wrap:focus-within:not(.dica-fechada) .dica-montar:not(:empty){display:block}
+/* Faixa compacta (v0.35.3): o mesmo texto de antes, menor e mais justo. */
 #pasta .aviso{background:var(--papel);border-radius:0;border-bottom:1px solid var(--linha);
-  padding:0 14px;font-size:13px;color:var(--tinta2);max-height:30vh;overflow:auto}
+  padding:0 14px;font-size:12px;line-height:1.35;color:var(--tinta2);max-height:30vh;overflow:auto}
 #pasta .aviso:empty{display:none}
-#pasta .aviso>div{padding:8px 0;border-bottom:1px solid var(--linha2)}
-#pasta .aviso>div:last-child{border-bottom:0}
+#pasta .aviso>div{padding:3px 0;border-bottom:1px solid var(--linha2)}
 #pasta strong{color:var(--tinta)}
-#pasta .proc{font-size:12.5px;color:var(--tinta2)}
+#pasta .proc{color:var(--tinta2)}
+#pasta .aviso .nota{margin-top:0;font-size:inherit}
 #pasta .job.pausa,#pasta .pausa{color:var(--atencao);background:var(--atencao-bg);
-  border-radius:8px;padding:8px 10px;margin:6px 0}
+  border-radius:8px;padding:5px 10px;margin:3px 0}
 #pasta .job.pausa strong,#pasta .pausa strong{color:var(--atencao)}
 #pasta .job.falha,#pasta .falha{color:var(--erro)}
 #pasta .job.falha strong,#pasta .falha strong{color:var(--erro)}
@@ -50,21 +62,26 @@ body.com-pasta{overflow:hidden}
 #pasta .lista{flex:none;width:min(var(--pasta-lista-w),calc(100vw - 256px - 320px));
   min-width:260px;max-width:100%;display:flex;flex-direction:column;min-height:0;
   border-right:1px solid var(--linha);background:var(--papel)}
-#pasta .lista .barra{flex-shrink:0;padding:10px 12px;border-bottom:1px solid var(--linha2);
-  display:flex;flex-direction:column;gap:8px}
-#pasta .lista input[type=search]{width:100%;min-height:40px;padding:6px 12px;font-size:14px;
-  min-width:0}
-#pasta .so-disp{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--tinta2);
-  cursor:pointer;min-height:28px}
-#pasta .so-disp input{width:18px;height:18px}
+#pasta .lista .barra{flex-shrink:0;padding:5px 12px;border-bottom:1px solid var(--linha2);
+  display:flex;flex-direction:column;gap:3px}
+#pasta .lista input[type=search]{flex:1 1 150px;width:auto;min-height:32px;padding:3px 12px;
+  font-size:14px;min-width:0}
+/* "só disponíveis" e o contador na mesma linha; ações e chips no mesmo fluxo. */
+#pasta .filtro-linha{display:flex;align-items:center;gap:4px 10px;min-width:0}
+#pasta .so-disp{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--tinta2);
+  cursor:pointer;min-height:24px;white-space:nowrap}
+#pasta .so-disp input{width:16px;height:16px}
+#pasta .acoes-chips{display:flex;flex-wrap:wrap;align-items:center;gap:3px 5px;min-width:0}
+#pasta .acoes-chips>.acoes,#pasta .acoes-chips>.chips{display:contents}
 #pasta .acoes,#pasta .acoes-previa{display:flex;gap:6px;flex-wrap:wrap}
-#pasta .acoes .bt,#pasta .acoes .bt2{min-height:38px;padding:0 12px;font-size:13px}
-#pasta .barra .chips{margin:0;gap:6px}
-#pasta .barra .chip{min-height:34px;padding:0 10px;font-size:12.5px;max-width:100%;
+#pasta .acoes .bt,#pasta .acoes .bt2{min-height:26px;padding:0 8px;font-size:12px}
+#pasta .barra .chips{margin:0;gap:3px 5px}
+#pasta .barra .chip{min-height:22px;padding:0 6px;font-size:11px;line-height:1;max-width:100%;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #pasta .chip.on{border-color:var(--acento);color:var(--acento);background:var(--acento-bg)}
-#pasta .contagem{font-size:12.5px;color:var(--tinta2)}
+#pasta .contagem{font-size:12px;color:var(--tinta2);min-width:0;flex:1 1 auto;text-align:right}
 #pasta .filtro-ativo{color:var(--atencao)}
+#pasta #pasta-baixar-caixa{flex-shrink:0;max-height:34vh;overflow:auto}
 #pasta .previa{margin:8px 12px;padding:10px 12px;border:1px solid var(--linha);
   border-radius:10px;background:var(--papel2);font-size:13px;color:var(--tinta2)}
 #pasta .previa.falha{border-color:var(--erro);background:var(--erro-bg)}
@@ -73,7 +90,7 @@ body.com-pasta{overflow:hidden}
 #pasta .itens{flex:1 1 auto;min-height:0;overflow:auto}
 #pasta .vazio-lista{padding:20px 14px;color:var(--tinta2);font-size:13.5px}
 #pasta .linha{display:grid;grid-template-columns:auto 8ch minmax(0,1fr);gap:2px 8px;align-items:center;
-  padding:9px 12px;border-top:1px solid var(--linha2);cursor:pointer;min-height:48px}
+  padding:4px 12px;border-top:1px solid var(--linha2);cursor:pointer;min-height:48px}
 #pasta .linha:first-child{border-top:0}
 #pasta .linha:hover{background:var(--papel2)}
 #pasta .linha.atual{background:var(--acento-bg)}
@@ -117,7 +134,7 @@ body.com-pasta{overflow:hidden}
 #pasta>.pcal-caixa{flex-shrink:0;border-bottom:1px solid var(--linha);max-height:32vh;
   overflow:auto}
 #pasta>.pcal-caixa:empty{display:none}
-#pasta .pcal summary{padding:8px 14px;cursor:pointer;font-weight:700;font-size:13.5px;
+#pasta .pcal summary{padding:3px 14px;cursor:pointer;font-weight:700;font-size:13px;
   color:var(--tinta);min-height:24px}
 #pasta .pcal summary:focus-visible,#pasta .pcal .bt:focus-visible,
 #pasta .pcal input:focus-visible,#pasta .pcal-editor input:focus-visible,

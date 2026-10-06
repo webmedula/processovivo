@@ -851,6 +851,13 @@ Não são detalhes — moldam o código.
   (nome de arquivo, título) leva `overflow-wrap: anywhere`, e o nome NÃO se trunca
   com "…". `tests/browser/inicio-navegador.spec.ts` mede `scrollWidth` em quatro
   larguras.
+- **Avisos da Pasta podem ser compactados, nunca escondidos; a lista da Pasta ocupa
+  a altura disponível e rola por dentro** (v0.35.3). A Pasta tem `100dvh`, a página
+  por baixo não rola, e só a lista e o visualizador rolam (cada um por dentro). O
+  aviso "lista obtida do tribunal… não é consulta ao vivo" e o da numeração (enquanto
+  houver número não exato) ficam sempre à vista; a estimativa do "Montar pasta
+  completa" mora numa dica junto do botão (foco e mouse), não numa linha fixa.
+  `tests/browser/pasta-layout-navegador.spec.ts` mede cinco larguras.
 - **A lista da Pasta não exibe índice sequencial; o número exibido à esquerda é
   sempre o da movimentação** (v0.35.2), nos formatos `386`, `380–381`, `~386` ou a
   posição, e "—" quando não há número — nunca o índice (que segue como chave
@@ -1203,8 +1210,8 @@ teste e carência** (v0.28.0), **visual novo a partir do logo** (v0.29.0),
 **calendário: detecção, agenda, tela e feed ICS** (v0.32.0),
 **ajustes dos advogados: Atualizações por processo, peças no topo, providência em 10 dias** (v0.32.1),
 **Pasta digital: backend (v0.33.0) e tela (v0.33.1) — peça aberta ao clique, guarda por peça, montar pasta completa, baixar marcadas**,
-**ato (movimentação) de cada peça na lista da Pasta, com descrição** (v0.33.2) **e o número da movimentação calculado pela posição do ato, com aviso de atos bloqueados** (v0.34.0; a 0.33.3 havia removido o número errado da 0.33.2), **calibração do número com o Projudi feita pelo advogado: exato quando provado, faixa ou estimado quando não** (v0.35.0), **página inicial: Últimas atualizações mostra só o trecho do texto e o trilho de peças baixadas não estoura a largura** (v0.35.1), **Pasta: número da movimentação no lugar do índice; página inicial: "detectado há N dias" e cartão "pede providência"** (v0.35.2),
-Dockerfile multi-stage, CI, 1228 testes.
+**ato (movimentação) de cada peça na lista da Pasta, com descrição** (v0.33.2) **e o número da movimentação calculado pela posição do ato, com aviso de atos bloqueados** (v0.34.0; a 0.33.3 havia removido o número errado da 0.33.2), **calibração do número com o Projudi feita pelo advogado: exato quando provado, faixa ou estimado quando não** (v0.35.0), **página inicial: Últimas atualizações mostra só o trecho do texto e o trilho de peças baixadas não estoura a largura** (v0.35.1), **Pasta: número da movimentação no lugar do índice; página inicial: "detectado há N dias" e cartão "pede providência"** (v0.35.2), **Pasta: lista em altura total com avisos compactados** (v0.35.3),
+Dockerfile multi-stage, CI, 1239 testes.
 
 **Pasta digital (v0.33.0, backend):** `GET /v1/processos/:numero/pasta` (lista +
 estado de cada peça + intervalos de página + totais SEM filtro + procedência
