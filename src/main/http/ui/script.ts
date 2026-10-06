@@ -372,7 +372,7 @@ function cardsDoPainel(c,naoLidas){
     card(c.ativos,'Processos ativos',
       arquivadas>0?arquivadas+' arquivado(s) fora da conta':'')+
     card(c.pedemProvidencia,'Pedem providência',
-      'ato dos últimos '+c.pendenciaJanelaDias+' dias que abre prazo','al')+
+      'ato dos últimos '+c.pendenciaJanelaDias+' dias que pede providência','al')+
     card(naoLidas,'Novidades não lidas','movimentação nova ainda não aberta','nv')+
     card(c.baixadasHoje,'Peças baixadas hoje','')+
     '</div>';

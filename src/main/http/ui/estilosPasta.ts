@@ -72,7 +72,7 @@ body.com-pasta{overflow:hidden}
 #pasta .acoes-previa{margin-top:8px}
 #pasta .itens{flex:1 1 auto;min-height:0;overflow:auto}
 #pasta .vazio-lista{padding:20px 14px;color:var(--tinta2);font-size:13.5px}
-#pasta .linha{display:grid;grid-template-columns:auto auto 1fr;gap:2px 8px;align-items:center;
+#pasta .linha{display:grid;grid-template-columns:auto 8ch minmax(0,1fr);gap:2px 8px;align-items:center;
   padding:9px 12px;border-top:1px solid var(--linha2);cursor:pointer;min-height:48px}
 #pasta .linha:first-child{border-top:0}
 #pasta .linha:hover{background:var(--papel2)}
@@ -85,8 +85,14 @@ body.com-pasta{overflow:hidden}
 #pasta .linha.marcada .cx::after{content:"";position:absolute;left:5px;top:1px;width:5px;
   height:10px;border:solid var(--papel);border-width:0 2px 2px 0;transform:rotate(45deg)}
 #pasta .linha[aria-disabled=true] .cx{opacity:.35;border-style:dashed}
-#pasta .linha .ord{font-size:12px;color:var(--tinta2);font-variant-numeric:tabular-nums;
-  min-width:2ch;text-align:right}
+/* Coluna do número da movimentação (v0.35.2): largura fixa que cabe "380–381" e
+   "~1386" sem quebrar; o número é o destaque, o rótulo vem depois. */
+#pasta .linha .ord{position:relative;font-size:13px;font-weight:700;color:var(--tinta);
+  font-variant-numeric:tabular-nums;width:8ch;min-width:8ch;text-align:right;white-space:nowrap}
+#pasta .linha .ord.sem{font-weight:400;color:var(--tinta2)}
+#pasta .linha .ord.estimado{font-style:italic}
+#pasta .linha .ord.faixa{text-decoration:underline dotted;text-underline-offset:3px}
+#pasta .linha .mov-grau{flex:none;white-space:nowrap;font-size:11.5px;font-weight:700;font-style:italic}
 #pasta .linha .rot{font-weight:600;font-size:13.5px;min-width:0;overflow:hidden;
   text-overflow:ellipsis;white-space:nowrap}
 #pasta .linha .meta{grid-column:3;display:flex;gap:8px;flex-wrap:wrap;align-items:center;
@@ -95,13 +101,9 @@ body.com-pasta{overflow:hidden}
    foco o texto se abre inteiro (o title só aparece no mouse). */
 #pasta .linha .mov{grid-column:3;display:flex;gap:6px;align-items:baseline;min-width:0;
   font-size:12px;color:var(--tinta2)}
-#pasta .linha .mov-n{flex:none;white-space:nowrap;font-weight:700;
-  font-variant-numeric:tabular-nums}
 #pasta .linha .mov-t{min-width:0;overflow:hidden;overflow-wrap:anywhere;
   display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2}
 #pasta .linha:focus-visible .mov-t{-webkit-line-clamp:unset;line-clamp:unset}
-#pasta .linha .mov-n.faixa{text-decoration:underline dotted;text-underline-offset:3px}
-#pasta .linha .mov-n.estimado{font-style:italic}
 #pasta .linha .mov-ok{flex:none;white-space:nowrap;font-size:11.5px;font-weight:700;
   color:var(--verde-tinta)}
 #pasta .linha .mov-ach{flex:none;white-space:nowrap;font-size:11.5px;font-style:italic}

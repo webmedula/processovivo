@@ -9,6 +9,35 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.35.2] — 2026-10-06
+
+Três ajustes de interface pedidos pelo dono: um na Pasta digital, dois na página inicial.
+
+### Alterado
+
+- **Pasta digital: o número da movimentação ocupa o lugar do índice.** A lista
+  mostrava um índice sequencial (1, 2, 3…) que o advogado lia como o número do ato
+  no Projudi. Agora a coluna à esquerda do rótulo é o número da movimentação, nos
+  formatos já calculados pela 0.35.0: exato `386` (com "✓ conferido"), faixa
+  `380–381` (nunca arredondada), estimado `~386` e posição `385` (com o aviso do
+  topo da 0.34.0). O "mov. N" repetido saiu da linha de metadados; "faixa" e
+  "estimado" aparecem por extenso ao lado do rótulo. Peça sem número mostra "—",
+  nunca o índice. O cabeçalho do visualizador passou de "13. Certidão" para
+  "Mov. 369 · Certidão" (e "Mov. 380–381", "Mov. ~386"), e o "Ver tudo seguido"
+  diz "Mov. N" em vez de "peça N". Coluna de largura fixa (8ch, fonte tabular), sem
+  rolagem horizontal em 1280/1024/768/390 px. Leitor de tela: "Movimentação 386,
+  conferida" / "faixa 380 a 381" / "estimada 386" / "sem número". Várias peças do
+  mesmo ato seguem como linhas separadas com o mesmo número. O índice continua
+  existindo como chave interna de ordenação; só deixou de ser exibido. Sem mudança
+  em API, banco ou no cálculo do número.
+- **Página inicial: "há N dias" virou "detectado há N dias"** (singular "detectado
+  há 1 dia"; "detectado hoje") na atualização em destaque e nas anteriores. A
+  contagem sempre foi desde a detecção, não desde a data do ato (que está no
+  quadro à esquerda); agora a tela diz isso, e o tooltip explica. Janela,
+  ordenação e contagem não mudaram.
+- **Cartão "Pedem providência"**: "ato dos últimos 10 dias que abre prazo" →
+  "…que pede providência", coerente com a regra de não anunciar prazo.
+
 ## [0.35.1] — 2026-10-06
 
 Página inicial — dois ajustes pedidos pelo dono depois de usar o sistema.

@@ -39,6 +39,17 @@ function notaDoAto(n){
       '" aria-label="Abrir o processo para ler o texto completo">Abrir processo</button>':'')+'</div>';
 }
 
+/* O "há N dias" desta lista conta desde a DETECÇÃO, nunca desde a data do ato (que
+   está no quadro à esquerda): sem o verbo, as duas datas lado a lado pareciam
+   contradizer-se. "ontem" vira "há 1 dia" para seguir o mesmo molde. */
+function detectadoHa(iso){
+  var h=pv().humano(iso);
+  if(!h)return '';
+  if(h==='hoje')return 'detectado hoje';
+  if(h==='ontem')return 'detectado há 1 dia';
+  return 'detectado '+h;
+}
+
 function linha(n,ehPrincipal){
   var p=pv(),dm=p.diaMes(n.data);
   return '<div class="nov'+(n.vista?'':' nl')+(ehPrincipal?'':' ant')+'">'+
@@ -50,7 +61,8 @@ function linha(n,ehPrincipal){
     '</div>'+
     '<div class="lado">'+(n.vista?'':'<span class="selo nv">novo</span>')+
     (n.exigeAcao?'<span class="selo am" title="Marcado por leitura automática do texto. Confira no ato completo.">pede providência</span>':'')+
-    '<span>'+p.esc(p.humano(n.detectadaEm))+'</span></div></div>';
+    '<span title="Quando o Processo Vivo percebeu este ato. A data do ato está no quadro à esquerda.">'+
+    p.esc(detectadoHa(n.detectadaEm))+'</span></div></div>';
 }
 
 function grupo(g,aberto){

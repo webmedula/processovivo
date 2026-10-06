@@ -96,6 +96,9 @@ describe.skipIf(sem)('Pasta digital — no navegador', { timeout: 60_000 }, () =
     expect(lotes()).toEqual([]);
   });
 
+  const visualDoNumero = (id: string) =>
+    linha(id).locator('.ord > [aria-hidden=true]').textContent();
+
   it('lista todas as peças na ordem dos autos, com o estado e os totais sem filtro', async () => {
     await abrirTela();
     await abrirPasta();
@@ -138,8 +141,8 @@ describe.skipIf(sem)('Pasta digital — no navegador', { timeout: 60_000 }, () =
       p09: '7',
     };
     for (const [id, n] of Object.entries(posicoes)) {
-      expect(await linha(id).locator('.mov-n').textContent()).toBe(`mov. ${n}`);
-      expect(await linha(id).locator('.mov-n').getAttribute('title')).toBe(
+      expect(await visualDoNumero(id)).toBe(n);
+      expect(await linha(id).locator('.ord').getAttribute('title')).toBe(
         'Número calculado pela ordem dos atos recebidos do tribunal. ' +
           'Pode ficar abaixo do número do Projudi se o processo tiver atos bloqueados.',
       );
@@ -194,7 +197,9 @@ describe.skipIf(sem)('Pasta digital — no navegador', { timeout: 60_000 }, () =
       await rota.fulfill({ response: resposta, json: corpo });
     });
     await abrirPasta();
-    expect(await page.locator('#pasta .linha .mov-n').count()).toBe(0);
+    // Sem número: "—" discreto, nunca o índice da lista.
+    expect(await page.locator('#pasta .linha .ord:not(.sem)').count()).toBe(0);
+    expect(await visualDoNumero('p06')).toBe('—');
     expect(await page.locator('#pasta-aviso-num').count()).toBe(0);
     expect(await page.locator('#pasta-lista').textContent()).not.toContain('mov.');
     // O texto do ato continua lá.
@@ -204,7 +209,7 @@ describe.skipIf(sem)('Pasta digital — no navegador', { timeout: 60_000 }, () =
   it('lacuna: com 7 atos recebidos, a tela mostra as posições e o aviso diz 7 — mesmo se o Projudi tiver mais', async () => {
     await abrirTela();
     await abrirPasta();
-    expect(await linha('p09').locator('.mov-n').textContent()).toBe('mov. 7');
+    expect(await visualDoNumero('p09')).toBe('7');
     const aviso = (await page.textContent('#pasta-aviso-num')) ?? '';
     expect(aviso).toContain('a partir de 7 atos recebidos');
     expect(aviso).toContain('podem estar abaixo');
@@ -249,6 +254,11 @@ describe.skipIf(sem)('Pasta digital — no navegador', { timeout: 60_000 }, () =
     const cab = (await page.textContent('#pasta-mov')) ?? '';
     expect(cab).toContain('Movimentação nº 3 · ');
     expect(cab).toContain('número calculado');
+    // O cabeçalho começa pelo número da movimentação, nunca pelo índice da lista.
+    expect(await page.textContent('#pasta-nome')).toBe('Mov. 3 · Petição - contestação');
+    expect(await page.getAttribute('#pasta-nome', 'aria-label')).toContain(
+      'Movimentação 3, calculada pela posição, não conferida',
+    );
     expect(cab).not.toMatch(/5160178\d\d/);
     expect(await page.locator('#pasta-mov .mov-aviso').getAttribute('title')).toContain(
       'atos bloqueados',
@@ -604,7 +614,7 @@ describe.skipIf(sem)('Pasta digital — no navegador', { timeout: 60_000 }, () =
 
   describe('calibração do número com o Projudi (7 atos recebidos; dados sintéticos)', () => {
     const aviso = () => page.textContent('#pasta-aviso-num');
-    const numeroDa = (id: string) => linha(id).locator('.mov-n').textContent();
+    const numeroDa = (id: string) => visualDoNumero(id);
     async function calibrarPeloUltimo(n: string): Promise<void> {
       await page.click('#pasta-cal summary');
       await page.fill('#pasta-cal-ultimo', n);
@@ -629,19 +639,19 @@ describe.skipIf(sem)('Pasta digital — no navegador', { timeout: 60_000 }, () =
       await abrirTela();
       await abrirPasta();
       expect(await aviso()).toContain('Numeração das movimentações calculada');
-      expect(await numeroDa('p09')).toBe('mov. 7');
+      expect(await numeroDa('p09')).toBe('7');
       const chamadasAntes = lotes().length;
 
       await calibrarPeloUltimo('8');
       // Último ato: exato e conferido. Os outros: faixa, nunca arredondada.
-      expect(await numeroDa('p09')).toBe('mov. 8');
+      expect(await numeroDa('p09')).toBe('8');
       expect(await linha('p09').locator('.mov-ok').textContent()).toContain('conferido');
       expect(await linha('p09').locator('.mov-ok').getAttribute('title')).toBe(
         'Calculado a partir dos números que você informou do Projudi',
       );
-      expect(await linha('p07').locator('.mov-n').innerText()).toContain('mov. 5–6');
+      expect(await visualDoNumero('p07')).toBe('5–6');
       expect(await linha('p07').locator('.pcal-sr').textContent()).toContain(
-        'entre 5 e 6, ainda não conferida',
+        'faixa 5 a 6, não conferida',
       );
       expect(await aviso()).toContain('Calibrada por você com 1 número do Projudi');
       expect(await aviso()).toContain('1 ato exato, 6 com faixa, 0 estimados');
@@ -653,12 +663,12 @@ describe.skipIf(sem)('Pasta digital — no navegador', { timeout: 60_000 }, () =
       await informarNoAto('p07', '6');
       await page.waitForFunction(
         () =>
-          document.querySelector('#pf-p09 .mov-n')?.textContent === 'mov. 8' &&
+          document.querySelector('#pf-p09 .ord > [aria-hidden]')?.textContent === '8' &&
           document.querySelector('#pf-p08 .mov-ok') !== null,
       );
-      expect(await numeroDa('p07')).toBe('mov. 6');
-      expect(await numeroDa('p08')).toBe('mov. 7');
-      expect(await linha('p06').locator('.mov-n').innerText()).toContain('mov. 4–5');
+      expect(await numeroDa('p07')).toBe('6');
+      expect(await numeroDa('p08')).toBe('7');
+      expect(await visualDoNumero('p06')).toBe('4–5');
       expect(await aviso()).toContain('2 números do Projudi');
       expect(await aviso()).toContain('3 atos exatos, 4 com faixa');
 
@@ -689,9 +699,67 @@ describe.skipIf(sem)('Pasta digital — no navegador', { timeout: 60_000 }, () =
           document.getElementById('pasta-aviso-num')?.textContent ?? '',
         ),
       );
-      expect(await numeroDa('p09')).toBe('mov. 7');
+      expect(await numeroDa('p09')).toBe('7');
       // Nada disto foi ao tribunal.
       expect(lotes().length).toBe(chamadasAntes);
+    });
+
+    it('o número ocupa o lugar do índice: exato, faixa, "—", mesmo ato repetido; sem rolagem horizontal nas quatro larguras', async () => {
+      await abrirTela();
+      await abrirPasta();
+      await calibrarPeloUltimo('8');
+      // Nenhuma linha começa por índice sequencial: o texto visual é o número (ou "—").
+      const visuais = await page
+        .locator('#pasta .linha .ord > [aria-hidden=true]')
+        .allTextContents();
+      expect(visuais).toHaveLength(12);
+      expect(visuais.slice(9)).toEqual(['—', '—', '—']);
+      expect(visuais.slice(0, 9)).toEqual([
+        '1–2',
+        '1–2',
+        '1–2',
+        '2–3',
+        '3–4',
+        '4–5',
+        '5–6',
+        '6–7',
+        '8',
+      ]);
+      // Duas (três) peças do mesmo ato: linhas separadas, o mesmo número, ordem mantida.
+      expect(
+        await page
+          .locator('#pasta .linha .rot')
+          .allTextContents()
+          .then((r) => r.slice(0, 3)),
+      ).toHaveLength(3);
+      // Rótulos acessíveis dizem o grau de certeza; faixa lida como faixa.
+      expect(await linha('p09').locator('.ord .pcal-sr').textContent()).toContain(
+        'Movimentação 8, conferida',
+      );
+      expect(await linha('p07').locator('.ord .pcal-sr').textContent()).toContain(
+        'faixa 5 a 6',
+      );
+      expect(await linha('p10').locator('.ord .pcal-sr').textContent()).toContain(
+        'sem número',
+      );
+      // O identificador interno do tribunal nunca aparece.
+      expect(await page.locator('#pasta-lista').textContent()).not.toMatch(/5160178\d\d/);
+      for (const largura of [1280, 1024, 768, 390]) {
+        await page.setViewportSize({ width: largura, height: 900 });
+        const m = await page.evaluate(() => {
+          const l = document.querySelector('#pf-p07') as HTMLElement;
+          const o = l.querySelector('.ord > [aria-hidden]') as HTMLElement;
+          return {
+            sw: document.documentElement.scrollWidth,
+            cw: document.documentElement.clientWidth,
+            linhaOk: l.scrollWidth <= l.clientWidth + 1,
+            numeroUmaLinha: o.getClientRects().length === 1,
+          };
+        });
+        expect(m.sw, `página a ${largura}px`).toBeLessThanOrEqual(m.cw);
+        expect(m.linhaOk, `linha a ${largura}px`).toBe(true);
+        expect(m.numeroUmaLinha).toBe(true);
+      }
     });
 
     it('número incompatível é recusado com a mensagem clara, e o campo vazio ou errado é avisado', async () => {
