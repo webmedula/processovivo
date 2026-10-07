@@ -20,7 +20,30 @@ describe('console — rotular cliente', () => {
      * não fazia nada — relatado pelo dono do produto na v0.29.0.
      */
     expect(corpoDe('verProcessos')).toContain('ligarRotulagem(alvo)');
-    expect(corpoDe('tabelaDaCarteira') + corpoDe('celulaDeCliente')).toContain('data-rotular');
+    expect(corpoDe('tabelaDaCarteira') + corpoDe('celulaDeCliente')).toContain(
+      'data-rotular',
+    );
+  });
+});
+
+describe('console — carteira (v0.37.2)', () => {
+  it('a classe e a última movimentação são normalizadas só na exibição, com o cru no title', () => {
+    const tabela = corpoDe('tabelaDaCarteira');
+    expect(tabela).toContain('nomeDaClasse(a.classe)');
+    expect(tabela).toContain('descricaoDoAto(a.ultimaMovimentacao.titulo)');
+    // O original segue disponível: title com o texto cru da classe e do ato.
+    expect(tabela).toContain('esc(classeCru)');
+    expect(tabela).toContain('title="\'+esc(a.ultimaMovimentacao.titulo)');
+  });
+
+  it('o console tem UMA função de nome de classe (a do domínio) e nenhum titulo() próprio', () => {
+    expect(SCRIPT).toContain('var nomeDaClasse=function nomeDaClasse(');
+    expect(SCRIPT).not.toContain('function titulo(');
+  });
+
+  it('a carteira não tem rodapé "N de N": a contagem é o subtítulo ou o aviso de filtro', () => {
+    expect(corpoDe('tabelaDaCarteira')).not.toContain('rodape-tab');
+    expect(ESTILOS).not.toContain('.rodape-tab');
   });
 });
 

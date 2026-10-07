@@ -9,6 +9,48 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.37.2] — 2026-10-07
+
+Ajustes pequenos decorrentes do diagnóstico da coluna "Classe" e da aba "Meus
+processos". Não muda quais processos aparecem em Atualizações, nem DataJud, vigilância
+ou detecção de novidades.
+
+### Alterado
+
+- **Classe legível em Atualizações.** A coluna Classe passou de 8,5% para 12,5% da
+  largura (Processo 17→16%, Partes 12→11%, Atualização 20→19%, Tribunal 6→6,5%, Data do
+  ato 8→8,5%, Detectado 9→8%, Situação 9,5→9%, Ações 10→9,5%). Em 1366 px a coluna media
+  ~74 px, menos que a palavra "Procedimento", e cortava no meio. Agora a classe quebra
+  em palavras inteiras (`overflow-wrap: break-word`), cabe em até 2 linhas em 1366, 1280
+  e 1920 px e, se exceder, o `line-clamp` põe as reticências; o `title` tem sempre a
+  classe inteira (o texto no DOM também, para leitor de tela).
+- **Classe normalizada SÓ na exibição** (`domain/entities/nomeDaClasse.ts`, função pura):
+  `PROCEDIMENTO COMUM CíVEL` (DJEN), `PROCEDIMENTO COMUM CÍVEL` e `Procedimento Comum
+  Cível` (DataJud) passam a ter o mesmo texto. Preposições (de, da, do, e…) em minúscula,
+  siglas conhecidas (INSS, FGTS…) preservadas, sigla desconhecida em texto bem escrito
+  não é rebaixada. O valor guardado e a API não mudam; o texto cru vai no `title` quando
+  difere. Sem classe, "—". Usada em Atualizações e em Meus processos (e nos resultados da
+  busca por OAB, que já usavam o `titulo()` antigo); o `titulo()` do console foi
+  removido — uma função só, a do domínio, injetada por `toString()`.
+- **Filtro de classe de "Meus processos" agrupado.** `GET /v1/facetas` devolve UMA
+  opção por classe normalizada (`classes`), e `GET /v1/acompanhamentos?classe=` casa com
+  todas as grafias cruas que normalizam igual. Sem migração: o banco segue como gravado.
+- **"Meus processos": última movimentação sem repetição** (`descricaoDoAto`, a mesma da
+  Pasta e de Atualizações); o texto cru fica no `title`.
+- **"Meus processos": sem rodapé "N de N".** O rodapé repetia o subtítulo e nunca mostrava
+  o total sem filtro. Sem filtro, o subtítulo diz o total uma vez; com filtro, só o aviso
+  "Mostrando X de Y processos" (Y = total sem filtro) conta, e o subtítulo some. O número
+  da lateral (`cont-processos`) é o mesmo total sem filtro e foi mantido.
+- O subtítulo da carteira usa `--tinta2` (o `--tinta3` mede 4,2:1; axe). A variável global
+  não mudou.
+
+### Não mudou (de propósito)
+
+"Em curso", "+ rotular cliente", "classe não informada", a faixa de novidade e as colunas
+da carteira ficam para a próxima versão, depois de ver a tela.
+
+---
+
 ## [0.37.1] — 2026-10-06
 
 Ajustes pedidos pelo dono depois de ver a tabela da 0.37.0 em produção.

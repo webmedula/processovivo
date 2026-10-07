@@ -214,12 +214,11 @@ describe('console — resultado da busca por OAB', () => {
 
   it('normaliza a CAIXA ALTA que o DJEN manda, com acento minúsculo', async () => {
     const html = await pagina();
-    const fonte = /function titulo\(texto\)\{[\s\S]*?\n\}/.exec(html);
+    // A função que o navegador recebe é a do domínio (nomeDaClasse), injetada por toString().
+    const fonte = /var nomeDaClasse=(function nomeDaClasse[\s\S]*?\n\});/.exec(html);
     expect(fonte).not.toBeNull();
 
-    const titulo = new Function(`${fonte?.[0]}; return titulo;`)() as (
-      t: string,
-    ) => string;
+    const titulo = new Function(`return ${fonte?.[1]};`)() as (t: string) => string;
 
     // O DJEN manda caixa alta com os acentuados em minúscula: chega
     // literalmente "AçãO TRABALHISTA". Exigir 100% de maiúsculas deixaria

@@ -29,6 +29,7 @@
  * texto vindo do servidor passa por `esc()`.
  */
 import { descricaoDoAto } from '../../../domain/entities/descricaoDoAto.js';
+import { nomeDaClasse } from '../../../domain/entities/nomeDaClasse.js';
 import { trechoDeTexto } from './trechoDeTexto.js';
 import {
   contarSituacoes,
@@ -52,6 +53,7 @@ var proximaOrdem=${proximaOrdem.toString()};
 var ordenarGrupos=${ordenarGrupos.toString()};
 var paginar=${paginar.toString()};
 var descricaoDoAto=${descricaoDoAto.toString()};
+var nomeDaClasse=${nomeDaClasse.toString()};
 var textoDePartes=${textoDePartes.toString()};
 
 /* Só a escolha da sessão: some quando a página recarrega. */
@@ -141,13 +143,25 @@ function celulaAcoes(g){
     '</div></td>';
 }
 
+/* A classe é montada AQUI e só aqui: a coluna Classe e a linha sob o Tribunal (1024–1279 px)
+   saem do mesmo texto. Só a exibição é normalizada; o texto cru vai no title quando difere,
+   e o title tem sempre a classe inteira para o caso de a coluna ainda cortar. Sem classe,
+   "—": nunca se inventa. */
+function classeDaLinha(g){
+  var cru=g.processo&&g.processo.classe?String(g.processo.classe):'';
+  var txt=nomeDaClasse(cru);
+  if(!txt)return {cheia:'<span class="nvt-vazio" title="A fonte não informou a classe">—</span>',mini:''};
+  var t=' title="'+esc(cru!==txt?cru:txt)+'"';
+  return {cheia:'<span class="nvt-classe"'+t+'>'+esc(txt)+'</span>',mini:'<span class="nvt-classe-mini"'+t+'>'+esc(txt)+'</span>'};
+}
+
 function linha(g){
   var n=g.maisRecente;
+  var classe=classeDaLinha(g);
   var h='<tr class="nvt-linha" role="row" data-processo="'+esc(g.numero)+'">'+
     celulaProcesso(g)+celulaPartes(g)+celulaAtualizacao(n)+
-    '<td class="c-trib" data-rotulo="Tribunal">'+esc(g.processo&&g.processo.tribunal?g.processo.tribunal:'—')+
-    (g.processo&&g.processo.classe?'<span class="nvt-classe-mini">'+esc(g.processo.classe)+'</span>':'')+'</td>'+
-    '<td class="c-classe" data-rotulo="Classe">'+(g.processo&&g.processo.classe?'<span class="nvt-classe">'+esc(g.processo.classe)+'</span>':'<span class="nvt-vazio">—</span>')+'</td>'+
+    '<td class="c-trib" data-rotulo="Tribunal">'+esc(g.processo&&g.processo.tribunal?g.processo.tribunal:'—')+classe.mini+'</td>'+
+    '<td class="c-classe" data-rotulo="Classe">'+classe.cheia+'</td>'+
     '<td class="c-data" data-rotulo="Data do ato"><time datetime="'+esc(n.data)+'" title="'+esc(pv().dth(n.data))+'">'+esc(pv().dt(n.data))+'</time></td>'+
     '<td class="c-det" data-rotulo="Detectado"><span title="'+esc(detectadoHa(n.detectadaEm)+'. Quando o Processo Vivo percebeu este ato ('+pv().dth(n.detectadaEm)+'). A data do ato está na coluna ao lado.')+'">'+
       '<span aria-hidden="true">'+esc(detectadoCurto(n.detectadaEm))+'</span><span class="nvt-sr">'+esc(detectadoHa(n.detectadaEm))+'</span></span></td>'+

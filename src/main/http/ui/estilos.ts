@@ -416,10 +416,11 @@ h3.sec{font-size:12px;font-weight:700;text-transform:uppercase;
   color:var(--tinta2);font:inherit;font-size:12.5px;font-weight:600;padding:3px 10px;
   cursor:pointer;white-space:nowrap}
 .rotular:hover{border-style:solid;color:var(--acento);border-color:var(--acento)}
+/* O --tinta3 mede 4,2:1 sobre o fundo claro (axe); o subtítulo da carteira usa --tinta2, como as
+   telas que já mediram isso. A variável global segue como está (decisão à parte). */
+.titulo-secao .sub.sub-carteira{color:var(--tinta2)}
 .trib{display:inline-flex;align-items:center;height:24px;padding:0 8px;border-radius:6px;
   background:var(--neutro-bg);font-size:12px;font-weight:700;color:var(--tinta2)}
-.rodape-tab{display:flex;justify-content:space-between;align-items:center;
-  padding:12px 20px;font-size:13px;color:var(--tinta3);border-top:1px solid var(--linha2)}
 .t-in{width:100%;font:inherit;font-size:13px;padding:5px 8px;border-radius:6px;
   border:1px solid var(--acento);background:var(--papel);color:var(--tinta)}
 .selo.av{background:var(--marco-bg);color:var(--marco)}

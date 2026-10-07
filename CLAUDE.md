@@ -968,6 +968,20 @@ Não são detalhes — moldam o código.
   sem peça), no cabeçalho do visualizador e no título da atualização na tabela. **O
   original continua no `title`/tooltip, na busca (casa com o original e o enxuto),
   nos dados guardados e na API** — nada muda no banco nem no contrato.
+- **A classe é normalizada SÓ na exibição; o original fica no `title`, no banco e na
+  API** (v0.37.2). `nomeDaClasse` (`domain/entities/nomeDaClasse.ts`, pura e
+  autocontida, injetada por `toString()` como `descricaoDoAto`) faz `PROCEDIMENTO COMUM
+  CíVEL` (DJEN) e `Procedimento Comum Cível` (DataJud) terem o mesmo texto; vazio é "—",
+  classe nunca se inventa. Há UMA função: o `titulo()` do console saiu. Montagem em um só
+  lugar por tela (`classeDaLinha` em Atualizações, `tabelaDaCarteira` em Meus processos).
+  **Facetas agrupadas:** `GET /v1/facetas` devolve uma opção por classe normalizada e o
+  filtro `classe` casa com todas as grafias cruas que normalizam igual
+  (`variantesDaClasse`), sem migrar dado. **Coluna Classe de Atualizações:** 12,5% da
+  largura, palavras inteiras (`overflow-wrap: break-word`), até 2 linhas; o que passar
+  vira reticências e o `title` tem a classe toda — o teste de navegador mede em 1920,
+  1366 e 1280 px. **Meus processos não tem rodapé "N de N":** sem filtro o subtítulo diz
+  o total; com filtro só o aviso "Mostrando X de Y" conta (Y sem filtro) — a contagem não
+  se repete na aba (a da lateral, `cont-processos`, é o mesmo total sem filtro).
 - **Encerramento se decide pelo ato MAIS RECENTE, nunca pelo histórico.**
   Processo arquivado e depois desarquivado tem os dois atos nos autos; procurar
   "existe arquivamento" marcaria como encerrada a pasta que voltou a correr — e
@@ -1300,8 +1314,8 @@ teste e carência** (v0.28.0), **visual novo a partir do logo** (v0.29.0),
 **calendário: detecção, agenda, tela e feed ICS** (v0.32.0),
 **ajustes dos advogados: Atualizações por processo, peças no topo, providência em 10 dias** (v0.32.1),
 **Pasta digital: backend (v0.33.0) e tela (v0.33.1) — peça aberta ao clique, guarda por peça, montar pasta completa, baixar marcadas**,
-**ato (movimentação) de cada peça na lista da Pasta, com descrição** (v0.33.2) **e o número da movimentação calculado pela posição do ato, com aviso de atos bloqueados** (v0.34.0; a 0.33.3 havia removido o número errado da 0.33.2), **calibração do número com o Projudi feita pelo advogado: exato quando provado, faixa ou estimado quando não** (v0.35.0), **página inicial: Últimas atualizações mostra só o trecho do texto e o trilho de peças baixadas não estoura a largura** (v0.35.1), **Pasta: número da movimentação no lugar do índice; página inicial: "detectado há N dias" e cartão "pede providência"** (v0.35.2), **Pasta: lista em altura total com avisos compactados** (v0.35.3), **Pasta: todas as movimentações na lista, inclusive as sem peça, com lacuna de numeração provada e lista mais larga** (v0.36.0), **página inicial: tabela de últimas atualizações, uma linha por processo, com filtros que contam no lugar dos cartões; histórico de peças baixadas dentro da Pasta** (v0.37.0), **tabela sem "+N anteriores", "Detectado" enxuto e descrição do ato sem repetição na exibição** (v0.37.1),
-Dockerfile multi-stage, CI, 1378 testes.
+**ato (movimentação) de cada peça na lista da Pasta, com descrição** (v0.33.2) **e o número da movimentação calculado pela posição do ato, com aviso de atos bloqueados** (v0.34.0; a 0.33.3 havia removido o número errado da 0.33.2), **calibração do número com o Projudi feita pelo advogado: exato quando provado, faixa ou estimado quando não** (v0.35.0), **página inicial: Últimas atualizações mostra só o trecho do texto e o trilho de peças baixadas não estoura a largura** (v0.35.1), **Pasta: número da movimentação no lugar do índice; página inicial: "detectado há N dias" e cartão "pede providência"** (v0.35.2), **Pasta: lista em altura total com avisos compactados** (v0.35.3), **Pasta: todas as movimentações na lista, inclusive as sem peça, com lacuna de numeração provada e lista mais larga** (v0.36.0), **página inicial: tabela de últimas atualizações, uma linha por processo, com filtros que contam no lugar dos cartões; histórico de peças baixadas dentro da Pasta** (v0.37.0), **tabela sem "+N anteriores", "Detectado" enxuto e descrição do ato sem repetição na exibição** (v0.37.1), **classe legível e agrupada no filtro, última movimentação sem repetição e carteira sem rodapé redundante** (v0.37.2),
+Dockerfile multi-stage, CI, 1417 testes.
 
 **Pasta digital (v0.33.0, backend):** `GET /v1/processos/:numero/pasta` (lista +
 estado de cada peça + intervalos de página + totais SEM filtro + procedência
