@@ -43,6 +43,7 @@ export const ESTILOS_TABELA_ATUALIZACOES = `
   border:1px solid var(--linha);background:var(--papel);color:var(--acento);cursor:pointer}
 .nov-btn:hover{background:var(--acento-bg);border-color:var(--acento)}
 .nov-fora{padding:0 0 12px}
+.nov-ant{padding:0 0 12px}
 .selo.am{background:var(--atencao-bg);color:var(--atencao)}
 .nvt .vazio{background:var(--papel);border:1px solid var(--linha);border-radius:var(--r)}
 
@@ -93,30 +94,12 @@ export const ESTILOS_TABELA_ATUALIZACOES = `
   background:none;border:0;padding:2px 0;cursor:pointer;font-family:inherit;font-size:13px}
 
 /* ---------- ações ---------- */
-.nvt-acoes{display:flex;flex-wrap:wrap;gap:4px;align-items:center}
+.nvt-acoes{display:flex;flex-wrap:nowrap;gap:4px;align-items:center}
 .nvt-ic{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;padding:0;
   border-radius:8px;border:1px solid var(--linha);background:var(--papel);color:var(--tinta2);cursor:pointer;flex:none}
 .nvt-ic:hover:not(:disabled){background:var(--acento-bg);border-color:var(--acento);color:var(--acento)}
 .nvt-ic:disabled{opacity:.4;cursor:default}
-.nvt-exp{font:inherit;font-weight:700;font-size:12.5px;min-height:32px;padding:3px 10px;border-radius:16px;line-height:1.2;
-  border:1px solid var(--linha);background:var(--papel);color:var(--acento);cursor:pointer;max-width:100%;text-align:center}
-.nvt-exp:hover{background:var(--acento-bg);border-color:var(--acento)}
-.nvt-acoes .selo{flex-basis:100%;width:fit-content}
 .nvt-tabela .selo{white-space:normal;text-align:center;line-height:1.25}
-
-/* ---------- anteriores ---------- */
-.nvt-tabela tr.nvt-ant td{background:var(--papel2);padding:12px 14px 14px}
-.nvt-tabela tr.nvt-ant[hidden]{display:none}
-.nvt-ant-topo{margin-bottom:8px}
-.nvt-lista{list-style:none;margin:0;padding:0}
-.nvt-item{display:grid;grid-template-columns:minmax(0,170px) minmax(0,1fr) minmax(0,150px);gap:6px 14px;
-  padding:9px 0;border-top:1px solid var(--linha2)}
-.nvt-item:first-child{border-top:0}
-.nvt-item-data{font-size:12.5px;color:var(--tinta2);font-variant-numeric:tabular-nums}
-.nvt-rot-mini{font-size:11px;font-weight:700;text-transform:uppercase;color:var(--tinta2)}
-.nvt-item-det{font-size:12.5px;color:var(--tinta2)}
-.nvt-item .nvt-tit{font-size:13.5px;font-weight:600}
-.nvt-ant-pe{margin-top:8px;display:flex;gap:10px;align-items:center}
 
 /* ---------- rodapé ---------- */
 .nvt-pag{display:flex;flex-wrap:wrap;gap:10px 20px;align-items:center;justify-content:space-between;
@@ -147,7 +130,6 @@ export const ESTILOS_TABELA_ATUALIZACOES = `
   .nvt-tabela th,.nvt-tabela td{padding-left:5px;padding-right:5px}
   .nvt-tabela{font-size:12.5px}
   .nvt-tabela td.c-data{font-size:12px}
-  .nvt-exp{padding:3px 6px;font-size:12px;overflow-wrap:normal}
   .nvt-ic{width:28px;height:28px}
   .nvt-copiar{margin-top:2px}
 }
@@ -155,7 +137,7 @@ export const ESTILOS_TABELA_ATUALIZACOES = `
 /* ---------- abaixo de 1024: um bloco por processo ---------- */
 @media (max-width:1023px){
   .nvt-so-pequeno{display:flex}
-  .nvt .chip,.nvt-bloco select,.nov-btn,.nvt-exp,.nvt-por select{min-height:44px}
+  .nvt .chip,.nvt-bloco select,.nov-btn,.nvt-por select{min-height:44px}
   .nvt-ic{width:44px;height:44px}
   .nvt-wrap{border:0;background:transparent;box-shadow:none}
   .nvt-tabela,.nvt-tabela tbody,.nvt-tabela tr,.nvt-tabela td{display:block}
@@ -168,13 +150,8 @@ export const ESTILOS_TABELA_ATUALIZACOES = `
     text-transform:uppercase;letter-spacing:.04em;color:var(--tinta2);margin-bottom:2px}
   .nvt-tabela td.c-proc,.nvt-tabela td.c-atu,.nvt-tabela td.c-acoes,.nvt-tabela td.c-partes{grid-column:1/-1}
   .nvt-tabela td.c-sit:empty{display:none}
-  .nvt-tabela tr.nvt-ant{display:block;margin:-6px 0 12px;border:1px solid var(--linha);border-radius:var(--r);overflow:hidden}
-  .nvt-tabela tr.nvt-ant[hidden]{display:none}
-  .nvt-tabela tr.nvt-ant td{display:block;padding:12px}
-  .nvt-tabela tr.nvt-ant td::before{content:none}
   .nvt-tabela td.c-acoes::before{margin-bottom:4px}
   .nvt-num{display:inline-flex;align-items:center;min-height:44px;padding:0}
-  .nvt-item{grid-template-columns:minmax(0,1fr)}
   .nvt-pag{justify-content:flex-start}
   .env.env-larga{padding-left:14px;padding-right:14px}
 }

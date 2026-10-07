@@ -9,6 +9,43 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.37.1] — 2026-10-06
+
+Ajustes pedidos pelo dono depois de ver a tabela da 0.37.0 em produção.
+
+### Removido
+
+- **"+N anteriores", a lista de anteriores, o "mostrar mais 20" e o aviso "há anterior
+  que pede providência"** saem da tabela de Atualizações (script, estilos e testes).
+  Cada processo é uma linha com a atualização mais recente. A regra de ouro (nada some
+  em silêncio) ficou em uma frase no nível da página, abaixo dos filtros: "Cada
+  processo mostra a atualização mais recente. As anteriores estão em 'Abrir
+  processo'." — só quando algum processo tem mais de uma atualização no período, sem
+  contagem por processo. A mensagem "N atualizações mais antigas não mostradas (fora
+  dos últimos 15 dias) · Ver todas" continua. Filtros, contadores, ordenação,
+  paginação, "Ver todas" e a janela de 15 dias não mudaram; "Não lida" e "Pede
+  providência" seguem a mesma regra.
+
+### Alterado
+
+- **`GET /v1/novidades` não envia mais as atualizações anteriores.** `grupos[].anteriores`
+  saiu; entrou `grupos[].quantidade` (atualizações do processo no período). O campo
+  `novidades` (achatado) traz só a mais recente de cada processo. `total`, `naoVistas`
+  e `foraDaJanela` continuam contando atualizações. Um processo com ~300 atualizações
+  agora trafega 1 item. `/v1/painel` não foi tocada.
+- **Coluna "Detectado" enxuta:** "hoje", "há 1 dia", "há 11 dias". A frase completa
+  ("detectado há 11 dias") fica no `title` e em texto para leitor de tela.
+- **Coluna Ações:** só os dois botões (abrir processo, abrir pasta), sempre na mesma
+  linha; alvos de 44 px no celular.
+- **Descrição sem repetição, só na exibição.** "Juntada -> Petição — Juntada ->
+  Petição - MANDADO…" passa a aparecer como "Juntada -> Petição - MANDADO…"
+  (`descricaoDoAto`, função pura em `domain/entities`). Aplicada na lista da Pasta
+  (peças e movimentações sem peça), no cabeçalho do visualizador e no título da
+  atualização na tabela. O texto original continua no tooltip, na busca (casa com o
+  original e o enxuto), nos dados guardados e na API.
+
+---
+
 ## [0.37.0] — 2026-10-06
 
 A página inicial (Atualizações) deixa de ser um painel de cartões com uma coluna de

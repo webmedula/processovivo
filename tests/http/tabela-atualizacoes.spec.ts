@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { SCRIPT_ATUALIZACOES } from '../../src/main/http/ui/atualizacoes.js';
+import { descricaoDoAto } from '../../src/domain/entities/descricaoDoAto.js';
 import { trechoDeTexto } from '../../src/main/http/ui/trechoDeTexto.js';
 import {
   contarSituacoes,
-  fatiaDeAnteriores,
   filtrarPorSituacao,
   ordenarGrupos,
   paginar,
@@ -29,7 +29,7 @@ function g(
       data: opcoes.data ?? '2026-10-01T12:00:00.000Z',
       detectadaEm: opcoes.detectada ?? '2026-10-02T12:00:00.000Z',
     },
-    anteriores: [],
+    quantidade: 1,
     naoVistas: opcoes.naoVistas ?? 0,
     processo: opcoes.semProcesso
       ? null
@@ -206,31 +206,6 @@ describe('paginação "X–Y de Z"', () => {
   });
 });
 
-describe('atualizações anteriores: 20 e mais 20, sempre dizendo "X de N"', () => {
-  it('um processo com 308 anteriores abre com 20 e oferece mais 20', () => {
-    const f = fatiaDeAnteriores(308, 0);
-    expect([f.mostrando, f.total, f.faltam, f.proximoLote]).toEqual([20, 308, 288, 20]);
-  });
-
-  it('cada "Mostrar mais" soma um lote, até esgotar', () => {
-    let pedido = 0;
-    const passos: number[] = [];
-    for (;;) {
-      const f = fatiaDeAnteriores(45, pedido);
-      passos.push(f.mostrando);
-      if (f.faltam === 0) break;
-      pedido = f.mostrando + f.proximoLote;
-    }
-    expect(passos).toEqual([20, 40, 45]);
-    expect(fatiaDeAnteriores(45, 40).proximoLote).toBe(5);
-  });
-
-  it('poucas anteriores aparecem todas e não oferecem mais', () => {
-    const f = fatiaDeAnteriores(3, 0);
-    expect([f.mostrando, f.faltam, f.proximoLote]).toEqual([3, 0, 0]);
-  });
-});
-
 describe('texto das partes', () => {
   const polo = (nomes: string[], total = nomes.length) => ({ nomes, total });
 
@@ -264,12 +239,12 @@ describe('o módulo da tela usa as MESMAS funções testadas aqui', () => {
   it('injeta o trecho curto de 0.35.1 e as regras puras por toString()', () => {
     for (const f of [
       trechoDeTexto,
+      descricaoDoAto,
       contarSituacoes,
       filtrarPorSituacao,
       proximaOrdem,
       ordenarGrupos,
       paginar,
-      fatiaDeAnteriores,
       textoDePartes,
     ]) {
       expect(SCRIPT_ATUALIZACOES).toContain(f.toString());

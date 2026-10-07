@@ -1,6 +1,6 @@
 /**
  * Regras PURAS da tabela de Atualizações (v0.37.0): filtros com contador,
- * ordenação, paginação, fatia das atualizações anteriores e texto das partes.
+ * ordenação, paginação e texto das partes.
  *
  * Mesma estratégia de `trechoDeTexto.ts`: o console é JavaScript dentro de uma
  * string (`atualizacoes.ts`), então o navegador recebe `funcao.toString()` e o
@@ -16,7 +16,8 @@
 export interface GrupoDaTabela {
   readonly numero: string;
   readonly maisRecente: { readonly data: string; readonly detectadaEm: string };
-  readonly anteriores: readonly unknown[];
+  /** Quantas atualizações o processo tem no período (a tela só mostra a mais recente). */
+  readonly quantidade: number;
   readonly naoVistas: number;
   readonly processo: {
     readonly tribunal: string | null;
@@ -150,31 +151,6 @@ export function paginar(
     ate: fim,
     total: n,
   };
-}
-
-export interface FatiaDeAnteriores {
-  /** Quantas já estão na tela. */
-  readonly mostrando: number;
-  readonly total: number;
-  readonly faltam: number;
-  /** Quantas o botão "Mostrar mais" traz agora (no máximo o lote). */
-  readonly proximoLote: number;
-}
-
-/**
- * As anteriores de um processo entram em lotes (20 + 20 …): um processo com 300
- * não vira 300 blocos de uma vez. `pedido` é quantas a pessoa já quis ver.
- */
-export function fatiaDeAnteriores(
-  total: number,
-  pedido: number,
-  lote: number = 20,
-): FatiaDeAnteriores {
-  const n = Math.max(0, Math.floor(total) || 0);
-  const tam = Math.max(1, Math.floor(lote) || 20);
-  const mostrando = Math.min(n, Math.max(tam, Math.floor(pedido) || 0));
-  const faltam = n - mostrando;
-  return { mostrando, total: n, faltam, proximoLote: Math.min(tam, faltam) };
 }
 
 interface PoloDasPartes {

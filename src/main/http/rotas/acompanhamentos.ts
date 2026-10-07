@@ -180,7 +180,9 @@ function grupoJson(
     numero: g.numero,
     processo: processo ?? null,
     maisRecente: novidadeJson(g.maisRecente),
-    anteriores: g.anteriores.map(novidadeJson),
+    // Só QUANTAS: a tela mostra a mais recente e manda para o processo ver as
+    // anteriores. Um processo com 300 atualizações não trafega 300 itens (v0.37.1).
+    quantidade: 1 + g.anteriores.length,
     naoVistas: g.naoVistas,
   };
 }
@@ -380,9 +382,9 @@ export function rotasDeAcompanhamento(
         pendenciaJanelaDias: janelas.pendenciaJanelaDias,
         foraDaJanela: agrupadas.foraDaJanela,
         grupos: agrupadas.grupos.map((g) => grupoJson(g, infoPorNumero.get(g.numero))),
-        novidades: agrupadas.grupos.flatMap((g) =>
-          [g.maisRecente, ...g.anteriores].map(novidadeJson),
-        ),
+        // Só a mais recente de cada processo, como em `grupos`. `total` continua
+        // contando as atualizações do período.
+        novidades: agrupadas.grupos.map((g) => novidadeJson(g.maisRecente)),
       };
     });
 

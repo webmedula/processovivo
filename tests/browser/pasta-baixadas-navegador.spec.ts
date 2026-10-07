@@ -337,7 +337,7 @@ describe.skipIf(sem)(
                   numero: PROCESSO_TJGO_DIGITOS,
                   processo: null,
                   maisRecente: nov,
-                  anteriores: [],
+                  quantidade: 1,
                   naoVistas: 1,
                 },
               ],

@@ -277,7 +277,7 @@ describe('console — a tela da Pasta digital', () => {
 
   it('mostra a movimentação da peça: texto por esc(), nunca link, e só quando há o que mostrar', () => {
     // Passa por esc() — é texto do tribunal.
-    expect(SCRIPT_PASTA).toContain("esc(t)+'</span>'");
+    expect(SCRIPT_PASTA).toContain("esc(textoEnxutoDaMov(p))+'</span>'");
     expect(SCRIPT_PASTA).toContain('esc(tituloDaMov(p))');
     // Sem bloco vazio: sem texto e sem posição, nada é desenhado.
     expect(SCRIPT_PASTA).toContain("if(!m)return '';");

@@ -148,7 +148,8 @@ export async function iniciar(
   });
   provedor.movimentos = [
     ato(1, 'Juntada de documentos iniciais'),
-    ato(2, 'Conclusos para despacho', ['prioridade: normal']),
+    // O complemento repete o tipo, como o tribunal manda (v0.37.1): a tela mostra a descrição enxuta.
+    ato(2, 'Conclusos para despacho', ['Conclusos para despacho - prioridade: normal']),
     ato(3, TEXTO_LONGO),
     ato(4, 'Juntada de manifestação sobre o ev. 382 (movimentação nº 5000)'),
     ato(5, 'Juntada de documento técnico'),

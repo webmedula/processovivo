@@ -33,8 +33,12 @@
  * Mesmo regime de `script.ts`: é JavaScript dentro de uma string, invisível ao
  * tsc e ao ESLint. `tests/http/console-script.spec.ts` roda o ESLint aqui dentro.
  */
+import { descricaoDoAto } from '../../../domain/entities/descricaoDoAto.js';
+
 export const SCRIPT_PASTA = String.raw`
 (function(){
+/* A MESMA função que o teste exercita (domain/entities/descricaoDoAto.ts), injetada como texto. */
+var descricaoDoAto=${descricaoDoAto.toString()};
 var LARGURA='processovivo.pasta.lista';
 var PDFJS='/ui/pdfjs/';
 /* Janela em que cliques seguidos viram um pedido só. */
@@ -403,11 +407,14 @@ function textoDaMov(p){
   if(!m)return '';
   return String(m.descricao||'')+(m.complemento?' — '+m.complemento:'');
 }
-function tituloDaMov(p){
+/* Só a EXIBIÇÃO perde a repetição do tipo ("A — A - detalhe" vira "A - detalhe",
+   v0.37.1). O original segue no tooltip, na busca, nos dados e na API. */
+function textoEnxutoDaMov(p){return descricaoDoAto(textoDaMov(p))}
+function tituloDaMov(p,enxuto){
   var m=p.movimentacao;
   if(!m)return '';
-  return 'Movimentação'+cal.rotuloDoTitulo(p)+' · '+pv().dt(m.data)+
-    (textoDaMov(p)?' — '+textoDaMov(p):'');
+  var t=enxuto?textoEnxutoDaMov(p):textoDaMov(p);
+  return 'Movimentação'+cal.rotuloDoTitulo(p)+' · '+pv().dt(m.data)+(t?' — '+t:'');
 }
 /* "382" acha a movimentação 382 e não a 1382: o número casa por IGUALDADE com o
    número exato, estimado ou a posição — e, numa faixa, quando o número buscado
@@ -423,7 +430,10 @@ function combinaComBusca(p,termo){
   if(!p.semPeca&&normal(p.rotulo).indexOf(termo)>=0)return true;
   var m=p.movimentacao;
   if(!m)return false;
+  /* O enxuto é trecho do original, então casar com um é casar com o outro; os dois
+     ficam explícitos para a regra não depender dessa coincidência. */
   if(normal(textoDaMov(p)).indexOf(termo)>=0)return true;
+  if(normal(textoEnxutoDaMov(p)).indexOf(termo)>=0)return true;
   var buscado=numeroBuscado(termo);
   return buscado!==null&&cal.combina(p,buscado);
 }
@@ -469,7 +479,7 @@ function movHtml(p){
   var buscado=numeroBuscado(normal(st.busca).trim());
   return '<span class="mov" title="'+esc(tituloDaMov(p))+'">'+
     (pos!==null?cal.htmlSelo(p,buscado):'')+
-    (t?'<span class="mov-t">'+esc(t)+'</span>':'')+
+    (t?'<span class="mov-t">'+esc(textoEnxutoDaMov(p))+'</span>':'')+
     /* Só para o mouse: quem usa teclado aperta N na linha, e o botão do
        visualizador faz o mesmo. Um botão aqui dentro de um "option" seria
        controle interativo aninhado, que leitor de tela não alcança. */
@@ -874,10 +884,12 @@ function atualizarVisor(){
   if(mv){
     /* Refeito só quando muda: a consulta de andamento roda a cada 2 s, e
        recriar o botão tiraria o foco de quem está nele. */
-    var sigMov=p?tituloDaMov(p)+'|'+cal.avisoDoVisor(p)+'|'+(typeof st.visao.totalAtosRecebidos):'';
+    var sigMov=p?tituloDaMov(p,true)+'|'+cal.avisoDoVisor(p)+'|'+(typeof st.visao.totalAtosRecebidos):'';
     if(mv.getAttribute('data-sig')!==sigMov){
       mv.setAttribute('data-sig',sigMov);
-      mv.textContent=p?tituloDaMov(p):'';
+      mv.textContent=p?tituloDaMov(p,true):'';
+      if(p&&tituloDaMov(p)!==tituloDaMov(p,true))mv.title=tituloDaMov(p);
+      else mv.removeAttribute('title');
       if(p&&posicaoDaMov(p)!==null){
         var avt=cal.avisoDoVisor(p);
         if(avt){

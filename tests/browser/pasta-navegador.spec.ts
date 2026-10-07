@@ -157,10 +157,19 @@ describe.skipIf(sem)('Pasta digital — no navegador', { timeout: 60_000 }, () =
     expect(await linha('p06').locator('.mov-t').textContent()).toBe(
       'Juntada de manifestação sobre o ev. 382 (movimentação nº 5000)',
     );
-    // O complemento vem junto, como veio.
+    // O tipo repetido no complemento sai da EXIBIÇÃO (v0.37.1); o original fica no
+    // tooltip e a busca casa com os dois.
     expect(await linha('p04').locator('.mov-t').textContent()).toBe(
-      'Conclusos para despacho — prioridade: normal',
+      'Conclusos para despacho - prioridade: normal',
     );
+    expect(await linha('p04').locator('.mov').getAttribute('title')).toContain(
+      'Conclusos para despacho — Conclusos para despacho - prioridade: normal',
+    );
+    await page.fill('#pasta-busca', 'despacho — conclusos para despacho');
+    expect(await page.locator('#pasta .linha').count()).toBe(1);
+    await page.fill('#pasta-busca', 'despacho - prioridade');
+    expect(await page.locator('#pasta .linha').count()).toBe(1);
+    await page.fill('#pasta-busca', '');
     // Várias peças do mesmo ato repetem a descrição (sem agrupar).
     for (const id of ['p01', 'p02', 'p03']) {
       expect(await linha(id).locator('.mov').textContent()).toContain(
