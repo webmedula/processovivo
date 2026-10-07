@@ -3,6 +3,7 @@ import type {
   Acompanhamento,
   Novidade,
 } from '../../../domain/entities/Acompanhamento.js';
+import { nomeDaClasse } from '../../../domain/entities/nomeDaClasse.js';
 import type { Movimentacao } from '../../../domain/entities/Movimentacao.js';
 import type { Processo } from '../../../domain/entities/Processo.js';
 import type {
@@ -116,8 +117,12 @@ export class RepositorioAcompanhamentosSqlite implements RepositorioAcompanhamen
       args.push(filtro.tribunal);
     }
     if (filtro.classe) {
-      cond.push('a.classe = ?');
-      args.push(filtro.classe);
+      // O filtro vem com o nome NORMALIZADO que a faceta oferece; o banco guarda
+      // cada grafia como o tribunal mandou. Casa com todas as variantes cruas que
+      // normalizam igual — sem migrar nada e sem mudar o que está gravado.
+      const variantes = this.variantesDaClasse(workspace, filtro.classe);
+      cond.push(`a.classe IN (${variantes.map(() => '?').join(', ')})`);
+      args.push(...variantes);
     }
     if (filtro.parte) {
       // `paraBusca` nas DUAS pontas — a mesma função que gravou a coluna. O
@@ -375,7 +380,33 @@ export class RepositorioAcompanhamentosSqlite implements RepositorioAcompanhamen
           .all(workspace) as Linha[]
       ).map((l) => String(l['v']));
 
-    return { tribunais: col('tribunal'), classes: col('classe') };
+    // Uma opção por classe NORMALIZADA: "PROCEDIMENTO COMUM CíVEL" (DJEN) e
+    // "Procedimento Comum Cível" (DataJud) são a mesma classe.
+    const classes = [
+      ...new Set(
+        col('classe')
+          .map(nomeDaClasse)
+          .filter((c) => c !== ''),
+      ),
+    ];
+    classes.sort((a, b) => a.localeCompare(b, 'pt-BR'));
+    return { tribunais: col('tribunal'), classes };
+  }
+
+  /** Grafias cruas guardadas que normalizam igual ao nome pedido (nunca vazio). */
+  private variantesDaClasse(workspace: string, pedido: string): string[] {
+    const alvo = nomeDaClasse(pedido);
+    const guardadas = (
+      this.db
+        .prepare(
+          `SELECT DISTINCT classe AS v FROM acompanhamentos
+            WHERE workspace = ? AND classe IS NOT NULL`,
+        )
+        .all(workspace) as Linha[]
+    ).map((l) => String(l['v']));
+    const casam = guardadas.filter((v) => nomeDaClasse(v) === alvo);
+    // Nada casa: devolve o pedido cru, e o filtro corretamente não acha nada.
+    return casam.length > 0 ? casam : [pedido];
   }
 
   private paraAcompanhamento(l: Linha): Acompanhamento {

@@ -5,9 +5,17 @@
  * sem build, sem framework e sem recurso externo. Nada para compilar e nada que
  * quebre em deploy.
  */
+import { descricaoDoAto } from '../../../domain/entities/descricaoDoAto.js';
+import { nomeDaClasse } from '../../../domain/entities/nomeDaClasse.js';
+
 export const SCRIPT = String.raw`
 (function(){
 var $=function(i){return document.getElementById(i)};
+/* Classe para EXIBIÇÃO (domain/entities/nomeDaClasse.ts): a mesma função que os testes e o
+   servidor usam; o dado guardado e a API seguem como vieram. */
+var nomeDaClasse=${nomeDaClasse.toString()};
+/* A última movimentação sem o tipo repetido (v0.37.1); o original vai no title. */
+var descricaoDoAto=${descricaoDoAto.toString()};
 var CH='processovivo.chave', VER='processovivo.verinternos';
 var FILTRO_MOV='processovivo.filtroMov';
 var SO_PRINCIPAIS='processovivo.soPrincipais';
@@ -375,7 +383,7 @@ function verProcessos(){
 
   api('/v1/acompanhamentos'+(q.length?'?'+q.join('&'):'')).then(function(r){
     var h='<div class="titulo-secao"><div><h2>Meus processos</h2>'+
-      '<div class="sub">'+r.total+' acompanhado(s)</div></div>'+
+      (r.total<(r.totalSemFiltro===undefined?r.total:r.totalSemFiltro)?'':'<div class="sub sub-carteira">'+r.total+' acompanhado(s)</div>')+'</div>'+
       '<button class="bt" id="ir-buscar">'+ICONE_MAIS+'Adicionar processo</button></div>';
 
     /* Filtros escondidos em "Mais filtros" que estão VALENDO são contados no
@@ -409,7 +417,7 @@ function verProcessos(){
         'value="'+esc(f.parte||'')+'"></div>'+
       '<div><label class="rotulo" for="f-cls">Classe</label>'+
         '<select id="f-cls"><option value="">Todas</option>'+
-        estado.facetas.classes.map(function(c){return '<option value="'+esc(c)+'"'+(f.classe===c?' selected':'')+'>'+esc(titulo(c))+'</option>'}).join('')+'</select></div>'+
+        estado.facetas.classes.map(function(c){return '<option value="'+esc(c)+'"'+(f.classe===c?' selected':'')+'>'+esc(c)+'</option>'}).join('')+'</select></div>'+
       '<div><label class="rotulo" for="f-dias">Movimentado em</label>'+
         '<select id="f-dias"><option value="">Qualquer período</option>'+
         [['7','Últimos 7 dias'],['30','Últimos 30 dias'],['90','Últimos 90 dias'],['365','Último ano']]
@@ -440,7 +448,7 @@ function verProcessos(){
           :'Busque um processo pelo número e clique em acompanhar. A partir daí o Processo Vivo verifica sozinho e avisa quando houver movimentação nova.'),
         q.length?'':'<button class="bt" onclick="window.__processovivo_ir(\'buscar\')">Buscar processo</button>');
     }else{
-      h+=tabelaDaCarteira(r.acompanhamentos,r.total);
+      h+=tabelaDaCarteira(r.acompanhamentos);
     }
     alvo.innerHTML=h;
 
@@ -519,7 +527,7 @@ function verProcessos(){
  * cliente X", e tirá-las para caber numa grade seria trocar informação por
  * alinhamento.
  */
-function tabelaDaCarteira(lista,total){
+function tabelaDaCarteira(lista){
   /* Larguras fixas por coluna (table-layout:fixed): é o que deixa cada
      célula cortar com reticências em vez de esticar a linha. Partes fica com
      o que sobrar — é o texto mais longo e o que mais tolera corte, porque o
@@ -534,12 +542,14 @@ function tabelaDaCarteira(lista,total){
 
   lista.forEach(function(a){
     var e=a.estado||{rotulo:'EM_CURSO',naoVerificado:false};
-    var classe=(titulo(a.classe)||'classe não informada')+(a.vara?' · '+a.vara:'');
+    var classeTxt=(nomeDaClasse(a.classe)||'classe não informada')+(a.vara?' · '+a.vara:'');
+    var classeCru=(a.classe||'classe não informada')+(a.vara?' · '+a.vara:'');
+    var movTxt=a.ultimaMovimentacao?descricaoDoAto(a.ultimaMovimentacao.titulo):'';
     var partes=(a.partes||[]).map(function(x){return x.nome}).join(' · ');
     h+='<tr'+(a.novidadesNaoVistas>0?' class="nova"':'')+'>'+
       '<td><button class="lnh corta" data-abrir="'+esc(a.numero)+'">'+
         '<span class="n">'+esc(a.numero)+'</span></button>'+
-        '<div class="t-sub corta" title="'+esc(classe)+'">'+esc(classe)+'</div></td>'+
+        '<div class="t-sub corta" title="'+esc(classeCru)+'">'+esc(classeTxt)+'</div></td>'+
       '<td>'+celulaDeCliente(a)+'</td>'+
       '<td><span class="corta" style="font-size:13px;color:var(--tinta2)" title="'+esc(partes)+'">'+
         (partes?esc(partes):'—')+'</span></td>'+
@@ -548,7 +558,7 @@ function tabelaDaCarteira(lista,total){
       '<td>'+
         (a.ultimaMovimentacao
           ? '<div class="corta t-mov-t" style="font-weight:600" title="'+esc(a.ultimaMovimentacao.titulo)+'">'+
-              esc(a.ultimaMovimentacao.titulo)+'</div>'+
+              esc(movTxt)+'</div>'+
             '<div class="t-sub">'+dt(a.ultimaMovimentacao.data)+' · '+
             humano(a.ultimaMovimentacao.data)+'</div>'
           : '<div class="t-sub">'+(a.erro?'não foi possível consultar'
@@ -557,8 +567,7 @@ function tabelaDaCarteira(lista,total){
       '<td>'+seloDeEstado(e,a)+'</td>'+
     '</tr>';
   });
-  return h+'</tbody></table></div>'+
-    '<div class="rodape-tab"><span>'+lista.length+' de '+(total||lista.length)+' processo(s)</span></div></div>';
+  return h+'</tbody></table></div></div>';
 }
 
 /** Os quatro estados, e o aviso de verificação que corre por fora deles. */
@@ -792,7 +801,7 @@ function desenharBuscaOab(){
           '<div class="lin1"><span class="n">'+esc(p.numero)+'</span>'+
           '<span class="selo">'+esc(p.tribunal||'—')+'</span>'+
           (jaTem?'<span class="selo nv">já acompanhando</span>':'')+'</div>'+
-          '<div class="lin2">'+esc(titulo(p.classe)||'classe não informada')+'</div>'+
+          '<div class="lin2">'+esc(nomeDaClasse(p.classe)||'classe não informada')+'</div>'+
           (partes?'<div class="lin3">'+partes+(resto>0?' · <span class="cp">+'+resto+'</span>':'')+'</div>':
             '<div class="lin3"><span class="cp">partes não informadas nesta publicação</span></div>')+
           (um?'<div class="lin3"><span class="cp">'+esc(um.titulo)+' · '+dt(um.data)+'</span></div>':'')+
@@ -862,33 +871,6 @@ function rotuloPolo(polo){
      porque a fonte não disse isso — pode ser MP, assistente, perito. */
   var m={ATIVO:'autor',PASSIVO:'réu',OUTROS:'outra parte'};
   return m[polo]||'parte';
-}
-
-/**
- * O DJEN manda classe e nome em CAIXA ALTA com acento minúsculo — sai
- * "AçãO TRABALHISTA" na tela. Normalizar é da camada de exibição; o dado
- * guardado continua como veio, conforme a regra do projeto.
- */
-function titulo(texto){
-  if(!texto)return '';
-  var t=String(texto);
-  var letras=t.replace(/[^A-Za-zÁÉÍÓÚÂÊÔÃÕÀÇáéíóúâêôãõàç]/g,'');
-  if(!letras)return t;
-  var altas=letras.replace(/[^A-ZÁÉÍÓÚÂÊÔÃÕÀÇ]/g,'').length;
-  /* O corte é 70%, e não "tudo maiúsculo": o DJEN manda CAIXA ALTA com os
-     acentuados em minúscula — chega literalmente "AçãO TRABALHISTA". Exigir
-     100% de maiúsculas deixaria passar justamente o caso que motivou isto.
-     Texto escrito normalmente fica abaixo de 70% e passa intacto. */
-  if(altas/letras.length<0.7)return t;
-
-  var miudas={de:1,da:1,do:1,das:1,dos:1,e:1,em:1,no:1,na:1,a:1,o:1,ao:1,'à':1,por:1,com:1};
-  return t.toLowerCase().replace(/([A-Za-zÁÉÍÓÚÂÊÔÃÕÀÇáéíóúâêôãõàç]+)/g,
-    function(palavra,_p,pos){
-      /* Preposição minúscula, menos na primeira posição: "Cumprimento de
-         Sentença" se lê melhor do que "Cumprimento De Sentença". */
-      if(pos>0&&miudas[palavra])return palavra;
-      return palavra.charAt(0).toUpperCase()+palavra.slice(1);
-    });
 }
 
 function executarBusca(){

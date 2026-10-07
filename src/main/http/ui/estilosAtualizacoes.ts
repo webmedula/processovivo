@@ -62,8 +62,11 @@ export const ESTILOS_TABELA_ATUALIZACOES = `
 .nvt-tabela td.c-data{white-space:nowrap}
 .nvt-tabela tbody tr:first-child td{border-top:0}
 .nvt-tabela tbody tr.nvt-linha:hover td{background:var(--papel2)}
-.h-processo{width:17%}.h-partes{width:12%}.h-atu{width:20%}.h-tribunal{width:6%}.h-classe{width:8.5%}
-.h-dataAto{width:8%}.h-detectado{width:9%}.h-sit{width:9.5%}.h-acoes{width:10%}
+/* Classe com 12,5% (era 8,5%): em 1366 px o conteúdo mede ~1060 px e 8,5% deixava ~74 px,
+   menos que a palavra "Procedimento". A largura veio de Partes e Atualização (o texto longo,
+   que tem clamp e title) e de Processo; Ações e Data seguem com o que os botões e a data pedem. */
+.h-processo{width:16%}.h-partes{width:11%}.h-atu{width:19%}.h-tribunal{width:6.5%}.h-classe{width:12.5%}
+.h-dataAto{width:8.5%}.h-detectado{width:8%}.h-sit{width:9%}.h-acoes{width:9.5%}
 .nvt-ord{font:inherit;font-size:inherit;font-weight:inherit;text-transform:inherit;letter-spacing:inherit;
   color:inherit;background:none;border:0;padding:4px 0;min-height:28px;cursor:pointer;text-align:left}
 .nvt-ord:hover{color:var(--tinta)}
@@ -77,6 +80,9 @@ export const ESTILOS_TABELA_ATUALIZACOES = `
 .nvt-copiado{font-size:12px;font-weight:700;color:var(--verde-tinta);align-self:center}
 .nvt-partes,.nvt-classe{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden;
   overflow-wrap:anywhere}
+/* A classe quebra em PALAVRAS inteiras: "break-word" só parte a palavra que sozinha não cabe
+   na coluna. Passando de duas linhas, o clamp põe as reticências e o title tem a classe toda. */
+.nvt-classe{overflow-wrap:break-word;hyphens:manual}
 .nvt-classe-mini{display:none;margin-top:3px;font-size:12px;color:var(--tinta2)}
 .nvt-vazio{color:var(--tinta2)}
 .nvt-tit{font-weight:700;font-size:14px;line-height:1.4;overflow-wrap:anywhere}

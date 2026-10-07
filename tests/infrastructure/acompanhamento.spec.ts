@@ -224,6 +224,61 @@ describe('RepositorioAcompanhamentosSqlite', () => {
     expect(f.tribunais).toEqual(['TJSP']);
     expect(f.classes).toEqual(['Procedimento Comum Cível']);
   });
+
+  describe('classe por nome normalizado', () => {
+    const N1 = NUMERO_TJSP_A;
+    const N2 = NUMERO_TJSP_B;
+    const N3 = '00076521220228260224';
+
+    function comClasse(numero: string, classe: string): Processo {
+      return new Processo({
+        numero: NumeroCNJ.criar(numero),
+        tribunal: 'TJSP',
+        classe,
+        movimentacoes: [],
+        procedencia: { provider: 'teste', consultadoEm: new Date(), deCache: false },
+      });
+    }
+
+    beforeEach(async () => {
+      for (const [n, c] of [
+        [N1, 'Procedimento Comum Cível'],
+        [N2, 'PROCEDIMENTO COMUM CíVEL'],
+        [N3, 'Execução Fiscal'],
+      ] as const) {
+        await repo.acompanhar(WS, n);
+        await repo.registrarSincronizacao(WS, n, comClasse(n, c), []);
+      }
+    });
+
+    it('as facetas oferecem UMA opção por classe, com o nome normalizado', async () => {
+      const f = await repo.facetas(WS);
+      expect(f.classes).toEqual(['Execução Fiscal', 'Procedimento Comum Cível']);
+    });
+
+    it('o filtro pelo nome normalizado traz todas as grafias cruas', async () => {
+      const lista = await repo.listar(WS, { classe: 'Procedimento Comum Cível' });
+      expect(lista.map((a) => a.numero).sort()).toEqual([N1, N2].sort());
+    });
+
+    it('o filtro continua aceitando uma grafia crua (a mesma classe)', async () => {
+      const lista = await repo.listar(WS, { classe: 'PROCEDIMENTO COMUM CíVEL' });
+      expect(lista).toHaveLength(2);
+    });
+
+    it('classe que ninguém tem não acha nada, e o banco segue como gravado', async () => {
+      expect(await repo.listar(WS, { classe: 'Inventário' })).toHaveLength(0);
+      const gravada = (await repo.buscar(WS, N2))?.processo?.classe;
+      expect(gravada).toBe('PROCEDIMENTO COMUM CíVEL');
+    });
+
+    it('não enxerga classe de outro workspace', async () => {
+      await repo.acompanhar(OUTRO_WS, N1);
+      await repo.registrarSincronizacao(OUTRO_WS, N1, comClasse(N1, 'Inventário'), []);
+      expect((await repo.facetas(WS)).classes).not.toContain('Inventário');
+      expect(await repo.listar(WS, { classe: 'Inventário' })).toHaveLength(0);
+    });
+  });
 });
 
 describe('ServicoAcompanhamento', () => {
