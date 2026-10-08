@@ -30,6 +30,12 @@ export interface NovidadeSintetica {
   vista: boolean;
 }
 
+export interface ProvidenciaSintetica {
+  situacao: 'pede' | 'cumprida' | 'venceu';
+  motivo: { rotulo: string; data: string; chave: string; tipo: 'intimacao' | 'citacao' | 'outro' };
+  cumpridoEm: string | null;
+}
+
 export interface GrupoSintetico {
   numero: string;
   processo: {
@@ -41,6 +47,8 @@ export interface GrupoSintetico {
     };
     pedeProvidencia: boolean;
     motivoProvidencia: string | null;
+    /** (v0.37.5) Como a API: o ato que gera a providência e o que a marca/o tempo tiraram. */
+    providencia?: ProvidenciaSintetica | null;
   } | null;
   maisRecente: NovidadeSintetica;
   /** Como a API: só a contagem do período, nunca as anteriores (v0.37.1). */
@@ -133,6 +141,7 @@ export function infoProcesso(
   ativo: string[],
   passivo: string[],
   pedeProvidencia = false,
+  providencia?: ProvidenciaSintetica | null,
 ): NonNullable<GrupoSintetico['processo']> {
   return {
     tribunal,
@@ -143,6 +152,7 @@ export function infoProcesso(
     },
     pedeProvidencia,
     motivoProvidencia: pedeProvidencia ? '"Intimação" nos últimos 10 dias' : null,
+    ...(providencia !== undefined ? { providencia } : {}),
   };
 }
 
@@ -159,6 +169,7 @@ export function respostaNovidades(
     janelaDias: 15,
     janelaPadraoDias: 15,
     pendenciaJanelaDias: 10,
+    pendenciaIntimacaoJanelaDias: 30,
     foraDaJanela: 0,
     semNovidade: [],
     processosForaDaJanela: 0,

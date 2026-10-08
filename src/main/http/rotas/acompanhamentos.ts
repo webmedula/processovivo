@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { WorkspaceNaoResolvidoError } from '../../../domain/errors/index.js';
 import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import type {
@@ -9,7 +10,14 @@ import type {
   Novidade,
 } from '../../../domain/entities/Acompanhamento.js';
 import type { AcompanhamentoResumido } from '../../../domain/ports/RepositorioAcompanhamentos.js';
-import { estadoDaPasta } from '../../../domain/entities/estadoDaPasta.js';
+import {
+  PENDENCIA_INTIMACAO_JANELA_DIAS,
+  estadoDaPasta,
+} from '../../../domain/entities/estadoDaPasta.js';
+import type {
+  AtoDaProvidencia,
+  LeituraDaProvidencia,
+} from '../../../domain/entities/estadoDaPasta.js';
 import { triar } from '../../../domain/entities/triagem.js';
 import { agruparNovidades } from '../../../domain/entities/agruparNovidades.js';
 import type { GrupoDeNovidades } from '../../../domain/entities/agruparNovidades.js';
@@ -96,6 +104,7 @@ function resumoJson(
           ...(a.sincronizadoEm !== undefined ? { sincronizadoEm: a.sincronizadoEm } : {}),
           novidadesNaoVistas: a.novidadesNaoVistas,
           ...(p ? { movimentacoes: p.movimentacoes } : {}),
+          ...(a.cumprido ? { cumprido: a.cumprido } : {}),
         },
         agora,
         pendenciaJanelaDias,
@@ -156,7 +165,7 @@ const MAX_NOMES_POR_POLO = 20;
  * que esta tabela substituiu.
  */
 function infoDoProcesso(
-  a: AcompanhamentoResumido,
+  a: Acompanhamento & { readonly novidadesNaoVistas?: number },
   pendenciaJanelaDias: number,
   agora: Date,
 ): Record<string, unknown> {
@@ -169,8 +178,9 @@ function infoDoProcesso(
     {
       ...(a.erro !== undefined ? { erro: a.erro } : {}),
       ...(a.sincronizadoEm !== undefined ? { sincronizadoEm: a.sincronizadoEm } : {}),
-      novidadesNaoVistas: a.novidadesNaoVistas,
+      novidadesNaoVistas: a.novidadesNaoVistas ?? 0,
       ...(p ? { movimentacoes: p.movimentacoes } : {}),
+      ...(a.cumprido ? { cumprido: a.cumprido } : {}),
     },
     agora,
     pendenciaJanelaDias,
@@ -181,7 +191,46 @@ function infoDoProcesso(
     partes: { ativo: nomes('ATIVO'), passivo: nomes('PASSIVO') },
     pedeProvidencia: estado.rotulo === 'PROVIDENCIA',
     motivoProvidencia: estado.rotulo === 'PROVIDENCIA' ? (estado.motivo ?? null) : null,
+    // (v0.37.5) Campo NOVO e aditivo: o ATO que gera a providência (que pode não
+    // ser o da linha), o que a marca de "cumprido" cobriu e o que passou da janela.
+    providencia: providenciaJson(estado.providencia, a.cumprido),
   };
+}
+
+function atoJson(ato: AtoDaProvidencia): Record<string, unknown> {
+  return {
+    rotulo: ato.rotulo,
+    data: ato.data.toISOString(),
+    // Opaca para a tela: ela a devolve em "marcar como cumprido", nunca a interpreta.
+    chave: ato.chave,
+    tipo: ato.tipo,
+  };
+}
+
+/**
+ * `pede`: há ato pedindo providência agora. `cumprida`: pediria, mas o advogado
+ * marcou (`cumpridoEm` diz quando). `venceu`: intimação/citação que passou da
+ * janela sem marca. `null`: nada a dizer. Só rótulo e data do ato — nunca o texto,
+ * nem de processo em segredo de justiça.
+ */
+function providenciaJson(
+  leitura: LeituraDaProvidencia,
+  cumprido: Acompanhamento['cumprido'],
+): Record<string, unknown> | null {
+  if (leitura.pendente) {
+    return { situacao: 'pede', motivo: atoJson(leitura.pendente), cumpridoEm: null };
+  }
+  if (leitura.coberto) {
+    return {
+      situacao: 'cumprida',
+      motivo: atoJson(leitura.coberto),
+      cumpridoEm: cumprido?.em.toISOString() ?? null,
+    };
+  }
+  if (leitura.venceuPorTempo) {
+    return { situacao: 'venceu', motivo: atoJson(leitura.venceuPorTempo), cumpridoEm: null };
+  }
+  return null;
 }
 
 function grupoJson(
@@ -264,6 +313,8 @@ export interface JanelasDasTelas {
   readonly novidadesJanelaDias: number;
   readonly pendenciaJanelaDias: number;
 }
+
+const corpoDoCumprido = z.object({ chaveDoAto: z.string().min(1).max(1000) });
 
 const verdadeiro = (v: string | undefined): boolean => v === 'true' || v === '1';
 
@@ -385,6 +436,34 @@ export function rotasDeAcompanhamento(
       return { total: lista.length, clientes: lista };
     });
 
+    /*
+     * "Marcar como cumprido" (v0.37.5). A tela manda a chave do ato que ELA
+     * mostrou; a resposta traz o processo já recalculado (mesmo formato de
+     * `processo` em /v1/novidades), então ela não precisa recarregar a lista.
+     * Sem try/catch: o errorHandler traduz (404 não acompanhado, 409 ato inválido).
+     */
+    servidor.post<{ Params: { numero: string } }>(
+      '/v1/acompanhamentos/:numero/cumprido',
+      async (req) => {
+        const { chaveDoAto } = corpoDoCumprido.parse(req.body);
+        const a = await servico.marcarComoCumprido(
+          workspaceDe(req),
+          req.params.numero,
+          chaveDoAto,
+          req.identidadeDaChave ?? '',
+        );
+        return { processo: infoDoProcesso(a, janelas.pendenciaJanelaDias, agora()) };
+      },
+    );
+
+    servidor.delete<{ Params: { numero: string } }>(
+      '/v1/acompanhamentos/:numero/cumprido',
+      async (req) => {
+        const a = await servico.desfazerCumprido(workspaceDe(req), req.params.numero);
+        return { processo: infoDoProcesso(a, janelas.pendenciaJanelaDias, agora()) };
+      },
+    );
+
     servidor.get<{ Querystring: QueryNovidades }>('/v1/novidades', async (req) => {
       const q = req.query;
       const ws = workspaceDe(req);
@@ -445,6 +524,8 @@ export function rotasDeAcompanhamento(
         janelaPadraoDias: janelas.novidadesJanelaDias,
         // O filtro "Pedem providência" diz de quantos dias é: um valor só, do servidor.
         pendenciaJanelaDias: janelas.pendenciaJanelaDias,
+        // (v0.37.5) A janela das intimações/citações do Diário, também do servidor.
+        pendenciaIntimacaoJanelaDias: PENDENCIA_INTIMACAO_JANELA_DIAS,
         foraDaJanela: agrupadas.foraDaJanela,
         // (v0.37.3) Campos NOVOS; os de cima não mudaram. Processos acompanhados
         // sem novidade registrada, com a última movimentação do retrato.

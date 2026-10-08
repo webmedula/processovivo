@@ -1,6 +1,7 @@
 import type { DatabaseSync } from 'node:sqlite';
 import type {
   Acompanhamento,
+  CumpridoDoAcompanhamento,
   Novidade,
 } from '../../../domain/entities/Acompanhamento.js';
 import { nomeDaClasse } from '../../../domain/entities/nomeDaClasse.js';
@@ -84,6 +85,41 @@ export class RepositorioAcompanhamentosSqlite implements RepositorioAcompanhamen
         'UPDATE acompanhamentos SET cliente = ? WHERE workspace = ? AND numero = ?',
       )
       .run(limpo || null, workspace, numero);
+    return Number(r.changes) > 0;
+  }
+
+  async marcarCumprido(
+    workspace: string,
+    numero: string,
+    cumprido: CumpridoDoAcompanhamento,
+  ): Promise<boolean> {
+    // WHERE com o workspace: o número de outra conta nunca é alcançado.
+    const r = this.db
+      .prepare(
+        `UPDATE acompanhamentos
+            SET cumprido_chave = ?, cumprido_ate = ?, cumprido_em = ?, cumprido_por = ?
+          WHERE workspace = ? AND numero = ?`,
+      )
+      .run(
+        cumprido.chave,
+        cumprido.ate.toISOString(),
+        cumprido.em.toISOString(),
+        cumprido.por,
+        workspace,
+        numero,
+      );
+    return Number(r.changes) > 0;
+  }
+
+  async desfazerCumprido(workspace: string, numero: string): Promise<boolean> {
+    const r = this.db
+      .prepare(
+        `UPDATE acompanhamentos
+            SET cumprido_chave = NULL, cumprido_ate = NULL, cumprido_em = NULL,
+                cumprido_por = NULL
+          WHERE workspace = ? AND numero = ?`,
+      )
+      .run(workspace, numero);
     return Number(r.changes) > 0;
   }
 
@@ -426,6 +462,16 @@ export class RepositorioAcompanhamentosSqlite implements RepositorioAcompanhamen
         : {}),
       ...(texto(l['erro']) ? { erro: String(l['erro']) } : {}),
       ...(processo ? { processo } : {}),
+      ...(texto(l['cumprido_chave']) && data(l['cumprido_ate']) && data(l['cumprido_em'])
+        ? {
+            cumprido: {
+              chave: String(l['cumprido_chave']),
+              ate: data(l['cumprido_ate']) as Date,
+              em: data(l['cumprido_em']) as Date,
+              por: texto(l['cumprido_por']) ?? '',
+            },
+          }
+        : {}),
     };
   }
 }

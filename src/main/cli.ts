@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-import { writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { NumeroCNJ } from '../domain/entities/NumeroCNJ.js';
 import type { Processo } from '../domain/entities/Processo.js';
@@ -9,6 +10,13 @@ import type { RespostaHttpBinaria } from '../infrastructure/http/HttpClient.js';
 import { DomainError } from '../domain/errors/index.js';
 import { carregarConfig } from '../infrastructure/config/env.js';
 import { gerarBackup } from '../infrastructure/persistencia/backup.js';
+import {
+  aplicarReparo,
+  desfazerReparo,
+  diagnosticarAvalanche,
+} from '../infrastructure/persistencia/reparoDeNovidades.js';
+import type { RegistroDoReparo } from '../infrastructure/persistencia/reparoDeNovidades.js';
+import { abrirBanco } from '../infrastructure/persistencia/sqlite/banco.js';
 import { montarAplicacao } from './factories/makeProcessoSearchService.js';
 
 /**
@@ -37,6 +45,7 @@ Processo Vivo — consulta de processos judiciais
   npm run cli -- assinatura liberar <email> <plano> <meses> [--obs "Pix 22/09"]
   npm run cli -- assinatura cancelar <email> [--obs "pediu por e-mail"]
   npm run cli -- assinatura avisar
+  npm run cli -- novidades reparar [--aplicar] [--desfazer <arquivo>]
 
 Exemplos:
   npm run cli -- processo 1234567-47.2023.8.26.0100
@@ -72,6 +81,8 @@ async function main(): Promise<number> {
       manter: { type: 'string' },
       capturar: { type: 'string' },
       obs: { type: 'string' },
+      aplicar: { type: 'boolean', default: false },
+      desfazer: { type: 'string' },
       help: { type: 'boolean', short: 'h', default: false },
     },
     allowPositionals: true,
@@ -85,6 +96,9 @@ async function main(): Promise<number> {
   }
 
   const config = carregarConfig();
+
+  if (comando === 'novidades') return repararNovidades(config.banco.caminho, args[0], values);
+
   const app = montarAplicacao(config);
 
   switch (comando) {
@@ -464,6 +478,59 @@ async function main(): Promise<number> {
       console.error(`Comando desconhecido: "${comando}"`);
       console.log(USO.trim());
       return 1;
+  }
+}
+
+/**
+ * `novidades reparar` (v0.37.5): conta, e só com `--aplicar` marca como lidas, as
+ * novidades que a avalanche despejou. Padrão = dry-run. Nunca apaga; saída só com
+ * contagens (sem número de processo); `--desfazer <arquivo>` reverte.
+ */
+function repararNovidades(
+  caminhoBanco: string,
+  acao: string | undefined,
+  opcoes: { aplicar?: boolean | undefined; desfazer?: string | undefined },
+): number {
+  if (acao !== 'reparar') {
+    console.error('Uso: novidades reparar [--aplicar] [--desfazer <arquivo>]');
+    return 1;
+  }
+  const db = abrirBanco(caminhoBanco);
+  try {
+    if (opcoes.desfazer) {
+      const registro = JSON.parse(readFileSync(opcoes.desfazer, 'utf8')) as RegistroDoReparo;
+      const desfeitas = desfazerReparo(db, registro);
+      console.log(`Voltaram a "não lida": ${desfeitas} de ${registro.ids.length}.`);
+      return 0;
+    }
+
+    const d = diagnosticarAvalanche(db);
+    console.log(opcoes.aplicar ? 'Modo: APLICAR' : 'Modo: dry-run (nada será alterado)');
+    for (const w of d.workspaces) {
+      console.log(
+        `workspace ${w.ordem}: ${w.lotes} lote(s) suspeito(s), ` +
+          `${w.noTotal} novidade(s) no total, ${w.naoLidas} não lida(s) a marcar`,
+      );
+    }
+    console.log(`Total a marcar como lida: ${d.totalNaoLidas}`);
+
+    if (!opcoes.aplicar) {
+      console.error('\nNada foi alterado. Para marcar como lidas, rode de novo com --aplicar.');
+      return 0;
+    }
+    if (d.totalNaoLidas === 0) return 0;
+
+    const registro = aplicarReparo(db, d, new Date());
+    const arquivo = join(
+      dirname(caminhoBanco),
+      `reparo-novidades-${registro.aplicadoEm.replace(/[:.]/g, '-')}.json`,
+    );
+    writeFileSync(arquivo, JSON.stringify(registro));
+    console.log(`Marcadas como lidas: ${registro.ids.length}.`);
+    console.error(`Para desfazer: novidades reparar --desfazer ${arquivo}`);
+    return 0;
+  } finally {
+    db.close();
   }
 }
 

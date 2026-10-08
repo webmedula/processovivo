@@ -27,7 +27,27 @@ export interface GrupoDaTabela {
   readonly processo: {
     readonly tribunal: string | null;
     readonly pedeProvidencia: boolean;
+    /** (v0.37.5) O ato que gera a providência e o que a marca/o tempo tiraram. Ausente em servidor antigo. */
+    readonly providencia?: ProvidenciaDaLinha | null;
   } | null;
+}
+
+/** O ato que gera (ou gerou) a providência, como `GET /v1/novidades` o manda. */
+export interface AtoDaLinha {
+  readonly rotulo: string;
+  readonly data: string;
+  readonly chave: string;
+  readonly tipo: 'intimacao' | 'citacao' | 'outro';
+}
+
+/**
+ * `pede`: pede providência agora. `cumprida`: pediria, mas o advogado marcou.
+ * `venceu`: intimação/citação que passou da janela sem marca.
+ */
+export interface ProvidenciaDaLinha {
+  readonly situacao: 'pede' | 'cumprida' | 'venceu';
+  readonly motivo: AtoDaLinha;
+  readonly cumpridoEm: string | null;
 }
 
 /** Linha de processo acompanhado sem novidade registrada, como o servidor a manda (`semNovidade`). */
@@ -42,7 +62,11 @@ export interface ProcessoSemNovidade {
   } | null;
 }
 
-export type SituacaoFiltro = 'todas' | 'naoLidas' | 'providencia';
+/**
+ * `cumpridos` não é um chip: é o "Ver" da frase "N marcados como cumpridos" (v0.37.5),
+ * a lista dos processos que o advogado marcou, com o "Desfazer".
+ */
+export type SituacaoFiltro = 'todas' | 'naoLidas' | 'providencia' | 'cumpridos';
 
 /**
  * O filtro de Situação com que a aba abre (v0.37.4, decisão do dono, opção A):
@@ -149,10 +173,93 @@ export function contarSemLeitura(
   return n;
 }
 
+/**
+ * Quantos PROCESSOS a marca de "cumprido" tirou de "Pedem providência" e quantos
+ * passaram da janela da intimação/citação sem marca (v0.37.5). Os dois números
+ * existem para a tela dizer o que o filtro deixou de fora — nada some calado.
+ */
+export function contarSaidasDaProvidencia(
+  grupos: ReadonlyArray<{
+    readonly processo: {
+      readonly providencia?: { readonly situacao: string } | null;
+    } | null;
+  }>,
+): { readonly cumpridos: number; readonly vencidos: number } {
+  let cumpridos = 0;
+  let vencidos = 0;
+  for (const g of grupos) {
+    const p = g.processo && g.processo.providencia ? g.processo.providencia : null;
+    if (!p) continue;
+    if (p.situacao === 'cumprida') cumpridos += 1;
+    else if (p.situacao === 'venceu') vencidos += 1;
+  }
+  return { cumpridos, vencidos };
+}
+
+/**
+ * As frases que acompanham "Pedem providência": "N marcados como cumpridos" e
+ * "N sem marca há mais de 30 dias". Vazias quando o número é zero. Sem a palavra
+ * "prazo": a janela é de leitura automática, não de contagem.
+ */
+export function frasesDeSaidas(
+  cumpridos: number,
+  vencidos: number,
+  janelaDias: number,
+): { readonly cumpridos: string; readonly vencidos: string } {
+  return {
+    cumpridos:
+      cumpridos <= 0
+        ? ''
+        : cumpridos === 1
+          ? '1 marcado como cumprido'
+          : cumpridos + ' marcados como cumpridos',
+    vencidos:
+      vencidos <= 0 ? '' : vencidos + ' sem marca há mais de ' + janelaDias + ' dias',
+  };
+}
+
+/**
+ * O ato que gera a providência, QUANDO ele não é o ato que a linha mostra (v0.37.5).
+ * O selo se calcula sobre o retrato inteiro e a linha mostra uma só movimentação;
+ * sem isto o selo pode apontar para outro ato sem a tela dizer qual. Devolve
+ * `null` se não pede providência ou se for o mesmo ato (aí não há segunda linha).
+ * Compara rótulo e data: a novidade não guarda o identificador da fonte.
+ */
+export function atoQueGeraAProvidencia(g: {
+  readonly maisRecente: { readonly data: string | null; readonly titulo?: string };
+  readonly processo: {
+    readonly providencia?: {
+      readonly situacao: string;
+      readonly motivo: {
+        readonly rotulo: string;
+        readonly data: string;
+        readonly tipo: string;
+      };
+    } | null;
+  } | null;
+}): { readonly rotulo: string; readonly data: string; readonly tipo: string } | null {
+  const p = g.processo && g.processo.providencia ? g.processo.providencia : null;
+  if (!p || p.situacao !== 'pede') return null;
+  const n = g.maisRecente;
+  if (n.data === p.motivo.data && n.titulo === p.motivo.rotulo) return null;
+  return { rotulo: p.motivo.rotulo, data: p.motivo.data, tipo: p.motivo.tipo };
+}
+
+/** "Intimação" / "Citação" quando o ato que gera a providência veio de comunicação do DJEN desse tipo. */
+export function seloDoTipo(tipo: string | null | undefined): string {
+  return tipo === 'intimacao' ? 'Intimação' : tipo === 'citacao' ? 'Citação' : '';
+}
+
 export function filtrarPorSituacao<T extends GrupoDaTabela>(
   grupos: readonly T[],
   situacao: SituacaoFiltro,
 ): T[] {
+  if (situacao === 'cumpridos') {
+    return grupos.filter(
+      (g) =>
+        !!g.processo && !!g.processo.providencia && g.processo.providencia.situacao === 'cumprida',
+    );
+  }
   if (situacao === 'naoLidas') return grupos.filter((g) => g.naoVistas > 0);
   if (situacao === 'providencia') {
     return grupos.filter((g) => !!g.processo && g.processo.pedeProvidencia);

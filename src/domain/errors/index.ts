@@ -700,3 +700,29 @@ export class CalibracaoDeNumeracaoInvalidaError extends DomainError {
     super(motivo);
   }
 }
+
+/**
+ * Pediu algo sobre um processo que este workspace não acompanha (ou que nunca
+ * foi lido). 404 com a mesma resposta para "não existe" e "é de outra conta".
+ */
+export class AcompanhamentoNaoEncontradoError extends DomainError {
+  readonly codigo = 'ACOMPANHAMENTO_NAO_ENCONTRADO';
+
+  constructor() {
+    super('Este processo não está sendo acompanhado.');
+  }
+}
+
+/**
+ * A marca de "cumprido" apontou para um ato que não serve: não está mais no
+ * retrato do processo (a tela estava desatualizada) ou não pede providência.
+ * 409 — o pedido é válido, o estado do processo é que não o admite; a tela
+ * recarrega e a pessoa decide de novo.
+ */
+export class AtoDaProvidenciaInvalidoError extends DomainError {
+  readonly codigo = 'ATO_DA_PROVIDENCIA_INVALIDO';
+
+  constructor(motivo: string) {
+    super(motivo);
+  }
+}

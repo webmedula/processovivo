@@ -112,6 +112,25 @@ describe('payload real do DJEN', () => {
     expect(exibida).toBe('04/09/2026');
   });
 
+  it('guarda o TIPO da comunicação (e só ele), sem mais texto — v0.37.5', () => {
+    const mov = mapearMovimentacao(COMUNICACAO);
+    // A captura real: documento "Ato ordinatório" endereçado como Intimação.
+    expect(mov.titulo).toBe('Ato ordinatório');
+    expect(mov.tipoComunicacao).toBe('Intimação');
+    // A data é a de disponibilização e o identificador da comunicação já está em idExterno.
+    expect(mov.idExterno).toBe(`djen:${COMUNICACAO.id}`);
+  });
+
+  it('a intimação da captura real passa a EXIGIR ação, e o processo montado a marca', () => {
+    const { processos } = agruparEmProcessos([COMUNICACAO], AGORA);
+    expect(processos[0]?.movimentacoes[0]?.exigeAcao).toBe(true);
+  });
+
+  it('comunicação sem tipo não ganha campo (nada de undefined gravado)', () => {
+    const mov = mapearMovimentacao({ ...COMUNICACAO, tipoComunicacao: null });
+    expect('tipoComunicacao' in mov).toBe(false);
+  });
+
   it('recusa data em formato desconhecido em vez de virar Invalid Date', () => {
     expect(() => parseDataDisponibilizacao('04/09/2026x', 'teste')).toThrow(
       RespostaInvalidaError,
