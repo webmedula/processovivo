@@ -982,6 +982,20 @@ Não são detalhes — moldam o código.
   1366 e 1280 px. **Meus processos não tem rodapé "N de N":** sem filtro o subtítulo diz
   o total; com filtro só o aviso "Mostrando X de Y" conta (Y sem filtro) — a contagem não
   se repete na aba (a da lateral, `cont-processos`, é o mesmo total sem filtro).
+- **A aba Atualizações ABRE no filtro "Pedem providência"; "Todas" está a um clique**
+  (v0.37.4, decisão do dono, opção A — EXCEÇÃO registrada à regra "filtro nasce
+  desligado"). Não contradiz "triagem ordena, nunca esconde": o filtro é escolhido pelo
+  POSITIVO (`estadoDaPasta === 'PROVIDENCIA'`, a mesma regra e a mesma janela de 10 dias
+  do selo), a frase "Mostrando m de N processos acompanhados: só os que pedem providência
+  · Ver todos" está sempre à vista (sem "Ver todos" quando m = N), m = 0 mostra o bloco
+  "Nenhum processo pede providência agora." com a saída, e `exigeAcao` continua só
+  marcando. O período segue desligado por padrão. A escolha vale na sessão (variável da
+  página, nunca `localStorage`); recarregar volta ao padrão (`SITUACAO_PADRAO` em
+  `ui/tabelaAtualizacoes.ts`). O aviso "Leitura automática do andamento, não é contagem de
+  prazo. Confira no processo." fica junto do chip. Processo acompanhado SEM movimentação
+  conhecida não tem dado para ser lido: não conta como providência e a tela diz quantos
+  ficaram fora do filtro (`contarSemLeitura`) — nunca se inventa providência. Eventos de
+  calendário NÃO entram como critério (fora de escopo). Menu lateral e `/v1/painel` não mudam.
 - **Atualizações lista TODOS os processos acompanhados; o período é filtro opcional,
   desligado por padrão; o estado de verificação é por conta** (v0.37.3, decisão do
   dono; substitui a "janela de 15 dias" que escondia por padrão). (1) A aba só listava
@@ -1344,7 +1358,7 @@ teste e carência** (v0.28.0), **visual novo a partir do logo** (v0.29.0),
 **calendário: detecção, agenda, tela e feed ICS** (v0.32.0),
 **ajustes dos advogados: Atualizações por processo, peças no topo, providência em 10 dias** (v0.32.1),
 **Pasta digital: backend (v0.33.0) e tela (v0.33.1) — peça aberta ao clique, guarda por peça, montar pasta completa, baixar marcadas**,
-**ato (movimentação) de cada peça na lista da Pasta, com descrição** (v0.33.2) **e o número da movimentação calculado pela posição do ato, com aviso de atos bloqueados** (v0.34.0; a 0.33.3 havia removido o número errado da 0.33.2), **calibração do número com o Projudi feita pelo advogado: exato quando provado, faixa ou estimado quando não** (v0.35.0), **página inicial: Últimas atualizações mostra só o trecho do texto e o trilho de peças baixadas não estoura a largura** (v0.35.1), **Pasta: número da movimentação no lugar do índice; página inicial: "detectado há N dias" e cartão "pede providência"** (v0.35.2), **Pasta: lista em altura total com avisos compactados** (v0.35.3), **Pasta: todas as movimentações na lista, inclusive as sem peça, com lacuna de numeração provada e lista mais larga** (v0.36.0), **página inicial: tabela de últimas atualizações, uma linha por processo, com filtros que contam no lugar dos cartões; histórico de peças baixadas dentro da Pasta** (v0.37.0), **tabela sem "+N anteriores", "Detectado" enxuto e descrição do ato sem repetição na exibição** (v0.37.1), **classe legível e agrupada no filtro, última movimentação sem repetição e carteira sem rodapé redundante** (v0.37.2), **Atualizações lista todos os processos acompanhados, período como filtro opcional e verificação por conta** (v0.37.3),
+**ato (movimentação) de cada peça na lista da Pasta, com descrição** (v0.33.2) **e o número da movimentação calculado pela posição do ato, com aviso de atos bloqueados** (v0.34.0; a 0.33.3 havia removido o número errado da 0.33.2), **calibração do número com o Projudi feita pelo advogado: exato quando provado, faixa ou estimado quando não** (v0.35.0), **página inicial: Últimas atualizações mostra só o trecho do texto e o trilho de peças baixadas não estoura a largura** (v0.35.1), **Pasta: número da movimentação no lugar do índice; página inicial: "detectado há N dias" e cartão "pede providência"** (v0.35.2), **Pasta: lista em altura total com avisos compactados** (v0.35.3), **Pasta: todas as movimentações na lista, inclusive as sem peça, com lacuna de numeração provada e lista mais larga** (v0.36.0), **página inicial: tabela de últimas atualizações, uma linha por processo, com filtros que contam no lugar dos cartões; histórico de peças baixadas dentro da Pasta** (v0.37.0), **tabela sem "+N anteriores", "Detectado" enxuto e descrição do ato sem repetição na exibição** (v0.37.1), **classe legível e agrupada no filtro, última movimentação sem repetição e carteira sem rodapé redundante** (v0.37.2), **Atualizações lista todos os processos acompanhados, período como filtro opcional e verificação por conta** (v0.37.3), **Atualizações abre em "Pedem providência", com a lista completa a um clique** (v0.37.4),
 Dockerfile multi-stage, CI, 1451 testes.
 
 **Pasta digital (v0.33.0, backend):** `GET /v1/processos/:numero/pasta` (lista +

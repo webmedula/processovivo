@@ -36,6 +36,10 @@ export const ESTILOS_TABELA_ATUALIZACOES = `
 .nvt .chip{min-height:38px}
 .nvt-bloco select{width:auto;min-width:190px;max-width:100%;min-height:38px;padding:0 10px;font-size:13.5px}
 .nvt-so-pequeno{display:none}
+.nvt-aviso-prov{margin:0;font-size:12.5px;line-height:1.4;color:var(--tinta2);max-width:60ch}
+.nvt-sem-prov{background:var(--papel);border:1px solid var(--linha);border-radius:var(--r);padding:22px 20px;color:var(--tinta)}
+.nvt-sem-prov p{margin:6px 0 0;color:var(--tinta2);font-size:13.5px}
+.nvt-sem-leitura{padding:0 0 12px}
 .nvt-resumo{font-size:13.5px;color:var(--tinta2);margin:0 0 10px;line-height:2}
 .nvt-resumo .nov-btn{margin-left:6px;vertical-align:middle}
 .nvt-resumo strong{color:var(--tinta)}

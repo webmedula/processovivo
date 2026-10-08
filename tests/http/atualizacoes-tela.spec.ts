@@ -139,7 +139,19 @@ describe('tela do processo — ordem e janela de pendência', () => {
   it('o texto do filtro e dos selos nunca fala em prazo', () => {
     // A palavra pode aparecer em comentário do arquivo, mas não em texto que vai à tela.
     const textos = SCRIPT_ATUALIZACOES.match(/'[^'\n]*'/g) ?? [];
-    expect(textos.filter((t) => /prazo/i.test(t))).toEqual([]);
+    // Única ocorrência permitida (v0.37.4): o aviso de honestidade, que NEGA a contagem.
+    const semAviso = textos.filter(
+      (t) => /prazo/i.test(t) && !/não é contagem de prazo/.test(t),
+    );
+    expect(semAviso).toEqual([]);
+  });
+
+  it('a aba abre em "Pedem providência" e o estado vive na página, nunca em localStorage (v0.37.4)', () => {
+    expect(SCRIPT_ATUALIZACOES).toContain('var S={situacao:"providencia"');
+    expect(SCRIPT_ATUALIZACOES).not.toMatch(/localStorage|sessionStorage/);
+    expect(SCRIPT_ATUALIZACOES).toContain(
+      'Leitura automática do andamento, não é contagem de prazo. Confira no processo.',
+    );
   });
 });
 
