@@ -5,12 +5,13 @@ import { trechoDeTexto } from '../../src/main/http/ui/trechoDeTexto.js';
 import {
   contarSituacoes,
   filtrarPorSituacao,
+  montarLinhas,
   ordenarGrupos,
   paginar,
   proximaOrdem,
   textoDePartes,
 } from '../../src/main/http/ui/tabelaAtualizacoes.js';
-import type { GrupoDaTabela } from '../../src/main/http/ui/tabelaAtualizacoes.js';
+import type { GrupoDaTabela, ProcessoSemNovidade } from '../../src/main/http/ui/tabelaAtualizacoes.js';
 
 function g(
   numero: string,
@@ -261,5 +262,84 @@ describe('o módulo da tela usa as MESMAS funções testadas aqui', () => {
       ate: number;
     };
     expect([pag.de, pag.ate]).toEqual([26, 48]);
+  });
+});
+
+describe('base da tabela com processos sem novidade (v0.37.3)', () => {
+  const info = (providencia = false): GrupoDaTabela['processo'] => ({
+    tribunal: 'TJGO',
+    pedeProvidencia: providencia,
+  });
+  const sem = (
+    numero: string,
+    data: string | null,
+    opcoes: { segredo?: boolean; providencia?: boolean } = {},
+  ): ProcessoSemNovidade => ({
+    numero,
+    processo: info(opcoes.providencia),
+    segredoJustica: opcoes.segredo ?? false,
+    ultimaMovimentacao: data ? { data, titulo: 'Juntada', conteudo: null } : null,
+  });
+  const com = [g('1', { naoVistas: 1 }), g('2')];
+
+  it('primeiro quem tem atualização detectada (ordem de chegada); depois os demais pela data do ato, mais recente primeiro', () => {
+    const linhas = montarLinhas(
+      com,
+      [
+        sem('a', '2026-01-01T00:00:00.000Z'),
+        sem('b', null),
+        sem('c', '2026-09-01T00:00:00.000Z'),
+      ],
+      true,
+    );
+    expect(linhas.map((l) => l.numero)).toEqual(['1', '2', 'c', 'a', 'b']);
+  });
+
+  it('com o período ligado só entram os processos com atualização no período', () => {
+    expect(montarLinhas(com, [sem('a', null)], false).map((l) => l.numero)).toEqual([
+      '1',
+      '2',
+    ]);
+  });
+
+  it('a linha sem novidade não tem detecção, nunca é "não lida" e leva a movimentação do retrato', () => {
+    const [l] = montarLinhas([], [sem('a', '2026-09-01T00:00:00.000Z', { segredo: true })], true);
+    expect(l).toMatchObject({
+      semNovidade: true,
+      naoVistas: 0,
+      quantidade: 0,
+      segredoJustica: true,
+      maisRecente: { detectadaEm: null, data: '2026-09-01T00:00:00.000Z', titulo: 'Juntada' },
+    });
+  });
+
+  it('os contadores de situação contam processos, e "Todas" inclui os sem novidade', () => {
+    const base = montarLinhas(
+      com,
+      [sem('a', '2026-09-01T00:00:00.000Z', { providencia: true }), sem('b', null)],
+      true,
+    );
+    expect(contarSituacoes(base)).toEqual({ todas: 4, naoLidas: 1, pedemProvidencia: 1 });
+    expect(filtrarPorSituacao(base, 'naoLidas').map((x) => x.numero)).toEqual(['1']);
+    expect(filtrarPorSituacao(base, 'providencia').map((x) => x.numero)).toEqual(['a']);
+  });
+
+  it('ordenar por data do ato ou por detecção manda quem não tem o dado para o fim, nas duas direções', () => {
+    const base = montarLinhas(
+      [g('1', { data: '2026-10-01T00:00:00.000Z' })],
+      [sem('a', '2026-09-01T00:00:00.000Z'), sem('b', null)],
+      true,
+    );
+    for (const direcao of ['asc', 'desc'] as const) {
+      const porData = ordenarGrupos(base, { chave: 'dataAto', direcao }).map((x) => x.numero);
+      expect(porData[porData.length - 1]).toBe('b');
+      const porDeteccao = ordenarGrupos(base, { chave: 'detectado', direcao }).map((x) => x.numero);
+      expect(porDeteccao[0]).toBe('1');
+    }
+  });
+
+  it('é autocontida: injetada por toString() no console, roda sem nada do módulo', () => {
+    const injetada = new Function(`return ${montarLinhas.toString()}`)() as typeof montarLinhas;
+    expect(injetada([], [sem('a', null)], true)).toHaveLength(1);
   });
 });

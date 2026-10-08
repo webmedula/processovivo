@@ -48,6 +48,40 @@ export interface GrupoSintetico {
   naoVistas: number;
 }
 
+/** Processo acompanhado sem novidade registrada, como `semNovidade` da API (v0.37.3). */
+export interface SemNovidadeSintetico {
+  numero: string;
+  processo: GrupoSintetico['processo'];
+  segredoJustica: boolean;
+  ultimaMovimentacao: { data: string; titulo: string; conteudo: string | null } | null;
+}
+
+export function semNovidade(
+  numero: string,
+  titulo: string | null,
+  opcoes: {
+    diasAto?: number;
+    conteudo?: string | null;
+    segredo?: boolean;
+    processo?: GrupoSintetico['processo'];
+  } = {},
+  agora: number = Date.now(),
+): SemNovidadeSintetico {
+  return {
+    numero,
+    processo: opcoes.processo ?? null,
+    segredoJustica: opcoes.segredo ?? false,
+    ultimaMovimentacao:
+      titulo === null
+        ? null
+        : {
+            data: new Date(agora - (opcoes.diasAto ?? 30) * DIA).toISOString(),
+            titulo,
+            conteudo: opcoes.conteudo ?? null,
+          },
+  };
+}
+
 let proximoId = 1;
 
 export function novidade(
@@ -126,6 +160,8 @@ export function respostaNovidades(
     janelaPadraoDias: 15,
     pendenciaJanelaDias: 10,
     foraDaJanela: 0,
+    semNovidade: [],
+    processosForaDaJanela: 0,
     grupos,
     novidades: [],
     ...extra,

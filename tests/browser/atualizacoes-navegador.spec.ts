@@ -12,8 +12,9 @@ import {
   novidade,
   numeroValido,
   respostaNovidades,
+  semNovidade,
 } from '../helpers/atualizacoesSinteticas.js';
-import type { GrupoSintetico } from '../helpers/atualizacoesSinteticas.js';
+import type { GrupoSintetico, SemNovidadeSintetico } from '../helpers/atualizacoesSinteticas.js';
 
 /*
  * A página inicial (v0.37.0) NUM NAVEGADOR: tabela de uma linha por processo,
@@ -33,6 +34,8 @@ interface Cenario {
   /** Só entram em "Todas" (fora da janela de 15 dias). */
   antigos?: GrupoSintetico[];
   foraDaJanela?: number;
+  /** Processos acompanhados sem novidade registrada (v0.37.3): só a API os manda em `semNovidade`. */
+  semNovidade?: SemNovidadeSintetico[];
   /** Atraso artificial da resposta, para ver o esqueleto. */
   atrasoMs?: number;
   /** Respostas de erro antes de acertar (para o "Tentar de novo"). */
@@ -110,17 +113,24 @@ describe.skipIf(sem)(
             json: { erro: 'ERRO_INTERNO', mensagem: 'Falha sintética.' },
           });
         }
+        // O console pede "Todas" por padrão (v0.37.3); só a janela ligada pela pessoa vem sem o parâmetro.
         const todas = url.searchParams.get('janela') === 'todas';
         const tribunal = url.searchParams.get('tribunal');
-        let grupos = todas
-          ? [...cenario.grupos, ...(cenario.antigos ?? [])]
-          : cenario.grupos;
-        if (tribunal) grupos = grupos.filter((g) => g.processo?.tribunal === tribunal);
+        const sem = cenario.semNovidade ?? [];
+        const antigos = cenario.antigos ?? [];
+        const doTribunal = (t: string | null | undefined): boolean =>
+          !tribunal || t === tribunal;
+        let grupos = todas ? [...cenario.grupos, ...antigos] : cenario.grupos;
+        grupos = grupos.filter((g) => doTribunal(g.processo?.tribunal));
+        const semDoTribunal = sem.filter((x) => doTribunal(x.processo?.tribunal));
+        const fora = antigos.filter((g) => doTribunal(g.processo?.tribunal)).length;
         return rota.fulfill({
           json: respostaNovidades(grupos, {
-            acompanhados: cenario.grupos.length + (cenario.antigos?.length ?? 0),
+            acompanhados: cenario.grupos.length + antigos.length + sem.length,
             janelaDias: todas ? null : 15,
             foraDaJanela: todas ? 0 : (cenario.foraDaJanela ?? 0),
+            semNovidade: semDoTribunal,
+            processosForaDaJanela: todas ? 0 : fora + semDoTribunal.length,
           }),
         });
       });
@@ -137,6 +147,17 @@ describe.skipIf(sem)(
       });
       await page.goto(amb.url + '/');
       await page.waitForSelector(opcoes.espera ?? '.nvt-tabela');
+    }
+
+    /** Liga o filtro "Últimos 15 dias" (nasce desligado) e espera a tabela recarregar. */
+    async function ligarPeriodo(): Promise<void> {
+      await page.getByRole('button', { name: 'Últimos 15 dias' }).click();
+      await page.waitForFunction(
+        () =>
+          document
+            .querySelector('[data-janela="padrao"]')
+            ?.getAttribute('aria-pressed') === 'true',
+      );
     }
 
     const linhas = () => page.locator('.nvt-tabela tr.nvt-linha');
@@ -189,7 +210,7 @@ describe.skipIf(sem)(
     it('é uma tabela de verdade: caption, nove colunas com <th scope="col"> e as colunas pedidas', async () => {
       await abrir({ grupos: carteira(5) });
       expect(await page.locator('table.nvt-tabela > caption').textContent()).toBe(
-        'Últimas atualizações dos processos',
+        'Processos acompanhados e a atualização mais recente de cada um',
       );
       const ths = page.locator('table.nvt-tabela thead th');
       expect(await ths.count()).toBe(9);
@@ -407,14 +428,16 @@ describe.skipIf(sem)(
       expect(await page.locator('.nov-ant').count()).toBe(0);
     });
 
-    it('a mensagem "N atualizações mais antigas não mostradas" convive com a frase da página', async () => {
+    it('a mensagem "N processos sem atualização nos últimos 15 dias" convive com a frase da página', async () => {
       const numero = numeroValido(3003);
       await abrir({
         grupos: [grupo(numero, novidade(numero, 'A'), [novidade(numero, 'B')])],
+        antigos: carteira(1),
         foraDaJanela: 308,
       });
+      await ligarPeriodo();
       expect(await page.locator('.nov-fora').innerText()).toContain(
-        '308 atualizações mais antigas não mostradas (fora dos últimos 15 dias).',
+        '1 processo sem atualização nos últimos 15 dias (há 308 atualizações mais antigas) · Ver todos',
       );
       expect(await page.locator('.nov-ant').count()).toBe(1);
     });
@@ -514,6 +537,7 @@ describe.skipIf(sem)(
 
     it('os filtros de situação têm contador de PROCESSOS e o texto nunca fala em prazo', async () => {
       await abrir(cenarioDeFiltros());
+      await ligarPeriodo();
       const sit = page.locator(
         '[role="group"][aria-labelledby="nvt-rot-situacao"] button',
       );
@@ -537,6 +561,7 @@ describe.skipIf(sem)(
 
     it('"Não lidas" e "Pedem providência" filtram, dizem quantos ficaram de fora e se desligam com "Todas"', async () => {
       await abrir(cenarioDeFiltros());
+      await ligarPeriodo();
       await page.getByRole('button', { name: /^Não lidas \(3\)/ }).click();
       expect(await linhas().count()).toBe(3);
       expect(await page.locator('.nvt-resumo').innerText()).toContain(
@@ -570,6 +595,7 @@ describe.skipIf(sem)(
 
     it('o tribunal recarrega a base e os contadores passam a contar só aquele tribunal', async () => {
       await abrir(cenarioDeFiltros());
+      await ligarPeriodo();
       await page.selectOption('#nvt-trib', 'TJGO');
       await page.waitForFunction(
         () => document.querySelectorAll('tr.nvt-linha').length === 3,
@@ -591,28 +617,31 @@ describe.skipIf(sem)(
       );
     });
 
-    it('o período "Todas" traz as mais antigas e a mensagem "N mais antigas não mostradas… Ver todas" some', async () => {
+    it('o período nasce desligado ("Todas"); ligado, diz quantos processos tirou da lista, com "Ver todos"', async () => {
       await abrir(cenarioDeFiltros());
-      const aviso = page.locator('.nov-fora');
-      expect(await aviso.innerText()).toContain(
-        '3 atualizações mais antigas não mostradas (fora dos últimos 15 dias).',
-      );
-      await aviso.getByRole('button', { name: 'Ver todas' }).click();
-      await page.waitForFunction(
-        () => document.querySelectorAll('tr.nvt-linha').length === 8,
-      );
+      // Padrão: todos os processos, nenhum aviso de ocultos.
+      expect(await linhas().count()).toBe(8);
       expect(await page.locator('.nov-fora').count()).toBe(0);
       expect(
         await page
           .getByRole('button', { name: 'Todas', exact: true })
           .getAttribute('aria-pressed'),
       ).toBe('true');
-      // Voltar ao período padrão restaura o aviso.
-      await page.getByRole('button', { name: 'Últimos 15 dias' }).click();
-      await page.waitForFunction(
-        () => document.querySelectorAll('tr.nvt-linha').length === 6,
+
+      await ligarPeriodo();
+      expect(await linhas().count()).toBe(6);
+      const aviso = page.locator('.nov-fora');
+      expect(await aviso.innerText()).toContain(
+        '2 processos sem atualização nos últimos 15 dias (há 3 atualizações mais antigas) · Ver todos',
       );
-      expect(await page.locator('.nov-fora').count()).toBe(1);
+      expect(await page.locator('.nvt-resumo').innerText()).toContain(
+        '8 processos acompanhados · 6 com atualização detectada nos últimos 15 dias',
+      );
+      await aviso.getByRole('button', { name: 'Ver todos' }).click();
+      await page.waitForFunction(
+        () => document.querySelectorAll('tr.nvt-linha').length === 8,
+      );
+      expect(await page.locator('.nov-fora').count()).toBe(0);
     });
 
     it('o foco do teclado sobrevive ao redesenho do filtro', async () => {
@@ -762,7 +791,7 @@ describe.skipIf(sem)(
       await page.waitForSelector('#nav-buscar.ativo');
     });
 
-    it('sem resultado no filtro: "Nenhuma atualização com este filtro", quantos existem sem filtro e "Limpar filtros"', async () => {
+    it('sem resultado no filtro: "Nenhum processo com este filtro", quantos existem sem filtro e "Limpar filtros"', async () => {
       const numero = numeroValido(6001);
       const g = grupo(
         numero,
@@ -773,13 +802,13 @@ describe.skipIf(sem)(
       await abrir({ grupos: [g] });
       await page.getByRole('button', { name: /^Pedem providência \(0\)/ }).click();
       expect(await page.locator('.nvt .vazio h3').textContent()).toBe(
-        'Nenhuma atualização com este filtro',
+        'Nenhum processo com este filtro',
       );
       expect(await page.locator('.nvt .vazio p').innerText()).toContain(
-        'Há 1 processo com atualização neste período',
+        'Há 1 processo acompanhado, sem o filtro',
       );
       expect(await page.locator('#nvt-live').textContent()).toBe(
-        'Nenhuma atualização com este filtro',
+        'Nenhum processo com este filtro',
       );
       expect(await page.locator('table').count()).toBe(0);
       await page
@@ -807,17 +836,159 @@ describe.skipIf(sem)(
       expect(await linhas().count()).toBe(3);
     });
 
-    it('nenhuma atualização no período mas há mais antigas: diz isso e oferece "Ver todas", sem descartar nada', async () => {
-      await abrir(
-        { grupos: [], antigos: carteira(2), foraDaJanela: 4 },
-        { espera: '.nvt .vazio' },
-      );
+    it('nenhum processo com atualização no período mas há acompanhados: diz isso e oferece "Ver todos", sem descartar nada', async () => {
+      await abrir({ grupos: [], antigos: carteira(2), foraDaJanela: 4 });
+      expect(await linhas().count()).toBe(2); // padrão "Todas"
+      await ligarPeriodo();
       expect(await page.locator('.nvt .vazio h3').textContent()).toContain(
-        'Nenhuma atualização nos últimos 15 dias',
+        'Nenhum processo com atualização nos últimos 15 dias',
       );
       expect(await page.locator('.nov-fora').innerText()).toContain(
-        '4 atualizações mais antigas não mostradas',
+        '2 processos sem atualização nos últimos 15 dias (há 4 atualizações mais antigas)',
       );
+      await page.locator('.vazio').getByRole('button', { name: 'Ver todos' }).click();
+      await page.waitForFunction(
+        () => document.querySelectorAll('tr.nvt-linha').length === 2,
+      );
+    });
+
+    /* ------------------------------------------- processos sem novidade (v0.37.3) */
+
+    /** 2 acompanhados: um com atualização detectada, um sem nenhuma novidade registrada. */
+    function doisProcessos(): Cenario {
+      const comNov = numeroValido(7001);
+      const sem = numeroValido(7002);
+      return {
+        grupos: [
+          grupo(
+            comNov,
+            novidade(comNov, 'Sentença', { diasDetectada: 1 }),
+            [],
+            infoProcesso('TJGO', 'Procedimento Comum Cível', ['Autor'], ['Réu']),
+          ),
+        ],
+        semNovidade: [
+          semNovidade(sem, 'Juntada de Petição — Juntada de Petição', {
+            diasAto: 20,
+            conteudo: 'Texto sintético do último ato conhecido.',
+            processo: infoProcesso('TJGO', 'Execução Fiscal', [], []),
+          }),
+        ],
+      };
+    }
+
+    it('2 processos acompanhados, 1 sem novidade: 2 linhas, o sem novidade com a última movimentação, sem detecção', async () => {
+      await abrir(doisProcessos());
+      expect(await linhas().count()).toBe(2);
+      const sem = linhas().nth(1); // primeiro quem tem atualização detectada
+      expect(await sem.locator('.nvt-num').textContent()).toContain('7002');
+      expect(await sem.locator('.c-atu').innerText()).toContain(
+        'Última movimentação conhecida · sem atualização detectada',
+      );
+      // Mesma regra de descrição: a repetição some só na exibição.
+      expect(await sem.locator('.c-atu .nvt-tit').textContent()).toBe('Juntada de Petição');
+      expect(await sem.locator('.c-atu .nvt-tit').getAttribute('title')).toBe(
+        'Juntada de Petição — Juntada de Petição',
+      );
+      expect(await sem.locator('.c-atu .nov-txt').textContent()).toContain(
+        'Texto sintético do último ato conhecido.',
+      );
+      // Data do ato = data da movimentação; Detectado = "—" com texto acessível.
+      expect(await sem.locator('.c-data time').count()).toBe(1);
+      expect(await sem.locator('.c-det').innerText()).toContain('—');
+      expect(await sem.locator('.c-det .nvt-sr').textContent()).toBe(
+        'sem detecção registrada',
+      );
+      // Situação vazia: nem "Não lida" nem providência sem base.
+      expect(await sem.locator('.c-sit .selo').count()).toBe(0);
+      // O resumo conta processos e nenhuma linha some.
+      expect(await page.locator('.nvt-resumo').innerText()).toContain(
+        '2 processos acompanhados',
+      );
+      const sit = page.locator('[role="group"][aria-labelledby="nvt-rot-situacao"] button');
+      expect((await sit.allTextContents()).map((t) => t.trim())).toEqual([
+        'Todas (2)',
+        'Não lidas (1)',
+        'Pedem providência (0)',
+      ]);
+    });
+
+    it('período "Últimos 15 dias" esconde o sem novidade e diz "1 processo sem atualização…", com a saída', async () => {
+      await abrir(doisProcessos());
+      await ligarPeriodo();
+      expect(await linhas().count()).toBe(1);
+      expect(await page.locator('.nov-fora').innerText()).toBe(
+        '1 processo sem atualização nos últimos 15 dias · Ver todos',
+      );
+      expect(await page.locator('.nvt-resumo').innerText()).toContain(
+        '2 processos acompanhados · 1 com atualização detectada nos últimos 15 dias',
+      );
+      await page.locator('.nov-fora').getByRole('button', { name: 'Ver todos' }).click();
+      await page.waitForFunction(
+        () => document.querySelectorAll('tr.nvt-linha').length === 2,
+      );
+    });
+
+    it('os sem novidade vêm depois dos com atualização, pela data do ato mais recente; sem movimentação diz "Nenhuma movimentação conhecida"', async () => {
+      const a = numeroValido(7101);
+      const b = numeroValido(7102);
+      const c = numeroValido(7103);
+      const d = numeroValido(7104);
+      await abrir({
+        grupos: [grupo(a, novidade(a, 'Nova', { diasDetectada: 2 }))],
+        semNovidade: [
+          semNovidade(b, 'Antigo', { diasAto: 90 }),
+          semNovidade(c, null),
+          semNovidade(d, 'Recente', { diasAto: 5 }),
+        ],
+      });
+      expect(
+        (await numerosDasLinhas()).map((n) => n.replace(/\D/g, '').slice(0, 7)),
+      ).toEqual(['0007101', '0007104', '0007102', '0007103']);
+      const vazia = linhas().nth(3);
+      expect(await vazia.locator('.c-atu').innerText()).toBe('Nenhuma movimentação conhecida');
+      expect(await vazia.locator('.c-data').innerText()).toBe('—');
+      expect(await vazia.locator('.c-det .nvt-sr').textContent()).toBe(
+        'sem detecção registrada',
+      );
+    });
+
+    it('segredo de justiça sem novidade: rótulo e data, nunca o texto do ato', async () => {
+      const n = numeroValido(7201);
+      await abrir({
+        grupos: [],
+        semNovidade: [semNovidade(n, 'Decisão', { segredo: true, conteudo: null })],
+      });
+      const linha = linhas().first();
+      expect(await linha.locator('.c-atu').innerText()).toContain('segredo de justiça');
+      expect(await linha.locator('.c-atu').innerText()).toContain(
+        'O texto do ato não é exibido aqui.',
+      );
+      expect(await linha.locator('.nov-txt').count()).toBe(0);
+    });
+
+    it('"Pedem providência" e "Não lidas" continuam valendo: o sem novidade entra em "Todas" e só em "Pedem providência" se o servidor disser', async () => {
+      const a = numeroValido(7301);
+      const b = numeroValido(7302);
+      await abrir({
+        grupos: [],
+        semNovidade: [
+          semNovidade(a, 'Intimação', {
+            diasAto: 2,
+            processo: infoProcesso('TJGO', null, [], [], true),
+          }),
+          semNovidade(b, 'Juntada', { diasAto: 2, processo: infoProcesso('TJGO', null, [], [], false) }),
+        ],
+      });
+      const sit = page.locator('[role="group"][aria-labelledby="nvt-rot-situacao"] button');
+      expect((await sit.allTextContents()).map((t) => t.trim())).toEqual([
+        'Todas (2)',
+        'Não lidas (0)',
+        'Pedem providência (1)',
+      ]);
+      await page.getByRole('button', { name: /^Pedem providência/ }).click();
+      expect(await linhas().count()).toBe(1);
+      expect(await page.locator('.c-sit .selo.am').count()).toBe(1);
     });
 
     /* ----------------------------------------------------------------- ações */
@@ -883,7 +1054,15 @@ describe.skipIf(sem)(
           ),
           ...carteira(24),
         ];
-        await abrir({ grupos, foraDaJanela: 3 }, { largura });
+        const semNov = [
+          semNovidade(numeroValido(8101), longo, {
+            conteudo: longo + ' ' + DECISAO,
+            processo: infoProcesso('TJGO', longo, [], []),
+          }),
+          semNovidade(numeroValido(8102), null),
+          semNovidade(numeroValido(8103), 'Decisão', { segredo: true }),
+        ];
+        await abrir({ grupos, foraDaJanela: 3, semNovidade: semNov }, { largura });
         const m = await page.evaluate(() => ({
           sw: document.documentElement.scrollWidth,
           cw: document.documentElement.clientWidth,
@@ -1024,7 +1203,15 @@ describe.skipIf(sem)(
             ),
             ...carteira(6),
           ];
-          await abrir({ grupos, foraDaJanela: 2 }, { largura, escuro });
+          const semNov = [
+            semNovidade(numeroValido(9101), 'Juntada de Petição', {
+              conteudo: 'Texto do último ato conhecido.',
+              processo: infoProcesso('TJSP', 'Execução Fiscal', [], []),
+            }),
+            semNovidade(numeroValido(9102), null),
+            semNovidade(numeroValido(9103), 'Decisão', { segredo: true }),
+          ];
+          await abrir({ grupos, foraDaJanela: 2, semNovidade: semNov }, { largura, escuro });
           await page.addScriptTag({
             content: (AxeBuilder as unknown as { source: string }).source,
           });

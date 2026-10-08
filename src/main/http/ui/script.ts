@@ -249,7 +249,8 @@ function verNovidades(){
   var trib=window.__f_nv_trib||'';
   var q=trib?'tribunal='+encodeURIComponent(trib):'';
   /* A janela de tempo NÃO conta como filtro para o texto de "vazio": ela tem aviso próprio. */
-  var jan=window.__f_nv_janela==='todas'?'&janela=todas':'';
+  /* Desde a v0.37.3 "Todas" é o padrão; os 15 dias são filtro que a pessoa liga. */
+  var jan=window.__f_nv_janela==='padrao'?'':'&janela=todas';
 
   /* Duas chamadas em paralelo, e o painel NÃO derruba a tela se falhar: ele só
      informa a verificação. Trocar a tela inteira por um erro porque a frase de
@@ -305,17 +306,24 @@ function dispararSync(){
   var b=$('sincronizar'); if(!b)return;
   b.disabled=true;b.innerHTML='<span class="gira"></span>Verificando';
   api('/v1/sincronizar',{method:'POST',body:{}})
-    .then(function(){
-      b.innerHTML='Verificação iniciada';
+    .then(function(r){
+      b.innerHTML=r.jaEmAndamento?'Verificação em andamento':'Verificação iniciada';
       var aviso=document.createElement('div');
-      aviso.className='aviso';aviso.style.marginTop='10px';
-      aviso.innerHTML='Varredura em andamento. Cada processo leva alguns segundos '+
+      aviso.className='aviso';aviso.style.marginTop='10px';aviso.setAttribute('role','status');
+      aviso.innerHTML='Verificando os seus processos. Cada um leva alguns segundos '+
         '(a base do CNJ é lenta), então as novidades vão aparecendo aos poucos. '+
         'Pode fechar a página — ela continua rodando no servidor.';
       b.parentNode.parentNode.appendChild(aviso);
+      /* O estado é o DESTA conta (v0.37.3): a varredura dos outros assinantes não
+         faz esta tela girar. Passado o limite do servidor, para de girar e diz por quê. */
       var t=setInterval(function(){
         api('/v1/sincronizacao').then(function(s){
-          if(!s.emAndamento){clearInterval(t);atualizarBolha();verNovidades()}})
+          if(!s.emAndamento){clearInterval(t);atualizarBolha();verNovidades();return}
+          if(s.demorando){
+            b.innerHTML='Verificação demorando';
+            aviso.textContent='Verificação demorando: as fontes do tribunal estão lentas. '+
+              'Os processos continuam sendo verificados e a tela atualiza quando terminar.';
+          }})
           .catch(function(){clearInterval(t)});
       },4000);
     })
@@ -356,6 +364,10 @@ function resumoDaVerificacao(ver,acomp,r){
  */
 function seloDeVerificacao(ver,acomp){
   if(!acomp)return '';
+  if(ver.emAndamento&&ver.demorando){
+    return '<span class="vigia atencao"><span class="ponto-vivo"></span>Verificação demorando: as fontes do tribunal estão lentas.'+
+      (ver.ultimaEm?' Última verificação às '+esc(horaDe(ver.ultimaEm))+'.':'')+'</span>';
+  }
   if(ver.emAndamento)return '<span class="vigia neutro"><span class="gira"></span>Verificando agora</span>';
   if(ver.naoVerificados>0){
     return '<span class="vigia atencao"><span class="ponto-vivo"></span>'+
