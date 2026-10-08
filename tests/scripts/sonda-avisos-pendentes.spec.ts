@@ -8,13 +8,13 @@ import { MniAdapter } from '../../src/infrastructure/adapters/mni/MniAdapter.js'
 
 /**
  * A sonda é um script `.mjs` (como as outras), então entra por import dinâmico de
- * um caminho em variável: o TypeScript não tenta tipá-lo, e o contrato que
- * importa está descrito aqui.
+ * um caminho em variável: o TypeScript não tenta tipá-lo.
  *
- * Fixtures SINTÉTICAS, sempre: a forma real de `consultarAvisosPendentes` ainda
- * não foi capturada (é para isso que a sonda existe). Os campos abaixo são o
- * palpite do MNI 2.2.2 e as variações que a sonda tem de tolerar — por isso não
- * há aqui nenhum teste que "prove" o formato do tribunal.
+ * Fixtures SINTÉTICAS, sempre. A forma do aviso segue o WSDL do TJGO lido pelo
+ * dono: `tipoAvisoComunicacaoPendente` = `destinatario`, `processo`,
+ * `dataDisponibilizacao` + atributos `idAviso` e `tipoComunicacao`; SEM prazo e
+ * SEM data limite. A resposta real ainda não foi capturada (é para isso que a
+ * sonda existe), então nenhum teste aqui "prova" o que o tribunal devolve.
  */
 interface Aviso {
   indice: number;
@@ -35,17 +35,8 @@ interface Tabela {
 interface Resumo {
   total: number;
   tipos: Record<string, number>;
-  limite: {
-    campoExiste: boolean;
-    campos: string[];
-    preenchidos: number;
-    vazios: number;
-    ausentes: number;
-    semLimite: number;
-    formatos: string[];
-  };
+  limite: { campoExiste: boolean; campos: string[]; preenchidos: number };
   publicacao: { comData: number; formatos: string[] };
-  diasPublicacaoAteLimite: { n: number; min: number; max: number } | null;
   acompanhados: Tabela['acompanhados'];
 }
 interface Analise {
@@ -61,26 +52,46 @@ interface Deps {
   baixarDocumento: (u: string) => Promise<string>;
   consultarAvisos: (a: unknown) => Promise<unknown>;
 }
+interface No {
+  nome: string;
+  tipo: string;
+  minOccurs: string;
+  maxOccurs: string;
+  filhos: No[];
+}
+interface Op {
+  encontrada: boolean;
+  documentacao?: string;
+  soapAction?: string;
+  entrada: { elemento: string; namespace?: string; filhos: No[] };
+  saida: { elemento: string; filhos: No[] };
+}
+interface WsdlAnalise {
+  operacoesDoServico: string[];
+  proibidasPresentes: string[];
+  operacoes: Record<string, Op>;
+}
 interface Sonda {
   VERSAO_SONDA: string;
   OPERACAO: string;
   ACAO_AVISOS: string;
   OPERACOES_PROIBIDAS: readonly string[];
-  OperacaoProibidaError: new (...a: never[]) => Error;
+  ORDEM_DA_ENTRADA: readonly string[];
   SondaAbortada: new (m: string) => Error;
   garantirOperacaoPermitida(o: string): void;
   validarEnvelopeEAcao(xml: string, acao: string): void;
-  envelopeAvisosPendentes(c: { identificacao: string; senha: string }): string;
+  envelopeAvisosPendentes(
+    c: { identificacao: string; senha: string },
+    p?: { prefixoServico?: string; prefixoTipos?: string },
+  ): string;
   envelopeParaExibir(): string;
   mascararNumeroProcesso(t: string): string;
-  formatarNumeroCnj(d: string): string;
   lerData(v: string): { formato: string; iso: string } | undefined;
   formatoDe(v: string): string;
-  papelDoCampo(c: string, v: string): string;
   analisarResposta(conteudo: unknown): Analise;
   montarTabela(a: unknown): Tabela;
   validarTabela(b: unknown): Tabela;
-  resumir(t: Tabela, o?: { esperado?: number; semLimiteEsperado?: number }): Resumo;
+  resumir(t: Tabela, o?: { esperado?: number }): Resumo;
   julgar(r: Resumo): { rotulo: string; motivo: string };
   contarAcompanhados(n: string[][], c: Set<string>): NonNullable<Tabela['acompanhados']>;
   linhasDeConferencia(a: Analise, o: { mostrar: boolean }): string[];
@@ -94,28 +105,16 @@ interface Sonda {
   indiciosDeEfeitoColateral(d: string): { fortes: string[]; fracos: string[] };
   principal(argv: string[], deps: Deps, escrever: (l: string) => void): Promise<number>;
 }
-interface Op {
-  encontrada: boolean;
-  documentacao?: string;
-  soapAction?: string;
-  entrada: {
-    elemento: string;
-    namespace?: string;
-    filhos: { nome: string; minOccurs: string; filhos: unknown[] }[];
-  };
-  saida: { elemento: string; filhos: { nome: string; filhos: { nome: string }[] }[] };
-}
-interface WsdlAnalise {
-  operacoesDoServico: string[];
-  proibidasPresentes: string[];
-  operacoes: Record<string, Op>;
-}
 
 const CAMINHO = resolve(__dirname, '../../scripts/sonda-avisos-pendentes.mjs');
 const carregar = async (): Promise<Sonda> =>
   (await import(/* @vite-ignore */ CAMINHO)) as unknown as Sonda;
 
-// --- fixtures sintéticas ---------------------------------------------------------
+const NS_SERVICO = 'http://www.cnj.jus.br/servico-intercomunicacao-2.2.2/';
+const NS_TIPOS = 'http://www.cnj.jus.br/tipos-servico-intercomunicacao-2.2.2';
+const NS_INTER = 'http://www.cnj.jus.br/intercomunicacao-2.2.2';
+
+// --- fixtures sintéticas de RESPOSTA ----------------------------------------------
 /** Número CNJ com DV correto (mesma conta do teste de NumeroCNJ). */
 function numeroValido(
   seq: string,
@@ -130,101 +129,116 @@ function numeroValido(
 }
 const NUMEROS = Array.from({ length: 10 }, (_, i) => numeroValido(String(1000001 + i)));
 
-function aviso(
-  i: number,
-  opcoes: {
-    limite?: 'preenchido' | 'vazio' | 'ausente';
-    formato?: 'ts' | 'iso' | 'br';
-    tipo?: string;
-  },
-): string {
-  const { limite = 'preenchido', formato = 'ts', tipo = 'Intimação' } = opcoes;
-  const data = (d: string): string =>
-    formato === 'ts'
-      ? `${d.replaceAll('-', '')}093000`
-      : formato === 'iso'
-        ? `${d}T09:30:00`
-        : d.split('-').reverse().join('/');
-  const lim =
-    limite === 'preenchido'
-      ? `<ns2:dataLimite>${data(`2026-10-${20 + (i % 5)}`)}</ns2:dataLimite>`
-      : limite === 'vazio'
-        ? '<ns2:dataLimite/>'
-        : '';
-  return (
-    `<ns2:aviso idAviso="${9000 + i}" tipoComunicacao="${tipo}">` +
-    `<ns3:processo numero="${NUMEROS[i]}" classeProcessual="7"/>` +
-    `<ns2:destinatario>Fulano Sintetico de Tal</ns2:destinatario>` +
-    `<ns2:descricao>Texto livre do ato que nunca pode sair</ns2:descricao>` +
-    `<ns2:dataDisponibilizacao>${data(`2026-10-0${1 + (i % 5)}`)}</ns2:dataDisponibilizacao>` +
-    lim +
-    `</ns2:aviso>`
-  );
+/** Como os prefixos aparecem: declarados no topo, ou o namespace inline (padrão). */
+type Estilo = 'ns-numerados' | 'prefixos-outros' | 'padrao-inline';
+
+interface OpcoesAviso {
+  tipo?: string | null;
+  disponibilizacao?: string | null;
+  formato?: 'ts' | 'iso' | 'br';
+  /** Cenário INESPERADO pelo WSDL: o tribunal manda um campo de data limite. */
+  comLimite?: boolean;
 }
 
-function resposta(avisos: string[], extra = ''): string {
+const data = (d: string, formato: 'ts' | 'iso' | 'br'): string =>
+  formato === 'ts'
+    ? `${d.replaceAll('-', '')}093000`
+    : formato === 'iso'
+      ? `${d}T09:30:00`
+      : d.split('-').reverse().join('/');
+
+/** Gera um elemento no namespace dado, no estilo escolhido. */
+function elemento(
+  estilo: Estilo,
+  prefixos: { corpo: string; inter: string },
+  ns: 'corpo' | 'inter',
+  nome: string,
+  atributos: string,
+  interior: string,
+): string {
+  const abre = `${atributos ? ' ' + atributos : ''}`;
+  if (estilo === 'padrao-inline') {
+    const url = ns === 'corpo' ? NS_TIPOS : NS_INTER;
+    const fim = interior === '' ? '/>' : `>${interior}</${nome}>`;
+    return `<${nome} xmlns="${url}"${abre}${fim}`;
+  }
+  const p = ns === 'corpo' ? prefixos.corpo : prefixos.inter;
+  return interior === ''
+    ? `<${p}:${nome}${abre}/>`
+    : `<${p}:${nome}${abre}>${interior}</${p}:${nome}>`;
+}
+
+function aviso(i: number, o: OpcoesAviso = {}, estilo: Estilo = 'ns-numerados'): string {
+  const prefixos =
+    estilo === 'prefixos-outros'
+      ? { corpo: 'tp', inter: 'ic' }
+      : { corpo: 'ns2', inter: 'ns3' };
+  const tipo = o.tipo === undefined ? 'Intimação' : o.tipo;
+  const formato = o.formato ?? 'ts';
+  const disp =
+    o.disponibilizacao === undefined ? `2026-10-0${1 + (i % 5)}` : o.disponibilizacao;
+  const e = (
+    ns: 'corpo' | 'inter',
+    nome: string,
+    attr: string,
+    interior: string,
+  ): string => elemento(estilo, prefixos, ns, nome, attr, interior);
+  const filhos =
+    e('inter', 'destinatario', '', 'Fulano Sintetico de Tal') +
+    e('inter', 'processo', `numero="${NUMEROS[i]}" classeProcessual="7"`, '') +
+    (disp === null ? '' : e('inter', 'dataDisponibilizacao', '', data(disp, formato))) +
+    (o.comLimite
+      ? e('inter', 'dataLimite', '', data(`2026-10-${20 + (i % 5)}`, formato))
+      : '');
+  const attrs =
+    `idAviso="${9000 + i}"` + (tipo === null ? '' : ` tipoComunicacao="${tipo}"`);
+  return e('corpo', 'aviso', attrs, filhos);
+}
+
+function resposta(avisos: string[], estilo: Estilo = 'ns-numerados', extra = ''): string {
+  const decl =
+    estilo === 'padrao-inline'
+      ? `xmlns="${NS_SERVICO}"`
+      : estilo === 'prefixos-outros'
+        ? `xmlns:sv="${NS_SERVICO}" xmlns:tp="${NS_TIPOS}" xmlns:ic="${NS_INTER}"`
+        : `xmlns:ns2="${NS_TIPOS}" xmlns:ns3="${NS_INTER}" xmlns:ns5="${NS_SERVICO}"`;
+  const raiz =
+    estilo === 'padrao-inline'
+      ? 'consultarAvisosPendentesResposta'
+      : estilo === 'prefixos-outros'
+        ? 'sv:consultarAvisosPendentesResposta'
+        : 'ns5:consultarAvisosPendentesResposta';
+  const p =
+    estilo === 'prefixos-outros' ? 'tp:' : estilo === 'padrao-inline' ? '' : 'ns2:';
+  const x = estilo === 'padrao-inline' ? ` xmlns="${NS_TIPOS}"` : '';
   return (
     `<?xml version="1.0" encoding="UTF-8"?><soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body>` +
-    `<ns5:consultarAvisosPendentesResposta xmlns:ns2="http://www.cnj.jus.br/tipos-servico-intercomunicacao-2.2.2" xmlns:ns3="http://www.cnj.jus.br/intercomunicacao-2.2.2" xmlns:ns5="http://www.cnj.jus.br/servico-intercomunicacao-2.2.2/">` +
-    `<ns2:sucesso>true</ns2:sucesso>${extra}${avisos.join('')}` +
-    `</ns5:consultarAvisosPendentesResposta></soap:Body></soap:Envelope>`
+    `<${raiz} ${decl}><${p}sucesso${x}>true</${p}sucesso>${extra}${avisos.join('')}` +
+    `</${raiz}></soap:Body></soap:Envelope>`
   );
 }
 const conteudoDe = (xml: string): unknown => abrirEnvelope(xml).conteudo;
 
-/** Dez avisos: oito com data limite, um com o campo vazio e um sem o campo. */
-function dezAvisos(): string[] {
+/** Dez avisos como o WSDL prevê: tipo e disponibilização, nada de prazo. */
+function dezAvisos(estilo: Estilo = 'ns-numerados'): string[] {
   return NUMEROS.map((_, i) =>
-    aviso(i, {
-      limite: i === 3 ? 'vazio' : i === 7 ? 'ausente' : 'preenchido',
-      tipo: i % 3 === 0 ? 'Citação' : 'Intimação',
-    }),
+    aviso(i, { tipo: i % 3 === 0 ? 'Citação' : 'Intimação' }, estilo),
   );
 }
 
-const WSDL = (
-  opcoes: { doc?: string; extraObrigatorio?: boolean; ordem?: 'ok' | 'trocada' } = {},
-): string => {
-  const { doc = '', extraObrigatorio = false, ordem = 'ok' } = opcoes;
-  const id = '<xs:element name="idConsultante" type="xs:string"/>';
-  const senha = '<xs:element name="senhaConsultante" type="xs:string"/>';
-  return `<?xml version="1.0"?>
+// --- fixtures sintéticas de WSDL (em DOIS arquivos, como o CXF faz) -----------------
+const WSDL_PRINCIPAL = (doc = ''): string => `<?xml version="1.0"?>
 <wsdl:definitions xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/" xmlns:xs="http://www.w3.org/2001/XMLSchema"
-  xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/" xmlns:tns="http://www.cnj.jus.br/servico-intercomunicacao-2.2.2/"
-  targetNamespace="http://www.cnj.jus.br/servico-intercomunicacao-2.2.2/">
- <wsdl:types>
-  <xs:schema targetNamespace="http://www.cnj.jus.br/servico-intercomunicacao-2.2.2/">
-   <xs:element name="consultarAvisosPendentes"><xs:complexType><xs:sequence>
-     ${ordem === 'ok' ? id + senha : senha + id}
-     <xs:element name="idRepresentado" type="xs:string" minOccurs="0" maxOccurs="unbounded"/>
-     <xs:element name="dataReferencia" type="xs:string" minOccurs="0"/>
-     ${extraObrigatorio ? '<xs:element name="codigoNovo" type="xs:string"/>' : ''}
-   </xs:sequence></xs:complexType></xs:element>
-   <xs:element name="consultarAvisosPendentesResposta"><xs:complexType><xs:sequence>
-     <xs:element name="sucesso" type="xs:boolean"/>
-     <xs:element name="mensagem" type="xs:string"/>
-     <xs:element name="aviso" type="tns:tipoAviso" minOccurs="0" maxOccurs="unbounded"/>
-   </xs:sequence></xs:complexType></xs:element>
-   <xs:complexType name="tipoAviso"><xs:sequence>
-     <xs:element name="processo" type="xs:string"/>
-     <xs:element name="dataLimite" type="xs:string" minOccurs="0"/>
-   </xs:sequence><xs:attribute name="idAviso" type="xs:string" use="required"/></xs:complexType>
-   <xs:element name="consultarRelatorioDeIntimacoesTJGO"><xs:complexType><xs:sequence>
-     <xs:element name="idConsultante" type="xs:string"/><xs:element name="senhaConsultante" type="xs:string"/>
-     <xs:element name="inicio" type="xs:string"/>
-   </xs:sequence></xs:complexType></xs:element>
-   <xs:element name="consultarRelatorioDeIntimacoesTJGOResposta"><xs:complexType><xs:sequence>
-     <xs:element name="sucesso" type="xs:boolean"/>
-   </xs:sequence></xs:complexType></xs:element>
-   <xs:element name="confirmarRecebimento"><xs:complexType><xs:sequence><xs:element name="x" type="xs:string"/></xs:sequence></xs:complexType></xs:element>
-  </xs:schema>
- </wsdl:types>
+  xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/" xmlns:tns="${NS_SERVICO}" targetNamespace="${NS_SERVICO}">
+ <wsdl:types><xs:schema targetNamespace="${NS_SERVICO}">
+   <xs:import namespace="${NS_TIPOS}" schemaLocation="https://tribunal.exemplo/Svc?xsd=1"/>
+ </xs:schema></wsdl:types>
  <wsdl:message name="avisosIn"><wsdl:part name="p" element="tns:consultarAvisosPendentes"/></wsdl:message>
  <wsdl:message name="avisosOut"><wsdl:part name="p" element="tns:consultarAvisosPendentesResposta"/></wsdl:message>
  <wsdl:message name="relIn"><wsdl:part name="p" element="tns:consultarRelatorioDeIntimacoesTJGO"/></wsdl:message>
  <wsdl:message name="relOut"><wsdl:part name="p" element="tns:consultarRelatorioDeIntimacoesTJGOResposta"/></wsdl:message>
  <wsdl:message name="confIn"><wsdl:part name="p" element="tns:confirmarRecebimento"/></wsdl:message>
- <wsdl:message name="confOut"><wsdl:part name="p" element="tns:confirmarRecebimento"/></wsdl:message>
+ <wsdl:message name="confOut"><wsdl:part name="p" element="tns:confirmarRecebimentoResposta"/></wsdl:message>
  <wsdl:portType name="Svc">
   <wsdl:operation name="consultarAvisosPendentes">
    ${doc ? `<wsdl:documentation>${doc}</wsdl:documentation>` : ''}
@@ -234,10 +248,62 @@ const WSDL = (
   <wsdl:operation name="confirmarRecebimento"><wsdl:input message="tns:confIn"/><wsdl:output message="tns:confOut"/></wsdl:operation>
  </wsdl:portType>
  <wsdl:binding name="B" type="tns:Svc">
-  <wsdl:operation name="consultarAvisosPendentes"><soap:operation soapAction="http://www.cnj.jus.br/servico-intercomunicacao-2.2.2/consultarAvisosPendentes"/></wsdl:operation>
+  <wsdl:operation name="consultarAvisosPendentes"><soap:operation soapAction="${NS_SERVICO}consultarAvisosPendentes"/></wsdl:operation>
  </wsdl:binding>
 </wsdl:definitions>`;
+
+const XSD = (
+  opcoes: { ordem?: 'ok' | 'trocada'; obrigatorioExtra?: boolean } = {},
+): string => {
+  const { ordem = 'ok', obrigatorioExtra = false } = opcoes;
+  const id = '<xs:element name="idConsultante" type="xs:string" minOccurs="0"/>';
+  const senha = '<xs:element name="senhaConsultante" type="xs:string" minOccurs="0"/>';
+  return `<?xml version="1.0"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:tns="${NS_SERVICO}" xmlns:ic="${NS_INTER}" targetNamespace="${NS_SERVICO}">
+ <xs:element name="consultarAvisosPendentes"><xs:complexType><xs:sequence>
+   <xs:element name="idRepresentado" type="xs:string" minOccurs="0" maxOccurs="unbounded"/>
+   ${ordem === 'ok' ? id + senha : senha + id}
+   <xs:element name="dataReferencia" type="xs:string" minOccurs="0"/>
+   ${obrigatorioExtra ? '<xs:element name="codigoNovo" type="xs:string"/>' : ''}
+ </xs:sequence></xs:complexType></xs:element>
+ <xs:element name="consultarAvisosPendentesResposta"><xs:complexType><xs:sequence>
+   <xs:element name="sucesso" type="xs:boolean"/>
+   <xs:element name="mensagem" type="xs:string" minOccurs="0"/>
+   <xs:element name="aviso" type="tns:tipoAvisoComunicacaoPendente" minOccurs="0" maxOccurs="unbounded"/>
+ </xs:sequence></xs:complexType></xs:element>
+ <xs:complexType name="tipoAvisoComunicacaoPendente"><xs:sequence>
+   <xs:element name="destinatario" type="xs:string" minOccurs="0"/>
+   <xs:element name="processo" type="xs:string"/>
+   <xs:element name="dataDisponibilizacao" type="xs:string"/>
+ </xs:sequence>
+   <xs:attribute name="idAviso" type="xs:string"/><xs:attribute name="tipoComunicacao" type="xs:string"/>
+ </xs:complexType>
+ <xs:element name="consultarRelatorioDeIntimacoesTJGO"><xs:complexType><xs:sequence>
+   <xs:element name="requisicaoCredenciaisTJGO" type="tns:requisicaoCredenciaisTJGO" minOccurs="0"/>
+ </xs:sequence></xs:complexType></xs:element>
+ <xs:complexType name="requisicaoCredenciaisTJGO"><xs:sequence>
+   <xs:element name="grupoCodigo" type="xs:string" minOccurs="0"/>
+   <xs:element name="id_UsuarioServentiaChefe" type="xs:string" minOccurs="0"/>
+   <xs:element name="id_serventiaCargo" type="xs:string" minOccurs="0"/>
+   <xs:element name="id_serventiaCargoUsuarioChefe" type="xs:string" minOccurs="0"/>
+   <xs:element name="id_usuarioServentia" type="xs:string" minOccurs="0"/>
+   <xs:element name="loginConsultante" type="xs:string" minOccurs="0"/>
+   <xs:element name="senhaConsultante" type="xs:string" minOccurs="0"/>
+ </xs:sequence></xs:complexType>
+ <xs:element name="consultarRelatorioDeIntimacoesTJGOResposta"><xs:complexType><xs:sequence>
+   <xs:element name="conteudoArquivo" type="xs:base64Binary" minOccurs="0"/>
+   <xs:element name="nomeArquivo" type="xs:string" minOccurs="0"/>
+   <xs:element name="quantidadeDeRegistros" type="xs:int" minOccurs="0"/>
+ </xs:sequence></xs:complexType></xs:element>
+ <xs:element name="confirmarRecebimento"><xs:complexType><xs:sequence><xs:element name="x" type="xs:string"/></xs:sequence></xs:complexType></xs:element>
+ <xs:element name="confirmarRecebimentoResposta"><xs:complexType><xs:sequence><xs:element name="sucesso" type="xs:boolean"/></xs:sequence></xs:complexType></xs:element>
+</xs:schema>`;
 };
+const juntos = (w = WSDL_PRINCIPAL(), x = XSD()): Map<string, string> =>
+  new Map([
+    ['wsdl', w],
+    ['xsd', x],
+  ]);
 
 const pastas: string[] = [];
 const novaPasta = (): string => {
@@ -267,11 +333,12 @@ describe('sonda-avisos-pendentes · segurança das operações', () => {
     }
   });
 
-  it('só deixa passar consultarAvisosPendentes (lista de permissão)', async () => {
+  it('só deixa passar consultarAvisosPendentes — nem o relatório local do TJGO', async () => {
     const s = await carregar();
     expect(() => s.garantirOperacaoPermitida('consultarAvisosPendentes')).not.toThrow();
     expect(() => s.garantirOperacaoPermitida(s.ACAO_AVISOS)).not.toThrow();
     for (const outra of [
+      'consultarRelatorioDeIntimacoesTJGO',
       'consultarProcesso',
       'consultarAlteracao',
       '',
@@ -281,14 +348,83 @@ describe('sonda-avisos-pendentes · segurança das operações', () => {
     }
   });
 
-  it('o envelope montado é aceito e tem a ordem obrigatória do xs:sequence', async () => {
+  it('o envelope manda só idConsultante e senhaConsultante, na ordem do WSDL, sem dataReferencia', async () => {
     const s = await carregar();
     const xml = s.envelopeAvisosPendentes({ identificacao: 'adv', senha: 'a&b<c' });
     expect(() => s.validarEnvelopeEAcao(xml, s.ACAO_AVISOS)).not.toThrow();
-    expect(xml.indexOf('idConsultante')).toBeLessThan(xml.indexOf('senhaConsultante'));
     expect(xml).toContain('<srv:consultarAvisosPendentes>');
     expect(xml).toContain('a&amp;b&lt;c'); // senha com & e < não quebra o XML
-    expect(xml).not.toMatch(/idRepresentado|dataReferencia/); // opcionais ficam de fora
+    expect(xml).not.toMatch(/idRepresentado|dataReferencia/);
+
+    // Os elementos enviados são uma subsequência da ordem do xs:sequence do WSDL.
+    const enviados = [...xml.matchAll(/<tip:(\w+)>/g)].map((m) => m[1] as string);
+    expect(enviados).toEqual(['idConsultante', 'senhaConsultante']);
+    const ordem = [...s.ORDEM_DA_ENTRADA];
+    expect(ordem).toEqual([
+      'idRepresentado',
+      'idConsultante',
+      'senhaConsultante',
+      'dataReferencia',
+    ]);
+    expect(enviados.map((n) => ordem.indexOf(n))).toEqual([1, 2]);
+  });
+
+  it('o corpo está no namespace do serviço e os filhos no de tipos (resolvidos, não só nomeados)', async () => {
+    const s = await carregar();
+    const xml = s.envelopeAvisosPendentes({ identificacao: 'adv', senha: 'x' });
+    expect(xml).toContain(`xmlns:srv="${NS_SERVICO}"`);
+    expect(xml).toContain(`xmlns:tip="${NS_TIPOS}"`);
+  });
+
+  it('aceita prefixos diferentes e recusa namespace trocado, mesmo com o prefixo "certo"', async () => {
+    const s = await carregar();
+    const outro = s.envelopeAvisosPendentes(
+      { identificacao: 'adv', senha: 'x' },
+      { prefixoServico: 'svc', prefixoTipos: 't.ipos-2' },
+    );
+    expect(() => s.validarEnvelopeEAcao(outro, s.ACAO_AVISOS)).not.toThrow();
+
+    const bom = s.envelopeAvisosPendentes({ identificacao: 'adv', senha: 'x' });
+    // prefixo "srv" apontando para o namespace de TIPOS: o nome parece certo, o sentido não
+    const servicoTrocado = bom.replace(
+      `xmlns:srv="${NS_SERVICO}"`,
+      `xmlns:srv="${NS_TIPOS}"`,
+    );
+    expect(() => s.validarEnvelopeEAcao(servicoTrocado, s.ACAO_AVISOS)).toThrow(
+      /namespace do serviço/,
+    );
+    const tiposTrocado = bom.replace(
+      `xmlns:tip="${NS_TIPOS}"`,
+      `xmlns:tip="${NS_INTER}"`,
+    );
+    expect(() => s.validarEnvelopeEAcao(tiposTrocado, s.ACAO_AVISOS)).toThrow(
+      /namespace de tipos/,
+    );
+  });
+
+  it('recusa elemento além do plano (dataReferencia, idRepresentado) e ordem trocada', async () => {
+    const s = await carregar();
+    const bom = s.envelopeAvisosPendentes({ identificacao: 'adv', senha: 'x' });
+    const comData = bom.replace(
+      '</srv:',
+      '<tip:dataReferencia>20260101</tip:dataReferencia></srv:',
+    );
+    expect(() => s.validarEnvelopeEAcao(comData, s.ACAO_AVISOS)).toThrow(
+      /dataReferencia/,
+    );
+    const comRep = bom.replace(
+      '<tip:idConsultante>',
+      '<tip:idRepresentado>1</tip:idRepresentado><tip:idConsultante>',
+    );
+    expect(() => s.validarEnvelopeEAcao(comRep, s.ACAO_AVISOS)).toThrow(/idRepresentado/);
+    const trocado = bom
+      .replace('<tip:idConsultante>adv</tip:idConsultante>', '@@')
+      .replace(
+        '<tip:senhaConsultante>x</tip:senhaConsultante>',
+        '<tip:senhaConsultante>x</tip:senhaConsultante><tip:idConsultante>adv</tip:idConsultante>',
+      )
+      .replace('@@', '');
+    expect(() => s.validarEnvelopeEAcao(trocado, s.ACAO_AVISOS)).toThrow(/ordem/);
   });
 
   it('recusa envelope de outra operação, SOAPAction trocado e nome proibido escondido no corpo', async () => {
@@ -322,7 +458,6 @@ describe('sonda-avisos-pendentes · segurança das operações', () => {
     const proto = MniAdapter.prototype as unknown as Record<string, unknown>;
     expect(typeof proto['chamar']).toBe('function');
     expect((proto['chamar'] as (...a: unknown[]) => unknown).length).toBe(3);
-    // E a sonda não cria rate limiter nem HttpClient próprio para o envio.
     const fonte = readFileSync(CAMINHO, 'utf8');
     expect(fonte).not.toMatch(/TokenBucketRateLimiter/);
     expect(fonte).toMatch(/adapter\['chamar'\]/);
@@ -347,36 +482,41 @@ describe('sonda-avisos-pendentes · mascaramento', () => {
     for (const n of NUMEROS) expect(mascarado).not.toContain(n);
     expect(mascarado).not.toMatch(/\d{2}\/\d{2}\/\d{4}/);
     expect(mascarado).toContain('*******-**.****.8.09.****');
+    expect(mascarado).toContain('tipo Citação');
+    expect(mascarado).not.toMatch(/data limite/); // o aviso não tem esse campo
 
     const aberto = s.linhasDeConferencia(analise, { mostrar: true });
     expect(aberto[0]).toContain(NUMEROS[0]);
-    expect(aberto[0]).toMatch(/publicação 01\/10\/2026 · data limite 20\/10\/2026/);
-    expect(aberto[3]).toContain('data limite — (sem)'); // o aviso de campo vazio
+    expect(aberto[0]).toMatch(/disponibilização 01\/10\/2026/);
   });
 });
 
 describe('sonda-avisos-pendentes · analisador da resposta', () => {
-  it('conta os dez avisos, acha o campo de data limite e os dois que não têm', async () => {
+  it('lê dez avisos como o WSDL os descreve: tipo e disponibilização em todos, nenhum prazo', async () => {
     const s = await carregar();
     const analise = s.analisarResposta(conteudoDe(resposta(dezAvisos())));
     expect(analise.avisos).toHaveLength(10);
     expect(analise.chaveDaLista).toBe('aviso');
+    const nomes = new Set(analise.avisos.flatMap((a) => a.campos.map((c) => c.nome)));
+    expect([...nomes].sort()).toEqual(
+      [
+        '@idAviso',
+        '@tipoComunicacao',
+        'dataDisponibilizacao',
+        'destinatario',
+        'processo/@classeProcessual',
+        'processo/@numero',
+      ].sort(),
+    );
 
-    const tabela = s.montarTabela({ ...analise, acompanhados: null });
-    const r = s.resumir(tabela, { esperado: 10, semLimiteEsperado: 2 });
-    expect(r.total).toBe(10);
-    expect(r.limite).toMatchObject({
-      campoExiste: true,
-      campos: ['dataLimite'],
-      preenchidos: 8,
-      vazios: 1,
-      ausentes: 1,
-      semLimite: 2,
-      formatos: expect.arrayContaining(['AAAAMMDDhhmmss', 'vazio']),
+    const r = s.resumir(s.montarTabela({ ...analise, acompanhados: null }), {
+      esperado: 10,
     });
-    expect(r.diasPublicacaoAteLimite).toMatchObject({ n: 8 });
     expect(r.tipos).toEqual({ Citação: 4, Intimação: 6 });
-    expect(s.julgar(r).rotulo).toBe('COMPATÍVEL');
+    expect(r.publicacao.comData).toBe(10);
+    expect(r.limite.campoExiste).toBe(false);
+    expect(s.julgar(r)).toMatchObject({ rotulo: 'COMPATÍVEL' });
+    expect(s.julgar(r).motivo).toMatch(/não traz prazo nem data limite \(esperado/);
   });
 
   it.each([
@@ -384,19 +524,50 @@ describe('sonda-avisos-pendentes · analisador da resposta', () => {
     ['iso', 'ISO com hora'],
     ['br', 'dd/MM/AAAA'],
   ] as const)(
-    'reconhece a data no formato %s e normaliza para o mesmo dia',
+    'reconhece a disponibilização no formato %s e normaliza para o mesmo dia',
     async (formato, nome) => {
       const s = await carregar();
       const analise = s.analisarResposta(conteudoDe(resposta([aviso(0, { formato })])));
-      const lim = analise.avisos[0]?.datas.find((d) => d.papel === 'limite');
-      expect(lim).toMatchObject({ formato: nome, valor: '2026-10-20' });
+      const d = analise.avisos[0]?.datas.find((x) => x.papel === 'publicacao');
+      expect(d).toMatchObject({ formato: nome, valor: '2026-10-01' });
     },
   );
 
-  it('aviso de lista vazia: zero avisos, NÃO CONFIRMÁVEL', async () => {
+  it.each(['ns-numerados', 'prefixos-outros', 'padrao-inline'] as const)(
+    'dá o MESMO resultado com prefixos diferentes (%s): o namespace manda, o prefixo não',
+    async (estilo) => {
+      const s = await carregar();
+      const analise = s.analisarResposta(conteudoDe(resposta(dezAvisos(estilo), estilo)));
+      expect(analise.chaveDaLista).toBe('aviso');
+      expect(analise.avisos).toHaveLength(10);
+      const referencia = s.analisarResposta(conteudoDe(resposta(dezAvisos())));
+      expect(analise.avisos).toEqual(referencia.avisos);
+      expect(analise.numerosPorAviso).toEqual(referencia.numerosPorAviso);
+    },
+  );
+
+  it('se o tribunal mandar data limite (o WSDL não prevê), a sonda acusa como INESPERADO', async () => {
     const s = await carregar();
     const analise = s.analisarResposta(
-      conteudoDe(resposta([], '<ns2:mensagem>Nenhum aviso.</ns2:mensagem>')),
+      conteudoDe(resposta([aviso(0, { comLimite: true }), aviso(1)])),
+    );
+    const r = s.resumir(s.montarTabela({ ...analise, acompanhados: null }), {
+      esperado: 2,
+    });
+    expect(r.limite).toMatchObject({
+      campoExiste: true,
+      campos: ['dataLimite'],
+      preenchidos: 1,
+    });
+    expect(s.julgar(r).motivo).toMatch(/o WSDL não prevê/);
+  });
+
+  it('lista vazia: zero avisos, NÃO CONFIRMÁVEL', async () => {
+    const s = await carregar();
+    const analise = s.analisarResposta(
+      conteudoDe(
+        resposta([], 'ns-numerados', '<ns2:mensagem>Nenhum aviso.</ns2:mensagem>'),
+      ),
     );
     expect(analise.avisos).toHaveLength(0);
     const r = s.resumir(s.montarTabela({ ...analise, acompanhados: null }), {
@@ -407,7 +578,7 @@ describe('sonda-avisos-pendentes · analisador da resposta', () => {
 
   it('um único aviso (objeto, não lista) também é lido', async () => {
     const s = await carregar();
-    const analise = s.analisarResposta(conteudoDe(resposta([aviso(2, {})])));
+    const analise = s.analisarResposta(conteudoDe(resposta([aviso(2)])));
     expect(analise.avisos).toHaveLength(1);
     expect(analise.numerosPorAviso[0]).toEqual([
       (NUMEROS[2] as string).replace(/\D/g, ''),
@@ -416,9 +587,7 @@ describe('sonda-avisos-pendentes · analisador da resposta', () => {
 
   it('desce num invólucro <avisos><aviso>…</aviso></avisos>', async () => {
     const s = await carregar();
-    const xml = resposta([
-      `<ns2:avisos>${[aviso(0, {}), aviso(1, {})].join('')}</ns2:avisos>`,
-    ]);
+    const xml = resposta([`<ns2:avisos>${[aviso(0), aviso(1)].join('')}</ns2:avisos>`]);
     const analise = s.analisarResposta(conteudoDe(xml));
     expect(analise.avisos).toHaveLength(2);
     expect(analise.chaveDaLista).toBe('avisos/aviso');
@@ -438,19 +607,18 @@ describe('sonda-avisos-pendentes · analisador da resposta', () => {
       formato: 'texto curto',
     });
     expect(campos['outro/fundo']).toMatchObject({ formato: 'só dígitos (1)' });
-    expect(campos['prazoEmDias']).toMatchObject({ papel: 'prazo' }); // dias não são data limite
+    expect(campos['prazoEmDias']).toMatchObject({ papel: 'prazo' });
     expect(campos['prazoFinal']).toMatchObject({
       papel: 'limite',
       formato: 'dd/MM/AAAA',
     });
   });
 
-  it('data de 14 dígitos inválida (mês 13) não vira data', async () => {
+  it('data inválida (mês 13) não vira data', async () => {
     const s = await carregar();
     expect(s.lerData('20261301093000')).toBeUndefined();
     expect(s.lerData('20261020')?.iso).toBe('2026-10-20');
     expect(s.formatoDe('20261301093000')).toBe('só dígitos (14)');
-    expect(s.papelDoCampo('processo/@numero', NUMEROS[0] as string)).toBe('processo');
   });
 
   it('cruza os avisos com a carteira só por contagem', async () => {
@@ -470,50 +638,62 @@ describe('sonda-avisos-pendentes · analisador da resposta', () => {
 });
 
 describe('sonda-avisos-pendentes · julgamento', () => {
-  const resumoDe = async (
-    avisos: string[],
-    o: { esperado?: number; semLimiteEsperado?: number },
-  ): Promise<Resumo> => {
+  const resumoDe = async (avisos: string[], esperado?: number): Promise<Resumo> => {
     const s = await carregar();
     const a = s.analisarResposta(conteudoDe(resposta(avisos)));
-    return s.resumir(s.montarTabela({ ...a, acompanhados: null }), o);
+    return s.resumir(
+      s.montarTabela({ ...a, acompanhados: null }),
+      esperado === undefined ? {} : { esperado },
+    );
   };
+
+  it('COMPATÍVEL: quantidade igual, tipo e disponibilização presentes; sem data limite NÃO é falha', async () => {
+    const s = await carregar();
+    const j = s.julgar(await resumoDe(dezAvisos(), 10));
+    expect(j.rotulo).toBe('COMPATÍVEL');
+    expect(j.motivo).toMatch(/conferência visual/);
+  });
 
   it('PARCIAL quando vêm menos avisos que a tela', async () => {
     const s = await carregar();
-    expect(
-      s.julgar(await resumoDe(dezAvisos().slice(0, 6), { esperado: 10 })),
-    ).toMatchObject({ rotulo: 'PARCIAL' });
-  });
-
-  it('PARCIAL quando nenhum aviso tem data limite', async () => {
-    const s = await carregar();
-    const sem = NUMEROS.map((_, i) => aviso(i, { limite: 'ausente' }));
-    const j = s.julgar(await resumoDe(sem, { esperado: 10 }));
-    expect(j).toMatchObject({ rotulo: 'PARCIAL' });
-    expect(j.motivo).toMatch(/data limite/);
-  });
-
-  it('PARCIAL quando o número de avisos sem limite difere do Projudi', async () => {
-    const s = await carregar();
-    const todos = NUMEROS.map((_, i) => aviso(i, {}));
-    expect(
-      s.julgar(await resumoDe(todos, { esperado: 10, semLimiteEsperado: 2 })),
-    ).toMatchObject({ rotulo: 'PARCIAL' });
-  });
-
-  it('PARCIAL sem --esperado: sem referência não se afirma completude', async () => {
-    const s = await carregar();
-    expect(s.julgar(await resumoDe(dezAvisos(), {}))).toMatchObject({
+    expect(s.julgar(await resumoDe(dezAvisos().slice(0, 6), 10))).toMatchObject({
       rotulo: 'PARCIAL',
     });
   });
 
+  it('PARCIAL quando algum aviso vem sem tipoComunicacao', async () => {
+    const s = await carregar();
+    const avisos = NUMEROS.map((_, i) => aviso(i, i === 4 ? { tipo: null } : {}));
+    const j = s.julgar(await resumoDe(avisos, 10));
+    expect(j).toMatchObject({ rotulo: 'PARCIAL' });
+    expect(j.motivo).toMatch(/1 sem tipoComunicacao/);
+  });
+
+  it('PARCIAL quando algum aviso vem sem dataDisponibilizacao', async () => {
+    const s = await carregar();
+    const avisos = NUMEROS.map((_, i) =>
+      aviso(i, i < 2 ? { disponibilizacao: null } : {}),
+    );
+    const j = s.julgar(await resumoDe(avisos, 10));
+    expect(j).toMatchObject({ rotulo: 'PARCIAL' });
+    expect(j.motivo).toMatch(/2 sem dataDisponibilizacao/);
+  });
+
+  it('PARCIAL sem --esperado: sem referência não se afirma completude', async () => {
+    const s = await carregar();
+    expect(s.julgar(await resumoDe(dezAvisos()))).toMatchObject({ rotulo: 'PARCIAL' });
+  });
+
   it('NÃO CONFIRMÁVEL quando vêm MAIS avisos que a tela (a lista não é a mesma)', async () => {
     const s = await carregar();
-    expect(s.julgar(await resumoDe(dezAvisos(), { esperado: 7 }))).toMatchObject({
+    expect(s.julgar(await resumoDe(dezAvisos(), 7))).toMatchObject({
       rotulo: 'NÃO CONFIRMÁVEL',
     });
+  });
+
+  it('o argumento --sem-limite-esperado foi removido', async () => {
+    const s = await carregar();
+    expect(() => s.lerArgumentos(['--sem-limite-esperado=2'])).toThrow();
   });
 });
 
@@ -528,10 +708,10 @@ describe('sonda-avisos-pendentes · tabela e --offline', () => {
       expect(texto).not.toContain(n);
       expect(texto).not.toContain(n.replace(/\D/g, ''));
     }
-    expect(texto).not.toMatch(/Fulano|Texto livre|Sintetico/);
+    expect(texto).not.toMatch(/Fulano|Sintetico/);
     expect(texto).toContain('Citação');
-    expect(texto).toContain('2026-10-20');
-    expect(texto).toContain('dataLimite');
+    expect(texto).toContain('2026-10-01');
+    expect(texto).toContain('dataDisponibilizacao');
   });
 
   it('recusa tabela com forma de número de processo', async () => {
@@ -566,7 +746,7 @@ describe('sonda-avisos-pendentes · tabela e --offline', () => {
     };
     const saida: string[] = [];
     const codigo = await s.principal(
-      [`--offline=${arquivo}`, '--esperado=10', '--sem-limite-esperado=2'],
+      [`--offline=${arquivo}`, '--esperado=10'],
       deps,
       (l) => saida.push(l),
     );
@@ -575,9 +755,10 @@ describe('sonda-avisos-pendentes · tabela e --offline', () => {
     const texto = saida.join('\n');
     expect(texto).toContain('avisos recebidos: 10');
     expect(texto).toContain('4 de 10 avisos são de processo acompanhado');
+    expect(texto).toContain('ACHADO ESPERADO');
     expect(texto).toMatch(/COMPATÍVEL/);
     expect(texto).toMatch(/não conseguiu medir/);
-    expect(texto).not.toMatch(/Fulano|Texto livre/);
+    expect(texto).not.toMatch(/Fulano/);
   });
 });
 
@@ -601,7 +782,7 @@ describe('sonda-avisos-pendentes · --seco', () => {
     const texto = saida.join('\n');
     expect(texto).toContain('consultarAvisosPendentes');
     expect(texto).toContain('(omitido)');
-    expect(texto).toContain('confirmarRecebimento'); // listada como recusada
+    expect(texto).toContain('confirmarRecebimento');
     expect(texto).toContain('sonda-avisos-pendentes-tabela.json');
   });
 
@@ -609,7 +790,6 @@ describe('sonda-avisos-pendentes · --seco', () => {
     const fonte = readFileSync(CAMINHO, 'utf8');
     const estaticos = fonte.split('\n').filter((l) => /^import /.test(l));
     expect(estaticos.join('\n')).not.toMatch(/node:sqlite|dist\//);
-    // e os imports de dist/ e do sqlite acontecem só dentro de dependenciasReais
     const idx = fonte.indexOf('export function dependenciasReais');
     expect(fonte.indexOf("await import('node:sqlite')")).toBeGreaterThan(idx);
     expect(fonte.indexOf("await import('../dist/")).toBeGreaterThan(idx);
@@ -638,53 +818,108 @@ describe('sonda-avisos-pendentes · --seco', () => {
 });
 
 describe('sonda-avisos-pendentes · WSDL', () => {
-  it('descreve entrada e saída em ordem, os opcionais e a extensão local', async () => {
+  it('descreve a entrada (quatro opcionais, em ordem) e a saída; o tipo de aviso vem de outro arquivo', async () => {
     const s = await carregar();
     const a = s.analisarWsdl(
-      new Map([
-        ['w', WSDL({ doc: 'Retorna a lista de avisos pendentes do consultante.' })],
-      ]),
+      juntos(WSDL_PRINCIPAL('Retorna a lista de avisos pendentes do consultante.')),
     );
     const op = a.operacoes['consultarAvisosPendentes'] as Op;
     expect(op.encontrada).toBe(true);
-    expect(op.entrada.namespace).toBe(
-      'http://www.cnj.jus.br/servico-intercomunicacao-2.2.2/',
-    );
+    expect(op.entrada.namespace).toBe(NS_SERVICO);
     expect(op.entrada.filhos.map((f) => `${f.nome}:${f.minOccurs}`)).toEqual([
-      'idConsultante:1',
-      'senhaConsultante:1',
       'idRepresentado:0',
+      'idConsultante:0',
+      'senhaConsultante:0',
       'dataReferencia:0',
     ]);
     expect(op.saida.filhos.map((f) => f.nome)).toEqual(['sucesso', 'mensagem', 'aviso']);
     expect(op.saida.filhos[2]?.filhos.map((f) => f.nome)).toEqual([
+      'destinatario',
       'processo',
-      'dataLimite',
+      'dataDisponibilizacao',
       '@idAviso',
+      '@tipoComunicacao',
     ]);
     expect(op.soapAction).toMatch(/consultarAvisosPendentes$/);
+  });
+
+  it('só com o arquivo do WSDL (sem o esquema importado) a análise percebe que falta o tipo', async () => {
+    const s = await carregar();
+    const a = s.analisarWsdl(new Map([['wsdl', WSDL_PRINCIPAL()]]));
+    expect((a.operacoes['consultarAvisosPendentes'] as Op).entrada.filhos).toEqual([]);
+    expect(s.avaliarWsdl(a).abortar.join(' ')).toMatch(/idConsultante/);
+  });
+
+  it('descreve consultarRelatorioDeIntimacoesTJGO sem chamá-la', async () => {
+    const s = await carregar();
+    const a = s.analisarWsdl(juntos());
     const rel = a.operacoes['consultarRelatorioDeIntimacoesTJGO'] as Op;
-    expect(rel.entrada.filhos.map((f) => f.nome)).toEqual([
-      'idConsultante',
+    expect(rel.encontrada).toBe(true);
+    const req = rel.entrada.filhos[0] as No;
+    expect(req.nome).toBe('requisicaoCredenciaisTJGO');
+    expect(req.filhos.map((f) => f.nome)).toEqual([
+      'grupoCodigo',
+      'id_UsuarioServentiaChefe',
+      'id_serventiaCargo',
+      'id_serventiaCargoUsuarioChefe',
+      'id_usuarioServentia',
+      'loginConsultante',
       'senhaConsultante',
-      'inicio',
+    ]);
+    expect(req.filhos.every((f) => f.minOccurs === '0')).toBe(true);
+    expect(rel.saida.filhos.map((f) => f.nome)).toEqual([
+      'conteudoArquivo',
+      'nomeArquivo',
+      'quantidadeDeRegistros',
     ]);
     expect(a.proibidasPresentes).toEqual(['confirmarRecebimento']);
   });
 
-  it('autoriza a consulta quando só há opcionais além de id e senha', async () => {
+  it('--wsdl-arquivo aceita vários arquivos, imprime tudo e não chama banco, rede nem a consulta', async () => {
+    const s = await carregar();
+    const arquivos: Record<string, string> = {
+      'a.wsdl': WSDL_PRINCIPAL('Lista os avisos.'),
+      'b.xsd': XSD(),
+    };
+    const proibido = vi.fn(() => {
+      throw new Error('não podia ser chamado');
+    });
+    const deps: Deps = {
+      tmpdir: () => '/tmp',
+      lerArquivo: (c) => arquivos[c] as string,
+      gravarArquivo: proibido,
+      carregarContexto: proibido,
+      baixarDocumento: proibido,
+      consultarAvisos: proibido,
+    };
+    const saida: string[] = [];
+    expect(
+      await s.principal(['--wsdl-arquivo=a.wsdl,b.xsd'], deps, (l) => saida.push(l)),
+    ).toBe(0);
+    expect(proibido).not.toHaveBeenCalled();
+    const texto = saida.join('\n');
+    expect(texto).toMatch(/consultarRelatorioDeIntimacoesTJGO .*SÓ DESCRITA/);
+    expect(texto).toContain('requisicaoCredenciaisTJGO');
+    expect(texto).toContain('quantidadeDeRegistros');
+    expect(texto).toContain('@tipoComunicacao');
+    expect(texto).toMatch(/não declara prazo nem data limite/);
+    expect(texto).toMatch(/OK: a entrada é montável/);
+  });
+
+  it('autoriza a consulta com entrada toda opcional e nada de prazo no aviso', async () => {
     const s = await carregar();
     const av = s.avaliarWsdl(
-      s.analisarWsdl(new Map([['w', WSDL({ doc: 'Retorna a lista de avisos.' })]])),
+      s.analisarWsdl(juntos(WSDL_PRINCIPAL('Retorna a lista de avisos.'))),
     );
     expect(av.abortar).toEqual([]);
     expect(av.acao).toBe(s.ACAO_AVISOS);
+    expect(av.avisos.join(' ')).toMatch(/não declara prazo nem data limite/);
   });
 
   it('PARA quando a entrada exige elemento que o envelope não monta', async () => {
     const s = await carregar();
     const av = s.avaliarWsdl(
-      s.analisarWsdl(new Map([['w', WSDL({ extraObrigatorio: true })]])),
+      s.analisarWsdl(juntos(WSDL_PRINCIPAL(), XSD({ obrigatorioExtra: true }))),
     );
     expect(av.abortar.join(' ')).toMatch(/codigoNovo/);
   });
@@ -692,7 +927,7 @@ describe('sonda-avisos-pendentes · WSDL', () => {
   it('PARA quando a ordem de id/senha no WSDL é outra', async () => {
     const s = await carregar();
     const av = s.avaliarWsdl(
-      s.analisarWsdl(new Map([['w', WSDL({ ordem: 'trocada' })]])),
+      s.analisarWsdl(juntos(WSDL_PRINCIPAL(), XSD({ ordem: 'trocada' }))),
     );
     expect(av.abortar.join(' ')).toMatch(/ordem/);
   });
@@ -700,13 +935,11 @@ describe('sonda-avisos-pendentes · WSDL', () => {
   it('PARA quando a documentação indica efeito colateral; só avisa quando é ambígua', async () => {
     const s = await carregar();
     const forte = s.avaliarWsdl(
-      s.analisarWsdl(
-        new Map([['w', WSDL({ doc: 'Lista os avisos e marca como lido.' })]]),
-      ),
+      s.analisarWsdl(juntos(WSDL_PRINCIPAL('Lista os avisos e marca como lido.'))),
     );
     expect(forte.abortar.join(' ')).toMatch(/efeito colateral/);
     const fraco = s.avaliarWsdl(
-      s.analisarWsdl(new Map([['w', WSDL({ doc: 'Avisos pendentes de ciência.' })]])),
+      s.analisarWsdl(juntos(WSDL_PRINCIPAL('Avisos pendentes de ciência.'))),
     );
     expect(fraco.abortar).toEqual([]);
     expect(fraco.avisos.join(' ')).toMatch(/ciência/);
@@ -717,17 +950,14 @@ describe('sonda-avisos-pendentes · WSDL', () => {
 
   it('sem documentação, avisa que a ausência de efeito colateral não está provada', async () => {
     const s = await carregar();
-    const av = s.avaliarWsdl(s.analisarWsdl(new Map([['w', WSDL()]])));
+    const av = s.avaliarWsdl(s.analisarWsdl(juntos()));
     expect(av.avisos.join(' ')).toMatch(/NÃO está provada/);
   });
 
   it('PARA quando o WSDL não declara a operação', async () => {
     const s = await carregar();
-    const av = s.avaliarWsdl(
-      s.analisarWsdl(
-        new Map([['w', WSDL().replaceAll('consultarAvisosPendentes', 'outraCoisa')]]),
-      ),
-    );
+    const w = WSDL_PRINCIPAL().replaceAll('consultarAvisosPendentes', 'outraCoisa');
+    const av = s.avaliarWsdl(s.analisarWsdl(juntos(w, XSD())));
     expect(av.abortar.join(' ')).toMatch(/não declara/);
   });
 
@@ -755,7 +985,11 @@ describe('sonda-avisos-pendentes · fluxo da consulta real (dublado)', () => {
     endpoint: 'https://tribunal.exemplo/IntercomunicacaoService',
   };
 
-  function montarDeps(o: { wsdl: string; resposta?: string; falha?: Error }): {
+  function montarDeps(o: {
+    wsdl: Map<string, string>;
+    resposta?: string;
+    falha?: Error;
+  }): {
     deps: Deps;
     gravados: Map<string, string>;
     consultar: ReturnType<typeof vi.fn>;
@@ -778,7 +1012,11 @@ describe('sonda-avisos-pendentes · fluxo da consulta real (dublado)', () => {
         lerArquivo: () => '',
         gravarArquivo: (c, t) => void gravados.set(c, t),
         carregarContexto: async () => contexto,
-        baixarDocumento: async () => o.wsdl,
+        // o WSDL "principal" referencia o esquema por URL: devolve cada um pelo nome
+        baixarDocumento: async (u) =>
+          u.includes('xsd')
+            ? (o.wsdl.get('xsd') as string)
+            : (o.wsdl.get('wsdl') as string),
         consultarAvisos: consultar,
       },
     };
@@ -787,15 +1025,11 @@ describe('sonda-avisos-pendentes · fluxo da consulta real (dublado)', () => {
   it('consulta UMA vez, grava a tabela sem dado pessoal e não imprime número, nome ou texto', async () => {
     const s = await carregar();
     const { deps, gravados, consultar } = montarDeps({
-      wsdl: WSDL({ doc: 'Lista os avisos.' }),
+      wsdl: juntos(WSDL_PRINCIPAL('Lista os avisos.')),
       resposta: resposta(dezAvisos()),
     });
     const saida: string[] = [];
-    const codigo = await s.principal(
-      ['--esperado=10', '--sem-limite-esperado=2'],
-      deps,
-      (l) => saida.push(l),
-    );
+    const codigo = await s.principal(['--esperado=10'], deps, (l) => saida.push(l));
     expect(codigo).toBe(0);
     expect(consultar).toHaveBeenCalledTimes(1);
     const texto = saida.join('\n');
@@ -803,7 +1037,7 @@ describe('sonda-avisos-pendentes · fluxo da consulta real (dublado)', () => {
     expect(texto).toContain('COMPATÍVEL');
     expect(texto).toContain('*******-**.****.8.09.****');
     for (const n of NUMEROS) expect(texto).not.toContain(n);
-    expect(texto).not.toMatch(/Fulano|Texto livre|\d{2}\/\d{2}\/2026/);
+    expect(texto).not.toMatch(/Fulano|Sintetico|\d{2}\/\d{2}\/2026/);
 
     const [caminho, conteudo] = [...gravados.entries()][0] ?? ['', ''];
     expect(caminho).toBe('/tmp/sonda-spec/sonda-avisos-pendentes-tabela.json');
@@ -815,25 +1049,28 @@ describe('sonda-avisos-pendentes · fluxo da consulta real (dublado)', () => {
     });
   });
 
-  it('com --mostrar imprime número e datas no terminal, e ainda não grava no arquivo', async () => {
+  it('com --mostrar imprime número e datas no terminal, e não os grava no arquivo', async () => {
     const s = await carregar();
     const { deps, gravados } = montarDeps({
-      wsdl: WSDL({ doc: 'Lista os avisos.' }),
+      wsdl: juntos(WSDL_PRINCIPAL('Lista os avisos.')),
       resposta: resposta(dezAvisos()),
     });
     const saida: string[] = [];
     await s.principal(['--mostrar', '--esperado=10'], deps, (l) => saida.push(l));
     const texto = saida.join('\n');
     expect(texto).toContain(NUMEROS[0]);
-    expect(texto).toMatch(/publicação 01\/10\/2026/);
-    expect([...gravados.values()].join('')).not.toContain('2026-10-20T');
+    expect(texto).toMatch(/disponibilização 01\/10\/2026/);
     expect([...gravados.values()].join('')).not.toContain(NUMEROS[0]);
   });
 
   it('não toca na credencial quando o WSDL não autoriza', async () => {
     const s = await carregar();
-    const { deps, consultar } = montarDeps({ wsdl: WSDL({ doc: 'Marca como lido.' }) });
+    const { deps, consultar } = montarDeps({
+      wsdl: juntos(WSDL_PRINCIPAL('Marca como lido.')),
+    });
+    const erro = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const codigo = await s.principal([], deps, () => undefined);
+    erro.mockRestore();
     expect(codigo).toBe(2);
     expect(consultar).not.toHaveBeenCalled();
   });
@@ -841,7 +1078,7 @@ describe('sonda-avisos-pendentes · fluxo da consulta real (dublado)', () => {
   it('aborta (código 2) quando o tribunal falha, sem segunda tentativa', async () => {
     const s = await carregar();
     const { deps, consultar } = montarDeps({
-      wsdl: WSDL({ doc: 'Lista os avisos.' }),
+      wsdl: juntos(WSDL_PRINCIPAL('Lista os avisos.')),
       falha: new s.SondaAbortada('o tribunal respondeu HTTP 403'),
     });
     const erro = vi.spyOn(console, 'error').mockImplementation(() => undefined);
@@ -854,7 +1091,7 @@ describe('sonda-avisos-pendentes · fluxo da consulta real (dublado)', () => {
 });
 
 describe('sonda-avisos-pendentes · versão', () => {
-  it('é a 1.0.0', async () => {
+  it('segue na 1.0.0 (ajustes ao WSDL, antes de qualquer execução real)', async () => {
     expect((await carregar()).VERSAO_SONDA).toBe('1.0.0');
   });
 });

@@ -8,6 +8,13 @@
  * Limite")? Se devolver, a lista vira a fonte oficial de "prazo em aberto" do
  * Processo Vivo: o sistema não calcula prazo, CITA o que o tribunal informa.
  *
+ * ACHADO DO WSDL (lido pelo dono): `tipoAvisoComunicacaoPendente` tem só
+ * `destinatario`, `processo` (cabeçalho), `dataDisponibilizacao` e os atributos
+ * `idAviso` e `tipoComunicacao`. NÃO há prazo nem data limite no aviso — `prazo` e
+ * `tipoPrazo` só existem em `tipoComunicacaoProcessual`, da operação
+ * `consultarTeorComunicacao`, que esta sonda recusa. Logo a lista pode dizer QUE
+ * há intimação pendente, de que tipo e desde quando; não diz até quando.
+ *
  * Mede, numa única consulta real:
  *  1. a estrutura da operação no WSDL (entrada e saída, em ordem) e a de
  *     `consultarRelatorioDeIntimacoesTJGO` (extensão local — só descrita, NUNCA
@@ -47,10 +54,10 @@
  *
  * Uso:
  *   node scripts/sonda-avisos-pendentes.mjs --wsdl                  # só o WSDL (sem credencial)
- *   node scripts/sonda-avisos-pendentes.mjs --wsdl-arquivo=<wsdl.xml>
+ *   node scripts/sonda-avisos-pendentes.mjs --wsdl-arquivo=<wsdl.xml>[,<esquema.xsd>,...]
  *   node scripts/sonda-avisos-pendentes.mjs --seco                  # mostra o envelope (sem senha)
  *   node scripts/sonda-avisos-pendentes.mjs [--workspace=<nome>] [--esperado=10] \
- *        [--sem-limite-esperado=2] [--mostrar] [--tribunal=TJGO]    # a consulta real
+ *        [--mostrar] [--tribunal=TJGO]                              # a consulta real
  *   node scripts/sonda-avisos-pendentes.mjs --offline=<tabela.json> [--esperado=10]
  *
  *   --seco     não abre banco nem rede: só o plano e o envelope.
@@ -106,6 +113,14 @@ export class SondaAbortada extends Error {
   }
 }
 
+/** O envelope não segue o plano da sonda (operação, namespace, elementos ou ordem). */
+export class EnvelopeInvalidoError extends SondaAbortada {
+  constructor(motivo) {
+    super(`Envelope fora do plano: ${motivo}`);
+    this.name = 'EnvelopeInvalidoError';
+  }
+}
+
 // =============================================================================
 // Guarda das operações
 // =============================================================================
@@ -128,21 +143,62 @@ export function garantirOperacaoPermitida(operacao) {
   }
 }
 
+/** Ordem do `xs:sequence` de entrada (WSDL do TJGO): todos opcionais. */
+export const ORDEM_DA_ENTRADA = Object.freeze([
+  'idRepresentado',
+  'idConsultante',
+  'senhaConsultante',
+  'dataReferencia',
+]);
+/** O que a sonda envia, e NADA além: sem representado e sem data de referência. */
+const ELEMENTOS_ENVIADOS = Object.freeze(['idConsultante', 'senhaConsultante']);
+
+/** Namespace a que um prefixo (ou o padrão, se `undefined`) resolve no texto do envelope. */
+function resolverNamespace(xml, prefixo) {
+  const re = prefixo
+    ? new RegExp(`xmlns:${prefixo.replace(/[.-]/g, '\\$&')}="([^"]*)"`)
+    : /\sxmlns="([^"]*)"/;
+  return re.exec(xml)?.[1];
+}
+
 /**
  * Última barreira antes de a requisição sair: o corpo do envelope e o SOAPAction
- * têm de ser da mesma operação permitida, e nenhum nome proibido pode aparecer em
- * lugar nenhum do texto (uma operação escondida num elemento filho, por exemplo).
+ * têm de ser da mesma operação permitida, nenhum nome proibido pode aparecer em
+ * lugar nenhum do texto (uma operação escondida num elemento filho, por exemplo),
+ * os namespaces têm de ser os do WSDL — pela RESOLUÇÃO do prefixo, não pelo nome
+ * dele — e só `idConsultante` e `senhaConsultante`, nessa ordem, podem seguir.
  */
 export function validarEnvelopeEAcao(xml, acao) {
-  const m = /<soapenv:Body>\s*<srv:([A-Za-z0-9_]+)[\s>]/.exec(xml);
-  garantirOperacaoPermitida(m?.[1]);
+  const m = /<(?:[\w.-]+:)?Body\b[^>]*>\s*<(?:([\w.-]+):)?([A-Za-z0-9_]+)\b/.exec(xml);
+  const prefixoOp = m?.[1];
+  garantirOperacaoPermitida(m?.[2]);
   garantirOperacaoPermitida(acao);
-  if (semPrefixo(acao) !== m?.[1]) {
+  if (semPrefixo(acao) !== m?.[2]) {
     throw new OperacaoProibidaError(semPrefixo(acao), 'o SOAPAction não bate com o corpo.');
   }
   for (const p of OPERACOES_PROIBIDAS) {
     if (xml.toLowerCase().includes(p.toLowerCase()) || acao.toLowerCase().includes(p.toLowerCase())) {
       throw new OperacaoProibidaError(p, 'o nome aparece dentro do envelope.');
+    }
+  }
+  if (resolverNamespace(xml, prefixoOp) !== NS_SERVICO) {
+    throw new EnvelopeInvalidoError('o elemento da operação não está no namespace do serviço');
+  }
+  const corpo = xml.slice(xml.indexOf(m[0]) + m[0].length);
+  const filhos = [...corpo.matchAll(/<(?:([\w.-]+):)?([A-Za-z0-9_]+)\b[^>]*>/g)]
+    .filter((t) => t[2] !== m[2])
+    .map((t) => ({ prefixo: t[1], nome: t[2] }));
+  const nomes = filhos.map((f) => f.nome);
+  const fora = nomes.filter((n) => !ELEMENTOS_ENVIADOS.includes(n));
+  if (fora.length > 0) {
+    throw new EnvelopeInvalidoError(`elemento(s) que a sonda não envia: ${[...new Set(fora)].join(', ')}`);
+  }
+  if (nomes.join(',') !== ELEMENTOS_ENVIADOS.join(',')) {
+    throw new EnvelopeInvalidoError('a ordem deve ser idConsultante, senhaConsultante');
+  }
+  for (const f of filhos) {
+    if (resolverNamespace(xml, f.prefixo) !== NS_TIPOS) {
+      throw new EnvelopeInvalidoError(`${f.nome} não está no namespace de tipos`);
     }
   }
 }
@@ -159,21 +215,28 @@ const escaparXml = (v) =>
     .replace(/'/g, '&apos;');
 
 /**
- * O envelope mínimo: só os dois elementos obrigatórios, NESTA ordem (o tipo é
- * `xs:sequence`). Os opcionais (representado, data de referência) ficam de fora de
- * propósito — sem eles o tribunal devolve o padrão, que é o que a tela do Projudi
- * mostra. Mesmos namespaces do restante do MNI (`mni.envelope.ts`).
+ * O envelope mínimo. A entrada do WSDL é um `xs:sequence` de quatro elementos,
+ * todos opcionais, NESTA ordem: idRepresentado, idConsultante, senhaConsultante,
+ * dataReferencia. A sonda manda só o 2.º e o 3.º: sem `idRepresentado` (a lista é
+ * do próprio consultante) e sem `dataReferencia` (queremos TODOS os pendentes).
+ * Os filhos do corpo vivem no namespace de tipos (`form="qualified"`) e a raiz no
+ * do serviço — o mesmo desenho do resto do MNI (`mni.envelope.ts`). Os prefixos
+ * são arbitrários (o que vale é o namespace a que resolvem), e por isso são
+ * parâmetros: o teste monta variações e a guarda confere pela resolução.
  */
-export function envelopeAvisosPendentes({ identificacao, senha }) {
-  const el = (n, v) => `<tip:${n}>${escaparXml(v)}</tip:${n}>`;
+export function envelopeAvisosPendentes(
+  { identificacao, senha },
+  { prefixoServico = 'srv', prefixoTipos = 'tip' } = {},
+) {
+  const el = (n, v) => `<${prefixoTipos}:${n}>${escaparXml(v)}</${prefixoTipos}:${n}>`;
   return (
     `<?xml version="1.0" encoding="UTF-8"?>` +
     `<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"` +
-    ` xmlns:srv="${NS_SERVICO}" xmlns:tip="${NS_TIPOS}">` +
-    `<soapenv:Body><srv:${OPERACAO}>` +
+    ` xmlns:${prefixoServico}="${NS_SERVICO}" xmlns:${prefixoTipos}="${NS_TIPOS}">` +
+    `<soapenv:Body><${prefixoServico}:${OPERACAO}>` +
     el('idConsultante', identificacao) +
     el('senhaConsultante', senha) +
-    `</srv:${OPERACAO}></soapenv:Body></soapenv:Envelope>`
+    `</${prefixoServico}:${OPERACAO}></soapenv:Body></soapenv:Envelope>`
   );
 }
 
@@ -439,7 +502,7 @@ export function analisarWsdl(documentos, operacoes = [OPERACAO, OPERACAO_RELATOR
       encontrada: true,
       ...(op.documentacao ? { documentacao: op.documentacao } : {}),
       ...(indice.soapActions.has(nome) ? { soapAction: indice.soapActions.get(nome) } : {}),
-      entrada: descreverMensagem(op.entrada, indice, 2),
+      entrada: descreverMensagem(op.entrada, indice, 4),
       saida: descreverMensagem(op.saida, indice, PROFUNDIDADE_SAIDA),
     };
   }
@@ -517,6 +580,13 @@ export function avaliarWsdl(analise) {
   if (analise.proibidasPresentes.length > 0) {
     avisos.push(`o serviço também declara (e a sonda recusa): ${analise.proibidasPresentes.join(', ')}`);
   }
+  const temPrazo = (filhos) =>
+    filhos.some((f) => /prazo|limite/i.test(f.nome) || temPrazo(f.filhos ?? []));
+  if (!temPrazo(op.saida.filhos)) {
+    avisos.push(
+      'o tipo de aviso do WSDL não declara prazo nem data limite: "sem data limite no aviso" é esperado, e a lista sozinha não dá prazo em aberto',
+    );
+  }
   const acaoDoWsdl = op.soapAction ? String(op.soapAction) : undefined;
   let acao = ACAO_AVISOS;
   if (acaoDoWsdl && acaoDoWsdl !== ACAO_AVISOS) {
@@ -546,7 +616,9 @@ export function imprimirWsdl(analise, escrever = console.log) {
   escrever('== 1. WSDL ==');
   escrever(`documentos lidos: ${analise.documentosLidos} · operações do serviço: ${analise.operacoesDoServico.length}`);
   for (const [nome, op] of Object.entries(analise.operacoes)) {
-    escrever(`\n-- ${nome}${nome === OPERACAO_RELATORIO_LOCAL ? ' (extensão local; só descrita, nunca chamada)' : ''}`);
+    escrever(
+      `\n-- ${nome}${nome === OPERACAO_RELATORIO_LOCAL ? ' (extensão local do TJGO — SÓ DESCRITA, a sonda NUNCA a chama: pede loginConsultante/senhaConsultante e devolve arquivo)' : ''}`,
+    );
     if (!op.encontrada) {
       escrever('   não declarada neste WSDL.');
       continue;
@@ -791,7 +863,7 @@ export function validarTabela(bruta) {
 // =============================================================================
 const dias = (a, b) => Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86_400_000);
 
-export function resumir(tabela, { esperado, semLimiteEsperado } = {}) {
+export function resumir(tabela, { esperado } = {}) {
   const avisos = tabela.avisos;
   const total = avisos.length;
   const porCampo = new Map();
@@ -842,7 +914,6 @@ export function resumir(tabela, { esperado, semLimiteEsperado } = {}) {
   return {
     total,
     esperado: esperado ?? null,
-    semLimiteEsperado: semLimiteEsperado ?? null,
     campos: [...porCampo.values()]
       .map((c) => ({ ...c, formatos: [...c.formatos] }))
       .sort((x, y) => x.nome.localeCompare(y.nome)),
@@ -871,7 +942,7 @@ export function naoMedido(resumo, { wsdlConferido = true } = {}) {
   const itens = [
     'se o MNI devolve só os avisos AINDA NÃO LIDOS/sem ciência: uma consulta não separa "pendente" de "todos"; só a igualdade com a tela (--esperado) sugere que é a mesma lista',
     'se cada data é a MESMA da tela: a igualdade das datas é conferência visual do dono (--mostrar)',
-    'se o campo de data limite tem a mesma semântica da "Possível Data Limite" do Projudi (a sonda lê o NOME do campo; não o sentido)',
+    'o prazo/data limite de cada intimação: o WSDL só os traz em tipoComunicacaoProcessual (consultarTeorComunicacao, que a sonda não chama); a lista de avisos não os carrega',
     'se a lista é estável de uma consulta para outra (houve uma só consulta)',
   ];
   if (!wsdlConferido) itens.unshift('o WSDL: a análise foi feita sem ele');
@@ -879,8 +950,15 @@ export function naoMedido(resumo, { wsdlConferido = true } = {}) {
   return itens;
 }
 
+/**
+ * Critérios (v1.0.0, depois de ler o WSDL do TJGO): o aviso NÃO tem campo de prazo
+ * ou data limite — só destinatario, processo, dataDisponibilizacao e os atributos
+ * idAviso e tipoComunicacao. Então "sem data limite no aviso" é achado ESPERADO e
+ * não derruba o julgamento; COMPATÍVEL mede se a lista é a da tela (quantidade) e
+ * se o que o aviso promete (tipo e data de disponibilização) vem em todos.
+ */
 export function julgar(resumo) {
-  const { total, esperado, semLimiteEsperado, limite } = resumo;
+  const { total, esperado } = resumo;
   if (total === 0) {
     return { rotulo: 'NÃO CONFIRMÁVEL', motivo: 'a resposta não trouxe nenhum aviso' };
   }
@@ -890,8 +968,13 @@ export function julgar(resumo) {
       motivo: `vieram ${total} avisos e a tela tem ${esperado}: a lista do MNI não é a da tela (pode incluir já lidos/outros representados)`,
     };
   }
-  if (!limite.campoExiste || limite.preenchidos === 0) {
-    return { rotulo: 'PARCIAL', motivo: 'há avisos, mas nenhum campo de data limite preenchido' };
+  const semTipo = resumo.tipos['(sem tipo)'] ?? 0;
+  const semPublicacao = total - resumo.publicacao.comData;
+  const faltas = [];
+  if (semTipo > 0) faltas.push(`${semTipo} sem tipoComunicacao`);
+  if (semPublicacao > 0) faltas.push(`${semPublicacao} sem dataDisponibilizacao`);
+  if (faltas.length > 0) {
+    return { rotulo: 'PARCIAL', motivo: `avisos incompletos: ${faltas.join(' e ')}` };
   }
   if (esperado === null) {
     return { rotulo: 'PARCIAL', motivo: 'sem --esperado não há como afirmar que a lista está completa' };
@@ -899,17 +982,14 @@ export function julgar(resumo) {
   if (total < esperado) {
     return { rotulo: 'PARCIAL', motivo: `vieram ${total} de ${esperado} avisos: lista parcial` };
   }
-  if (semLimiteEsperado !== null && limite.semLimite !== semLimiteEsperado) {
-    return {
-      rotulo: 'PARCIAL',
-      motivo: `${limite.semLimite} avisos sem data limite; o Projudi tem ${semLimiteEsperado}`,
-    };
-  }
+  const achado = resumo.limite.campoExiste
+    ? `o aviso traz campo de data limite (${resumo.limite.campos.join(', ')}), o que o WSDL não prevê: conferir`
+    : 'o aviso não traz prazo nem data limite (esperado pelo WSDL)';
   return {
     rotulo: 'COMPATÍVEL',
     motivo:
-      `quantidade igual (${total}) e campo de data limite em ${limite.preenchidos} avisos ` +
-      `(${limite.semLimite} sem). Falta a conferência visual dos mesmos avisos pelo dono`,
+      `quantidade igual (${total}), tipoComunicacao e dataDisponibilizacao em todos; ${achado}. ` +
+      'Falta a conferência visual dos mesmos avisos pelo dono',
   };
 }
 
@@ -930,13 +1010,12 @@ export function imprimirResumo(resumo, escrever = console.log) {
   const l = resumo.limite;
   escrever(
     l.campoExiste
-      ? `  campo equivalente a "Possível Data Limite": SIM (${l.campos.join(', ')}) · formato ${l.formatos.join(' | ')}`
-      : '  campo equivalente a "Possível Data Limite": NÃO ENCONTRADO',
+      ? `  campo equivalente a "Possível Data Limite": SIM (${l.campos.join(', ')}) · formato ${l.formatos.join(' | ')} — INESPERADO: o WSDL não prevê`
+      : '  campo equivalente a "Possível Data Limite": não há (ACHADO ESPERADO: o tipo de aviso do WSDL não o declara)',
   );
-  escrever(
-    `  com data limite: ${l.preenchidos} · campo presente e vazio: ${l.vazios} · campo ausente: ${l.ausentes}` +
-      (resumo.semLimiteEsperado !== null ? ` · esperado sem limite: ${resumo.semLimiteEsperado}` : ''),
-  );
+  if (l.campoExiste) {
+    escrever(`  com data limite: ${l.preenchidos} · campo presente e vazio: ${l.vazios} · campo ausente: ${l.ausentes}`);
+  }
   if (resumo.diasPublicacaoAteLimite) {
     const d = resumo.diasPublicacaoAteLimite;
     escrever(`  dias da publicação até a data limite: de ${d.min} a ${d.max} (em ${d.n} avisos)`);
@@ -969,11 +1048,11 @@ export function linhasDeConferencia(analise, { mostrar }) {
       : '(sem número reconhecido)';
     const pub = a.datas.find((d) => d.papel === 'publicacao')?.valor;
     const lim = a.datas.find((d) => d.papel === 'limite' && d.valor)?.valor;
-    const partes = [`aviso ${a.indice}`, `processo ${rotuloNumero}`];
-    if (mostrar) {
-      partes.push(`publicação ${dataBr(pub)}`, `data limite ${lim ? dataBr(lim) : '— (sem)'}`);
-    } else {
-      partes.push(`data limite ${lim ? 'presente' : 'ausente'}`);
+    const partes = [`aviso ${a.indice}`, `processo ${rotuloNumero}`, `tipo ${a.tipoComunicacao ?? '—'}`];
+    if (mostrar) partes.push(`disponibilização ${dataBr(pub)}`);
+    // O WSDL não prevê data limite no aviso; se vier, aparece (e é INESPERADO).
+    if (a.datas.some((d) => d.papel === 'limite')) {
+      partes.push(mostrar ? `data limite ${lim ? dataBr(lim) : '— (sem)'}` : `data limite ${lim ? 'presente' : 'ausente'}`);
     }
     return partes.join(' · ');
   });
@@ -1000,7 +1079,6 @@ const ARGS_COM_VALOR = [
   'wsdl-url',
   'workspace',
   'esperado',
-  'sem-limite-esperado',
   'tribunal',
 ];
 
@@ -1014,7 +1092,7 @@ export function lerArgumentos(entrada) {
     else if (ARGS_COM_VALOR.includes(nome) && valor !== undefined && valor !== '') args[nome] = valor;
     else throw new Error(`argumento inválido: --${nome}`);
   }
-  for (const n of ['esperado', 'sem-limite-esperado']) {
+  for (const n of ['esperado']) {
     if (args[n] !== undefined && !/^\d{1,4}$/.test(args[n])) throw new Error(`--${n} deve ser um inteiro`);
   }
   const modos = ['seco', 'offline', 'wsdl', 'wsdl-arquivo'].filter((m) => args[m] !== undefined);
@@ -1025,7 +1103,7 @@ export function lerArgumentos(entrada) {
 const USO =
   'Uso: node scripts/sonda-avisos-pendentes.mjs --wsdl | --wsdl-arquivo=<arq> | --seco | ' +
   '--offline=<tabela.json> [--esperado=N] | [--workspace=<nome>] [--esperado=N] ' +
-  '[--sem-limite-esperado=N] [--mostrar] [--tribunal=TJGO]';
+  '[--mostrar] [--tribunal=TJGO]';
 
 /** Dependências reais — importadas só quando o modo precisa delas. */
 export function dependenciasReais() {
@@ -1163,11 +1241,7 @@ export async function principal(argv, deps = dependenciasReais(), escrever = con
     return 1;
   }
   const esperado = args['esperado'] !== undefined ? Number(args['esperado']) : undefined;
-  const semLimiteEsperado = args['sem-limite-esperado'] !== undefined ? Number(args['sem-limite-esperado']) : undefined;
-  const opcoesResumo = {
-    ...(esperado !== undefined ? { esperado } : {}),
-    ...(semLimiteEsperado !== undefined ? { semLimiteEsperado } : {}),
-  };
+  const opcoesResumo = esperado !== undefined ? { esperado } : {};
   escrever(`sonda-avisos-pendentes v${VERSAO_SONDA}`);
 
   try {
@@ -1204,8 +1278,10 @@ export async function principal(argv, deps = dependenciasReais(), escrever = con
 
     // --- WSDL (com ou sem a consulta) --------------------------------------------
     if (args['wsdl-arquivo']) {
-      const xml = deps.lerArquivo(args['wsdl-arquivo']);
-      const analise = analisarWsdl(new Map([[args['wsdl-arquivo'], xml]]));
+      // O WSDL do CXF costuma importar os esquemas (xs:import) de outros
+      // documentos: salve-os também e liste todos, separados por vírgula.
+      const arquivos = args['wsdl-arquivo'].split(',').filter(Boolean);
+      const analise = analisarWsdl(new Map(arquivos.map((a) => [a, deps.lerArquivo(a)])));
       imprimirWsdl(analise, escrever);
       imprimirAvaliacaoWsdl(avaliarWsdl(analise), escrever);
       return 0;
