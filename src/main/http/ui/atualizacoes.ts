@@ -33,6 +33,7 @@ import { nomeDaClasse } from '../../../domain/entities/nomeDaClasse.js';
 import { trechoDeTexto } from './trechoDeTexto.js';
 import {
   contarSituacoes,
+  montarLinhas,
   filtrarPorSituacao,
   ordenarGrupos,
   paginar,
@@ -48,6 +49,7 @@ var pv=function(){return window.__pv};
    ui/tabelaAtualizacoes.ts), injetadas como texto. */
 var trechoDeTexto=${trechoDeTexto.toString()};
 var contarSituacoes=${contarSituacoes.toString()};
+var montarLinhas=${montarLinhas.toString()};
 var filtrarPorSituacao=${filtrarPorSituacao.toString()};
 var proximaOrdem=${proximaOrdem.toString()};
 var ordenarGrupos=${ordenarGrupos.toString()};
@@ -120,6 +122,24 @@ function celulaPartes(g){
   return '<td class="c-partes" data-rotulo="Partes"><span class="nvt-partes" title="'+esc(txt)+'">'+esc(txt)+'</span></td>';
 }
 
+/* Processo acompanhado SEM novidade registrada (v0.37.3): a última movimentação do retrato,
+   com a mesma regra de descrição e de trecho. Não é "atualização detectada" e a célula diz isso.
+   Segredo de justiça: rótulo e data, nunca o texto do ato. */
+function celulaSemNovidade(g){
+  var n=g.maisRecente;
+  var h='<td class="c-atu" data-rotulo="Atualização">';
+  if(!n.data){
+    return h+'<div class="nvt-tit nvt-vazio">Nenhuma movimentação conhecida</div></td>';
+  }
+  var enxuto=descricaoDoAto(n.titulo);
+  h+='<div class="nvt-sem">Última movimentação conhecida · sem atualização detectada</div>'+
+    '<div class="nvt-tit"'+(enxuto!==n.titulo?' title="'+esc(n.titulo)+'"':'')+'>'+esc(enxuto)+'</div>';
+  if(g.segredoJustica)
+    h+='<div class="nota nvt-sem"><span class="selo al">segredo de justiça</span> O texto do ato não é exibido aqui.</div>';
+  else h+=notaDoAto(n);
+  return h+'</td>';
+}
+
 function celulaAtualizacao(n){
   /* Só a exibição perde a repetição do tipo; o original fica no title. */
   var enxuto=descricaoDoAto(n.titulo);
@@ -155,16 +175,26 @@ function classeDaLinha(g){
   return {cheia:'<span class="nvt-classe"'+t+'>'+esc(txt)+'</span>',mini:'<span class="nvt-classe-mini"'+t+'>'+esc(txt)+'</span>'};
 }
 
+function celulaData(n){
+  if(!n.data)return '<td class="c-data" data-rotulo="Data do ato"><span class="nvt-vazio" title="Nenhuma movimentação conhecida">—</span></td>';
+  return '<td class="c-data" data-rotulo="Data do ato"><time datetime="'+esc(n.data)+'" title="'+esc(pv().dth(n.data))+'">'+esc(pv().dt(n.data))+'</time></td>';
+}
+function celulaDetectado(n){
+  if(!n.detectadaEm)
+    return '<td class="c-det" data-rotulo="Detectado"><span title="Sem detecção registrada: o acompanhamento ainda não percebeu nenhuma movimentação nova neste processo.">'+
+      '<span aria-hidden="true">—</span><span class="nvt-sr">sem detecção registrada</span></span></td>';
+  return '<td class="c-det" data-rotulo="Detectado"><span title="'+esc(detectadoHa(n.detectadaEm)+'. Quando o Processo Vivo percebeu este ato ('+pv().dth(n.detectadaEm)+'). A data do ato está na coluna ao lado.')+'">'+
+    '<span aria-hidden="true">'+esc(detectadoCurto(n.detectadaEm))+'</span><span class="nvt-sr">'+esc(detectadoHa(n.detectadaEm))+'</span></span></td>';
+}
+
 function linha(g){
   var n=g.maisRecente;
   var classe=classeDaLinha(g);
-  var h='<tr class="nvt-linha" role="row" data-processo="'+esc(g.numero)+'">'+
-    celulaProcesso(g)+celulaPartes(g)+celulaAtualizacao(n)+
+  var h='<tr class="nvt-linha'+(g.semNovidade?' nvt-sem-nov':'')+'" role="row" data-processo="'+esc(g.numero)+'">'+
+    celulaProcesso(g)+celulaPartes(g)+(g.semNovidade?celulaSemNovidade(g):celulaAtualizacao(n))+
     '<td class="c-trib" data-rotulo="Tribunal">'+esc(g.processo&&g.processo.tribunal?g.processo.tribunal:'—')+classe.mini+'</td>'+
     '<td class="c-classe" data-rotulo="Classe">'+classe.cheia+'</td>'+
-    '<td class="c-data" data-rotulo="Data do ato"><time datetime="'+esc(n.data)+'" title="'+esc(pv().dth(n.data))+'">'+esc(pv().dt(n.data))+'</time></td>'+
-    '<td class="c-det" data-rotulo="Detectado"><span title="'+esc(detectadoHa(n.detectadaEm)+'. Quando o Processo Vivo percebeu este ato ('+pv().dth(n.detectadaEm)+'). A data do ato está na coluna ao lado.')+'">'+
-      '<span aria-hidden="true">'+esc(detectadoCurto(n.detectadaEm))+'</span><span class="nvt-sr">'+esc(detectadoHa(n.detectadaEm))+'</span></span></td>'+
+    celulaData(n)+celulaDetectado(n)+
     celulaSituacao(g)+celulaAcoes(g)+'</tr>';
   return h;
 }
@@ -191,7 +221,7 @@ function filtros(cont){
   var h='<div class="nvt-filtros">'+
     '<div class="nvt-bloco"><span class="nvt-rot" id="nvt-rot-periodo">Período</span>'+
     '<div class="nvt-chips" role="group" aria-labelledby="nvt-rot-periodo">'+
-    '<button type="button" class="chip'+(todas?'':' on')+'" aria-pressed="'+(todas?'false':'true')+'" data-acao="periodo" data-janela="" data-foco="periodo-padrao">Últimos '+R.janelaPadraoDias+' dias</button>'+
+    '<button type="button" class="chip'+(todas?'':' on')+'" aria-pressed="'+(todas?'false':'true')+'" data-acao="periodo" data-janela="padrao" data-foco="periodo-padrao">Últimos '+R.janelaPadraoDias+' dias</button>'+
     '<button type="button" class="chip'+(todas?' on':'')+'" aria-pressed="'+(todas?'true':'false')+'" data-acao="periodo" data-janela="todas" data-foco="periodo-todas">Todas</button></div></div>'+
     '<div class="nvt-bloco"><span class="nvt-rot" id="nvt-rot-situacao">Situação</span>'+
     '<div class="nvt-chips" role="group" aria-labelledby="nvt-rot-situacao">';
@@ -199,7 +229,7 @@ function filtros(cont){
   SITUACOES.forEach(function(s){
     var on=S.situacao===s[0];
     var dica=s[0]==='providencia'?'Processos com ato dos últimos '+R.pendenciaJanelaDias+' dias que pede providência (leitura automática do texto; confira no ato completo).':
-      s[0]==='naoLidas'?'Processos com atualização que você ainda não abriu.':'Todos os processos com atualização no período.';
+      s[0]==='naoLidas'?'Processos com atualização que você ainda não abriu.':'Todos os processos acompanhados'+(todas?'.':' com atualização detectada no período.');
     h+='<button type="button" class="chip'+(s[0]==='naoLidas'&&on?' nv':'')+(on?' on':'')+'" aria-pressed="'+(on?'true':'false')+'" title="'+esc(dica)+'" data-acao="situacao" data-sit="'+s[0]+'" data-foco="sit-'+s[0]+'">'+
       esc(s[1])+' ('+n[s[0]]+')</button>';
   });
@@ -219,22 +249,29 @@ function filtros(cont){
 
 function resumo(base,filtrados){
   var onde=O.tribunal?' em '+esc(O.tribunal):'';
-  var quando=R.janelaDias===null?'':' nos últimos '+R.janelaPadraoDias+' dias';
   var h='<div class="nvt-resumo">';
   if(S.situacao!=='todas'){
     var nome=SITUACOES.filter(function(s){return s[0]===S.situacao})[0][1];
-    h+='Mostrando <strong>'+filtrados+'</strong> de <strong>'+base+'</strong> processos'+onde+quando+' (filtro: '+esc(nome)+'). '+
+    h+='Mostrando <strong>'+filtrados+'</strong> de <strong>'+base+'</strong> processos'+onde+
+      (R.janelaDias===null?'':' com atualização detectada nos últimos '+R.janelaPadraoDias+' dias')+' (filtro: '+esc(nome)+'). '+
       '<button type="button" class="nov-btn" data-acao="limpar" data-foco="limpar">Limpar filtros</button>';
+  }else if(R.janelaDias===null){
+    h+='<strong>'+base+'</strong> '+(base===1?'processo acompanhado':'processos acompanhados')+onde+'.';
   }else{
-    h+='<strong>'+base+'</strong> '+(base===1?'processo':'processos')+' com atualização'+onde+quando+'.';
+    h+='<strong>'+R.acompanhados+'</strong> '+(R.acompanhados===1?'processo acompanhado':'processos acompanhados')+onde+
+      ' · <strong>'+base+'</strong> com atualização detectada nos últimos '+R.janelaPadraoDias+' dias.';
   }
   return h+'</div>';
 }
 
+/* O período é um filtro da pessoa e nasce desligado. Ligado, diz quantos PROCESSOS tirou da
+   lista (e, se houver, quantas atualizações antigas existem) e oferece a saída ao lado. */
 function avisoDeOcultas(){
-  if(!(R.foraDaJanela>0))return '';
-  return '<div class="nota nov-fora">'+(R.foraDaJanela>1?R.foraDaJanela+' atualizações mais antigas não mostradas':'1 atualização mais antiga não mostrada')+
-    ' (fora dos últimos '+R.janelaPadraoDias+' dias). <button type="button" class="nov-btn" data-acao="periodo" data-janela="todas" data-foco="ver-todas">Ver todas</button></div>';
+  if(R.janelaDias===null||!(R.processosForaDaJanela>0))return '';
+  var n=R.processosForaDaJanela;
+  return '<div class="nota nov-fora">'+n+(n>1?' processos sem atualização':' processo sem atualização')+' nos últimos '+R.janelaPadraoDias+' dias'+
+    (R.foraDaJanela>0?' (há '+R.foraDaJanela+(R.foraDaJanela>1?' atualizações mais antigas':' atualização mais antiga')+')':'')+
+    ' · <button type="button" class="nov-btn" data-acao="periodo" data-janela="todas" data-foco="ver-todas">Ver todos</button></div>';
 }
 
 /* A regra de ouro em UMA frase, no nível da página: sem contagem por processo e sem
@@ -266,18 +303,16 @@ function semProcessos(){
     '<button type="button" class="bt" data-acao="buscar">Buscar processo</button>');
 }
 function semBase(){
-  if(R.foraDaJanela>0)
-    return pv().vazio('🔔','Nenhuma atualização nos últimos '+R.janelaPadraoDias+' dias','Há atualizações mais antigas — elas não foram descartadas.');
-  if(O.tribunal)
-    return pv().vazio('🔔','Nenhuma atualização com este filtro','Não há atualização de '+O.tribunal+' neste período.',
-      '<button type="button" class="bt bt2" data-acao="limpar" data-foco="limpar">Limpar filtros</button>');
-  return pv().vazio('✓','Nenhuma movimentação nova',
-    'Seus '+R.acompanhados+' processo(s) foram verificados e nada mudou desde a última consulta. Esta tela mostra só o que é NOVO — para ver a carteira inteira, abra Meus processos.',
-    '<button type="button" class="bt bt2" data-acao="processos">Ver meus processos</button>');
+  if(R.janelaDias!==null)
+    return pv().vazio('🔔','Nenhum processo com atualização nos últimos '+R.janelaPadraoDias+' dias',
+      'Seus processos continuam sendo acompanhados — o período só esconde o que não tem atualização nele.',
+      '<button type="button" class="bt bt2" data-acao="periodo" data-janela="todas" data-foco="ver-todas">Ver todos</button>');
+  return pv().vazio('🔔','Nenhum processo com este filtro','Não há processo de '+O.tribunal+' acompanhado.',
+    '<button type="button" class="bt bt2" data-acao="limpar" data-foco="limpar">Limpar filtros</button>');
 }
 function semResultado(total){
-  return pv().vazio('🔎','Nenhuma atualização com este filtro',
-    'Há '+total+(total===1?' processo':' processos')+' com atualização neste período, sem o filtro de situação.',
+  return pv().vazio('🔎','Nenhum processo com este filtro',
+    'Há '+total+(R.janelaDias===null?(total===1?' processo acompanhado':' processos acompanhados'):(total===1?' processo':' processos')+' com atualização neste período')+', sem o filtro de situação.',
     '<button type="button" class="bt bt2" data-acao="limpar" data-foco="limpar">Limpar filtros</button>');
 }
 
@@ -285,7 +320,7 @@ function semResultado(total){
 function anunciar(texto){if(live)live.textContent=texto}
 
 function desenhar(anunciarMudanca){
-  var base=R.grupos,cont=contarSituacoes(base);
+  var base=montarLinhas(R.grupos,R.semNovidade||[],R.janelaDias===null),cont=contarSituacoes(base);
   if(!R.acompanhados&&!base.length){corpo.innerHTML=semProcessos();return}
   var filtrados=filtrarPorSituacao(base,S.situacao);
   var ordenados=ordenarGrupos(filtrados,S.ordem);
@@ -296,13 +331,13 @@ function desenhar(anunciarMudanca){
   else if(!filtrados.length)h+=semResultado(base.length);
   else{
     h+=avisoDeAnteriores(filtrados);
-    h+='<div class="nvt-wrap"><table class="nvt-tabela" role="table"><caption class="nvt-sr">Últimas atualizações dos processos</caption>'+
+    h+='<div class="nvt-wrap"><table class="nvt-tabela" role="table"><caption class="nvt-sr">Processos acompanhados e a atualização mais recente de cada um</caption>'+
       cabecalho()+'<tbody>'+ordenados.slice(pg.inicio,pg.fim).map(linha).join('')+'</tbody></table></div>'+rodape(pg);
   }
   corpo.innerHTML=h;
   if(anunciarMudanca&&filtrados.length)
     anunciar('Mostrando '+pg.de+' a '+pg.ate+' de '+pg.total+(pg.total===1?' processo':' processos'));
-  else if(anunciarMudanca)anunciar('Nenhuma atualização com este filtro');
+  else if(anunciarMudanca)anunciar('Nenhum processo com este filtro');
   devolverFoco();
 }
 
@@ -369,7 +404,7 @@ function aoClicar(ev){
   }
   if(acao==='ord'){S.ordem=proximaOrdem(S.ordem,el.getAttribute('data-chave'));S.pagina=1;desenhar(true);return}
   if(acao==='pagina'){
-    var tot=Math.ceil(filtrarPorSituacao(R.grupos,S.situacao).length/S.porPagina)||1;
+    var tot=Math.ceil(filtrarPorSituacao(montarLinhas(R.grupos,R.semNovidade||[],R.janelaDias===null),S.situacao).length/S.porPagina)||1;
     var v=el.getAttribute('data-vai');
     S.pagina=v==='primeira'?1:v==='anterior'?S.pagina-1:v==='proxima'?S.pagina+1:tot;
     desenhar(true);

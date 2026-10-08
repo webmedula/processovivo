@@ -28,7 +28,30 @@ export interface OpcoesServicoAcompanhamento {
   readonly maximoPorVarredura?: number;
   /** Pausa entre consultas, para não martelar a fonte. Padrão: 1500ms. */
   readonly pausaEntreConsultasMs?: number;
+  /** Relógio injetável: o limite de espera se testa sem tempo real. */
+  readonly agora?: () => Date;
+  /** Passado esse tempo, a verificação da conta é dita "demorando". Padrão: 5 min. */
+  readonly limiteVerificacaoDemoradaMs?: number;
 }
+
+/** Quanto a tela espera antes de dizer que as fontes estão lentas (v0.37.3). */
+export const LIMITE_VERIFICACAO_DEMORADA_MS = 5 * 60_000;
+
+/**
+ * O que UMA conta pode saber da varredura. Só fala dos processos dela: a fila
+ * global (quantos, de quem) nunca sai daqui.
+ */
+export interface EstadoDaVerificacao {
+  readonly emAndamento: boolean;
+  /** Processos DESTA conta ainda por verificar nesta rodada. */
+  readonly pendentes: number;
+  /** Quando a verificação desta conta começou a valer; `null` fora de andamento. */
+  readonly desde: Date | null;
+  /** Passou do limite de espera: a tela para de girar e diz que as fontes estão lentas. */
+  readonly demorando: boolean;
+}
+
+export type ResultadoDoPedido = 'iniciada' | 'ja_em_andamento' | 'na_fila';
 
 /**
  * Acompanhamento de processos: adicionar, listar e manter atualizado.
@@ -48,6 +71,17 @@ export class ServicoAcompanhamento {
   private readonly maximo: number;
   private readonly pausaMs: number;
   private sincronizando = false;
+  /**
+   * Por conta: os números que a rodada em curso ainda vai verificar. A varredura
+   * global enche isto ao montar a fila e esvazia item a item; é daqui que sai o
+   * "verificando agora" de CADA conta, em vez de uma bandeira única para todas.
+   */
+  private readonly pendentes = new Map<string, Set<string>>();
+  /** Contas que pediram "verificar agora" com a varredura de outro rodando. */
+  private readonly aguardando = new Set<string>();
+  private readonly desde = new Map<string, Date>();
+  private readonly relogio: () => Date;
+  private readonly limiteDemoradaMs: number;
 
   constructor(opcoes: OpcoesServicoAcompanhamento) {
     this.repo = opcoes.repositorio;
@@ -55,6 +89,9 @@ export class ServicoAcompanhamento {
     this.log = opcoes.logger.child({ servico: 'acompanhamento' });
     this.maximo = opcoes.maximoPorVarredura ?? 200;
     this.pausaMs = opcoes.pausaEntreConsultasMs ?? 1500;
+    this.relogio = opcoes.agora ?? (() => new Date());
+    this.limiteDemoradaMs =
+      opcoes.limiteVerificacaoDemoradaMs ?? LIMITE_VERIFICACAO_DEMORADA_MS;
   }
 
   /**
@@ -169,6 +206,73 @@ export class ServicoAcompanhamento {
   async sincronizar(
     opcoes: { workspace?: string } = {},
   ): Promise<ResultadoSincronizacao> {
+    try {
+      return await this.executar(opcoes);
+    } finally {
+      // Quem pediu enquanto outra varredura rodava vai agora, uma conta por vez.
+      void this.drenarPedidos();
+    }
+  }
+
+  /**
+   * "Verificar agora" de uma conta. Nunca dispara uma segunda verificação da
+   * mesma conta: com uma em curso (ou já na fila) devolve `ja_em_andamento`.
+   * Com a varredura de OUTRAS contas ocupando o serviço, o pedido espera a vez
+   * (`na_fila`) — a cota do CNJ é compartilhada, então não há duas varreduras
+   * ao mesmo tempo — e a conta aparece "em andamento" desde já.
+   */
+  solicitar(workspace: string): ResultadoDoPedido {
+    if (this.estadoDa(workspace).emAndamento) return 'ja_em_andamento';
+    if (this.sincronizando) {
+      this.aguardando.add(workspace);
+      this.desde.set(workspace, this.relogio());
+      return 'na_fila';
+    }
+    // Marca já: entre aqui e a fila montada (uma ida ao banco) a conta precisa
+    // aparecer "em andamento", senão a primeira consulta de status diz que acabou.
+    this.aguardando.add(workspace);
+    this.desde.set(workspace, this.relogio());
+    void this.executar({ workspace })
+      .catch(() => {
+        /* já registrado no log pelo serviço */
+      })
+      .finally(() => {
+        this.aguardando.delete(workspace);
+        this.desde.delete(workspace);
+        void this.drenarPedidos();
+      });
+    return 'iniciada';
+  }
+
+  /** O estado desta conta e só dela (v0.37.3). */
+  estadoDa(workspace: string): EstadoDaVerificacao {
+    const pendentes = this.pendentes.get(workspace)?.size ?? 0;
+    const emAndamento = pendentes > 0 || this.aguardando.has(workspace);
+    const desde = emAndamento ? (this.desde.get(workspace) ?? null) : null;
+    const demorando =
+      desde !== null && this.relogio().getTime() - desde.getTime() > this.limiteDemoradaMs;
+    return { emAndamento, pendentes, desde, demorando };
+  }
+
+  private async drenarPedidos(): Promise<void> {
+    while (!this.sincronizando) {
+      const proximo = this.aguardando.values().next();
+      if (proximo.done) return;
+      // Fica na lista até terminar: a conta segue "em andamento" sem intervalo.
+      try {
+        await this.executar({ workspace: proximo.value });
+      } catch (erro) {
+        // Outra varredura tomou a vez: o pedido continua na fila para a próxima.
+        if (erro instanceof SincronizacaoEmAndamentoError) return;
+      }
+      this.aguardando.delete(proximo.value);
+      this.desde.delete(proximo.value);
+    }
+  }
+
+  private async executar(
+    opcoes: { workspace?: string } = {},
+  ): Promise<ResultadoSincronizacao> {
     if (this.sincronizando) {
       throw new SincronizacaoEmAndamentoError();
     }
@@ -183,6 +287,17 @@ export class ServicoAcompanhamento {
     try {
       const fila = await this.repo.listarParaSincronizar(this.maximo, opcoes.workspace);
       this.log.info('varredura iniciada', { total: fila.length });
+      const inicioDaRodada = this.relogio();
+      for (const item of fila) {
+        let set = this.pendentes.get(item.workspace);
+        if (!set) {
+          set = new Set<string>();
+          this.pendentes.set(item.workspace, set);
+          // Quem já esperava na fila mantém a hora do pedido.
+          if (!this.desde.has(item.workspace)) this.desde.set(item.workspace, inicioDaRodada);
+        }
+        set.add(item.numero);
+      }
 
       for (const item of fila) {
         try {
@@ -216,12 +331,19 @@ export class ServicoAcompanhamento {
             erro: descrever(erro),
           });
           await this.repo.registrarFalha(item.workspace, item.numero, descrever(erro));
+        } finally {
+          this.concluirItem(item.workspace, item.numero);
         }
 
         if (this.pausaMs > 0) await dormir(this.pausaMs);
       }
     } finally {
       this.sincronizando = false;
+      // Falha no meio da fila não pode deixar conta "verificando" para sempre.
+      this.pendentes.clear();
+      for (const ws of [...this.desde.keys()]) {
+        if (!this.aguardando.has(ws)) this.desde.delete(ws);
+      }
     }
 
     const resultado = {
@@ -235,8 +357,19 @@ export class ServicoAcompanhamento {
     return resultado;
   }
 
+  /** Há varredura rodando (de qualquer conta). Uso interno e do guarda de reentrância — a API pública usa `estadoDa`. */
   get emAndamento(): boolean {
     return this.sincronizando;
+  }
+
+  private concluirItem(workspace: string, numero: string): void {
+    const set = this.pendentes.get(workspace);
+    if (!set) return;
+    set.delete(numero);
+    if (set.size === 0) {
+      this.pendentes.delete(workspace);
+      if (!this.aguardando.has(workspace)) this.desde.delete(workspace);
+    }
   }
 }
 

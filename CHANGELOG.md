@@ -9,6 +9,62 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.37.3] — 2026-10-08
+
+Dois ajustes na página de Atualizações, pedidos pelo dono depois de usar a 0.37.2 em
+produção. Não muda a detecção de novidades, nenhum timeout, nem o DataJud/DJEN.
+
+### Corrigido
+
+- **Processo acompanhado sumia da aba Atualizações.** A aba só listava processo com
+  pelo menos uma novidade, e a primeira sincronização guarda o retrato SEM gerar
+  novidade (regra mantida): quem acompanhava 2 processos via 1, sem aviso, e a
+  mensagem "N atualizações mais antigas não mostradas" falava de atualizações, não de
+  processos. Agora a aba lista **todos os processos acompanhados**, uma linha por
+  processo. Quem não tem novidade registrada mostra a última movimentação do retrato
+  (mesma regra de `descricaoDoAto` e de trecho), "Detectado" = "—" (texto acessível
+  "sem detecção registrada"), situação vazia (só "Pede providência" se o
+  `estadoDaPasta` disser) e, sem nenhuma movimentação conhecida, "Nenhuma movimentação
+  conhecida". Ordem padrão: primeiro os com atualização detectada (como antes), depois
+  os demais pela data do ato, mais recente primeiro. Segredo de justiça: rótulo e data,
+  nunca o texto do ato.
+- **"Verificando agora" girava pela varredura de todo mundo.** O estado era uma
+  bandeira única do serviço; com a varredura global rodando (todas as contas, fontes
+  lentas) a tela de quem tem 2 processos girava por dezenas de minutos, e o clique em
+  "Verificar agora" recebia 409. O estado agora é **por conta**.
+
+### Alterado
+
+- **O período de 15 dias virou filtro opcional e nasce desligado** ("Todas" é o padrão).
+  Ligado, mostra só processos com atualização detectada na janela (regra de
+  `detectadaEm` inalterada) e diz quantos PROCESSOS tirou: "N processos sem atualização
+  nos últimos 15 dias (há K atualizações mais antigas) · Ver todos". A frase do topo
+  conta processos acompanhados.
+- **`GET /v1/novidades`:** campos existentes intactos (inclusive a lista plana
+  `novidades`); dois campos NOVOS: `semNovidade` (processos acompanhados sem novidade
+  registrada, com `ultimaMovimentacao` do retrato; vazio com `naoVistas=true`) e
+  `processosForaDaJanela` (0 com a janela desligada). Nenhuma novidade é criada no banco.
+- **`GET /v1/sincronizacao` e `verificacao` de `GET /v1/painel`** falam só da conta:
+  `{ emAndamento, pendentes, desde, demorando }` — nenhum número da fila global. Antes
+  `emAndamento` era a bandeira global.
+- **`POST /v1/sincronizar`:** nunca dispara uma segunda verificação da mesma conta
+  (`jaEmAndamento: true`) e não responde mais 409 por causa da varredura de OUTRAS
+  contas: o pedido espera a vez (`naFila: true`) e roda em seguida, só com os processos
+  de quem pediu. Continua sendo uma varredura por vez no processo (cota do CNJ).
+- **Limite de espera: 5 minutos** (`LIMITE_VERIFICACAO_DEMORADA_MS`). Passado, a tela
+  para de girar e diz "Verificação demorando: as fontes do tribunal estão lentas.
+  Última verificação às HH:MM." (a verificação segue no servidor).
+
+### Testes
+
+`verificacao-por-conta.spec.ts`, `atualizacoes-sem-novidade.spec.ts`, ampliações em
+`tabela-atualizacoes`, `atualizacoes-tela`, `painel` e `atualizacoes-navegador`
+(2 processos / 1 sem novidade, período, sem rolagem horizontal em 1920, 1366, 1280,
+1024, 768 e 390 px, temas claro e escuro, axe). Os testes que assumiam "só quem tem
+novidade" ou o período de 15 dias como padrão foram reescritos para o novo contrato.
+
+---
+
 ## [0.37.2] — 2026-10-07
 
 Ajustes pequenos decorrentes do diagnóstico da coluna "Classe" e da aba "Meus

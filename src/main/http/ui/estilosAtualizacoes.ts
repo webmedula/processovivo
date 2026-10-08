@@ -85,6 +85,8 @@ export const ESTILOS_TABELA_ATUALIZACOES = `
 .nvt-classe{overflow-wrap:break-word;hyphens:manual}
 .nvt-classe-mini{display:none;margin-top:3px;font-size:12px;color:var(--tinta2)}
 .nvt-vazio{color:var(--tinta2)}
+.nvt-sem{color:var(--tinta2);font-size:12px;margin:0 0 2px}
+.nvt-sem-nov .nvt-tit{font-weight:500}
 .nvt-tit{font-weight:700;font-size:14px;line-height:1.4;overflow-wrap:anywhere}
 .nvt-tit.nl::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;
   background:var(--novo);margin-right:7px;vertical-align:2px}

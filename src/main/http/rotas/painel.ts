@@ -2,6 +2,7 @@ import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import type { ServicoAcompanhamento } from '../../../application/services/ServicoAcompanhamento.js';
 import type { ServicoPecas } from '../../../application/services/ServicoPecas.js';
 import { WorkspaceNaoResolvidoError } from '../../../domain/errors/index.js';
+import { estadoDaVerificacaoJson } from './acompanhamentos.js';
 import { estadoDaPasta } from '../../../domain/entities/estadoDaPasta.js';
 
 function workspaceDe(requisicao: FastifyRequest): string {
@@ -91,7 +92,8 @@ export function rotasDoPainel(
         verificacao: {
           ultimaEm: ultimaVerificacao?.toISOString() ?? null,
           naoVerificados,
-          emAndamento: acompanhamento.emAndamento,
+          // Por CONTA (v0.37.3): a varredura dos outros assinantes não é desta tela.
+          ...estadoDaVerificacaoJson(acompanhamento.estadoDa(ws)),
         },
         cards: {
           ativos,

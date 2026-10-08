@@ -15,13 +15,30 @@
 /** O mínimo que as regras leem de uma linha (um grupo de `agruparNovidades`). */
 export interface GrupoDaTabela {
   readonly numero: string;
-  readonly maisRecente: { readonly data: string; readonly detectadaEm: string };
+  readonly maisRecente: {
+    /** `null` só em processo sem nenhuma movimentação conhecida. */
+    readonly data: string | null;
+    /** `null` em processo sem novidade registrada: o acompanhamento não detectou nada. */
+    readonly detectadaEm: string | null;
+  };
   /** Quantas atualizações o processo tem no período (a tela só mostra a mais recente). */
   readonly quantidade: number;
   readonly naoVistas: number;
   readonly processo: {
     readonly tribunal: string | null;
     readonly pedeProvidencia: boolean;
+  } | null;
+}
+
+/** Linha de processo acompanhado sem novidade registrada, como o servidor a manda (`semNovidade`). */
+export interface ProcessoSemNovidade {
+  readonly numero: string;
+  readonly processo: GrupoDaTabela['processo'];
+  readonly segredoJustica: boolean;
+  readonly ultimaMovimentacao: {
+    readonly data: string;
+    readonly titulo: string;
+    readonly conteudo: string | null;
   } | null;
 }
 
@@ -98,6 +115,7 @@ export function ordenarGrupos<T extends GrupoDaTabela>(
     if (ordem.chave === 'tribunal') return (g.processo?.tribunal ?? '').toLowerCase();
     const iso =
       ordem.chave === 'dataAto' ? g.maisRecente.data : g.maisRecente.detectadaEm;
+    if (iso === null) return Number.NaN;
     const t = new Date(iso).getTime();
     return Number.isNaN(t) ? 0 : t;
   };
@@ -108,6 +126,11 @@ export function ordenarGrupos<T extends GrupoDaTabela>(
     // também não põe a linha sem dado na frente de quem tem.
     if (ordem.chave === 'tribunal' && (va === '') !== (vb === '')) {
       return va === '' ? 1 : -1;
+    }
+    // Data ausente (processo sem detecção ou sem movimentação) vai para o fim nas
+    // duas direções: ordenar não esconde, mas não põe a linha sem dado na frente.
+    if (typeof va === 'number' && typeof vb === 'number' && Number.isNaN(va) !== Number.isNaN(vb)) {
+      return Number.isNaN(va) ? 1 : -1;
     }
     const c =
       typeof va === 'number' && typeof vb === 'number'
@@ -176,4 +199,58 @@ export function textoDePartes(
   if (!a && !p) return '';
   // Um polo só: o traço diz que o OUTRO não veio — sem ele, "Fulano" não diria de que lado está.
   return (a || '—') + ' × ' + (p || '—');
+}
+
+/**
+ * A base da tabela (v0.37.3): primeiro os processos com atualização detectada, na
+ * ordem que o servidor mandou; depois os sem novidade, pela data da última
+ * movimentação (mais recente primeiro; sem movimentação por último). Com o período
+ * ligado (`incluirSemNovidade` falso) a lista é só a de quem tem atualização no período.
+ *
+ * A linha sem novidade ganha `semNovidade: true` e `detectadaEm: null` — não foi o
+ * acompanhamento que a detectou, e a tela não finge o contrário.
+ */
+export function montarLinhas<G extends GrupoDaTabela>(
+  grupos: readonly G[],
+  semNovidade: readonly ProcessoSemNovidade[],
+  incluirSemNovidade: boolean,
+): Array<G | LinhaSemNovidade> {
+  const saida: Array<G | LinhaSemNovidade> = grupos.slice();
+  if (!incluirSemNovidade) return saida;
+  const tempo = (p: ProcessoSemNovidade): number =>
+    p.ultimaMovimentacao ? new Date(p.ultimaMovimentacao.data).getTime() || 0 : -1;
+  const extras = semNovidade
+    .map((p, i) => ({ p, i }))
+    .sort((a, b) => tempo(b.p) - tempo(a.p) || a.i - b.i)
+    .map(({ p }): LinhaSemNovidade => {
+      const u = p.ultimaMovimentacao;
+      return {
+        numero: p.numero,
+        processo: p.processo,
+        quantidade: 0,
+        naoVistas: 0,
+        semNovidade: true,
+        segredoJustica: p.segredoJustica,
+        maisRecente: {
+          data: u ? u.data : null,
+          detectadaEm: null,
+          titulo: u ? u.titulo : '',
+          conteudo: u ? u.conteudo : null,
+          numero: p.numero,
+          vista: true,
+        },
+      };
+    });
+  return saida.concat(extras);
+}
+
+export interface LinhaSemNovidade extends GrupoDaTabela {
+  readonly semNovidade: true;
+  readonly segredoJustica: boolean;
+  readonly maisRecente: GrupoDaTabela['maisRecente'] & {
+    readonly titulo: string;
+    readonly conteudo: string | null;
+    readonly numero: string;
+    readonly vista: boolean;
+  };
 }

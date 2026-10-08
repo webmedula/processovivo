@@ -1,7 +1,9 @@
 import { WorkspaceNaoResolvidoError } from '../../../domain/errors/index.js';
 import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
-import { SincronizacaoEmAndamentoError } from '../../../application/services/ServicoAcompanhamento.js';
-import type { ServicoAcompanhamento } from '../../../application/services/ServicoAcompanhamento.js';
+import type {
+  EstadoDaVerificacao,
+  ServicoAcompanhamento,
+} from '../../../application/services/ServicoAcompanhamento.js';
 import type {
   Acompanhamento,
   Novidade,
@@ -32,6 +34,16 @@ function diasValidos(bruto: string | undefined): number | undefined {
   if (!bruto) return undefined;
   const n = Number(bruto);
   return Number.isInteger(n) && n > 0 && n <= 3650 ? n : undefined;
+}
+
+/** O que a tela sabe da verificação da conta: sem fila global, sem outras contas. */
+export function estadoDaVerificacaoJson(e: EstadoDaVerificacao): Record<string, unknown> {
+  return {
+    emAndamento: e.emAndamento,
+    pendentes: e.pendentes,
+    desde: e.desde?.toISOString() ?? null,
+    demorando: e.demorando,
+  };
 }
 
 function resumoJson(
@@ -184,6 +196,43 @@ function grupoJson(
     // anteriores. Um processo com 300 atualizações não trafega 300 itens (v0.37.1).
     quantidade: 1 + g.anteriores.length,
     naoVistas: g.naoVistas,
+  };
+}
+
+/** Trecho do texto do ato que viaja na linha de processo sem novidade; a tela encurta mais. */
+const MAX_CONTEUDO_SEM_NOVIDADE = 600;
+
+/**
+ * Linha de um processo acompanhado que NÃO tem novidade registrada (v0.37.3).
+ *
+ * Lê só o retrato que o acompanhamento já guarda (`ultimaMovimentacao`) — nada de
+ * consulta ao tribunal, nada gravado. Não é novidade e não se apresenta como tal:
+ * por isso vive num campo à parte (`semNovidade`) e nunca entra em `novidades`.
+ *
+ * Segredo de justiça: vai o rótulo e a data, que é o que a carteira ("Meus
+ * processos") já mostra; o TEXTO do ato não sai, porque a tela só o exibia para
+ * novidade e o retrato do sigiloso pode trazer conteúdo que a carteira nunca mostra.
+ */
+function linhaSemNovidade(
+  a: AcompanhamentoResumido,
+  info: Record<string, unknown>,
+): Record<string, unknown> {
+  const segredo = a.processo?.segredoJustica ?? false;
+  const ultima = a.ultimaMovimentacao;
+  return {
+    numero: a.numero,
+    processo: info,
+    segredoJustica: segredo,
+    ultimaMovimentacao: ultima
+      ? {
+          data: ultima.data.toISOString(),
+          titulo: ultima.titulo,
+          conteudo:
+            !segredo && ultima.conteudo
+              ? ultima.conteudo.slice(0, MAX_CONTEUDO_SEM_NOVIDADE)
+              : null,
+        }
+      : null,
   };
 }
 
@@ -353,12 +402,28 @@ export function rotasDeAcompanhamento(
       const agrupadas = agruparNovidades(lista, instante, janelaDias);
       // Sempre do workspace de quem pediu: a carteira de outro nunca entra aqui.
       const infoPorNumero = new Map<string, Record<string, unknown>>();
-      for (const a of await servico.listar(ws)) {
+      const carteira = await servico.listar(ws);
+      for (const a of carteira) {
         infoPorNumero.set(
           a.numero,
           infoDoProcesso(a, janelas.pendenciaJanelaDias, instante),
         );
       }
+      // Processos acompanhados SEM novidade nenhuma registrada (em qualquer data):
+      // a primeira sincronização guarda o retrato e não gera novidade, por regra.
+      // `lista` já vem sem janela. Com `naoVistas` a pergunta é outra e o campo
+      // fica vazio — "sem novidade" só se afirma sobre a lista completa.
+      const numeroPedido = q.numero ? q.numero.replace(/\D/g, '') : undefined;
+      const daBusca = carteira.filter(
+        (a) =>
+          (!q.tribunal || a.processo?.tribunal === q.tribunal) &&
+          (!numeroPedido || a.numero === numeroPedido),
+      );
+      const comNovidade = new Set(lista.map((n) => n.numero));
+      const semNovidade = verdadeiro(q.naoVistas)
+        ? []
+        : daBusca.filter((a) => !comNovidade.has(a.numero));
+      const noGrupo = new Set(agrupadas.grupos.map((g) => g.numero));
       return {
         total: agrupadas.dentroDaJanela,
         // Contam ATUALIZAÇÕES não vistas, não linhas: o menu e o painel
@@ -381,6 +446,18 @@ export function rotasDeAcompanhamento(
         // O filtro "Pedem providência" diz de quantos dias é: um valor só, do servidor.
         pendenciaJanelaDias: janelas.pendenciaJanelaDias,
         foraDaJanela: agrupadas.foraDaJanela,
+        // (v0.37.3) Campos NOVOS; os de cima não mudaram. Processos acompanhados
+        // sem novidade registrada, com a última movimentação do retrato.
+        semNovidade: semNovidade.map((a) =>
+          linhaSemNovidade(a, infoPorNumero.get(a.numero) ?? {}),
+        ),
+        // Quantos PROCESSOS a janela deixou fora da lista (sem atualização no
+        // período, inclusive os sem novidade nenhuma). 0 quando a janela está
+        // desligada ("Todas") — nesse caso nenhum processo fica de fora.
+        processosForaDaJanela:
+          janelaDias === undefined || verdadeiro(q.naoVistas)
+            ? 0
+            : daBusca.filter((a) => !noGrupo.has(a.numero)).length,
         grupos: agrupadas.grupos.map((g) => grupoJson(g, infoPorNumero.get(g.numero))),
         // Só a mais recente de cada processo, como em `grupos`. `total` continua
         // contando as atualizações do período.
@@ -417,32 +494,32 @@ export function rotasDeAcompanhamento(
      * levaria o proxy a cortar antes do fim.
      */
     servidor.post('/v1/sincronizar', async (req, resposta) => {
-      if (servico.emAndamento) {
-        void resposta.code(409);
-        return {
-          erro: new SincronizacaoEmAndamentoError().codigo,
-          mensagem: new SincronizacaoEmAndamentoError().message,
-        };
-      }
       // ESCOPADA ao chamador. A versão global existe e é a agendada — deixar
       // a rota HTTP disparar aquela permitia a qualquer conta mandar o
       // servidor consultar o tribunal sobre a carteira de TODOS os
       // assinantes, gravando nos dados deles e gastando a cota do CNJ em
       // nome deles.
-      void servico.sincronizar({ workspace: workspaceDe(req) }).catch(() => {
-        /* já registrado no log pelo serviço */
-      });
+      //
+      // Desde a v0.37.3 a varredura de OUTRA conta não barra o pedido (era 409
+      // para quem não tinha nada a ver com ela): o pedido espera a vez, e uma
+      // verificação desta conta já em curso nunca vira uma segunda.
+      const resultado = servico.solicitar(workspaceDe(req));
       void resposta.code(202);
       return {
-        iniciada: true,
+        iniciada: resultado !== 'ja_em_andamento',
+        jaEmAndamento: resultado === 'ja_em_andamento',
+        naFila: resultado === 'na_fila',
         mensagem:
-          'Varredura iniciada em segundo plano. Cada processo leva alguns segundos; ' +
-          'as novidades aparecem no feed conforme forem detectadas.',
+          resultado === 'ja_em_andamento'
+            ? 'Já há uma verificação dos seus processos em andamento.'
+            : 'Verificação iniciada em segundo plano. Cada processo leva alguns segundos; ' +
+              'as novidades aparecem no feed conforme forem detectadas.',
       };
     });
 
-    servidor.get('/v1/sincronizacao', async () => ({
-      emAndamento: servico.emAndamento,
-    }));
+    // Só os processos DESTA conta: nenhum número da fila global sai daqui.
+    servidor.get('/v1/sincronizacao', async (req) =>
+      estadoDaVerificacaoJson(servico.estadoDa(workspaceDe(req))),
+    );
   };
 }

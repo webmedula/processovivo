@@ -68,10 +68,21 @@ describe('tela de Atualizações — uma linha por processo', () => {
     expect(ESTILOS_ATUALIZACOES).not.toContain('.baixa');
   });
 
-  it('a janela e o aviso de ocultas são do módulo: "Todas" e "N mais antigas não mostradas"', () => {
+  it('o período é filtro opcional do módulo: "Todas" é o padrão e o aviso fala de PROCESSOS (v0.37.3)', () => {
     expect(SCRIPT_ATUALIZACOES).toContain('>Todas<');
-    expect(SCRIPT_ATUALIZACOES).toContain('não mostrada');
-    expect(SCRIPT_ATUALIZACOES).toContain('anterior');
+    expect(SCRIPT_ATUALIZACOES).toContain('sem atualização');
+    expect(SCRIPT_ATUALIZACOES).toContain('Ver todos');
+    // O padrão do console é "Todas": só pede a janela quem a ligou.
+    expect(SCRIPT).toContain("window.__f_nv_janela==='padrao'?'':'&janela=todas'");
+    // A mensagem antiga, que falava de atualizações e escondia o processo, saiu.
+    expect(SCRIPT_ATUALIZACOES).not.toContain('não mostrada');
+  });
+
+  it('processo sem novidade: linha própria, sem detecção e sem texto de ato sigiloso', () => {
+    expect(SCRIPT_ATUALIZACOES).toContain('Nenhuma movimentação conhecida');
+    expect(SCRIPT_ATUALIZACOES).toContain('sem detecção registrada');
+    expect(SCRIPT_ATUALIZACOES).toContain('Última movimentação conhecida');
+    expect(SCRIPT_ATUALIZACOES).toContain('O texto do ato não é exibido aqui');
   });
 
   it('exigeAcao só MARCA: o módulo nunca filtra por ele', () => {
@@ -145,5 +156,23 @@ describe('janela de pendência em um único lugar', () => {
       expect(fonte, rel).not.toMatch(/\*\s*86_?400_?000/);
     }
     expect(lerSrc('domain/entities/estadoDaPasta.ts')).not.toContain('DIAS_DE_PENDENCIA');
+  });
+});
+
+describe('selo de verificação por conta (v0.37.3)', () => {
+  it('"demorando" para de girar e diz que as fontes estão lentas, com a última verificação', () => {
+    const selo = corpoDe('seloDeVerificacao');
+    expect(selo).toContain('ver.demorando');
+    expect(selo).toContain('Verificação demorando: as fontes do tribunal estão lentas.');
+    expect(selo).toContain('Última verificação às ');
+    // O spinner só vem depois do caso "demorando".
+    expect(selo.indexOf('ver.demorando')).toBeLessThan(selo.indexOf('Verificando agora'));
+  });
+
+  it('o clique lê o estado DA CONTA e não desiste nem dispara de novo', () => {
+    const disparo = corpoDe('dispararSync');
+    expect(disparo).toContain('/v1/sincronizacao');
+    expect(disparo).toContain('jaEmAndamento');
+    expect(disparo).toContain('s.demorando');
   });
 });

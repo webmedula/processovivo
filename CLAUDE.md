@@ -903,7 +903,7 @@ Não são detalhes — moldam o código.
   cortou (`ui/trechoDeTexto.ts`, função pura injetada no console por
   `toString()`). Só a exibição encurta; dado e API seguem inteiros e nenhuma
   atualização some.
-- **Atualizações: uma linha por processo, janela de 15 dias** (v0.32.1; desde a v0.37.0 a linha é uma linha de TABELA, ver a regra da v0.37.0,
+- **Atualizações: uma linha por processo, janela de 15 dias** (v0.32.1; desde a v0.37.3 a janela é filtro opcional, desligado por padrão, e a aba lista todos os processos; desde a v0.37.0 a linha é uma linha de TABELA, ver a regra da v0.37.0,
   `NOVIDADES_JANELA_DIAS`). A tela diz quantas atualizações mais antigas ficaram de
   fora da janela e oferece "Todas" (o "+N anteriores" da v0.32.1 saiu na v0.37.1). A janela
   decide pela hora em que o sistema PERCEBEU (`detectadaEm`), nunca pela data do
@@ -982,6 +982,36 @@ Não são detalhes — moldam o código.
   1366 e 1280 px. **Meus processos não tem rodapé "N de N":** sem filtro o subtítulo diz
   o total; com filtro só o aviso "Mostrando X de Y" conta (Y sem filtro) — a contagem não
   se repete na aba (a da lateral, `cont-processos`, é o mesmo total sem filtro).
+- **Atualizações lista TODOS os processos acompanhados; o período é filtro opcional,
+  desligado por padrão; o estado de verificação é por conta** (v0.37.3, decisão do
+  dono; substitui a "janela de 15 dias" que escondia por padrão). (1) A aba só listava
+  processo com novidade, e a primeira sincronização guarda o retrato SEM gerar novidade
+  (regra que não muda): o processo recém-acompanhado sumia sem aviso — "triagem ordena,
+  nunca esconde" aplicada a PROCESSO, não só a ato. `GET /v1/novidades` ganhou dois
+  campos e nenhum mudou: `semNovidade` (acompanhados sem novidade registrada, com a
+  `ultimaMovimentacao` do retrato; vazio com `naoVistas=true`, porque "sem novidade"
+  só se afirma sobre a lista completa) e `processosForaDaJanela`. **Nenhuma novidade
+  falsa é criada**: a linha é lida do retrato, sem consulta ao tribunal, sem migração e
+  sem retrocarga. (2) A linha sem novidade mostra a última movimentação conhecida (mesma
+  `descricaoDoAto` e mesmo trecho), "Detectado" = "—" ("sem detecção registrada"),
+  situação vazia — só "Pede providência" pelo `estadoDaPasta`, como na carteira — e, sem
+  movimentação, "Nenhuma movimentação conhecida". **Segredo de justiça: rótulo e data,
+  nunca o texto do ato** (o servidor nem o envia). Ordem padrão: com atualização
+  detectada primeiro, depois os demais pela data do ato; data ausente vai para o fim em
+  qualquer direção. (3) O período ("Últimos 15 dias") nasce desligado; ligado, a tela
+  diz quantos PROCESSOS tirou ("N processos sem atualização nos últimos 15 dias · Ver
+  todos"), e o console só pede a janela quando a pessoa a liga. As regras puras
+  (`montarLinhas`) ficam em `ui/tabelaAtualizacoes.ts`. (4) **"Verificando agora" é DA
+  CONTA.** `ServicoAcompanhamento.estadoDa(workspace)` deriva o estado dos processos
+  daquela conta ainda pendentes na rodada (a varredura global enche e esvazia o
+  conjunto item a item); `GET /v1/sincronizacao` e `verificacao` do painel devolvem só
+  `{ emAndamento, pendentes, desde, demorando }` — **nenhum número da fila global e
+  nenhum dado de outra conta**. `POST /v1/sincronizar` (`solicitar`) nunca dispara uma
+  segunda verificação da mesma conta e não dá 409 por varredura alheia: espera a vez
+  (continua UMA varredura por vez no processo, por causa da cota do CNJ). Passados 5
+  minutos (`LIMITE_VERIFICACAO_DEMORADA_MS`) a conta está `demorando` e a tela para de
+  girar e diz que as fontes estão lentas. Falha no meio da fila não deixa a conta
+  "verificando" para sempre (o conjunto é limpo no `finally`).
 - **Encerramento se decide pelo ato MAIS RECENTE, nunca pelo histórico.**
   Processo arquivado e depois desarquivado tem os dois atos nos autos; procurar
   "existe arquivamento" marcaria como encerrada a pasta que voltou a correr — e
@@ -1314,8 +1344,8 @@ teste e carência** (v0.28.0), **visual novo a partir do logo** (v0.29.0),
 **calendário: detecção, agenda, tela e feed ICS** (v0.32.0),
 **ajustes dos advogados: Atualizações por processo, peças no topo, providência em 10 dias** (v0.32.1),
 **Pasta digital: backend (v0.33.0) e tela (v0.33.1) — peça aberta ao clique, guarda por peça, montar pasta completa, baixar marcadas**,
-**ato (movimentação) de cada peça na lista da Pasta, com descrição** (v0.33.2) **e o número da movimentação calculado pela posição do ato, com aviso de atos bloqueados** (v0.34.0; a 0.33.3 havia removido o número errado da 0.33.2), **calibração do número com o Projudi feita pelo advogado: exato quando provado, faixa ou estimado quando não** (v0.35.0), **página inicial: Últimas atualizações mostra só o trecho do texto e o trilho de peças baixadas não estoura a largura** (v0.35.1), **Pasta: número da movimentação no lugar do índice; página inicial: "detectado há N dias" e cartão "pede providência"** (v0.35.2), **Pasta: lista em altura total com avisos compactados** (v0.35.3), **Pasta: todas as movimentações na lista, inclusive as sem peça, com lacuna de numeração provada e lista mais larga** (v0.36.0), **página inicial: tabela de últimas atualizações, uma linha por processo, com filtros que contam no lugar dos cartões; histórico de peças baixadas dentro da Pasta** (v0.37.0), **tabela sem "+N anteriores", "Detectado" enxuto e descrição do ato sem repetição na exibição** (v0.37.1), **classe legível e agrupada no filtro, última movimentação sem repetição e carteira sem rodapé redundante** (v0.37.2),
-Dockerfile multi-stage, CI, 1417 testes.
+**ato (movimentação) de cada peça na lista da Pasta, com descrição** (v0.33.2) **e o número da movimentação calculado pela posição do ato, com aviso de atos bloqueados** (v0.34.0; a 0.33.3 havia removido o número errado da 0.33.2), **calibração do número com o Projudi feita pelo advogado: exato quando provado, faixa ou estimado quando não** (v0.35.0), **página inicial: Últimas atualizações mostra só o trecho do texto e o trilho de peças baixadas não estoura a largura** (v0.35.1), **Pasta: número da movimentação no lugar do índice; página inicial: "detectado há N dias" e cartão "pede providência"** (v0.35.2), **Pasta: lista em altura total com avisos compactados** (v0.35.3), **Pasta: todas as movimentações na lista, inclusive as sem peça, com lacuna de numeração provada e lista mais larga** (v0.36.0), **página inicial: tabela de últimas atualizações, uma linha por processo, com filtros que contam no lugar dos cartões; histórico de peças baixadas dentro da Pasta** (v0.37.0), **tabela sem "+N anteriores", "Detectado" enxuto e descrição do ato sem repetição na exibição** (v0.37.1), **classe legível e agrupada no filtro, última movimentação sem repetição e carteira sem rodapé redundante** (v0.37.2), **Atualizações lista todos os processos acompanhados, período como filtro opcional e verificação por conta** (v0.37.3),
+Dockerfile multi-stage, CI, 1451 testes.
 
 **Pasta digital (v0.33.0, backend):** `GET /v1/processos/:numero/pasta` (lista +
 estado de cada peça + intervalos de página + totais SEM filtro + procedência
