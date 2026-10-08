@@ -81,7 +81,8 @@ desenho quebrou. Use a porta.
 src/
 ├── domain/                      # o núcleo, sem I/O
 │   ├── entities/                # Processo, Movimentacao, Parte, NumeroCNJ, Oab,
-│   │                            #   posicaoDoAto + numeracaoDoProjudi (Pasta digital)
+│   │                            #   posicaoDoAto + numeracaoDoProjudi (Pasta digital),
+│   │                            #   tipoDaComunicacao + estadoDaPasta/lerProvidencia (cumprido)
 │   ├── errors/                  # hierarquia de DomainError
 │   ├── ports/                   # ProcessoProvider, RepositorioAcompanhamentos, Cache…
 │   └── usecases/                # BuscarProcessoPorNumero, BuscarProcessosPorOab
@@ -214,6 +215,8 @@ interface ProcessoProvider {
 | `PastaSemPecasParaJuntarError` | montar/baixar sem nenhuma peça guardável (lista vazia ou só sigilosas) | 409; não monta PDF vazio |
 | `CalibracaoDeNumeracaoInvalidaError` | número do Projudi informado não serve como âncora (fora dos atos, abaixo da posição, incompatível com os outros, acima de 50) | 400; a mensagem diz qual — conferir o que foi digitado |
 | `FeedDoCalendarioNaoEncontradoError` | token do feed inválido, revogado, assinatura bloqueada ou plano sem o recurso | 404 com o MESMO corpo seco nos quatro casos |
+| `AcompanhamentoNaoEncontradoError` | pediu algo sobre processo que ESTE workspace não acompanha | 404; mesma resposta para "não existe" e "é de outra conta" |
+| `AtoDaProvidenciaInvalidoError` | "marcar como cumprido" apontou para ato que saiu do retrato ou que não pede providência | 409; a tela recarrega e a pessoa decide de novo |
 
 **A distinção que sustenta o produto:** "esse processo não existe" ≠ "não
 consegui ver esse processo". Colapsar as duas coisas faz o sistema dizer ao
@@ -1026,6 +1029,61 @@ Não são detalhes — moldam o código.
   minutos (`LIMITE_VERIFICACAO_DEMORADA_MS`) a conta está `demorando` e a tela para de
   girar e diz que as fontes estão lentas. Falha no meio da fila não deixa a conta
   "verificando" para sempre (o conjunto é limpo no `finally`).
+- **Fonte nova no retrato NÃO despeja o passado como novidade** (v0.37.5, a
+  "avalanche"). A vigilância por OAB grava o processo só com o DJEN; na primeira
+  varredura regular o retrato vira DataJud+DJEN e `detectarNovidades` tratava a linha
+  do tempo inteira do DataJud como nova (log real: 892 novidades em 4 processos, ato
+  de 2024 "detectado há 2 dias"). A regra (em `detectarNovidades`, então vale para as
+  três portas de entrada): movimentação de uma fonte que o retrato ANTERIOR não tinha
+  (`procedencia.provider` separado por `+`, `fonte` do andamento) e anterior ao ato
+  MAIS RECENTE que o retrato anterior já conhecia é linha de base, não novidade —
+  ato posterior a ele continua avisando (na dúvida, avisa; é o caso da publicação do
+  DJEN que chega a um processo que só tinha o DataJud). Retrato anterior sem nenhum ato
+  usa o início do dia da consulta. Cobre também fonte que cai e volta (o
+  retrato é regravado só com a outra). Não há campo novo de "completude": a procedência
+  já é essa informação, e um campo a mais seria uma segunda verdade para manter em
+  sincronia. A unicidade das novidades não mudou e **nada foi apagado**: o que a
+  avalanche já gravou fica, e o reparo é uma ferramenta do operador — `npm run cli --
+  novidades reparar` é **dry-run por padrão** (só conta, por workspace, sem número de
+  processo); `--aplicar` apenas marca como lidas as novidades ANTIGAS de lotes
+  suspeitos (nunca apaga; um ato recente no meio do lote continua não lido) e grava os
+  `id` para `--desfazer <arquivo>`. Quem decide aplicar é o dono.
+- **Intimação/citação do Diário pede providência por 30 dias ou até o "cumprido"**
+  (v0.37.5). O DJEN informa `tipoComunicacao`; o mapper guarda SÓ o tipo em
+  `Movimentacao.tipoComunicacao` (a data é a de disponibilização e o id da comunicação
+  já é o `idExterno`) — sem texto a mais, sem migração de esquema, preenchido na
+  próxima sincronização. `tipoDaComunicacao()` classifica intimação / citação / outro
+  (pelo começo da palavra: "Edital de citação" é edital) e `triar` marca esses atos
+  `exigeAcao` mesmo como "Ato ordinatório". A janela deles é
+  `PENDENCIA_INTIMACAO_JANELA_DIAS` (30); os demais atos seguem em 10. **Não é prazo**:
+  o sistema não sabe quanto tempo o ato deu (a "data limite" do Projudi não chega por
+  fonte nenhuma que usamos; `consultarAvisosPendentes` do MNI devolveu 50 avisos — 49
+  `VIS` — para uma tela de 10 e nenhum campo de prazo, então NÃO é a fonte desta lista).
+  Vencida a janela sem marca, o processo sai do filtro, continua em "Todas" e a tela diz
+  quantos saíram ("N sem marca há mais de 30 dias") — sumir calado seria perder o ato.
+- **"Cumprido" é por ATO, e ler não é cumprir** (v0.37.5). A marca vive na linha de
+  `acompanhamentos` (`cumprido_chave`, `cumprido_ate`, `cumprido_em`, `cumprido_por`;
+  migração aditiva, sem retrocarga: ninguém marcou, NULL é a verdade) e guarda a chave
+  do ato (`chaveDaMovimentacao`) e a data dele: **cobre os atos até aquela data,
+  inclusive** (o DJEN só dá o dia: ato do mesmo dia fica coberto); ato posterior que
+  exija ação volta a pedir sozinho. Só atos que de fato pedem providência podem ser
+  marcados, o ato vem da tela (não o escolhemos no servidor) e a marca nunca recua.
+  NÃO toca a detecção de novidades nem a "não lida". Rotas `POST`/`DELETE
+  /v1/acompanhamentos/:numero/cumprido` (Zod; isolamento por workspace; a resposta traz
+  o `processo` recalculado, então a tela não recarrega a lista); `GET /v1/novidades`
+  ganhou `processo.providencia` (`situacao` `pede`|`cumprida`|`venceu`, `motivo`
+  {rotulo, data, chave, tipo}, `cumpridoEm`) e `pendenciaIntimacaoJanelaDias` — aditivo.
+  `estadoDaPasta` usa a marca, então a carteira e o painel concordam com a tela. **Tela:**
+  o selo se calcula sobre o retrato inteiro e a linha mostra UM ato; quando o que gera a
+  providência é outro, a linha ganha "Pede providência por: {ato} · {data}" (rótulo e
+  data, nunca texto de ato nem prazo; segredo de justiça mostra só isso). O chip conta
+  só os que AINDA pedem; "N marcados como cumpridos · Ver" lista os marcados com
+  "Desfazer", e desfazer pede confirmação leve na própria célula (sem `alert`/`confirm`;
+  Esc cancela). Ação num componente só, `ui/providencia.ts` (`window.__pvProvidencia`);
+  a mensagem de erro é a do servidor — o `explicar()` do console diz "já existe uma
+  conta" para todo 409. Foco: depois de marcar vai ao vizinho; `aria-live` discreto.
+  **Hoje só a tabela de Atualizações tem o botão**: a Pasta não tem selo de providência
+  e o cartão da tela do processo mora no `script.ts`, que não cresce.
 - **Encerramento se decide pelo ato MAIS RECENTE, nunca pelo histórico.**
   Processo arquivado e depois desarquivado tem os dois atos nos autos; procurar
   "existe arquivamento" marcaria como encerrada a pasta que voltou a correr — e
@@ -1358,8 +1416,8 @@ teste e carência** (v0.28.0), **visual novo a partir do logo** (v0.29.0),
 **calendário: detecção, agenda, tela e feed ICS** (v0.32.0),
 **ajustes dos advogados: Atualizações por processo, peças no topo, providência em 10 dias** (v0.32.1),
 **Pasta digital: backend (v0.33.0) e tela (v0.33.1) — peça aberta ao clique, guarda por peça, montar pasta completa, baixar marcadas**,
-**ato (movimentação) de cada peça na lista da Pasta, com descrição** (v0.33.2) **e o número da movimentação calculado pela posição do ato, com aviso de atos bloqueados** (v0.34.0; a 0.33.3 havia removido o número errado da 0.33.2), **calibração do número com o Projudi feita pelo advogado: exato quando provado, faixa ou estimado quando não** (v0.35.0), **página inicial: Últimas atualizações mostra só o trecho do texto e o trilho de peças baixadas não estoura a largura** (v0.35.1), **Pasta: número da movimentação no lugar do índice; página inicial: "detectado há N dias" e cartão "pede providência"** (v0.35.2), **Pasta: lista em altura total com avisos compactados** (v0.35.3), **Pasta: todas as movimentações na lista, inclusive as sem peça, com lacuna de numeração provada e lista mais larga** (v0.36.0), **página inicial: tabela de últimas atualizações, uma linha por processo, com filtros que contam no lugar dos cartões; histórico de peças baixadas dentro da Pasta** (v0.37.0), **tabela sem "+N anteriores", "Detectado" enxuto e descrição do ato sem repetição na exibição** (v0.37.1), **classe legível e agrupada no filtro, última movimentação sem repetição e carteira sem rodapé redundante** (v0.37.2), **Atualizações lista todos os processos acompanhados, período como filtro opcional e verificação por conta** (v0.37.3), **Atualizações abre em "Pedem providência", com a lista completa a um clique** (v0.37.4),
-Dockerfile multi-stage, CI, 1451 testes.
+**ato (movimentação) de cada peça na lista da Pasta, com descrição** (v0.33.2) **e o número da movimentação calculado pela posição do ato, com aviso de atos bloqueados** (v0.34.0; a 0.33.3 havia removido o número errado da 0.33.2), **calibração do número com o Projudi feita pelo advogado: exato quando provado, faixa ou estimado quando não** (v0.35.0), **página inicial: Últimas atualizações mostra só o trecho do texto e o trilho de peças baixadas não estoura a largura** (v0.35.1), **Pasta: número da movimentação no lugar do índice; página inicial: "detectado há N dias" e cartão "pede providência"** (v0.35.2), **Pasta: lista em altura total com avisos compactados** (v0.35.3), **Pasta: todas as movimentações na lista, inclusive as sem peça, com lacuna de numeração provada e lista mais larga** (v0.36.0), **página inicial: tabela de últimas atualizações, uma linha por processo, com filtros que contam no lugar dos cartões; histórico de peças baixadas dentro da Pasta** (v0.37.0), **tabela sem "+N anteriores", "Detectado" enxuto e descrição do ato sem repetição na exibição** (v0.37.1), **classe legível e agrupada no filtro, última movimentação sem repetição e carteira sem rodapé redundante** (v0.37.2), **Atualizações lista todos os processos acompanhados, período como filtro opcional e verificação por conta** (v0.37.3), **Atualizações abre em "Pedem providência", com a lista completa a um clique** (v0.37.4), **intimação do Diário pede providência por 30 dias ou até "cumprido", marca por ato, correção da avalanche de novidades e reparo só com dry-run** (v0.37.5),
+Dockerfile multi-stage, CI, 1570 testes.
 
 **Pasta digital (v0.33.0, backend):** `GET /v1/processos/:numero/pasta` (lista +
 estado de cada peça + intervalos de página + totais SEM filtro + procedência

@@ -4,6 +4,10 @@ import { descricaoDoAto } from '../../src/domain/entities/descricaoDoAto.js';
 import { trechoDeTexto } from '../../src/main/http/ui/trechoDeTexto.js';
 import {
   SITUACAO_PADRAO,
+  atoQueGeraAProvidencia,
+  contarSaidasDaProvidencia,
+  frasesDeSaidas,
+  seloDoTipo,
   contarSemLeitura,
   contarSituacoes,
   filtrarPorSituacao,
@@ -447,5 +451,100 @@ describe('padrão "Pedem providência" (v0.37.4)', () => {
     );
     expect(contarSemLeitura(sem)).toBe(1);
     expect(filtrarPorSituacao(sem, 'providencia').map((x) => x.numero)).toEqual(['1']);
+  });
+});
+
+/* ------------------------------------------------------------------ v0.37.5 */
+const ATO = {
+  rotulo: 'Ato ordinatório',
+  data: '2026-09-25T03:00:00.000Z',
+  chave: 'k',
+  tipo: 'intimacao' as const,
+};
+const comProv = (situacao: 'pede' | 'cumprida' | 'venceu'): GrupoDaTabela => ({
+  ...g('1'),
+  processo: {
+    tribunal: 'TJGO',
+    pedeProvidencia: situacao === 'pede',
+    providencia: { situacao, motivo: ATO, cumpridoEm: null },
+  },
+});
+
+describe('cumprido: contagens e frases da tela', () => {
+  it('"Ver" lista só os processos marcados como cumpridos', () => {
+    const grupos = [comProv('pede'), comProv('cumprida'), comProv('venceu'), g('9')];
+    expect(filtrarPorSituacao(grupos, 'cumpridos')).toHaveLength(1);
+    expect(filtrarPorSituacao(grupos, 'providencia')).toHaveLength(1);
+  });
+
+  it('o chip de providência conta só os que AINDA pedem', () => {
+    const grupos = [comProv('pede'), comProv('cumprida'), comProv('venceu')];
+    expect(contarSituacoes(grupos).pedemProvidencia).toBe(1);
+  });
+
+  it('conta quantos saíram por marca e quantos por tempo', () => {
+    const grupos = [comProv('pede'), comProv('cumprida'), comProv('cumprida'), comProv('venceu')];
+    expect(contarSaidasDaProvidencia(grupos)).toEqual({ cumpridos: 2, vencidos: 1 });
+  });
+
+  it('as frases dizem o número e a janela, sem a palavra "prazo"', () => {
+    expect(frasesDeSaidas(2, 1, 30)).toEqual({
+      cumpridos: '2 marcados como cumpridos',
+      vencidos: '1 sem marca há mais de 30 dias',
+    });
+    expect(frasesDeSaidas(1, 0, 30)).toEqual({ cumpridos: '1 marcado como cumprido', vencidos: '' });
+    expect(frasesDeSaidas(0, 0, 30)).toEqual({ cumpridos: '', vencidos: '' });
+    const todas = Object.values(frasesDeSaidas(3, 4, 30)).join(' ');
+    expect(todas).not.toMatch(/prazo/i);
+  });
+});
+
+describe('"Pede providência por": o ato que gera o selo, quando não é o da linha', () => {
+  const linha = (data: string | null, titulo: string, situacao: 'pede' | 'cumprida' = 'pede') => ({
+    maisRecente: { data, titulo },
+    processo: {
+      tribunal: null,
+      pedeProvidencia: situacao === 'pede',
+      providencia: { situacao, motivo: ATO, cumpridoEm: null },
+    },
+  });
+
+  it('mostra o ato quando a linha exibe OUTRA movimentação', () => {
+    expect(atoQueGeraAProvidencia(linha('2026-10-01T12:00:00.000Z', 'Juntada de petição'))).toEqual({
+      rotulo: 'Ato ordinatório',
+      data: ATO.data,
+      tipo: 'intimacao',
+    });
+  });
+
+  it('é o mesmo ato (rótulo e data iguais): nada a mais', () => {
+    expect(atoQueGeraAProvidencia(linha(ATO.data, ATO.rotulo))).toBeNull();
+  });
+
+  it('mesmo rótulo em outra data é outro ato', () => {
+    expect(atoQueGeraAProvidencia(linha('2026-10-01T12:00:00.000Z', ATO.rotulo))).not.toBeNull();
+  });
+
+  it('sem providência pendente, nada a dizer', () => {
+    expect(atoQueGeraAProvidencia(linha('2026-10-01T12:00:00.000Z', 'x', 'cumprida'))).toBeNull();
+    expect(atoQueGeraAProvidencia({ maisRecente: { data: null }, processo: null })).toBeNull();
+  });
+
+  it('o selo do tipo é Intimação ou Citação, e só isso', () => {
+    expect(seloDoTipo('intimacao')).toBe('Intimação');
+    expect(seloDoTipo('citacao')).toBe('Citação');
+    expect(seloDoTipo('outro')).toBe('');
+    expect(seloDoTipo(null)).toBe('');
+  });
+});
+
+describe('script da tela: o texto novo não fala em prazo', () => {
+  it('fora de comentário, a palavra só aparece no aviso de honestidade já existente', () => {
+    const semComentarios = SCRIPT_ATUALIZACOES.replace(/\/\*[\s\S]*?\*\//g, '');
+    const semAviso = semComentarios.replace(
+      'Leitura automática do andamento, não é contagem de prazo. Confira no processo.',
+      '',
+    );
+    expect(semAviso).not.toMatch(/prazo/i);
   });
 });

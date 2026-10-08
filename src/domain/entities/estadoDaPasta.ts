@@ -1,4 +1,7 @@
+import { chaveDaMovimentacao } from './Acompanhamento.js';
 import type { Movimentacao } from './Movimentacao.js';
+import { tipoDaComunicacao } from './tipoDaComunicacao.js';
+import type { TipoDaComunicacao } from './tipoDaComunicacao.js';
 import { triar } from './triagem.js';
 
 /**
@@ -33,6 +36,45 @@ export interface EstadoDaPasta {
   readonly naoVerificado: boolean;
   /** Por que o rótulo é este. Vai para o title do selo: heurística sem explicação não se audita. */
   readonly motivo?: string;
+  /**
+   * A leitura de providência por trás do rótulo (v0.37.5): qual ato a gera, qual
+   * ficou coberto por uma marca de "cumprido" e qual passou da janela sem marca.
+   * Existe para a tela mostrar o ATO (que pode não ser o último da linha do
+   * tempo) e para ela dizer o que a marca e o tempo tiraram do filtro.
+   */
+  readonly providencia: LeituraDaProvidencia;
+}
+
+/** Um ato que pede (ou pediu) providência, com o que a tela precisa para nomeá-lo. */
+export interface AtoDaProvidencia {
+  /** Título do ato como a fonte o entregou. */
+  readonly rotulo: string;
+  readonly data: Date;
+  /** `chaveDaMovimentacao`: é o que a marca de "cumprido" guarda. */
+  readonly chave: string;
+  /** Só o DJEN informa; `outro` para todo o resto. */
+  readonly tipo: TipoDaComunicacao;
+}
+
+/** A marca do advogado: "cumpri tudo até este ato". Ver `ServicoAcompanhamento.marcarComoCumprido`. */
+export interface MarcaDeCumprido {
+  readonly chave: string;
+  /** Data do ato marcado: cobre os atos até ela, inclusive. */
+  readonly ate: Date;
+  readonly em: Date;
+}
+
+export interface LeituraDaProvidencia {
+  /** O ato MAIS RECENTE que pede providência agora (dentro da janela e sem marca). */
+  readonly pendente?: AtoDaProvidencia;
+  /** Teria pedido, mas a marca de cumprido o cobre. Só preenchido quando nada mais pede. */
+  readonly coberto?: AtoDaProvidencia;
+  /**
+   * Intimação/citação do Diário que passou da janela SEM marca. Só preenchido
+   * quando nada mais pede providência: é o que a tela conta em "sem marca há
+   * mais de N dias".
+   */
+  readonly venceuPorTempo?: AtoDaProvidencia;
 }
 
 /**
@@ -55,6 +97,21 @@ export interface EstadoDaPasta {
  */
 export const PENDENCIA_JANELA_DIAS_PADRAO = 10;
 
+/**
+ * Quanto dura o "pede providência" de uma INTIMAÇÃO ou CITAÇÃO publicada no
+ * Diário Eletrônico (v0.37.5): até o advogado marcar como cumprido ou até 30 dias
+ * da disponibilização, o que vier antes. É um valor só, entregue à tela pelo
+ * servidor.
+ *
+ * NÃO é prazo e não se apresenta como tal. É a janela de LEITURA AUTOMÁTICA: o
+ * sistema não sabe quanto tempo o ato deu ao advogado (a "data limite" do
+ * Projudi não chega por nenhuma fonte que usamos), então escolhe um tempo em que
+ * ainda vale a pena olhar primeiro. Quando vence sem marca o processo sai do
+ * filtro, continua em "Todas", e a tela diz quantos saíram por tempo — sumir em
+ * silêncio seria perder o ato. Os demais atos seguem em `PENDENCIA_JANELA_DIAS`.
+ */
+export const PENDENCIA_INTIMACAO_JANELA_DIAS = 30;
+
 /** Instante a partir do qual um ato ainda está na janela de pendência. */
 export function inicioDaJanelaDePendencia(
   agora: Date,
@@ -68,34 +125,97 @@ const ENCERRAMENTO = /\b(arquivamento|arquivado|arquivados|baixa\s+definitiva)\b
 const REABERTURA = /\bdesarquiv/i;
 
 export interface EntradaDoEstado {
+  /** A marca de "cumprido" da pasta, se houver. Cobre os atos até a data dela. */
+  readonly cumprido?: MarcaDeCumprido;
   readonly erro?: string;
   readonly sincronizadoEm?: Date;
   readonly novidadesNaoVistas?: number;
   readonly movimentacoes?: readonly Movimentacao[];
 }
 
+/**
+ * Lê os atos que pedem providência, aplicando as duas janelas e a marca.
+ *
+ * Pura e sem estado: o servidor chama uma vez por processo e entrega o resultado
+ * à tela, que nunca refaz a conta. A marca cobre os atos até a DATA do ato
+ * marcado, inclusive — o DJEN só informa o dia, então um ato publicado no mesmo
+ * dia do marcado também fica coberto; ato de dia posterior que exija ação volta
+ * a pedir providência sozinho.
+ */
+export function lerProvidencia(
+  movs: readonly Movimentacao[],
+  agora: Date,
+  janelaDias: number = PENDENCIA_JANELA_DIAS_PADRAO,
+  janelaIntimacaoDias: number = PENDENCIA_INTIMACAO_JANELA_DIAS,
+  cumprido?: MarcaDeCumprido,
+): LeituraDaProvidencia {
+  let pendente: AtoDaProvidencia | undefined;
+  let coberto: AtoDaProvidencia | undefined;
+  let venceu: AtoDaProvidencia | undefined;
+  const maisRecente = (a: AtoDaProvidencia | undefined, b: AtoDaProvidencia): AtoDaProvidencia =>
+    !a || b.data.getTime() > a.data.getTime() ? b : a;
+
+  for (const m of movs) {
+    if (!(m.exigeAcao ?? triar(m).exigeAcao)) continue;
+    const tipo = tipoDaComunicacao(m.tipoComunicacao);
+    const ato: AtoDaProvidencia = {
+      rotulo: m.titulo,
+      data: m.data,
+      chave: chaveDaMovimentacao(m),
+      tipo,
+    };
+    const janela = tipo === 'outro' ? janelaDias : janelaIntimacaoDias;
+    const dentro = m.data.getTime() >= inicioDaJanelaDePendencia(agora, janela).getTime();
+    const marcado = cumprido !== undefined && m.data.getTime() <= cumprido.ate.getTime();
+
+    if (dentro && !marcado) pendente = maisRecente(pendente, ato);
+    else if (dentro && marcado) coberto = maisRecente(coberto, ato);
+    else if (!dentro && !marcado && tipo !== 'outro') venceu = maisRecente(venceu, ato);
+  }
+
+  // Cobertura e vencimento só informam quando nada mais pede providência: com um
+  // ato pendente, a linha é sobre ele.
+  return {
+    ...(pendente ? { pendente } : {}),
+    ...(!pendente && coberto ? { coberto } : {}),
+    ...(!pendente && venceu ? { venceuPorTempo: venceu } : {}),
+  };
+}
+
 export function estadoDaPasta(
   entrada: EntradaDoEstado,
   agora: Date = new Date(),
   janelaDias: number = PENDENCIA_JANELA_DIAS_PADRAO,
+  janelaIntimacaoDias: number = PENDENCIA_INTIMACAO_JANELA_DIAS,
 ): EstadoDaPasta {
   const naoVerificado =
     entrada.erro !== undefined || entrada.sincronizadoEm === undefined;
   const movs = entrada.movimentacoes ?? [];
 
-  const limite = inicioDaJanelaDePendencia(agora, janelaDias).getTime();
-  const recentes = movs.filter((m) => m.data.getTime() >= limite);
-  const pendente = recentes.find((m) => m.exigeAcao ?? triar(m).exigeAcao);
-  if (pendente) {
+  const providencia = lerProvidencia(
+    movs,
+    agora,
+    janelaDias,
+    janelaIntimacaoDias,
+    entrada.cumprido,
+  );
+  if (providencia.pendente) {
+    const dias = providencia.pendente.tipo === 'outro' ? janelaDias : janelaIntimacaoDias;
     return {
       rotulo: 'PROVIDENCIA',
       naoVerificado,
-      motivo: `"${pendente.titulo}" nos últimos ${janelaDias} dias`,
+      motivo: `"${providencia.pendente.rotulo}" nos últimos ${dias} dias`,
+      providencia,
     };
   }
 
   if ((entrada.novidadesNaoVistas ?? 0) > 0) {
-    return { rotulo: 'NOVIDADE', naoVerificado, motivo: 'há movimentação não lida' };
+    return {
+      rotulo: 'NOVIDADE',
+      naoVerificado,
+      motivo: 'há movimentação não lida',
+      providencia,
+    };
   }
 
   /*
@@ -106,10 +226,10 @@ export function estadoDaPasta(
    */
   const ultima = maisRecente(movs);
   if (ultima && ENCERRAMENTO.test(ultima.titulo) && !REABERTURA.test(ultima.titulo)) {
-    return { rotulo: 'ARQUIVADO', naoVerificado, motivo: ultima.titulo };
+    return { rotulo: 'ARQUIVADO', naoVerificado, motivo: ultima.titulo, providencia };
   }
 
-  return { rotulo: 'EM_CURSO', naoVerificado };
+  return { rotulo: 'EM_CURSO', naoVerificado, providencia };
 }
 
 function maisRecente(movs: readonly Movimentacao[]): Movimentacao | undefined {

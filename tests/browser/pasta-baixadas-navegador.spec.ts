@@ -347,6 +347,9 @@ describe.skipIf(sem)(
         const page = await ctx.newPage();
         page.setDefaultTimeout(15_000);
         await page.goto(amb.url + '/');
+        // Desde a v0.37.4 a aba abre em "Pedem providência", e este processo sintético
+        // não pede: a tabela está a um clique em "Todas" (o teste falhava antes da v0.37.5).
+        await page.getByRole('button', { name: /^Todas \(/ }).click();
         await page.waitForSelector('.nvt-tabela');
         // "Abrir processo": só o processo, a Pasta continua fechada.
         await page.click('.nvt-ic[data-acao="abrir"]');
@@ -368,6 +371,8 @@ describe.skipIf(sem)(
         await page.waitForSelector('#pasta-abrir');
         expect(await page.locator('#pasta').count()).toBe(0);
       } finally {
+        // Uma consulta ainda no ar quando o teste termina não pode virar erro solto.
+        await ctx.unrouteAll({ behavior: 'ignoreErrors' });
         await ctx.close();
         await browser.close();
         await amb.encerrar();

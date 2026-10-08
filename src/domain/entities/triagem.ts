@@ -1,4 +1,5 @@
 import type { Movimentacao } from './Movimentacao.js';
+import { tipoDaComunicacao } from './tipoDaComunicacao.js';
 
 /**
  * Separa o que o advogado precisa responder do que é registro de cartório.
@@ -158,6 +159,13 @@ export function triar(movimentacao: Movimentacao): Triagem {
   // Um teor que a fonte não entregou não pode ser triado pelo texto: o "não" da
   // heurística seria sobre uma string vazia, não sobre o ato. Vai pelo tipo.
   const temTexto = !movimentacao.teorIndisponivel && texto.length > 0;
+
+  // Intimação ou citação PUBLICADA no Diário (v0.37.5): o tipo vem da fonte, não
+  // do texto — "Ato ordinatório" e afins escapavam das listas abaixo. Vale
+  // também com o teor indisponível: o ato foi endereçado ao advogado de qualquer jeito.
+  if (tipoDaComunicacao(movimentacao.tipoComunicacao) !== 'outro') {
+    return { exigeAcao: true, motivo: 'intimação ou citação publicada no Diário' };
+  }
 
   const prazo = temTexto && PRAZO_EXPLICITO.test(texto);
   if (prazo) {

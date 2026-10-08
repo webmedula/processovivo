@@ -199,3 +199,46 @@ describe('banco — retrocarga tolerante', () => {
     db.close();
   });
 });
+
+
+/*
+ * As colunas da marca de "cumprido" (v0.37.5) foram acrescentadas com a tabela
+ * já em produção: sem a migração explícita, o deploy quebraria ao gravar a marca.
+ */
+describe('banco — colunas da marca de cumprido', () => {
+  it('acrescenta as quatro colunas a um banco no formato anterior, sem tocar nos dados', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'pv-migracao-'));
+    const caminho = join(dir, 'processovivo.db');
+    try {
+      const antigo = new DatabaseSync(caminho);
+      antigo.exec(`CREATE TABLE acompanhamentos (
+         workspace TEXT NOT NULL, numero TEXT NOT NULL, apelido TEXT,
+         criado_em TEXT NOT NULL, sincronizado_em TEXT, erro TEXT, processo TEXT,
+         tribunal TEXT, classe TEXT, ultima_mov_data TEXT, partes_texto TEXT, cliente TEXT,
+         PRIMARY KEY (workspace, numero))`);
+      antigo
+        .prepare("INSERT INTO acompanhamentos (workspace, numero, criado_em) VALUES ('ws', '1', '2026-01-01')")
+        .run();
+      antigo.close();
+
+      const db = abrirBanco(caminho);
+      const nomes = (
+        db.prepare('PRAGMA table_info(acompanhamentos)').all() as Array<{ name: string }>
+      ).map((c) => c.name);
+      for (const coluna of ['cumprido_chave', 'cumprido_ate', 'cumprido_em', 'cumprido_por']) {
+        expect(nomes).toContain(coluna);
+      }
+      const linha = db
+        .prepare("SELECT cumprido_chave FROM acompanhamentos WHERE workspace = 'ws'")
+        .get() as { cumprido_chave: string | null };
+      // Sem retrocarga, de propósito: ninguém marcou nada.
+      expect(linha.cumprido_chave).toBeNull();
+      db.close();
+
+      // E abrir de novo (a coluna já existe) não estoura.
+      expect(() => abrirBanco(caminho).close()).not.toThrow();
+    } finally {
+      rmSync(dirname(join(dir, 'x')), { recursive: true, force: true });
+    }
+  });
+});

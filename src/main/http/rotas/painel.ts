@@ -63,6 +63,7 @@ export function rotasDoPainel(
               : {}),
             novidadesNaoVistas: a.novidadesNaoVistas,
             ...(a.processo ? { movimentacoes: a.processo.movimentacoes } : {}),
+            ...(a.cumprido ? { cumprido: a.cumprido } : {}),
           },
           agora,
           pendenciaJanelaDias,

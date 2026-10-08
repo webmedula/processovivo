@@ -129,6 +129,11 @@ export function mapearMovimentacao(comunicacao: ComunicacaoDjen): Movimentacao {
     ...(texto ? { conteudo: texto } : {}),
     ...(naoPublico ? { teorIndisponivel: true } : {}),
     ...(comunicacao.link ? { url: comunicacao.link } : {}),
+    // Só o tipo, nunca mais texto: é o que deixa a triagem reconhecer a
+    // intimação/citação mesmo quando o documento se chama "Ato ordinatório".
+    ...(comunicacao.tipoComunicacao?.trim()
+      ? { tipoComunicacao: comunicacao.tipoComunicacao.trim() }
+      : {}),
   };
 }
 

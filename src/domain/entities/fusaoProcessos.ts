@@ -28,7 +28,16 @@ export function fundirProcessos(base: Processo, complemento: Processo): Processo
     );
   }
 
-  const fontes = [base.procedencia.provider, complemento.procedencia.provider];
+  // Sem repetir: a vigilância funde o retrato guardado ("datajud+djen") com um
+  // retrato só do DJEN a cada varredura, e a procedência crescia um "+djen" por
+  // vez. A procedência também é como se sabe quais fontes um retrato já viu.
+  const fontes = [
+    ...new Set(
+      [base.procedencia.provider, complemento.procedencia.provider].flatMap((p) =>
+        p.split('+'),
+      ),
+    ),
+  ];
 
   return new Processo({
     numero: base.numero,

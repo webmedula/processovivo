@@ -9,6 +9,82 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.37.5] — 2026-10-08
+
+A aba Atualizações (que já abre em "Pedem providência") passa a reconhecer as
+**intimações e citações publicadas no Diário Eletrônico**, a manter cada uma pendente
+por até 30 dias, e o advogado ganha um jeito de tirar da lista as que já cumpriu.
+Corrige junto a "avalanche" de novidades. Nenhuma
+consulta ao tribunal (nem MNI, nem sonda); o sistema continua sem calcular nem anunciar
+prazo: "pede providência" é leitura automática do andamento.
+
+### Corrigido
+
+- **Avalanche de novidades.** Processo descoberto pela vigilância por OAB é gravado só
+  com o retrato do DJEN; na primeira varredura regular o retrato passava a ser
+  DataJud+DJEN e `detectarNovidades` tratava a linha do tempo INTEIRA do DataJud como
+  novidade (num log real: 892 novidades em 4 processos, ato de 2024 "detectado há 2
+  dias"). Agora o que vem de uma fonte que o retrato anterior ainda não tinha e é
+  anterior ao ato mais recente que ele já conhecia é histórico: reforça a linha de base,
+  não avisa. Ato realmente novo (posterior ao que se conhecia) continua gerando novidade. O mesmo vale
+  para fonte que cai e volta. A completude do retrato sai da própria procedência
+  (`datajud+djen`), já gravada: nenhum campo novo. A regra de unicidade não mudou e
+  nenhuma novidade foi apagada.
+- A procedência de um retrato fundido não cresce mais um `+djen` a cada varredura da
+  vigilância (`fundirProcessos` deduplica as fontes).
+
+### Adicionado
+
+- **Tipo da comunicação do DJEN guardado** (`Movimentacao.tipoComunicacao`, só o tipo,
+  nenhum texto a mais; a data de disponibilização já era a `data` e o id da comunicação
+  já era o `idExterno`). Sem migração de esquema: o retrato é JSON e o campo opcional se
+  preenche na próxima sincronização de cada processo.
+- **`domain/entities/tipoDaComunicacao.ts`**: intimação / citação / outro. Intimação ou
+  citação do DJEN passa a **exigir ação** ("Ato ordinatório" e afins escapavam).
+- **`PENDENCIA_INTIMACAO_JANELA_DIAS` = 30**: para esses atos, "pede providência" dura até
+  o advogado marcar como cumprido ou 30 dias da disponibilização, o que vier antes. Não é
+  prazo. Os demais atos seguem em 10 dias. Quando a janela vence sem marca o processo sai
+  do filtro, continua em "Todas", e a tela diz quantos saíram: "N sem marca há mais de 30
+  dias".
+- **"Marcar como cumprido"** por processo: guarda workspace, processo, ato coberto (chave
+  e data), `cumpridoEm` e quem marcou. A marca cobre os atos até aquele; ato novo que
+  exija ação volta a pedir providência sozinho. Não mexe na detecção de novidades nem na
+  "não lida". Desfazer com confirmação leve, na própria célula (sem `alert`/`confirm`).
+  Colunas aditivas `cumprido_chave`, `cumprido_ate`, `cumprido_em`, `cumprido_por` em
+  `acompanhamentos` (migração explícita, sem retrocarga).
+- API: `POST` e `DELETE /v1/acompanhamentos/:numero/cumprido` (Zod, isolamento por
+  workspace, 404 igual para "não existe" e "é de outra conta", 409 para ato inválido).
+  `GET /v1/novidades`: `processo.providencia` (`situacao` `pede`|`cumprida`|`venceu`,
+  `motivo` {rotulo, data, chave, tipo}, `cumpridoEm`) e `pendenciaIntimacaoJanelaDias`.
+  Nada foi removido nem renomeado.
+- Tela: selo "Intimação"/"Citação"; segunda linha "Pede providência por: {ato} · {data}"
+  quando o ato que gera o selo não é o da linha; "N marcados como cumpridos · Ver" (lista
+  os marcados, com Desfazer); componente único de ação em `ui/providencia.ts`.
+- **Reparo opcional da avalanche**: `npm run cli -- novidades reparar` (dry-run por
+  padrão; só conta, por workspace, sem número de processo). Com `--aplicar` apenas marca
+  como lidas as novidades antigas de lotes suspeitos, nunca apaga, e grava os `id` num
+  arquivo; `--desfazer <arquivo>` reverte. Quem decide aplicar é o dono.
+
+### Alterado
+
+- `estadoDaPasta` devolve também a leitura da providência (`providencia`) e aceita a
+  marca de cumprido; a carteira ("Meus processos") e o painel usam a mesma regra, então o
+  selo some lá também depois de marcado.
+
+### Testes
+
+- Unidade: avalanche reproduzida e corrigida (ponta a ponta: vigilância → varredura regular
+  → zero novidades; ato novo → 1), classificação do tipo, janela de 30 dias com relógio
+  fake, marca cobre só até o ato e ato novo reabre, desfazer, isolamento por workspace,
+  rotas, migração, reparo.
+- Navegador: marcar tira da lista e atualiza a frase, "Ver" e "Desfazer", selo, segunda
+  linha, teclado, foco, sem rolagem horizontal em 1920/1366/1280/1024/768/390 px, axe nos
+  temas claro e escuro.
+- O teste `pasta-baixadas-navegador` já falhava antes desta versão (a aba abre em
+  "Pedem providência" desde a 0.37.4); passou a clicar em "Todas".
+
+---
+
 ## [0.37.4] — 2026-10-08
 
 Um ajuste na página de Atualizações, decisão do dono (opção A): a aba abre mostrando

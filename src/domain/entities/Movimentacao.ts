@@ -52,6 +52,14 @@ export interface Movimentacao {
    * tribunal, não um espaço em branco que parece defeito nosso.
    */
   readonly teorIndisponivel?: boolean;
+  /**
+   * Tipo da comunicação como o DJEN o entrega ("Intimação", "Citação"…), só nas
+   * movimentações que vieram do DJEN. É metadado, não texto do ato: guardado
+   * para a triagem reconhecer o que foi ENDEREÇADO a alguém (ver
+   * `tipoDaComunicacao.ts`). A data da movimentação já é a de disponibilização
+   * e o identificador da comunicação já mora em `idExterno` (`djen:<id>`).
+   */
+  readonly tipoComunicacao?: string;
   /** Se o ato abre prazo ou pede providência. Ver `triagem.ts`. */
   readonly exigeAcao?: boolean;
 }

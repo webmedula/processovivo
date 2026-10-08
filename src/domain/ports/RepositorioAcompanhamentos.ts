@@ -1,4 +1,8 @@
-import type { Acompanhamento, Novidade } from '../entities/Acompanhamento.js';
+import type {
+  Acompanhamento,
+  CumpridoDoAcompanhamento,
+  Novidade,
+} from '../entities/Acompanhamento.js';
 import type { Movimentacao } from '../entities/Movimentacao.js';
 import type { Processo } from '../entities/Processo.js';
 
@@ -68,6 +72,20 @@ export interface RepositorioAcompanhamentos {
    * @returns `false` quando não há acompanhamento com esse número.
    */
   rotular(workspace: string, numero: string, cliente: string): Promise<boolean>;
+
+  /**
+   * Grava a marca de "cumprido" (substitui a anterior).
+   *
+   * @returns `false` quando não há acompanhamento com esse número NESTE workspace.
+   */
+  marcarCumprido(
+    workspace: string,
+    numero: string,
+    cumprido: CumpridoDoAcompanhamento,
+  ): Promise<boolean>;
+
+  /** Remove a marca. `false` quando não há acompanhamento com esse número neste workspace. */
+  desfazerCumprido(workspace: string, numero: string): Promise<boolean>;
 
   /** Os rótulos de cliente em uso, para alimentar o seletor. */
   clientes(workspace: string): Promise<string[]>;

@@ -641,6 +641,18 @@ const COLUNAS_ACRESCENTADAS: ReadonlyArray<{
    * significa "ainda não rotulado", que é a verdade.
    */
   { tabela: 'acompanhamentos', coluna: 'cliente', tipo: 'TEXT' },
+  /*
+   * A marca de "cumprido" (v0.37.5): `cumprido_chave` (o ato), `cumprido_ate` (a
+   * data dele, ISO), `cumprido_em` e `cumprido_por`. SEM retrocarga, de propósito
+   * e como `cliente`: a marca é decisão do advogado, não sai de dado já guardado —
+   * NULL é a verdade ("ninguém marcou"). Vive na linha do acompanhamento: o
+   * workspace e o número já são a chave, o isolamento é o mesmo de todo o resto,
+   * e deixar de acompanhar leva a marca junto.
+   */
+  { tabela: 'acompanhamentos', coluna: 'cumprido_chave', tipo: 'TEXT' },
+  { tabela: 'acompanhamentos', coluna: 'cumprido_ate', tipo: 'TEXT' },
+  { tabela: 'acompanhamentos', coluna: 'cumprido_em', tipo: 'TEXT' },
+  { tabela: 'acompanhamentos', coluna: 'cumprido_por', tipo: 'TEXT' },
 ];
 
 function migrarColunas(db: DatabaseSync): void {

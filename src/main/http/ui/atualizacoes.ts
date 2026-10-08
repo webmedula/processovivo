@@ -33,6 +33,10 @@ import { nomeDaClasse } from '../../../domain/entities/nomeDaClasse.js';
 import { trechoDeTexto } from './trechoDeTexto.js';
 import {
   SITUACAO_PADRAO,
+  atoQueGeraAProvidencia,
+  contarSaidasDaProvidencia,
+  frasesDeSaidas,
+  seloDoTipo,
   contarSemLeitura,
   contarSituacoes,
   montarLinhas,
@@ -62,10 +66,14 @@ var nomeDaClasse=${nomeDaClasse.toString()};
 var textoDePartes=${textoDePartes.toString()};
 var textoDeProvidencia=${textoDeProvidencia.toString()};
 var contarSemLeitura=${contarSemLeitura.toString()};
+var atoQueGeraAProvidencia=${atoQueGeraAProvidencia.toString()};
+var contarSaidasDaProvidencia=${contarSaidasDaProvidencia.toString()};
+var frasesDeSaidas=${frasesDeSaidas.toString()};
+var seloDoTipo=${seloDoTipo.toString()};
 
 /* Só a escolha da sessão: some quando a página recarrega e a aba volta a abrir em
    "Pedem providência" (v0.37.4). */
-var S={situacao:${JSON.stringify(SITUACAO_PADRAO)},ordem:null,porPagina:25,pagina:1,foco:''};
+var S={situacao:${JSON.stringify(SITUACAO_PADRAO)},ordem:null,porPagina:25,pagina:1,foco:'',confirmar:'',aviso:'',ocupado:{}};
 var R=null,O=null,corpo=null,live=null;
 
 var SITUACOES=[['todas','Todas'],['naoLidas','Não lidas'],['providencia','Pedem providência']];
@@ -81,6 +89,7 @@ var ICO_PROXIMA=svg('<path d="m9 18 6-6-6-6"/>');
 var ICO_ULTIMA=svg('<path d="m6 17 5-5-5-5"/><path d="m13 17 5-5-5-5"/>');
 
 function esc(s){return pv().esc(s)}
+function prov(){return window.__pvProvidencia}
 function digitos(n){return String(n||'').replace(/\D/g,'')}
 
 /* O "há N dias" desta lista conta desde a DETECÇÃO, nunca desde a data do ato. A
@@ -143,21 +152,43 @@ function celulaSemNovidade(g){
   if(g.segredoJustica)
     h+='<div class="nota nvt-sem"><span class="selo al">segredo de justiça</span> O texto do ato não é exibido aqui.</div>';
   else h+=notaDoAto(n);
-  return h+'</td>';
+  return h+linhaPorAto(g)+'</td>';
 }
 
-function celulaAtualizacao(n){
+/* O selo se calcula sobre o retrato inteiro e a linha mostra UM ato: quando o que gera a
+   providência é outro, a linha diz qual (rótulo e data, nunca o texto do ato nem prazo). */
+function linhaPorAto(g){
+  var a=atoQueGeraAProvidencia(g);
+  if(!a)return '';
+  var enxuto=descricaoDoAto(a.rotulo);
+  return '<div class="nvt-por"'+(enxuto!==a.rotulo?' title="'+esc(a.rotulo)+'"':'')+'>Pede providência por: <strong>'+
+    esc(enxuto)+'</strong> · <time datetime="'+esc(a.data)+'">'+esc(pv().dt(a.data))+'</time></div>';
+}
+
+function celulaAtualizacao(g){
+  var n=g.maisRecente;
   /* Só a exibição perde a repetição do tipo; o original fica no title. */
   var enxuto=descricaoDoAto(n.titulo);
   return '<td class="c-atu" data-rotulo="Atualização"><div class="nvt-tit'+(n.vista?'':' nl')+'"'+
-    (enxuto!==n.titulo?' title="'+esc(n.titulo)+'"':'')+'>'+esc(enxuto)+'</div>'+notaDoAto(n)+'</td>';
+    (enxuto!==n.titulo?' title="'+esc(n.titulo)+'"':'')+'>'+esc(enxuto)+'</div>'+notaDoAto(n)+linhaPorAto(g)+'</td>';
 }
 
 function celulaSituacao(g){
-  var s='';
+  var s='',P=g.processo&&g.processo.providencia?g.processo.providencia:null;
   if(g.naoVistas>0)s+='<span class="selo nv" title="'+esc(g.naoVistas+(g.naoVistas>1?' atualizações ainda não lidas neste processo':' atualização ainda não lida neste processo'))+'">'+
     (g.naoVistas>1?g.naoVistas+' não lidas':'Não lida')+'</span>';
-  if(g.processo&&g.processo.pedeProvidencia)s+=seloProvidencia(g.processo.motivoProvidencia);
+  if(g.processo&&g.processo.pedeProvidencia){
+    s+=seloProvidencia(g.processo.motivoProvidencia);
+    var tipo=P&&P.situacao==='pede'?seloDoTipo(P.motivo.tipo):'';
+    if(tipo)s+='<span class="selo int" title="Comunicação publicada no Diário Eletrônico (DJEN). Leitura automática; confira no ato completo.">'+esc(tipo)+'</span>';
+    if(P&&P.situacao==='pede')s+='<div>'+prov().botaoCumprir(g.numero,P.motivo.chave,'cumprir-'+g.numero)+'</div>';
+  }else if(P&&P.situacao==='cumprida'){
+    s+='<span class="selo cum" title="'+esc('Você marcou como cumprido'+(P.cumpridoEm?' em '+pv().dth(P.cumpridoEm):'')+
+      '. Um ato novo que exija ação volta a pedir providência sozinho.')+'">cumprido</span>'+
+      '<div>'+prov().controleDeDesfazer(g.numero,S.confirmar===g.numero,'desfazer-'+g.numero)+'</div>';
+  }else if(P&&P.situacao==='venceu'){
+    s+='<span class="selo neutro nvt-venceu" title="Esta comunicação do Diário passou da janela de leitura automática sem você marcar como cumprida. Confira no processo.">sem marca há mais de '+R.pendenciaIntimacaoJanelaDias+' dias</span>';
+  }
   return '<td class="c-sit" data-rotulo="Situação">'+s+'</td>';
 }
 
@@ -197,7 +228,7 @@ function linha(g){
   var n=g.maisRecente;
   var classe=classeDaLinha(g);
   var h='<tr class="nvt-linha'+(g.semNovidade?' nvt-sem-nov':'')+'" role="row" data-processo="'+esc(g.numero)+'">'+
-    celulaProcesso(g)+celulaPartes(g)+(g.semNovidade?celulaSemNovidade(g):celulaAtualizacao(n))+
+    celulaProcesso(g)+celulaPartes(g)+(g.semNovidade?celulaSemNovidade(g):celulaAtualizacao(g))+
     '<td class="c-trib" data-rotulo="Tribunal">'+esc(g.processo&&g.processo.tribunal?g.processo.tribunal:'—')+classe.mini+'</td>'+
     '<td class="c-classe" data-rotulo="Classe">'+classe.cheia+'</td>'+
     celulaData(n)+celulaDetectado(n)+
@@ -254,16 +285,30 @@ function filtros(cont){
   return h;
 }
 
-function resumo(base,filtrados){
+/* O que o filtro de providência deixou de fora, dito em voz alta (v0.37.5): os marcados como
+   cumpridos (com o "Ver") e as intimações que passaram da janela sem marca. Nada some calado. */
+function saidasDaProvidencia(base){
+  var c=contarSaidasDaProvidencia(base),f=frasesDeSaidas(c.cumpridos,c.vencidos,R.pendenciaIntimacaoJanelaDias),h='';
+  if(f.cumpridos)h+=' · '+esc(f.cumpridos)+' · <button type="button" class="nov-btn" data-acao="situacao" data-sit="cumpridos" data-foco="ver-cumpridos">Ver</button>';
+  if(f.vencidos)h+=' · '+esc(f.vencidos);
+  return h;
+}
+
+function resumo(base,filtrados,linhasBase){
   var onde=O.tribunal?' em '+esc(O.tribunal):'';
-  var h='<div class="nvt-resumo">';
+  var h='<div class="nvt-resumo" data-foco="resumo">';
+  if(S.situacao==='cumpridos'){
+    h+='Mostrando <strong>'+filtrados+'</strong> '+(filtrados===1?'processo marcado como cumprido':'processos marcados como cumpridos')+onde+
+      '. <button type="button" class="nov-btn" data-acao="situacao" data-sit="providencia" data-foco="voltar-prov">Voltar aos que pedem providência</button>';
+    return h+'</div>';
+  }
   if(S.situacao==='providencia'){
     /* Pedem providência (padrão da aba, v0.37.4): a frase fica sempre à vista e "Ver todos" é a saída. */
     var t=textoDeProvidencia(filtrados,base,(O.tribunal?' em '+O.tribunal:'')+
       (R.janelaDias===null?'':' com atualização detectada nos últimos '+R.janelaPadraoDias+' dias'));
     /* O bloco "Nenhum processo pede providência" já diz tudo e traz o "Ver todos". */
     if(t.modo==='vazio')return '';
-    h+=esc(t.frase)+(t.verTodos?' · <button type="button" class="nov-btn" data-acao="situacao" data-sit="todas" data-foco="sit-todas">Ver todos</button>':'');
+    h+=esc(t.frase)+(t.verTodos?' · <button type="button" class="nov-btn" data-acao="situacao" data-sit="todas" data-foco="sit-todas">Ver todos</button>':'')+saidasDaProvidencia(linhasBase);
   }else if(S.situacao!=='todas'){
     var nome=SITUACOES.filter(function(s){return s[0]===S.situacao})[0][1];
     h+='Mostrando <strong>'+filtrados+'</strong> de <strong>'+base+'</strong> processos'+onde+
@@ -332,10 +377,17 @@ function semResultado(total){
 
 /* Nenhum pede providência: sem tabela vazia. O bloco só nasce com conteúdo (há processos
    acompanhados) e não alarma. */
-function semProvidencia(base){
-  return '<div class="nvt-sem-prov" role="status"><strong>Nenhum processo pede providência agora.</strong>'+
+function semProvidencia(linhasBase){
+  var base=linhasBase.length;
+  return '<div class="nvt-sem-prov" role="status" data-foco="resumo"><strong>Nenhum processo pede providência agora.</strong>'+
     '<p>'+base+(base===1?' processo acompanhado':' processos acompanhados')+
-    ' · <button type="button" class="nov-btn" data-acao="situacao" data-sit="todas" data-foco="sit-todas">Ver todos</button></p></div>';
+    ' · <button type="button" class="nov-btn" data-acao="situacao" data-sit="todas" data-foco="sit-todas">Ver todos</button>'+saidasDaProvidencia(linhasBase)+'</p></div>';
+}
+
+/* O "Ver" abriu a lista dos marcados e não sobrou nenhum (outro tribunal, ou todos desfeitos). */
+function semCumpridos(){
+  return '<div class="nvt-sem-prov" role="status" data-foco="resumo"><strong>Nenhum processo marcado como cumprido.</strong>'+
+    '<p><button type="button" class="nov-btn" data-acao="situacao" data-sit="providencia" data-foco="voltar-prov">Voltar aos que pedem providência</button></p></div>';
 }
 
 /* Quem não tem movimentação conhecida não pode ser lido: o filtro não o conta, e a tela diz. */
@@ -356,10 +408,11 @@ function desenhar(anunciarMudanca){
   var ordenados=ordenarGrupos(filtrados,S.ordem);
   var pg=paginar(ordenados.length,S.pagina,S.porPagina);
   S.pagina=pg.pagina;
-  var h=filtros(cont)+resumo(base.length,filtrados.length)+avisoDeOcultas();
+  var h=filtros(cont)+(S.aviso?'<div class="nota nvt-erro" role="alert">'+esc(S.aviso)+'</div>':'')+resumo(base.length,filtrados.length,base)+avisoDeOcultas();
   if(S.situacao==='providencia')h+=avisoSemLeitura(base);
   if(!base.length)h+=semBase();
-  else if(!filtrados.length&&S.situacao==='providencia')h+=semProvidencia(base.length);
+  else if(!filtrados.length&&S.situacao==='providencia')h+=semProvidencia(base);
+  else if(!filtrados.length&&S.situacao==='cumpridos')h+=semCumpridos();
   else if(!filtrados.length)h+=semResultado(base.length);
   else{
     h+=avisoDeAnteriores(filtrados);
@@ -378,9 +431,21 @@ var VIZINHO={'pag-primeira':'pag-proxima','pag-anterior':'pag-proxima','pag-ulti
 function devolverFoco(){
   var f=S.foco;S.foco='';
   if(!f)return;
-  var alvo=corpo.querySelector('[data-foco="'+f+'"]');
-  if((!alvo||alvo.disabled)&&VIZINHO[f])alvo=corpo.querySelector('[data-foco="'+VIZINHO[f]+'"]');
-  if(alvo&&!alvo.disabled)alvo.focus();
+  /* "a|b|c": a primeira que existir. Marcar tira a linha da lista; o foco vai para o vizinho. */
+  var cand=f.split('|'),alvo=null;
+  for(var i=0;i<cand.length&&!alvo;i++){
+    var c=corpo.querySelector('[data-foco="'+cand[i]+'"]');
+    if(!c&&VIZINHO[cand[i]])c=corpo.querySelector('[data-foco="'+VIZINHO[cand[i]]+'"]');
+    if(c&&!c.disabled)alvo=c;
+  }
+  if(!alvo)return;
+  /* O resumo não é um controle: ganha tabindex só no instante do foco programático e o perde ao sair,
+     para não deixar um tabindex negativo escondido na página. */
+  if(alvo.getAttribute('data-foco')==='resumo'&&!alvo.hasAttribute('tabindex')){
+    alvo.setAttribute('tabindex','-1');
+    alvo.addEventListener('blur',function(){alvo.removeAttribute('tabindex')},{once:true});
+  }
+  alvo.focus();
 }
 
 /* ---------- copiar ---------- */
@@ -409,6 +474,75 @@ function copiar(btn,num){
   },function(){anunciar('Não foi possível copiar. Selecione o número e copie com o teclado.')});
 }
 
+/* ---------- marcar como cumprido (v0.37.5) ---------- */
+function baseAtual(){return montarLinhas(R.grupos,R.semNovidade||[],R.janelaDias===null)}
+
+/* O processo ao lado, na página como está AGORA: depois de marcar, a linha pode sair da
+   lista e o foco do teclado tem de ir para algum lugar coerente. */
+function vizinhoDe(num){
+  var ord=ordenarGrupos(filtrarPorSituacao(baseAtual(),S.situacao),S.ordem);
+  var pg=paginar(ord.length,S.pagina,S.porPagina),vis=ord.slice(pg.inicio,pg.fim),i=-1;
+  for(var k=0;k<vis.length;k++)if(vis[k].numero===num)i=k;
+  var v=i<0?null:(vis[i+1]||vis[i-1]);
+  return v?v.numero:'';
+}
+
+/* O servidor devolve o processo já recalculado: a lista é atualizada sem nova consulta. */
+function trocarProcesso(num,info){
+  [R.grupos,R.semNovidade||[]].forEach(function(l){
+    l.forEach(function(g){if(digitos(g.numero)===digitos(num))g.processo=info});
+  });
+}
+
+/* A mensagem do servidor já vem em português e diz o que houve; o explicar() do console traduz
+   por status (409 vira "já existe uma conta"), o que aqui seria mentira. */
+function textoDoErro(e){
+  return e&&e.codigo&&e.message?e.message:pv().explicar(e);
+}
+
+function falhouNaMarca(num,e,foco){
+  delete S.ocupado[num];
+  S.aviso=textoDoErro(e);S.foco=foco;desenhar(false);
+}
+
+function cumprir(el){
+  var num=el.getAttribute('data-num'),chave=el.getAttribute('data-chave');
+  if(S.ocupado[num])return;
+  S.ocupado[num]=true;S.aviso='';
+  el.disabled=true;el.setAttribute('aria-busy','true');
+  var viz=vizinhoDe(num);
+  prov().marcar(num,chave).then(function(info){
+    delete S.ocupado[num];
+    trocarProcesso(num,info);
+    var pedem=contarSituacoes(baseAtual()).pedemProvidencia;
+    S.foco='desfazer-'+num+'|cumprir-'+viz+'|abrir-'+viz+'|resumo';
+    desenhar(false);
+    anunciar('Marcado como cumprido. '+(pedem===0?'Nenhum processo pede providência agora.':
+      pedem===1?'1 processo ainda pede providência.':pedem+' processos ainda pedem providência.'));
+  },function(e){falhouNaMarca(num,e,'cumprir-'+num)});
+}
+
+function desfazerMarca(num){
+  if(S.ocupado[num])return;
+  S.ocupado[num]=true;S.aviso='';
+  var viz=vizinhoDe(num);
+  prov().remover(num).then(function(info){
+    delete S.ocupado[num];S.confirmar='';
+    trocarProcesso(num,info);
+    /* Desfez o último da lista dos marcados: volta ao filtro de onde veio, sem tela vazia. */
+    if(S.situacao==='cumpridos'&&!filtrarPorSituacao(baseAtual(),'cumpridos').length)S.situacao='providencia';
+    S.foco='cumprir-'+num+'|desfazer-'+viz+'|abrir-'+viz+'|resumo';
+    desenhar(false);
+    anunciar('Marca de cumprido desfeita.');
+  },function(e){S.confirmar='';falhouNaMarca(num,e,'desfazer-'+num)});
+}
+
+function aoTeclar(ev){
+  if(ev.key!=='Escape'||!S.confirmar)return;
+  var num=S.confirmar;
+  S.confirmar='';S.foco='desfazer-'+num;desenhar(false);
+}
+
 /* ---------- eventos (um só ouvinte, na raiz: o HTML interno é trocado a cada desenho) ---------- */
 function aoClicar(ev){
   var el=ev.target.closest?ev.target.closest('[data-acao]'):null;
@@ -423,6 +557,10 @@ function aoClicar(ev){
   if(acao==='copiar'){copiar(el,num);return}
   if(acao==='buscar'){window.__processovivo_ir('buscar');return}
   if(acao==='processos'){window.__processovivo_ir('processos');return}
+  if(acao==='cumprir'){cumprir(el);return}
+  if(acao==='desfazer'){S.confirmar=num;S.foco=el.getAttribute('data-foco')||'';desenhar(false);return}
+  if(acao==='desfazer-nao'){S.confirmar='';S.foco='desfazer-'+num;desenhar(false);return}
+  if(acao==='desfazer-sim'){desfazerMarca(num);return}
   if(acao==='periodo'){
     S.pagina=1;S.foco=el.getAttribute('data-foco')||'';
     O.aoMudar({janela:el.getAttribute('data-janela')});return;
@@ -463,6 +601,7 @@ function montar(alvo,r,opc){
   corpo=alvo.querySelector('#nvt-corpo');live=alvo.querySelector('#nvt-live');
   corpo.addEventListener('click',aoClicar);
   corpo.addEventListener('change',aoMudar);
+  corpo.addEventListener('keydown',aoTeclar);
   desenhar(false);
 }
 

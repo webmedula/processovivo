@@ -1,6 +1,8 @@
 import { ZodError } from 'zod';
 import {
+  AcompanhamentoNaoEncontradoError,
   AssinaturaInativaError,
+  AtoDaProvidenciaInvalidoError,
   ChaveApiNaoEncontradaError,
   PlanoJaExisteError,
   CredenciaisInvalidasError,
@@ -117,12 +119,16 @@ export function mapearErro(erro: unknown): RespostaDeErro {
 
   // 409: descartado é final; o pedido é válido, o estado do evento é que não
   // admite a mudança.
-  if (erro instanceof TransicaoDeEventoInvalidaError) {
+  if (
+    erro instanceof TransicaoDeEventoInvalidaError ||
+    erro instanceof AtoDaProvidenciaInvalidoError
+  ) {
     return { status: 409, corpo: { erro: erro.codigo, mensagem: erro.message } };
   }
 
   if (
     erro instanceof ProcessoNaoEncontradoError ||
+    erro instanceof AcompanhamentoNaoEncontradoError ||
     erro instanceof ChaveApiNaoEncontradaError ||
     erro instanceof JobDoLeitorNaoEncontradoError ||
     erro instanceof PecaDaPastaNaoEncontradaError ||

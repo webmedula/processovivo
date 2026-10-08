@@ -1,7 +1,16 @@
 import { NumeroCNJ } from '../../domain/entities/NumeroCNJ.js';
-import { detectarNovidades } from '../../domain/entities/Acompanhamento.js';
+import {
+  chaveDaMovimentacao,
+  detectarNovidades,
+} from '../../domain/entities/Acompanhamento.js';
+import { triar } from '../../domain/entities/triagem.js';
 import type { Acompanhamento, Novidade } from '../../domain/entities/Acompanhamento.js';
-import { DomainError, ProcessoNaoEncontradoError } from '../../domain/errors/index.js';
+import {
+  AcompanhamentoNaoEncontradoError,
+  AtoDaProvidenciaInvalidoError,
+  DomainError,
+  ProcessoNaoEncontradoError,
+} from '../../domain/errors/index.js';
 import type { Logger } from '../../domain/ports/Logger.js';
 import type { ProcessoProvider } from '../../domain/ports/ProcessoProvider.js';
 import type {
@@ -147,6 +156,67 @@ export class ServicoAcompanhamento {
   ): Promise<boolean> {
     const numero = NumeroCNJ.criar(numeroInformado);
     return this.repo.rotular(workspace, numero.digitos, cliente);
+  }
+
+  /**
+   * "Cumpri o que este ato pedia" (v0.37.5).
+   *
+   * A marca cobre os atos até a data do ato marcado; um ato posterior que exija
+   * ação volta a pedir providência sozinho. NÃO mexe nas novidades nem na "não
+   * lida": ler não é cumprir. Só atos que de fato pedem providência podem ser
+   * marcados, e o ato vem da tela (não o escolhemos no servidor): se um ato novo
+   * chegou entre o desenho da tela e o clique, a marca cobre o que a pessoa viu,
+   * não o que ela não viu.
+   *
+   * Marcar um ato que já está coberto é um no-op: a marca nunca recua.
+   *
+   * @returns o acompanhamento já com a marca, para a rota responder sem reler tudo
+   */
+  async marcarComoCumprido(
+    workspace: string,
+    numeroInformado: string,
+    chaveDoAto: string,
+    quem: string,
+  ): Promise<Acompanhamento> {
+    const numero = NumeroCNJ.criar(numeroInformado).digitos;
+    const atual = await this.repo.buscar(workspace, numero);
+    if (!atual) throw new AcompanhamentoNaoEncontradoError();
+
+    const ato = atual.processo?.movimentacoes.find(
+      (m) => chaveDaMovimentacao(m) === chaveDoAto,
+    );
+    if (!ato) {
+      throw new AtoDaProvidenciaInvalidoError(
+        'Esse ato não está mais no último retrato do processo. Atualize a tela e confira de novo.',
+      );
+    }
+    if (!(ato.exigeAcao ?? triar(ato).exigeAcao)) {
+      throw new AtoDaProvidenciaInvalidoError(
+        'Esse ato não está marcado como pedindo providência.',
+      );
+    }
+    if (atual.cumprido && ato.data.getTime() <= atual.cumprido.ate.getTime()) {
+      return atual;
+    }
+
+    const cumprido = { chave: chaveDoAto, ate: ato.data, em: this.relogio(), por: quem };
+    await this.repo.marcarCumprido(workspace, numero, cumprido);
+    return { ...atual, cumprido };
+  }
+
+  /** Desfaz a marca. Sem marca é um no-op; processo de outra conta é "não acompanhado". */
+  async desfazerCumprido(
+    workspace: string,
+    numeroInformado: string,
+  ): Promise<Acompanhamento> {
+    const numero = NumeroCNJ.criar(numeroInformado).digitos;
+    const atual = await this.repo.buscar(workspace, numero);
+    if (!atual) throw new AcompanhamentoNaoEncontradoError();
+    if (!atual.cumprido) return atual;
+    await this.repo.desfazerCumprido(workspace, numero);
+    const { cumprido: _removida, ...semMarca } = atual;
+    void _removida;
+    return semMarca;
   }
 
   async clientes(workspace: string): Promise<string[]> {

@@ -31,6 +31,8 @@ export function comDeteccaoDoCalendario(
     acompanhar: repositorio.acompanhar.bind(repositorio),
     deixarDeAcompanhar: repositorio.deixarDeAcompanhar.bind(repositorio),
     rotular: repositorio.rotular.bind(repositorio),
+    marcarCumprido: repositorio.marcarCumprido.bind(repositorio),
+    desfazerCumprido: repositorio.desfazerCumprido.bind(repositorio),
     clientes: repositorio.clientes.bind(repositorio),
     buscar: repositorio.buscar.bind(repositorio),
     listar: repositorio.listar.bind(repositorio),

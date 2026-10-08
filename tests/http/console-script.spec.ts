@@ -7,6 +7,7 @@ import { SCRIPT_PASTA_CALIBRACAO } from '../../src/main/http/ui/scriptPastaCalib
 import { SCRIPT_PASTA_BAIXADAS } from '../../src/main/http/ui/scriptPastaBaixadas.js';
 import { SCRIPT_CALENDARIO } from '../../src/main/http/ui/calendario.js';
 import { SCRIPT_ATUALIZACOES } from '../../src/main/http/ui/atualizacoes.js';
+import { SCRIPT_PROVIDENCIA } from '../../src/main/http/ui/providencia.js';
 
 /*
  * O console é JavaScript dentro de uma string.
@@ -38,6 +39,7 @@ describe.each([
   ['peças baixadas da pasta', SCRIPT_PASTA_BAIXADAS],
   ['calendário', SCRIPT_CALENDARIO],
   ['atualizações (tabela)', SCRIPT_ATUALIZACOES],
+  ['marcar como cumprido', SCRIPT_PROVIDENCIA],
 ])('console web — o JavaScript da interface (%s)', (_nome, codigo) => {
   const linter = new Linter();
 
