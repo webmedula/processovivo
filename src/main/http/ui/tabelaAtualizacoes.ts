@@ -43,6 +43,15 @@ export interface ProcessoSemNovidade {
 }
 
 export type SituacaoFiltro = 'todas' | 'naoLidas' | 'providencia';
+
+/**
+ * O filtro de Situação com que a aba abre (v0.37.4, decisão do dono, opção A):
+ * "Pedem providência". Convive com "triagem ordena, nunca esconde" porque o filtro
+ * é escolhido pelo POSITIVO (`estadoDaPasta === 'PROVIDENCIA'`), a tela diz sempre
+ * quantos processos ficaram de fora e a lista completa está a um clique. Vive só na
+ * página (variável do módulo): recarregar volta a este valor.
+ */
+export const SITUACAO_PADRAO: SituacaoFiltro = 'providencia';
 export type ChaveDeOrdem = 'processo' | 'tribunal' | 'dataAto' | 'detectado';
 export interface OrdemDaTabela {
   readonly chave: ChaveDeOrdem;
@@ -69,6 +78,75 @@ export function contarSituacoes(grupos: readonly GrupoDaTabela[]): ContagemDeSit
     if (g.processo && g.processo.pedeProvidencia) pedemProvidencia += 1;
   }
   return { todas: grupos.length, naoLidas, pedemProvidencia };
+}
+
+export interface TextoDeProvidencia {
+  /** `vazio`: nenhum pede; `parcial`: m < N; `todos`: m = N. */
+  readonly modo: 'vazio' | 'parcial' | 'todos';
+  /** Frase pronta, em texto puro (quem desenha escapa). Vazia no modo `vazio`. */
+  readonly frase: string;
+  /** "Ver todos" só existe quando o filtro esconde alguém. */
+  readonly verTodos: boolean;
+}
+
+/**
+ * A frase de situação do filtro "Pedem providência": m = processos que pedem,
+ * n = processos da base (período + tribunal). `complemento` é o que a tela já diz
+ * da base (" em TJGO"…), em texto puro. Sem a palavra "prazo": é leitura do
+ * andamento, não contagem.
+ */
+export function textoDeProvidencia(
+  m: number,
+  n: number,
+  complemento: string,
+): TextoDeProvidencia {
+  const acomp = n === 1 ? 'processo acompanhado' : 'processos acompanhados';
+  if (m === 0) return { modo: 'vazio', frase: '', verTodos: n > 0 };
+  if (m === n) {
+    return {
+      modo: 'todos',
+      frase:
+        'Mostrando ' +
+        m +
+        ' de ' +
+        n +
+        ' ' +
+        acomp +
+        complemento +
+        (n === 1 ? ': pede providência.' : ': todos pedem providência.'),
+      verTodos: false,
+    };
+  }
+  return {
+    modo: 'parcial',
+    frase:
+      'Mostrando ' +
+      m +
+      ' de ' +
+      n +
+      ' ' +
+      acomp +
+      complemento +
+      ': só os que pedem providência',
+    verTodos: true,
+  };
+}
+
+/**
+ * Processos que o filtro de providência NÃO consegue avaliar: acompanhados sem
+ * nenhuma movimentação conhecida (nunca sincronizados, ou sem retrato). Sem dado
+ * não há leitura — e a tela não inventa providência; diz quantos são.
+ */
+export function contarSemLeitura(
+  grupos: ReadonlyArray<{
+    readonly semNovidade?: boolean;
+    readonly maisRecente: { readonly data: string | null };
+  }>,
+): number {
+  let n = 0;
+  for (const g of grupos)
+    if (g.semNovidade === true && g.maisRecente.data === null) n += 1;
+  return n;
 }
 
 export function filtrarPorSituacao<T extends GrupoDaTabela>(
@@ -129,7 +207,11 @@ export function ordenarGrupos<T extends GrupoDaTabela>(
     }
     // Data ausente (processo sem detecção ou sem movimentação) vai para o fim nas
     // duas direções: ordenar não esconde, mas não põe a linha sem dado na frente.
-    if (typeof va === 'number' && typeof vb === 'number' && Number.isNaN(va) !== Number.isNaN(vb)) {
+    if (
+      typeof va === 'number' &&
+      typeof vb === 'number' &&
+      Number.isNaN(va) !== Number.isNaN(vb)
+    ) {
       return Number.isNaN(va) ? 1 : -1;
     }
     const c =

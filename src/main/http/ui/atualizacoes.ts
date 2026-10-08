@@ -32,6 +32,8 @@ import { descricaoDoAto } from '../../../domain/entities/descricaoDoAto.js';
 import { nomeDaClasse } from '../../../domain/entities/nomeDaClasse.js';
 import { trechoDeTexto } from './trechoDeTexto.js';
 import {
+  SITUACAO_PADRAO,
+  contarSemLeitura,
   contarSituacoes,
   montarLinhas,
   filtrarPorSituacao,
@@ -39,6 +41,7 @@ import {
   paginar,
   proximaOrdem,
   textoDePartes,
+  textoDeProvidencia,
 } from './tabelaAtualizacoes.js';
 import { ESTILOS_TABELA_ATUALIZACOES } from './estilosAtualizacoes.js';
 
@@ -57,9 +60,12 @@ var paginar=${paginar.toString()};
 var descricaoDoAto=${descricaoDoAto.toString()};
 var nomeDaClasse=${nomeDaClasse.toString()};
 var textoDePartes=${textoDePartes.toString()};
+var textoDeProvidencia=${textoDeProvidencia.toString()};
+var contarSemLeitura=${contarSemLeitura.toString()};
 
-/* Só a escolha da sessão: some quando a página recarrega. */
-var S={situacao:'todas',ordem:null,porPagina:25,pagina:1,foco:''};
+/* Só a escolha da sessão: some quando a página recarrega e a aba volta a abrir em
+   "Pedem providência" (v0.37.4). */
+var S={situacao:${JSON.stringify(SITUACAO_PADRAO)},ordem:null,porPagina:25,pagina:1,foco:''};
 var R=null,O=null,corpo=null,live=null;
 
 var SITUACOES=[['todas','Todas'],['naoLidas','Não lidas'],['providencia','Pedem providência']];
@@ -224,7 +230,7 @@ function filtros(cont){
     '<button type="button" class="chip'+(todas?'':' on')+'" aria-pressed="'+(todas?'false':'true')+'" data-acao="periodo" data-janela="padrao" data-foco="periodo-padrao">Últimos '+R.janelaPadraoDias+' dias</button>'+
     '<button type="button" class="chip'+(todas?' on':'')+'" aria-pressed="'+(todas?'true':'false')+'" data-acao="periodo" data-janela="todas" data-foco="periodo-todas">Todas</button></div></div>'+
     '<div class="nvt-bloco"><span class="nvt-rot" id="nvt-rot-situacao">Situação</span>'+
-    '<div class="nvt-chips" role="group" aria-labelledby="nvt-rot-situacao">';
+    '<div class="nvt-chips" role="group" aria-labelledby="nvt-rot-situacao" aria-describedby="nvt-aviso-prov">';
   var n={todas:cont.todas,naoLidas:cont.naoLidas,providencia:cont.pedemProvidencia};
   SITUACOES.forEach(function(s){
     var on=S.situacao===s[0];
@@ -233,7 +239,8 @@ function filtros(cont){
     h+='<button type="button" class="chip'+(s[0]==='naoLidas'&&on?' nv':'')+(on?' on':'')+'" aria-pressed="'+(on?'true':'false')+'" title="'+esc(dica)+'" data-acao="situacao" data-sit="'+s[0]+'" data-foco="sit-'+s[0]+'">'+
       esc(s[1])+' ('+n[s[0]]+')</button>';
   });
-  h+='</div></div>'+
+  /* Perto do chip, sempre visível (não só em tooltip): a leitura é automática e não é prazo. */
+  h+='</div><p class="nvt-aviso-prov" id="nvt-aviso-prov">Leitura automática do andamento, não é contagem de prazo. Confira no processo.</p></div>'+
     '<div class="nvt-bloco"><label class="nvt-rot" for="nvt-trib">Tribunal</label>'+
     '<select id="nvt-trib" data-sel="tribunal" data-foco="trib"><option value="">Todos os tribunais</option>'+
     (O.tribunais||[]).map(function(t){return '<option value="'+esc(t)+'"'+(O.tribunal===t?' selected':'')+'>'+esc(t)+'</option>'}).join('')+'</select></div>'+
@@ -250,7 +257,14 @@ function filtros(cont){
 function resumo(base,filtrados){
   var onde=O.tribunal?' em '+esc(O.tribunal):'';
   var h='<div class="nvt-resumo">';
-  if(S.situacao!=='todas'){
+  if(S.situacao==='providencia'){
+    /* Pedem providência (padrão da aba, v0.37.4): a frase fica sempre à vista e "Ver todos" é a saída. */
+    var t=textoDeProvidencia(filtrados,base,(O.tribunal?' em '+O.tribunal:'')+
+      (R.janelaDias===null?'':' com atualização detectada nos últimos '+R.janelaPadraoDias+' dias'));
+    /* O bloco "Nenhum processo pede providência" já diz tudo e traz o "Ver todos". */
+    if(t.modo==='vazio')return '';
+    h+=esc(t.frase)+(t.verTodos?' · <button type="button" class="nov-btn" data-acao="situacao" data-sit="todas" data-foco="sit-todas">Ver todos</button>':'');
+  }else if(S.situacao!=='todas'){
     var nome=SITUACOES.filter(function(s){return s[0]===S.situacao})[0][1];
     h+='Mostrando <strong>'+filtrados+'</strong> de <strong>'+base+'</strong> processos'+onde+
       (R.janelaDias===null?'':' com atualização detectada nos últimos '+R.janelaPadraoDias+' dias')+' (filtro: '+esc(nome)+'). '+
@@ -316,6 +330,22 @@ function semResultado(total){
     '<button type="button" class="bt bt2" data-acao="limpar" data-foco="limpar">Limpar filtros</button>');
 }
 
+/* Nenhum pede providência: sem tabela vazia. O bloco só nasce com conteúdo (há processos
+   acompanhados) e não alarma. */
+function semProvidencia(base){
+  return '<div class="nvt-sem-prov" role="status"><strong>Nenhum processo pede providência agora.</strong>'+
+    '<p>'+base+(base===1?' processo acompanhado':' processos acompanhados')+
+    ' · <button type="button" class="nov-btn" data-acao="situacao" data-sit="todas" data-foco="sit-todas">Ver todos</button></p></div>';
+}
+
+/* Quem não tem movimentação conhecida não pode ser lido: o filtro não o conta, e a tela diz. */
+function avisoSemLeitura(baseLinhas){
+  var n=contarSemLeitura(baseLinhas);
+  if(!n)return '';
+  return '<div class="nota nvt-sem-leitura">'+n+(n>1?' processos sem movimentação conhecida não puderam ser lidos':' processo sem movimentação conhecida não pôde ser lido')+
+    (n>1?' e não aparecem':' e não aparece')+' neste filtro · <button type="button" class="nov-btn" data-acao="situacao" data-sit="todas" data-foco="sit-todas">Ver todos</button></div>';
+}
+
 /* ---------- desenho ---------- */
 function anunciar(texto){if(live)live.textContent=texto}
 
@@ -327,7 +357,9 @@ function desenhar(anunciarMudanca){
   var pg=paginar(ordenados.length,S.pagina,S.porPagina);
   S.pagina=pg.pagina;
   var h=filtros(cont)+resumo(base.length,filtrados.length)+avisoDeOcultas();
+  if(S.situacao==='providencia')h+=avisoSemLeitura(base);
   if(!base.length)h+=semBase();
+  else if(!filtrados.length&&S.situacao==='providencia')h+=semProvidencia(base.length);
   else if(!filtrados.length)h+=semResultado(base.length);
   else{
     h+=avisoDeAnteriores(filtrados);

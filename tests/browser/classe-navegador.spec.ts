@@ -174,6 +174,8 @@ describe.skipIf(sem)(
         });
       });
       await page.goto(url + '/');
+      // Desde a v0.37.4 a aba abre em "Pedem providência"; estas medidas olham a lista inteira.
+      await page.getByRole('button', { name: /^Todas \(/ }).click();
       await page.waitForSelector('.nvt-tabela');
     }
 

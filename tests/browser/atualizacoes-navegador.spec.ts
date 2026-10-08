@@ -14,7 +14,10 @@ import {
   respostaNovidades,
   semNovidade,
 } from '../helpers/atualizacoesSinteticas.js';
-import type { GrupoSintetico, SemNovidadeSintetico } from '../helpers/atualizacoesSinteticas.js';
+import type {
+  GrupoSintetico,
+  SemNovidadeSintetico,
+} from '../helpers/atualizacoesSinteticas.js';
 
 /*
  * A página inicial (v0.37.0) NUM NAVEGADOR: tabela de uma linha por processo,
@@ -85,6 +88,8 @@ describe.skipIf(sem)(
         altura?: number;
         escuro?: boolean;
         espera?: string;
+        /** Deixa a aba no padrão da v0.37.4 ("Pedem providência"); sem isto o teste clica "Todas". */
+        padrao?: boolean;
       } = {},
     ): Promise<void> {
       ctx = await browser.newContext({
@@ -146,7 +151,14 @@ describe.skipIf(sem)(
         throw e;
       });
       await page.goto(amb.url + '/');
-      await page.waitForSelector(opcoes.espera ?? '.nvt-tabela');
+      await page.waitForSelector(opcoes.espera ?? '.nvt-tabela, .nvt-sem-prov');
+      if (!opcoes.padrao && !opcoes.espera) await verTodos();
+    }
+
+    /** Os testes anteriores à v0.37.4 olham a lista inteira: ativam o chip "Todas". */
+    async function verTodos(): Promise<void> {
+      await page.getByRole('button', { name: /^Todas \(/ }).click();
+      await page.waitForSelector('.nvt-tabela, .nvt-sem-prov, .vazio');
     }
 
     /** Liga o filtro "Últimos 15 dias" (nasce desligado) e espera a tabela recarregar. */
@@ -356,9 +368,9 @@ describe.skipIf(sem)(
           c.curto,
         );
         expect(await celula.locator('.nvt-sr').textContent()).toBe(c.completo);
-        expect(await celula.locator('span[title]').first().getAttribute('title')).toContain(
-          c.completo,
-        );
+        expect(
+          await celula.locator('span[title]').first().getAttribute('title'),
+        ).toContain(c.completo);
       }
       // O que se VÊ nunca repete o cabeçalho: "detectado" só existe no texto para leitor de tela.
       const visiveis = await page
@@ -386,7 +398,9 @@ describe.skipIf(sem)(
       const tabela = await page.locator('.nvt-tabela').innerText();
       expect(tabela).not.toMatch(/\+\d+ anteriore/);
       expect(tabela).not.toContain('há anterior');
-      expect(await page.locator('[data-acao="mais"], [data-acao="maisl"]').count()).toBe(0);
+      expect(await page.locator('[data-acao="mais"], [data-acao="maisl"]').count()).toBe(
+        0,
+      );
       expect(await page.locator('.nvt-ant, .nvt-item').count()).toBe(0);
       // A situação continua a regra de sempre: atualização não vista do processo.
       expect(await linhas().first().locator('.c-sit').innerText()).toContain(
@@ -454,7 +468,9 @@ describe.skipIf(sem)(
           return {
             n: bs.length,
             texto: l.textContent?.trim(),
-            dentro: bs.every((b) => b.left >= cel.left - 0.5 && b.right <= cel.right + 0.5),
+            dentro: bs.every(
+              (b) => b.left >= cel.left - 0.5 && b.right <= cel.right + 0.5,
+            ),
             mesmaLinha: new Set(bs.map((b) => Math.round(b.top))).size,
           };
         });
@@ -554,9 +570,11 @@ describe.skipIf(sem)(
       expect(textos.toLowerCase()).not.toContain('prazo');
       expect(textos).toContain('dos últimos 10 dias');
       // A página inteira também não anuncia prazo (nem "abre prazo").
-      expect((await page.locator('body').innerText()).toLowerCase()).not.toContain(
-        'prazo',
-      );
+      // Única menção: o aviso de honestidade, que NEGA a contagem (v0.37.4).
+      const corpo = (await page.locator('body').innerText())
+        .toLowerCase()
+        .replaceAll('não é contagem de prazo', '');
+      expect(corpo).not.toContain('prazo');
     });
 
     it('"Não lidas" e "Pedem providência" filtram, dizem quantos ficaram de fora e se desligam com "Todas"', async () => {
@@ -800,7 +818,7 @@ describe.skipIf(sem)(
         infoProcesso('TJGO', null, [], [], false),
       );
       await abrir({ grupos: [g] });
-      await page.getByRole('button', { name: /^Pedem providência \(0\)/ }).click();
+      await page.getByRole('button', { name: /^Não lidas \(0\)/ }).click();
       expect(await page.locator('.nvt .vazio h3').textContent()).toBe(
         'Nenhum processo com este filtro',
       );
@@ -832,7 +850,8 @@ describe.skipIf(sem)(
       await abrir({ grupos: carteira(3), falhas: 1 }, { espera: '#nv-tentar' });
       expect(await page.locator('#conteudo').innerText()).toContain('Falha sintética');
       await page.click('#nv-tentar');
-      await page.waitForSelector('.nvt-tabela');
+      await page.waitForSelector('.nvt-tabela, .nvt-sem-prov');
+      await verTodos();
       expect(await linhas().count()).toBe(3);
     });
 
@@ -886,7 +905,9 @@ describe.skipIf(sem)(
         'Última movimentação conhecida · sem atualização detectada',
       );
       // Mesma regra de descrição: a repetição some só na exibição.
-      expect(await sem.locator('.c-atu .nvt-tit').textContent()).toBe('Juntada de Petição');
+      expect(await sem.locator('.c-atu .nvt-tit').textContent()).toBe(
+        'Juntada de Petição',
+      );
       expect(await sem.locator('.c-atu .nvt-tit').getAttribute('title')).toBe(
         'Juntada de Petição — Juntada de Petição',
       );
@@ -905,7 +926,9 @@ describe.skipIf(sem)(
       expect(await page.locator('.nvt-resumo').innerText()).toContain(
         '2 processos acompanhados',
       );
-      const sit = page.locator('[role="group"][aria-labelledby="nvt-rot-situacao"] button');
+      const sit = page.locator(
+        '[role="group"][aria-labelledby="nvt-rot-situacao"] button',
+      );
       expect((await sit.allTextContents()).map((t) => t.trim())).toEqual([
         'Todas (2)',
         'Não lidas (1)',
@@ -946,7 +969,9 @@ describe.skipIf(sem)(
         (await numerosDasLinhas()).map((n) => n.replace(/\D/g, '').slice(0, 7)),
       ).toEqual(['0007101', '0007104', '0007102', '0007103']);
       const vazia = linhas().nth(3);
-      expect(await vazia.locator('.c-atu').innerText()).toBe('Nenhuma movimentação conhecida');
+      expect(await vazia.locator('.c-atu').innerText()).toBe(
+        'Nenhuma movimentação conhecida',
+      );
       expect(await vazia.locator('.c-data').innerText()).toBe('—');
       expect(await vazia.locator('.c-det .nvt-sr').textContent()).toBe(
         'sem detecção registrada',
@@ -977,10 +1002,15 @@ describe.skipIf(sem)(
             diasAto: 2,
             processo: infoProcesso('TJGO', null, [], [], true),
           }),
-          semNovidade(b, 'Juntada', { diasAto: 2, processo: infoProcesso('TJGO', null, [], [], false) }),
+          semNovidade(b, 'Juntada', {
+            diasAto: 2,
+            processo: infoProcesso('TJGO', null, [], [], false),
+          }),
         ],
       });
-      const sit = page.locator('[role="group"][aria-labelledby="nvt-rot-situacao"] button');
+      const sit = page.locator(
+        '[role="group"][aria-labelledby="nvt-rot-situacao"] button',
+      );
       expect((await sit.allTextContents()).map((t) => t.trim())).toEqual([
         'Todas (2)',
         'Não lidas (0)',
@@ -1176,6 +1206,214 @@ describe.skipIf(sem)(
       expect(await page.locator('#nvt-ordenar').isVisible()).toBe(false);
     });
 
+    /* ------------------------------------- padrão "Pedem providência" (v0.37.4) */
+
+    const FRASE_PARCIAL =
+      'Mostrando 1 de 2 processos acompanhados: só os que pedem providência';
+    const AVISO =
+      'Leitura automática do andamento, não é contagem de prazo. Confira no processo.';
+
+    function doisComProvidencia(pedem: number, tribunais = ['TJGO', 'TJGO']): Cenario {
+      return {
+        grupos: [0, 1].map((i) => {
+          const numero = numeroValido(7000 + i);
+          const pede = i < pedem;
+          return grupo(
+            numero,
+            novidade(numero, pede ? 'Intimação' : 'Juntada', {
+              diasDetectada: i + 1,
+              vista: i === 0,
+              exigeAcao: pede,
+            }),
+            [],
+            infoProcesso(
+              tribunais[i] ?? 'TJGO',
+              'Classe Sintética',
+              ['Autor'],
+              ['Réu'],
+              pede,
+            ),
+          );
+        }),
+      };
+    }
+    const chipAtivo = async (): Promise<string[]> =>
+      page
+        .locator(
+          '[role="group"][aria-labelledby="nvt-rot-situacao"] button[aria-pressed="true"]',
+        )
+        .allTextContents();
+
+    it('abre em "Pedem providência": 1 linha, frase "Mostrando 1 de 2", chip ativo e paginação dos processos do filtro', async () => {
+      await abrir(doisComProvidencia(1), { padrao: true });
+      expect(await linhas().count()).toBe(1);
+      expect(
+        (await page.locator('.nvt-resumo').innerText()).replace(/\s+/g, ' '),
+      ).toContain(FRASE_PARCIAL + ' · Ver todos');
+      expect((await chipAtivo()).map((t) => t.trim())).toEqual(['Pedem providência (1)']);
+      expect(
+        (
+          await page
+            .locator('[role="group"][aria-labelledby="nvt-rot-situacao"] button')
+            .allTextContents()
+        ).map((t) => t.trim()),
+      ).toEqual(['Todas (2)', 'Não lidas (1)', 'Pedem providência (1)']);
+      expect(await page.locator('.nvt-faixa').textContent()).toBe('1–1 de 1 processo');
+    });
+
+    it('"Ver todos" ativa o chip "Todas" e mostra os 2; a escolha da pessoa fica enquanto ela navega, e recarregar volta ao padrão', async () => {
+      await abrir(doisComProvidencia(1), { padrao: true });
+      await page
+        .locator('.nvt-resumo')
+        .getByRole('button', { name: 'Ver todos' })
+        .click();
+      expect(await linhas().count()).toBe(2);
+      expect((await chipAtivo()).map((t) => t.trim())).toEqual(['Todas (2)']);
+      // Trocar o tribunal recarrega a tela por cima; a escolha de situação sobrevive.
+      await page.selectOption('#nvt-trib', 'TJGO');
+      await page.waitForFunction(
+        () => document.querySelectorAll('.nvt-tabela tr.nvt-linha').length === 2,
+      );
+      expect((await chipAtivo()).map((t) => t.trim())).toEqual(['Todas (2)']);
+      expect(
+        await page.evaluate(() =>
+          Object.keys(window.localStorage).filter((k) =>
+            /situa|filtro|providencia/i.test(k),
+          ),
+        ),
+      ).toEqual([]);
+      await page.reload();
+      await page.waitForSelector('.nvt-tabela');
+      expect((await chipAtivo()).map((t) => t.trim())).toEqual(['Pedem providência (1)']);
+      expect(await linhas().count()).toBe(1);
+    });
+
+    it('nenhum pede providência: bloco claro com "Ver todos", sem tabela vazia e sem alarme', async () => {
+      await abrir(doisComProvidencia(0), { padrao: true });
+      expect(await page.locator('table').count()).toBe(0);
+      const bloco = page.locator('.nvt-sem-prov');
+      expect(await bloco.locator('strong').textContent()).toBe(
+        'Nenhum processo pede providência agora.',
+      );
+      expect((await bloco.innerText()).replace(/\s+/g, ' ')).toContain(
+        '2 processos acompanhados · Ver todos',
+      );
+      // A frase "Mostrando 0 de 2" não repete o bloco.
+      expect(await page.locator('.nvt-resumo').count()).toBe(0);
+      expect(await page.locator('nav.nvt-pag').count()).toBe(0);
+      await bloco.getByRole('button', { name: 'Ver todos' }).click();
+      expect(await linhas().count()).toBe(2);
+      expect((await chipAtivo()).map((t) => t.trim())).toEqual(['Todas (2)']);
+      // O foco volta para o chip, não se perde no <body>.
+      expect(
+        await page.evaluate(() => document.activeElement?.getAttribute('data-foco')),
+      ).toBe('sit-todas');
+    });
+
+    it('todos pedem providência (m = N): só a contagem, sem "Ver todos"', async () => {
+      await abrir(doisComProvidencia(2), { padrao: true });
+      expect(await linhas().count()).toBe(2);
+      const resumo = (await page.locator('.nvt-resumo').innerText()).replace(/\s+/g, ' ');
+      expect(resumo).toContain('Mostrando 2 de 2 processos acompanhados');
+      expect(resumo).not.toContain('Ver todos');
+    });
+
+    it('"Não lidas" e tribunal combinam com o filtro de providência: os contadores seguem a base (período + tribunal)', async () => {
+      await abrir(doisComProvidencia(2, ['TJGO', 'TJSP']), { padrao: true });
+      await page.selectOption('#nvt-trib', 'TJSP');
+      await page.waitForFunction(
+        () => document.querySelectorAll('.nvt-tabela tr.nvt-linha').length === 1,
+      );
+      expect(
+        (
+          await page
+            .locator('[role="group"][aria-labelledby="nvt-rot-situacao"] button')
+            .allTextContents()
+        ).map((t) => t.trim()),
+      ).toEqual(['Todas (1)', 'Não lidas (1)', 'Pedem providência (1)']);
+      expect(
+        (await page.locator('.nvt-resumo').innerText()).replace(/\s+/g, ' '),
+      ).toContain('Mostrando 1 de 1 processo acompanhado em TJSP');
+      await page.getByRole('button', { name: /^Não lidas/ }).click();
+      expect(await linhas().count()).toBe(1);
+      expect((await chipAtivo()).map((t) => t.trim())).toEqual(['Não lidas (1)']);
+    });
+
+    it('processo sem movimentação conhecida não é lido: a tela diz quantos ficaram fora do filtro, sem inventar providência', async () => {
+      const cen = doisComProvidencia(1);
+      cen.semNovidade = [semNovidade(numeroValido(7100), null, { processo: null })];
+      await abrir(cen, { padrao: true });
+      expect(await linhas().count()).toBe(1);
+      expect(
+        (await page.locator('.nvt-sem-leitura').innerText()).replace(/\s+/g, ' '),
+      ).toContain(
+        '1 processo sem movimentação conhecida não pôde ser lido e não aparece neste filtro',
+      );
+      expect(
+        (await page.locator('.nvt-resumo').innerText()).replace(/\s+/g, ' '),
+      ).toContain('Mostrando 1 de 3 processos acompanhados');
+    });
+
+    it('o aviso de honestidade está à vista perto do chip, ligado a ele por aria-describedby, e a página nunca anuncia prazo', async () => {
+      await abrir(doisComProvidencia(1), { padrao: true });
+      expect(await page.locator('#nvt-aviso-prov').innerText()).toBe(AVISO);
+      expect(await page.locator('#nvt-aviso-prov').isVisible()).toBe(true);
+      expect(
+        await page
+          .locator('[role="group"][aria-labelledby="nvt-rot-situacao"]')
+          .getAttribute('aria-describedby'),
+      ).toBe('nvt-aviso-prov');
+      const corpo = (await page.locator('body').innerText())
+        .toLowerCase()
+        .replaceAll('não é contagem de prazo', '');
+      expect(corpo).not.toContain('prazo');
+      // Também no estado vazio.
+      await ctx.close();
+      await abrir(doisComProvidencia(0), { padrao: true });
+      const vazio = (await page.locator('body').innerText())
+        .toLowerCase()
+        .replaceAll('não é contagem de prazo', '');
+      expect(vazio).not.toContain('prazo');
+    });
+
+    for (const largura of [1920, 1366, 1280, 1024, 768, 390]) {
+      it(`padrão "Pedem providência" e estado vazio sem rolagem horizontal em ${largura}px`, async () => {
+        for (const pedem of [1, 0]) {
+          await abrir(doisComProvidencia(pedem), { largura, padrao: true });
+          const m = await page.evaluate(() => ({
+            sw: document.documentElement.scrollWidth,
+            cw: document.documentElement.clientWidth,
+          }));
+          expect(m.sw).toBeLessThanOrEqual(m.cw);
+          await ctx.close();
+        }
+      });
+    }
+
+    for (const escuro of [false, true]) {
+      for (const pedem of [1, 0]) {
+        it(`axe sem violações no padrão "Pedem providência" (${pedem ? 'com' : 'sem'} resultado), tema ${escuro ? 'escuro' : 'claro'}`, async () => {
+          await abrir(doisComProvidencia(pedem), { padrao: true, escuro });
+          await page.addScriptTag({
+            content: (AxeBuilder as unknown as { source: string }).source,
+          });
+          const r = await page.evaluate(() =>
+            (window as unknown as AxeNaPagina).axe.run(
+              document.querySelector('#conteudo')!,
+              { rules: { 'color-contrast': { enabled: true } } },
+            ),
+          );
+          expect(
+            r.violations
+              .map(
+                (v) => `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(' | ')}`,
+              )
+              .join('\n'),
+          ).toBe('');
+        });
+      }
+    }
+
     /* --------------------------------------------------------------- temas e axe */
 
     for (const escuro of [false, true]) {
@@ -1211,7 +1449,10 @@ describe.skipIf(sem)(
             semNovidade(numeroValido(9102), null),
             semNovidade(numeroValido(9103), 'Decisão', { segredo: true }),
           ];
-          await abrir({ grupos, foraDaJanela: 2, semNovidade: semNov }, { largura, escuro });
+          await abrir(
+            { grupos, foraDaJanela: 2, semNovidade: semNov },
+            { largura, escuro },
+          );
           await page.addScriptTag({
             content: (AxeBuilder as unknown as { source: string }).source,
           });

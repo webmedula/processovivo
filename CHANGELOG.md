@@ -9,6 +9,37 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.37.4] — 2026-10-08
+
+Um ajuste na página de Atualizações, decisão do dono (opção A): a aba abre mostrando
+só os processos que **pedem providência**; todos os demais ficam a um clique. Não
+muda a detecção, `estadoDaPasta`, a janela de 10 dias, `exigeAcao`, o calendário, o
+contrato de `GET /v1/novidades` nem `/v1/painel`. Nenhuma consulta nova ao tribunal.
+
+### Alterado
+
+- **Padrão da aba = filtro de Situação "Pedem providência"** (`SITUACAO_PADRAO`). O
+  período continua "Todas". A escolha da pessoa vale enquanto ela navega (variável da
+  página, nunca `localStorage`); recarregar volta ao padrão. Chips na mesma ordem, com
+  contador de processos sobre a base de sempre (período + tribunal).
+- **Frase de situação sempre à vista** com o filtro ativo: "Mostrando m de N processos
+  acompanhados: só os que pedem providência · Ver todos" ("Ver todos" ativa "Todas").
+  Com m = N fica só a contagem, sem "Ver todos".
+- **Estado vazio** (m = 0): "Nenhum processo pede providência agora." + "N processos
+  acompanhados · Ver todos", no lugar de tabela vazia. Sem alarme e sem a palavra "prazo".
+- **Aviso de honestidade** junto do chip, sempre visível e ligado por `aria-describedby`:
+  "Leitura automática do andamento, não é contagem de prazo. Confira no processo."
+- **Processo sem movimentação conhecida** (acompanhado, ainda sem leitura) não pode ser
+  avaliado: não é contado como providência e a tela diz quantos ficaram fora do filtro.
+
+### Testes
+
+- Unidade: padrão, contadores, "Ver todos", vazio, frase com m < N e m = N, paginação.
+- Navegador: abre em providência (1 de 2), vazio com "Ver todos", "Ver todos" mostra 2,
+  "Não lidas" e tribunal combinam, sem "prazo" fora do aviso, sem rolagem horizontal em
+  1920/1366/1280/1024/768/390 px, axe nos temas claro e escuro. Os testes anteriores,
+  que assumiam "Todas" como abertura, passaram a clicar "Todas" ao abrir.
+
 ## [0.37.3] — 2026-10-08
 
 Dois ajustes na página de Atualizações, pedidos pelo dono depois de usar a 0.37.2 em

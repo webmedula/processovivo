@@ -3,6 +3,8 @@ import { SCRIPT_ATUALIZACOES } from '../../src/main/http/ui/atualizacoes.js';
 import { descricaoDoAto } from '../../src/domain/entities/descricaoDoAto.js';
 import { trechoDeTexto } from '../../src/main/http/ui/trechoDeTexto.js';
 import {
+  SITUACAO_PADRAO,
+  contarSemLeitura,
   contarSituacoes,
   filtrarPorSituacao,
   montarLinhas,
@@ -10,8 +12,12 @@ import {
   paginar,
   proximaOrdem,
   textoDePartes,
+  textoDeProvidencia,
 } from '../../src/main/http/ui/tabelaAtualizacoes.js';
-import type { GrupoDaTabela, ProcessoSemNovidade } from '../../src/main/http/ui/tabelaAtualizacoes.js';
+import type {
+  GrupoDaTabela,
+  ProcessoSemNovidade,
+} from '../../src/main/http/ui/tabelaAtualizacoes.js';
 
 function g(
   numero: string,
@@ -303,13 +309,21 @@ describe('base da tabela com processos sem novidade (v0.37.3)', () => {
   });
 
   it('a linha sem novidade não tem detecção, nunca é "não lida" e leva a movimentação do retrato', () => {
-    const [l] = montarLinhas([], [sem('a', '2026-09-01T00:00:00.000Z', { segredo: true })], true);
+    const [l] = montarLinhas(
+      [],
+      [sem('a', '2026-09-01T00:00:00.000Z', { segredo: true })],
+      true,
+    );
     expect(l).toMatchObject({
       semNovidade: true,
       naoVistas: 0,
       quantidade: 0,
       segredoJustica: true,
-      maisRecente: { detectadaEm: null, data: '2026-09-01T00:00:00.000Z', titulo: 'Juntada' },
+      maisRecente: {
+        detectadaEm: null,
+        data: '2026-09-01T00:00:00.000Z',
+        titulo: 'Juntada',
+      },
     });
   });
 
@@ -331,15 +345,107 @@ describe('base da tabela com processos sem novidade (v0.37.3)', () => {
       true,
     );
     for (const direcao of ['asc', 'desc'] as const) {
-      const porData = ordenarGrupos(base, { chave: 'dataAto', direcao }).map((x) => x.numero);
+      const porData = ordenarGrupos(base, { chave: 'dataAto', direcao }).map(
+        (x) => x.numero,
+      );
       expect(porData[porData.length - 1]).toBe('b');
-      const porDeteccao = ordenarGrupos(base, { chave: 'detectado', direcao }).map((x) => x.numero);
+      const porDeteccao = ordenarGrupos(base, { chave: 'detectado', direcao }).map(
+        (x) => x.numero,
+      );
       expect(porDeteccao[0]).toBe('1');
     }
   });
 
   it('é autocontida: injetada por toString() no console, roda sem nada do módulo', () => {
-    const injetada = new Function(`return ${montarLinhas.toString()}`)() as typeof montarLinhas;
+    const injetada = new Function(
+      `return ${montarLinhas.toString()}`,
+    )() as typeof montarLinhas;
     expect(injetada([], [sem('a', null)], true)).toHaveLength(1);
+  });
+});
+
+describe('padrão "Pedem providência" (v0.37.4)', () => {
+  const base = [
+    g('1', { naoVistas: 1, providencia: true }),
+    g('2'),
+    g('3', { providencia: true, naoVistas: 2 }),
+  ];
+
+  it('a aba abre no filtro de providência e ele devolve exatamente o que o contador anunciou', () => {
+    expect(SITUACAO_PADRAO).toBe('providencia');
+    const c = contarSituacoes(base);
+    const lista = filtrarPorSituacao(base, SITUACAO_PADRAO);
+    expect(c).toEqual({ todas: 3, naoLidas: 2, pedemProvidencia: 2 });
+    expect(lista).toHaveLength(c.pedemProvidencia);
+  });
+
+  it('"Ver todos" (situação "todas") devolve a base inteira e a paginação conta processos do filtro', () => {
+    expect(filtrarPorSituacao(base, 'todas')).toHaveLength(3);
+    const filtrados = filtrarPorSituacao(base, 'providencia');
+    expect(paginar(filtrados.length, 1, 25)).toMatchObject({ de: 1, ate: 2, total: 2 });
+  });
+
+  it('m < N: diz "Mostrando m de N" e oferece "Ver todos"', () => {
+    expect(textoDeProvidencia(1, 2, '')).toEqual({
+      modo: 'parcial',
+      frase: 'Mostrando 1 de 2 processos acompanhados: só os que pedem providência',
+      verTodos: true,
+    });
+    expect(textoDeProvidencia(1, 2, ' em TJGO').frase).toContain('acompanhados em TJGO:');
+  });
+
+  it('m = N: só a contagem, sem "Ver todos"', () => {
+    const t = textoDeProvidencia(2, 2, '');
+    expect(t.modo).toBe('todos');
+    expect(t.verTodos).toBe(false);
+    expect(t.frase).toBe(
+      'Mostrando 2 de 2 processos acompanhados: todos pedem providência.',
+    );
+    expect(textoDeProvidencia(1, 1, '').frase).toBe(
+      'Mostrando 1 de 1 processo acompanhado: pede providência.',
+    );
+  });
+
+  it('m = 0: estado vazio com "Ver todos" se há processos; nada se não há', () => {
+    expect(textoDeProvidencia(0, 5, '')).toEqual({
+      modo: 'vazio',
+      frase: '',
+      verTodos: true,
+    });
+    expect(textoDeProvidencia(0, 0, '').verTodos).toBe(false);
+  });
+
+  it('nenhuma frase fala em prazo', () => {
+    for (const [m, n] of [
+      [1, 2],
+      [2, 2],
+      [1, 1],
+    ] as const) {
+      expect(textoDeProvidencia(m, n, ' em TJGO').frase.toLowerCase()).not.toContain(
+        'prazo',
+      );
+    }
+  });
+
+  it('processo sem nenhuma movimentação conhecida é contado à parte, nunca como providência', () => {
+    const sem = montarLinhas(
+      [g('1', { providencia: true })],
+      [
+        { numero: '8', processo: null, segredoJustica: false, ultimaMovimentacao: null },
+        {
+          numero: '9',
+          processo: null,
+          segredoJustica: false,
+          ultimaMovimentacao: {
+            data: '2026-09-01T00:00:00.000Z',
+            titulo: 'x',
+            conteudo: null,
+          },
+        },
+      ],
+      true,
+    );
+    expect(contarSemLeitura(sem)).toBe(1);
+    expect(filtrarPorSituacao(sem, 'providencia').map((x) => x.numero)).toEqual(['1']);
   });
 });
