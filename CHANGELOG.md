@@ -9,6 +9,72 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.37.6] — 2026-10-09
+
+Conferência com o Projudi. O dono pôs a aba Atualizações ao lado da tela de
+Intimações do Projudi (Tribunal TJGO + Pedem providência + Últimos 15 dias): a aba tinha
+20 processos e o Projudi, 10; dos que cabiam numa captura, 3 de 4 não estavam no Projudi;
+2 do Projudi não estavam na aba; e uma linha mostrava duas datas de ato diferentes. Esta
+versão entrega **a sonda para descobrir o porquê, processo a processo**, faz a linha falar
+do **ato que gera a providência**, torna o "Detectado" legível e começa a separar a
+**intimação dirigida a outro destinatário**. Nenhuma consulta ao tribunal. Nada de prazo
+calculado nem de campo de data limite: o Projudi mostra uma "Possível Data Limite" que o
+sistema continua sem informar. O filtro de Período (por `detectadaEm`) e a janela de 30
+dias não mudaram.
+
+### Adicionado
+
+- **Sonda de diagnóstico `scripts/diagnostico-providencia.mjs` (v1.0.0).** Somente
+  leitura e sem rede: abre o banco com `readOnly` (e `query_only`), sem `abrirBanco` — logo
+  sem esquema, migração ou retrocarga —, não consulta tribunal, não grava nada, não lê senha
+  nem XML. Recusa rodar sem `--workspace` quando há mais de um (aceita o identificador ou o
+  e-mail da conta). Para cada processo diz: acompanhado, tribunal (do retrato e do número),
+  procedência do retrato, contagem de movimentações e de comunicações do DJEN, última
+  movimentação, novidades (total, não lidas, nos últimos 15 dias, maior lote detectado no
+  mesmo instante e quantas são de ato 30+ dias anterior), a providência (`pede` / `cumprida`
+  / `venceu` / `outro` / nenhuma, tipo, destinatário, marca de cumprido) e cada predicado do
+  filtro, com a conclusão "aparece / não aparece, porque …". `--lista-filtro` lista os que
+  passam (devem ser os da tela), termina com a contagem e separa os que pedem providência mas
+  ficam fora SÓ pelo Período. Números mascarados sem `--mostrar`. Grava em `os.tmpdir()`
+  `diagnostico-providencia-tabela.json`, só com contagens e booleanos. A lógica vive em
+  `infrastructure/persistencia/diagnosticoDeProvidencia.ts` e usa a MESMA `estadoDaPasta` da rota.
+- **Indicador de destinatário da comunicação do DJEN** (`Movimentacao.paraOUsuario`:
+  `sim`, `nao` ou `desconhecido`). O DJEN informa, em cada comunicação, os advogados
+  destinatários com número e UF da OAB, e a consulta por número devolve também as dirigidas
+  à outra parte. O mapper deixa as inscrições em memória (`destinatariosOab`, transitório) e
+  `comIndicadorDeDestinatario` — decorator da porta das pastas, o ponto único das cinco
+  gravações — as compara com as OABs do workspace (a do cadastro e as das vigilâncias) e as
+  troca pelo indicador. **Inscrição de terceiro nunca vai ao banco nem à API** (testes
+  fixam). Migração aditiva e sem retrocarga: o retrato é JSON; fica `desconhecido` até a
+  próxima sincronização, e uma resposta sem as inscrições (cache) não apaga o que já se sabia.
+- **Intimação a outro destinatário** (`paraOUsuario = nao`): deixa de contar como "pede
+  providência por intimação" (volta à regra comum do ato) e a tela diz: "N com intimação a
+  outro destinatário · Ver" ao lado do filtro, o selo "Intimação a outro destinatário" na
+  linha, e a lista dos que saíram por isso. `desconhecido` mantém o comportamento anterior e o
+  selo da intimação diz "destinatário não confirmado". `GET /v1/novidades` ganhou, aditivos,
+  `providencia.motivo.paraOUsuario`, `providencia.outroDestinatario` e a situação `outro`.
+
+### Alterado
+
+- **A linha mostra o ato que gera a providência.** Quando o processo pede providência, a
+  atualização principal é esse ato (rótulo, selo "Intimação"/"Citação" e a data dele na
+  coluna Data do ato); o último andamento, quando é outro, vai numa segunda linha "Último
+  andamento: …". Saiu o "Pede providência por:" da 0.37.5. Ordenar por "Data do ato" usa a
+  data exibida. O trecho do texto só aparece quando o ato da providência é a própria
+  atualização da linha (o contrato da API não leva texto do ato da providência).
+- **"Detectado" legível.** Quando a detecção está a mais de 7 dias da data do ato, a coluna
+  mostra a data absoluta ("detectado em 07/10"), com o `title` "Data do ato é a do tribunal;
+  detectado é quando o Processo Vivo viu pela primeira vez". Ordenação e regra de
+  `detectadaEm` intactas.
+- `serializarProcesso` aceita `preservarDestinatarios` (só o cache em memória o pede);
+  `Processo.toJSON` não leva `destinatariosOab`.
+
+### Investigação (sem alteração de comportamento)
+
+- O reparo da avalanche deixa de fora lotes menores que 20 e atos com menos de 30 dias de
+  atraso; testes sintéticos fixam o resíduo e o critério complementar proposto (5+ novidades,
+  100% com ato 30+ dias anterior). Nada foi aplicado.
+
 ## [0.37.5] — 2026-10-08
 
 A aba Atualizações (que já abre em "Pedem providência") passa a reconhecer as

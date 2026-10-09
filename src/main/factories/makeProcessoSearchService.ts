@@ -6,7 +6,9 @@ import { GuardaDePecas } from '../../application/services/GuardaDePecas.js';
 import { ServicoLeitor } from '../../application/services/ServicoLeitor.js';
 import { ServicoPasta } from '../../application/services/ServicoPasta.js';
 import { ServicoCalendario } from '../../application/services/ServicoCalendario.js';
+import { comIndicadorDeDestinatario } from '../../application/services/indicadorDeDestinatario.js';
 import { comDeteccaoDoCalendario } from '../../application/services/ingestaoDoCalendario.js';
+import { OabsDoWorkspaceSqlite } from '../../infrastructure/persistencia/sqlite/OabsDoWorkspaceSqlite.js';
 import { RepositorioDeEventosSqlite } from '../../infrastructure/persistencia/sqlite/RepositorioDeEventosSqlite.js';
 import { createHmac, randomBytes, randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
@@ -266,7 +268,14 @@ export function montarAplicacao(config: Config): Aplicacao {
     assinaturas,
     gerarId: () => randomUUID(),
   });
-  const repositorio = comDeteccaoDoCalendario(repositorioCru, calendario, logger);
+  // Por fora do calendário: o indicador de destinatário troca as inscrições
+  // transitórias do DJEN por `paraOUsuario` ANTES de o retrato descer, e nem o
+  // calendário nem o banco chegam a ver inscrição de terceiro (v0.37.6).
+  const repositorio = comIndicadorDeDestinatario(
+    comDeteccaoDoCalendario(repositorioCru, calendario, logger),
+    new OabsDoWorkspaceSqlite(db),
+    logger,
+  );
 
   // A sincronização usa o `provider` COM cache: se dois workspaces acompanham
   // o mesmo processo, a segunda consulta da varredura sai da memória em vez de

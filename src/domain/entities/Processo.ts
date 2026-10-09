@@ -144,10 +144,11 @@ export class Processo {
       valorCausa: this.valorCausa,
       segredoJustica: this.segredoJustica,
       partes: this.partes,
-      movimentacoes: this.movimentacoes.map((m) => ({
-        ...m,
-        data: m.data.toISOString(),
-      })),
+      movimentacoes: this.movimentacoes.map((m) => {
+        // Inscrição de advogado de terceiro é transitória (v0.37.6): não sai na API.
+        const { destinatariosOab: _transitorio, ...visivel } = m;
+        return { ...visivel, data: m.data.toISOString() };
+      }),
       procedencia: {
         ...this.procedencia,
         consultadoEm: this.procedencia.consultadoEm.toISOString(),

@@ -249,18 +249,21 @@ describe.skipIf(sem)(
 
       expect(await linhas().count()).toBe(2);
       const a = ao(NA);
-      expect(await a.locator('.selo.int').textContent()).toBe('Intimação');
-      expect(await ao(NB).locator('.selo.int').textContent()).toBe('Citação');
+      // (v0.37.6) O selo mora junto do rótulo do ato que gera a providência.
+      expect(await a.locator('.c-atu .selo.int').textContent()).toBe('Intimação');
+      expect(await ao(NB).locator('.c-atu .selo.int').textContent()).toBe('Citação');
 
-      // A: a linha mostra "Juntada de petição"; a providência vem do "Ato ordinatório".
-      const por = ((await a.locator('.nvt-por').textContent()) ?? '').replace(
-        /\s+/g,
-        ' ',
+      // A: a linha é sobre o "Ato ordinatório" (o que gera a providência); a
+      // "Juntada de petição", que é o último andamento, vai numa segunda linha.
+      expect(((await a.locator('.nvt-tit').textContent()) ?? '').trim()).toMatch(
+        /^Ato ordinatório\s*Intimação$/,
       );
-      expect(por).toMatch(/^Pede providência por: Ato ordinatório · /);
-      expect(por).toMatch(/\d{2}\/\d{2}\/\d{4}/);
-      // B: é o mesmo ato — nada a mais.
-      expect(await ao(NB).locator('.nvt-por').count()).toBe(0);
+      const ult = ((await a.locator('.nvt-ult').textContent()) ?? '').replace(/\s+/g, ' ');
+      expect(ult).toMatch(/^Último andamento: Juntada de petição · \d{2}\/\d{2}\/\d{4}$/);
+      expect(await a.locator('.nvt-por').count()).toBe(0);
+      expect(await a.innerText()).not.toContain('Pede providência por');
+      // B: é o mesmo ato — nada de segunda linha.
+      expect(await ao(NB).locator('.nvt-ult').count()).toBe(0);
 
       // O que ficou de fora é dito: nada de "prazo" no texto novo.
       const texto = await resumo();

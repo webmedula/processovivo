@@ -358,7 +358,8 @@ describe.skipIf(sem)(
         const numero = numeroValido(2004 + i);
         return {
           c,
-          g: grupo(numero, novidade(numero, 'A', { diasDetectada: c.d, diasAto: 12 })),
+          g: // Ato um dia antes da detecção: perto o bastante para o texto continuar relativo (v0.37.6).
+          grupo(numero, novidade(numero, 'A', { diasDetectada: c.d, diasAto: c.d + 1 })),
         };
       });
       await abrir({ grupos: gs.map((x) => x.g) });

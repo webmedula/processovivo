@@ -33,7 +33,9 @@ import { nomeDaClasse } from '../../../domain/entities/nomeDaClasse.js';
 import { trechoDeTexto } from './trechoDeTexto.js';
 import {
   SITUACAO_PADRAO,
-  atoQueGeraAProvidencia,
+  atoExibido,
+  detectadoDistanteDoAto,
+  diaMesBrasilia,
   contarSaidasDaProvidencia,
   frasesDeSaidas,
   seloDoTipo,
@@ -66,7 +68,9 @@ var nomeDaClasse=${nomeDaClasse.toString()};
 var textoDePartes=${textoDePartes.toString()};
 var textoDeProvidencia=${textoDeProvidencia.toString()};
 var contarSemLeitura=${contarSemLeitura.toString()};
-var atoQueGeraAProvidencia=${atoQueGeraAProvidencia.toString()};
+var atoExibido=${atoExibido.toString()};
+var detectadoDistanteDoAto=${detectadoDistanteDoAto.toString()};
+var diaMesBrasilia=${diaMesBrasilia.toString()};
 var contarSaidasDaProvidencia=${contarSaidasDaProvidencia.toString()};
 var frasesDeSaidas=${frasesDeSaidas.toString()};
 var seloDoTipo=${seloDoTipo.toString()};
@@ -137,40 +141,53 @@ function celulaPartes(g){
   return '<td class="c-partes" data-rotulo="Partes"><span class="nvt-partes" title="'+esc(txt)+'">'+esc(txt)+'</span></td>';
 }
 
+/* Selo "Intimação"/"Citação" ao lado do rótulo do ato (v0.37.6): vem da comunicação do Diário que gera
+   a providência. Destinatário não confirmado diz isso no title; "dirigida a outro" é aviso à parte. */
+function seloDoAto(a){
+  var t=seloDoTipo(a.tipo);
+  if(!t)return '';
+  return ' <span class="selo int" title="'+esc('Comunicação publicada no Diário Eletrônico (DJEN). '+
+    (a.paraOUsuario==='sim'?'Destinatário confirmado: uma das suas inscrições na OAB. ':'Destinatário não confirmado. ')+
+    'Leitura automática; confira no ato completo.')+'">'+esc(t)+'</span>';
+}
+
+/* Quando o último andamento é outro ato, ele vai numa segunda linha. A linha diz o ato que gera a
+   providência; nada aqui afirma prazo (rótulo e data, nunca o texto). */
+function linhaUltimoAndamento(a){
+  if(!a.ultimoAndamento)return '';
+  var enxuto=descricaoDoAto(a.ultimoAndamento.rotulo);
+  return '<div class="nvt-ult"'+(enxuto!==a.ultimoAndamento.rotulo?' title="'+esc(a.ultimoAndamento.rotulo)+'"':'')+
+    '>Último andamento: <strong>'+esc(enxuto)+'</strong> · <time datetime="'+esc(a.ultimoAndamento.data)+'">'+esc(pv().dt(a.ultimoAndamento.data))+'</time></div>';
+}
+
 /* Processo acompanhado SEM novidade registrada (v0.37.3): a última movimentação do retrato,
    com a mesma regra de descrição e de trecho. Não é "atualização detectada" e a célula diz isso.
-   Segredo de justiça: rótulo e data, nunca o texto do ato. */
+   Segredo de justiça: rótulo e data, nunca o texto do ato. Se o processo pede providência, a linha
+   mostra o ato que a gera e a última movimentação vai na segunda linha. */
 function celulaSemNovidade(g){
   var n=g.maisRecente;
   var h='<td class="c-atu" data-rotulo="Atualização">';
   if(!n.data){
     return h+'<div class="nvt-tit nvt-vazio">Nenhuma movimentação conhecida</div></td>';
   }
-  var enxuto=descricaoDoAto(n.titulo);
-  h+='<div class="nvt-sem">Última movimentação conhecida · sem atualização detectada</div>'+
-    '<div class="nvt-tit"'+(enxuto!==n.titulo?' title="'+esc(n.titulo)+'"':'')+'>'+esc(enxuto)+'</div>';
+  var a=atoExibido(g);
+  var enxuto=descricaoDoAto(a.rotulo);
+  h+='<div class="nvt-sem">'+(a.daProvidencia?'Sem atualização detectada':'Última movimentação conhecida · sem atualização detectada')+'</div>'+
+    '<div class="nvt-tit"'+(enxuto!==a.rotulo?' title="'+esc(a.rotulo)+'"':'')+'>'+esc(enxuto)+seloDoAto(a)+'</div>';
   if(g.segredoJustica)
     h+='<div class="nota nvt-sem"><span class="selo al">segredo de justiça</span> O texto do ato não é exibido aqui.</div>';
-  else h+=notaDoAto(n);
-  return h+linhaPorAto(g)+'</td>';
-}
-
-/* O selo se calcula sobre o retrato inteiro e a linha mostra UM ato: quando o que gera a
-   providência é outro, a linha diz qual (rótulo e data, nunca o texto do ato nem prazo). */
-function linhaPorAto(g){
-  var a=atoQueGeraAProvidencia(g);
-  if(!a)return '';
-  var enxuto=descricaoDoAto(a.rotulo);
-  return '<div class="nvt-por"'+(enxuto!==a.rotulo?' title="'+esc(a.rotulo)+'"':'')+'>Pede providência por: <strong>'+
-    esc(enxuto)+'</strong> · <time datetime="'+esc(a.data)+'">'+esc(pv().dt(a.data))+'</time></div>';
+  else if(a.igualAAtualizacao)h+=notaDoAto(n);
+  return h+linhaUltimoAndamento(a)+'</td>';
 }
 
 function celulaAtualizacao(g){
   var n=g.maisRecente;
+  var a=atoExibido(g);
   /* Só a exibição perde a repetição do tipo; o original fica no title. */
-  var enxuto=descricaoDoAto(n.titulo);
+  var enxuto=descricaoDoAto(a.rotulo);
   return '<td class="c-atu" data-rotulo="Atualização"><div class="nvt-tit'+(n.vista?'':' nl')+'"'+
-    (enxuto!==n.titulo?' title="'+esc(n.titulo)+'"':'')+'>'+esc(enxuto)+'</div>'+notaDoAto(n)+linhaPorAto(g)+'</td>';
+    (enxuto!==a.rotulo?' title="'+esc(a.rotulo)+'"':'')+'>'+esc(enxuto)+seloDoAto(a)+'</div>'+
+    (a.igualAAtualizacao?notaDoAto(n):'')+linhaUltimoAndamento(a)+'</td>';
 }
 
 function celulaSituacao(g){
@@ -179,8 +196,6 @@ function celulaSituacao(g){
     (g.naoVistas>1?g.naoVistas+' não lidas':'Não lida')+'</span>';
   if(g.processo&&g.processo.pedeProvidencia){
     s+=seloProvidencia(g.processo.motivoProvidencia);
-    var tipo=P&&P.situacao==='pede'?seloDoTipo(P.motivo.tipo):'';
-    if(tipo)s+='<span class="selo int" title="Comunicação publicada no Diário Eletrônico (DJEN). Leitura automática; confira no ato completo.">'+esc(tipo)+'</span>';
     if(P&&P.situacao==='pede')s+='<div>'+prov().botaoCumprir(g.numero,P.motivo.chave,'cumprir-'+g.numero)+'</div>';
   }else if(P&&P.situacao==='cumprida'){
     s+='<span class="selo cum" title="'+esc('Você marcou como cumprido'+(P.cumpridoEm?' em '+pv().dth(P.cumpridoEm):'')+
@@ -189,6 +204,9 @@ function celulaSituacao(g){
   }else if(P&&P.situacao==='venceu'){
     s+='<span class="selo neutro nvt-venceu" title="Esta comunicação do Diário passou da janela de leitura automática sem você marcar como cumprida. Confira no processo.">sem marca há mais de '+R.pendenciaIntimacaoJanelaDias+' dias</span>';
   }
+  /* (v0.37.6) Intimação/citação do Diário dirigida a OUTRO destinatário: o processo não entra em "Pedem
+     providência" por causa dela, e a linha diz por quê, em "Todas" e em "Ver". */
+  if(P&&P.outroDestinatario)s+='<span class="selo neutro nvt-outro" title="'+esc('Comunicação do Diário Eletrônico dirigida a advogado que não é uma das suas inscrições na OAB. Por isso não conta como providência. Se for de um colega do escritório, confira no processo.')+'">Intimação a outro destinatário</span>';
   return '<td class="c-sit" data-rotulo="Situação">'+s+'</td>';
 }
 
@@ -212,26 +230,36 @@ function classeDaLinha(g){
   return {cheia:'<span class="nvt-classe"'+t+'>'+esc(txt)+'</span>',mini:'<span class="nvt-classe-mini"'+t+'>'+esc(txt)+'</span>'};
 }
 
-function celulaData(n){
-  if(!n.data)return '<td class="c-data" data-rotulo="Data do ato"><span class="nvt-vazio" title="Nenhuma movimentação conhecida">—</span></td>';
-  return '<td class="c-data" data-rotulo="Data do ato"><time datetime="'+esc(n.data)+'" title="'+esc(pv().dth(n.data))+'">'+esc(pv().dt(n.data))+'</time></td>';
+function celulaData(g){
+  var a=atoExibido(g);
+  if(!a.data)return '<td class="c-data" data-rotulo="Data do ato"><span class="nvt-vazio" title="Nenhuma movimentação conhecida">—</span></td>';
+  return '<td class="c-data" data-rotulo="Data do ato"><time datetime="'+esc(a.data)+'" title="'+esc(pv().dth(a.data))+'">'+esc(pv().dt(a.data))+'</time></td>';
 }
-function celulaDetectado(n){
+/* "Detectado" (v0.37.6): quando a detecção está a mais de 7 dias da data do ato, o "há 2 dias" sozinho
+   passa por ato novo; a coluna mostra a data absoluta e o title explica as duas datas. A ordenação e a
+   regra de detectadaEm não mudam. */
+function celulaDetectado(g){
+  var n=g.maisRecente,a=atoExibido(g);
   if(!n.detectadaEm)
     return '<td class="c-det" data-rotulo="Detectado"><span title="Sem detecção registrada: o acompanhamento ainda não percebeu nenhuma movimentação nova neste processo.">'+
       '<span aria-hidden="true">—</span><span class="nvt-sr">sem detecção registrada</span></span></td>';
-  return '<td class="c-det" data-rotulo="Detectado"><span title="'+esc(detectadoHa(n.detectadaEm)+'. Quando o Processo Vivo percebeu este ato ('+pv().dth(n.detectadaEm)+'). A data do ato está na coluna ao lado.')+'">'+
-    '<span aria-hidden="true">'+esc(detectadoCurto(n.detectadaEm))+'</span><span class="nvt-sr">'+esc(detectadoHa(n.detectadaEm))+'</span></span></td>';
+  var distante=detectadoDistanteDoAto(a.data,n.detectadaEm);
+  var explica='Data do ato é a do tribunal; detectado é quando o Processo Vivo viu pela primeira vez.';
+  /* A detecção é da atualização da linha: se a linha mostra outro ato (o da providência), o title diz. */
+  var deOutro=a.daProvidencia&&!a.igualAAtualizacao?' A detecção refere-se ao último andamento, não ao ato que pede providência.':'';
+  var curto=distante?'em '+diaMesBrasilia(n.detectadaEm):detectadoCurto(n.detectadaEm);
+  var cheio=distante?'detectado em '+diaMesBrasilia(n.detectadaEm):detectadoHa(n.detectadaEm);
+  return '<td class="c-det" data-rotulo="Detectado"><span title="'+esc(cheio+' ('+pv().dth(n.detectadaEm)+'). '+explica+deOutro)+'">'+
+    '<span aria-hidden="true">'+esc(curto)+'</span><span class="nvt-sr">'+esc(cheio)+'</span></span></td>';
 }
 
 function linha(g){
-  var n=g.maisRecente;
   var classe=classeDaLinha(g);
   var h='<tr class="nvt-linha'+(g.semNovidade?' nvt-sem-nov':'')+'" role="row" data-processo="'+esc(g.numero)+'">'+
     celulaProcesso(g)+celulaPartes(g)+(g.semNovidade?celulaSemNovidade(g):celulaAtualizacao(g))+
     '<td class="c-trib" data-rotulo="Tribunal">'+esc(g.processo&&g.processo.tribunal?g.processo.tribunal:'—')+classe.mini+'</td>'+
     '<td class="c-classe" data-rotulo="Classe">'+classe.cheia+'</td>'+
-    celulaData(n)+celulaDetectado(n)+
+    celulaData(g)+celulaDetectado(g)+
     celulaSituacao(g)+celulaAcoes(g)+'</tr>';
   return h;
 }
@@ -288,9 +316,10 @@ function filtros(cont){
 /* O que o filtro de providência deixou de fora, dito em voz alta (v0.37.5): os marcados como
    cumpridos (com o "Ver") e as intimações que passaram da janela sem marca. Nada some calado. */
 function saidasDaProvidencia(base){
-  var c=contarSaidasDaProvidencia(base),f=frasesDeSaidas(c.cumpridos,c.vencidos,R.pendenciaIntimacaoJanelaDias),h='';
+  var c=contarSaidasDaProvidencia(base),f=frasesDeSaidas(c.cumpridos,c.vencidos,R.pendenciaIntimacaoJanelaDias,c.outros),h='';
   if(f.cumpridos)h+=' · '+esc(f.cumpridos)+' · <button type="button" class="nov-btn" data-acao="situacao" data-sit="cumpridos" data-foco="ver-cumpridos">Ver</button>';
   if(f.vencidos)h+=' · '+esc(f.vencidos);
+  if(f.outros)h+=' · '+esc(f.outros)+' · <button type="button" class="nov-btn" data-acao="situacao" data-sit="outros" data-foco="ver-outros">Ver</button>';
   return h;
 }
 
@@ -300,6 +329,12 @@ function resumo(base,filtrados,linhasBase){
   if(S.situacao==='cumpridos'){
     h+='Mostrando <strong>'+filtrados+'</strong> '+(filtrados===1?'processo marcado como cumprido':'processos marcados como cumpridos')+onde+
       '. <button type="button" class="nov-btn" data-acao="situacao" data-sit="providencia" data-foco="voltar-prov">Voltar aos que pedem providência</button>';
+    return h+'</div>';
+  }
+  if(S.situacao==='outros'){
+    h+='Mostrando <strong>'+filtrados+'</strong> '+(filtrados===1?'processo com intimação a outro destinatário':'processos com intimação a outro destinatário')+onde+
+      '. Eles não entram em "Pedem providência" por causa dessa intimação; se for de um colega do escritório, confira no processo. '+
+      '<button type="button" class="nov-btn" data-acao="situacao" data-sit="providencia" data-foco="voltar-prov">Voltar aos que pedem providência</button>';
     return h+'</div>';
   }
   if(S.situacao==='providencia'){
@@ -390,6 +425,11 @@ function semCumpridos(){
     '<p><button type="button" class="nov-btn" data-acao="situacao" data-sit="providencia" data-foco="voltar-prov">Voltar aos que pedem providência</button></p></div>';
 }
 
+function semOutros(){
+  return '<div class="nvt-sem-prov" role="status" data-foco="resumo"><strong>Nenhum processo com intimação a outro destinatário.</strong>'+
+    '<p><button type="button" class="nov-btn" data-acao="situacao" data-sit="providencia" data-foco="voltar-prov">Voltar aos que pedem providência</button></p></div>';
+}
+
 /* Quem não tem movimentação conhecida não pode ser lido: o filtro não o conta, e a tela diz. */
 function avisoSemLeitura(baseLinhas){
   var n=contarSemLeitura(baseLinhas);
@@ -413,6 +453,7 @@ function desenhar(anunciarMudanca){
   if(!base.length)h+=semBase();
   else if(!filtrados.length&&S.situacao==='providencia')h+=semProvidencia(base);
   else if(!filtrados.length&&S.situacao==='cumpridos')h+=semCumpridos();
+  else if(!filtrados.length&&S.situacao==='outros')h+=semOutros();
   else if(!filtrados.length)h+=semResultado(base.length);
   else{
     h+=avisoDeAnteriores(filtrados);

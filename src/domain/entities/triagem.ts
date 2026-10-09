@@ -163,7 +163,12 @@ export function triar(movimentacao: Movimentacao): Triagem {
   // Intimação ou citação PUBLICADA no Diário (v0.37.5): o tipo vem da fonte, não
   // do texto — "Ato ordinatório" e afins escapavam das listas abaixo. Vale
   // também com o teor indisponível: o ato foi endereçado ao advogado de qualquer jeito.
-  if (tipoDaComunicacao(movimentacao.tipoComunicacao) !== 'outro') {
+  // Dirigida a OUTRO destinatário (v0.37.6): não é intimação para quem acompanha,
+  // então esta cláusula não vale e o ato cai nas regras comuns abaixo.
+  if (
+    tipoDaComunicacao(movimentacao.tipoComunicacao) !== 'outro' &&
+    movimentacao.paraOUsuario !== 'nao'
+  ) {
     return { exigeAcao: true, motivo: 'intimação ou citação publicada no Diário' };
   }
 

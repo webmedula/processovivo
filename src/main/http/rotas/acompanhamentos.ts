@@ -204,6 +204,8 @@ function atoJson(ato: AtoDaProvidencia): Record<string, unknown> {
     // Opaca para a tela: ela a devolve em "marcar como cumprido", nunca a interpreta.
     chave: ato.chave,
     tipo: ato.tipo,
+    // (v0.37.6) `sim` | `nao` | `desconhecido`. Só o indicador: nenhuma inscrição de advogado sai daqui.
+    paraOUsuario: ato.paraOUsuario,
   };
 }
 
@@ -217,18 +219,37 @@ function providenciaJson(
   leitura: LeituraDaProvidencia,
   cumprido: Acompanhamento['cumprido'],
 ): Record<string, unknown> | null {
+  // (v0.37.6) Intimação/citação do Diário dirigida a OUTRO destinatário: campo à
+  // parte, porque convive com `cumprida` e `venceu` e a tela conta cada um.
+  const outro = leitura.outroDestinatario
+    ? { outroDestinatario: atoJson(leitura.outroDestinatario) }
+    : {};
   if (leitura.pendente) {
-    return { situacao: 'pede', motivo: atoJson(leitura.pendente), cumpridoEm: null };
+    return { situacao: 'pede', motivo: atoJson(leitura.pendente), cumpridoEm: null, ...outro };
   }
   if (leitura.coberto) {
     return {
       situacao: 'cumprida',
       motivo: atoJson(leitura.coberto),
       cumpridoEm: cumprido?.em.toISOString() ?? null,
+      ...outro,
     };
   }
   if (leitura.venceuPorTempo) {
-    return { situacao: 'venceu', motivo: atoJson(leitura.venceuPorTempo), cumpridoEm: null };
+    return {
+      situacao: 'venceu',
+      motivo: atoJson(leitura.venceuPorTempo),
+      cumpridoEm: null,
+      ...outro,
+    };
+  }
+  if (leitura.outroDestinatario) {
+    return {
+      situacao: 'outro',
+      motivo: atoJson(leitura.outroDestinatario),
+      cumpridoEm: null,
+      ...outro,
+    };
   }
   return null;
 }

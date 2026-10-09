@@ -38,6 +38,8 @@ export interface AtoDaLinha {
   readonly data: string;
   readonly chave: string;
   readonly tipo: 'intimacao' | 'citacao' | 'outro';
+  /** (v0.37.6) A comunicação do Diário é dirigida a quem acompanha? Ausente em servidor antigo = `desconhecido`. */
+  readonly paraOUsuario?: 'sim' | 'nao' | 'desconhecido';
 }
 
 /**
@@ -45,9 +47,12 @@ export interface AtoDaLinha {
  * `venceu`: intimação/citação que passou da janela sem marca.
  */
 export interface ProvidenciaDaLinha {
-  readonly situacao: 'pede' | 'cumprida' | 'venceu';
+  /** `outro` (v0.37.6): só há intimação/citação dirigida a OUTRO destinatário. */
+  readonly situacao: 'pede' | 'cumprida' | 'venceu' | 'outro';
   readonly motivo: AtoDaLinha;
   readonly cumpridoEm: string | null;
+  /** Intimação/citação do Diário dirigida a outro destinatário, sem marca, na janela de 30 dias. */
+  readonly outroDestinatario?: AtoDaLinha | null;
 }
 
 /** Linha de processo acompanhado sem novidade registrada, como o servidor a manda (`semNovidade`). */
@@ -64,9 +69,10 @@ export interface ProcessoSemNovidade {
 
 /**
  * `cumpridos` não é um chip: é o "Ver" da frase "N marcados como cumpridos" (v0.37.5),
- * a lista dos processos que o advogado marcou, com o "Desfazer".
+ * a lista dos processos que o advogado marcou, com o "Desfazer". `outros` (v0.37.6) é o
+ * "Ver" de "N com intimação a outro destinatário".
  */
-export type SituacaoFiltro = 'todas' | 'naoLidas' | 'providencia' | 'cumpridos';
+export type SituacaoFiltro = 'todas' | 'naoLidas' | 'providencia' | 'cumpridos' | 'outros';
 
 /**
  * O filtro de Situação com que a aba abre (v0.37.4, decisão do dono, opção A):
@@ -181,31 +187,45 @@ export function contarSemLeitura(
 export function contarSaidasDaProvidencia(
   grupos: ReadonlyArray<{
     readonly processo: {
-      readonly providencia?: { readonly situacao: string } | null;
+      readonly pedeProvidencia?: boolean;
+      readonly providencia?: {
+        readonly situacao: string;
+        readonly outroDestinatario?: unknown;
+      } | null;
     } | null;
   }>,
-): { readonly cumpridos: number; readonly vencidos: number } {
+): { readonly cumpridos: number; readonly vencidos: number; readonly outros: number } {
   let cumpridos = 0;
   let vencidos = 0;
+  let outros = 0;
   for (const g of grupos) {
     const p = g.processo && g.processo.providencia ? g.processo.providencia : null;
     if (!p) continue;
     if (p.situacao === 'cumprida') cumpridos += 1;
     else if (p.situacao === 'venceu') vencidos += 1;
+    // Só conta quem o filtro de fato deixou de fora: processo que pede providência por
+    // outro ato está na lista e a linha já diz que há intimação a outro destinatário.
+    if (p.outroDestinatario && !g.processo?.pedeProvidencia) outros += 1;
   }
-  return { cumpridos, vencidos };
+  return { cumpridos, vencidos, outros };
 }
 
 /**
- * As frases que acompanham "Pedem providência": "N marcados como cumpridos" e
- * "N sem marca há mais de 30 dias". Vazias quando o número é zero. Sem a palavra
- * "prazo": a janela é de leitura automática, não de contagem.
+ * As frases que acompanham "Pedem providência": "N marcados como cumpridos",
+ * "N sem marca há mais de 30 dias" e (v0.37.6) "N com intimação a outro destinatário".
+ * Vazias quando o número é zero. Sem a palavra "prazo": a janela é de leitura
+ * automática, não de contagem.
  */
 export function frasesDeSaidas(
   cumpridos: number,
   vencidos: number,
   janelaDias: number,
-): { readonly cumpridos: string; readonly vencidos: string } {
+  outros: number = 0,
+): {
+  readonly cumpridos: string;
+  readonly vencidos: string;
+  readonly outros: string;
+} {
   return {
     cumpridos:
       cumpridos <= 0
@@ -215,17 +235,22 @@ export function frasesDeSaidas(
           : cumpridos + ' marcados como cumpridos',
     vencidos:
       vencidos <= 0 ? '' : vencidos + ' sem marca há mais de ' + janelaDias + ' dias',
+    outros: outros <= 0 ? '' : outros + ' com intimação a outro destinatário',
   };
 }
 
 /**
- * O ato que gera a providência, QUANDO ele não é o ato que a linha mostra (v0.37.5).
- * O selo se calcula sobre o retrato inteiro e a linha mostra uma só movimentação;
- * sem isto o selo pode apontar para outro ato sem a tela dizer qual. Devolve
- * `null` se não pede providência ou se for o mesmo ato (aí não há segunda linha).
- * Compara rótulo e data: a novidade não guarda o identificador da fonte.
+ * O ato que a LINHA mostra (v0.37.6). Quando o processo pede providência, é o ato que
+ * gera a providência — rótulo, data, selo e, se for o mesmo da atualização, o trecho —
+ * e o último andamento, quando é outro, vai numa segunda linha. Sem providência, é a
+ * atualização da linha, como antes. Assim a data do ato, o selo e o rótulo falam do
+ * MESMO ato (antes a linha mostrava um ato e o selo vinha de outro).
+ *
+ * `igualAAtualizacao`: o ato exibido é o da atualização/última movimentação da linha
+ * (só nesse caso o trecho de texto dela é dele). Compara rótulo e data: a novidade não
+ * guarda o identificador da fonte.
  */
-export function atoQueGeraAProvidencia(g: {
+export function atoExibido(g: {
   readonly maisRecente: { readonly data: string | null; readonly titulo?: string };
   readonly processo: {
     readonly providencia?: {
@@ -234,15 +259,70 @@ export function atoQueGeraAProvidencia(g: {
         readonly rotulo: string;
         readonly data: string;
         readonly tipo: string;
+        readonly paraOUsuario?: string;
       };
     } | null;
   } | null;
-}): { readonly rotulo: string; readonly data: string; readonly tipo: string } | null {
-  const p = g.processo && g.processo.providencia ? g.processo.providencia : null;
-  if (!p || p.situacao !== 'pede') return null;
+}): {
+  readonly rotulo: string;
+  readonly data: string | null;
+  readonly tipo: string;
+  readonly paraOUsuario: string;
+  readonly daProvidencia: boolean;
+  readonly igualAAtualizacao: boolean;
+  readonly ultimoAndamento: { readonly rotulo: string; readonly data: string } | null;
+} {
   const n = g.maisRecente;
-  if (n.data === p.motivo.data && n.titulo === p.motivo.rotulo) return null;
-  return { rotulo: p.motivo.rotulo, data: p.motivo.data, tipo: p.motivo.tipo };
+  const p = g.processo && g.processo.providencia ? g.processo.providencia : null;
+  if (!p || p.situacao !== 'pede') {
+    return {
+      rotulo: n.titulo || '',
+      data: n.data,
+      tipo: 'outro',
+      paraOUsuario: 'desconhecido',
+      daProvidencia: false,
+      igualAAtualizacao: true,
+      ultimoAndamento: null,
+    };
+  }
+  const mesmo = n.data === p.motivo.data && n.titulo === p.motivo.rotulo;
+  return {
+    rotulo: p.motivo.rotulo,
+    data: p.motivo.data,
+    tipo: p.motivo.tipo,
+    paraOUsuario: p.motivo.paraOUsuario || 'desconhecido',
+    daProvidencia: true,
+    igualAAtualizacao: mesmo,
+    ultimoAndamento:
+      mesmo || !n.data || !n.titulo ? null : { rotulo: n.titulo, data: n.data },
+  };
+}
+
+/**
+ * "Detectado" e data do ato estão longe um do outro? (v0.37.6) Mais de 7 dias de
+ * diferença: o "há 2 dias" sozinho sugere ato novo, quando a data do ato é de semanas
+ * atrás. Só decide qual TEXTO a coluna mostra; não toca a ordenação nem `detectadaEm`.
+ */
+export function detectadoDistanteDoAto(
+  dataDoAto: string | null,
+  detectadaEm: string | null,
+): boolean {
+  if (!dataDoAto || !detectadaEm) return false;
+  const a = new Date(dataDoAto).getTime();
+  const d = new Date(detectadaEm).getTime();
+  if (Number.isNaN(a) || Number.isNaN(d)) return false;
+  return Math.abs(d - a) > 7 * 86_400_000;
+}
+
+/** "dd/mm" no fuso de Brasília (fixo, -03:00), para o "detectado em 07/10". Vazio se a data não existe. */
+export function diaMesBrasilia(iso: string | null): string {
+  if (!iso) return '';
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return '';
+  const local = new Date(t - 3 * 3_600_000);
+  const dd = String(local.getUTCDate());
+  const mm = String(local.getUTCMonth() + 1);
+  return (dd.length < 2 ? '0' + dd : dd) + '/' + (mm.length < 2 ? '0' + mm : mm);
 }
 
 /** "Intimação" / "Citação" quando o ato que gera a providência veio de comunicação do DJEN desse tipo. */
@@ -258,6 +338,15 @@ export function filtrarPorSituacao<T extends GrupoDaTabela>(
     return grupos.filter(
       (g) =>
         !!g.processo && !!g.processo.providencia && g.processo.providencia.situacao === 'cumprida',
+    );
+  }
+  if (situacao === 'outros') {
+    return grupos.filter(
+      (g) =>
+        !!g.processo &&
+        !g.processo.pedeProvidencia &&
+        !!g.processo.providencia &&
+        !!g.processo.providencia.outroDestinatario,
     );
   }
   if (situacao === 'naoLidas') return grupos.filter((g) => g.naoVistas > 0);
@@ -298,8 +387,15 @@ export function ordenarGrupos<T extends GrupoDaTabela>(
   const valor = (g: T): number | string => {
     if (ordem.chave === 'processo') return g.numero.replace(/\D/g, '');
     if (ordem.chave === 'tribunal') return (g.processo?.tribunal ?? '').toLowerCase();
+    // A coluna "Data do ato" mostra a data do ato que gera a providência quando o
+    // processo a pede (v0.37.6); ordenar por outra data contradiria o que está na tela.
+    const prov = g.processo && g.processo.providencia ? g.processo.providencia : null;
     const iso =
-      ordem.chave === 'dataAto' ? g.maisRecente.data : g.maisRecente.detectadaEm;
+      ordem.chave === 'dataAto'
+        ? prov && prov.situacao === 'pede'
+          ? prov.motivo.data
+          : g.maisRecente.data
+        : g.maisRecente.detectadaEm;
     if (iso === null) return Number.NaN;
     const t = new Date(iso).getTime();
     return Number.isNaN(t) ? 0 : t;

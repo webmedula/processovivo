@@ -4,7 +4,9 @@ import { descricaoDoAto } from '../../src/domain/entities/descricaoDoAto.js';
 import { trechoDeTexto } from '../../src/main/http/ui/trechoDeTexto.js';
 import {
   SITUACAO_PADRAO,
-  atoQueGeraAProvidencia,
+  atoExibido,
+  detectadoDistanteDoAto,
+  diaMesBrasilia,
   contarSaidasDaProvidencia,
   frasesDeSaidas,
   seloDoTipo,
@@ -484,22 +486,27 @@ describe('cumprido: contagens e frases da tela', () => {
 
   it('conta quantos saíram por marca e quantos por tempo', () => {
     const grupos = [comProv('pede'), comProv('cumprida'), comProv('cumprida'), comProv('venceu')];
-    expect(contarSaidasDaProvidencia(grupos)).toEqual({ cumpridos: 2, vencidos: 1 });
+    expect(contarSaidasDaProvidencia(grupos)).toEqual({ cumpridos: 2, vencidos: 1, outros: 0 });
   });
 
   it('as frases dizem o número e a janela, sem a palavra "prazo"', () => {
     expect(frasesDeSaidas(2, 1, 30)).toEqual({
       cumpridos: '2 marcados como cumpridos',
       vencidos: '1 sem marca há mais de 30 dias',
+      outros: '',
     });
-    expect(frasesDeSaidas(1, 0, 30)).toEqual({ cumpridos: '1 marcado como cumprido', vencidos: '' });
-    expect(frasesDeSaidas(0, 0, 30)).toEqual({ cumpridos: '', vencidos: '' });
+    expect(frasesDeSaidas(1, 0, 30)).toEqual({
+      cumpridos: '1 marcado como cumprido',
+      vencidos: '',
+      outros: '',
+    });
+    expect(frasesDeSaidas(0, 0, 30)).toEqual({ cumpridos: '', vencidos: '', outros: '' });
     const todas = Object.values(frasesDeSaidas(3, 4, 30)).join(' ');
     expect(todas).not.toMatch(/prazo/i);
   });
 });
 
-describe('"Pede providência por": o ato que gera o selo, quando não é o da linha', () => {
+describe('o ato que a linha mostra (v0.37.6): o que gera a providência, e o último andamento à parte', () => {
   const linha = (data: string | null, titulo: string, situacao: 'pede' | 'cumprida' = 'pede') => ({
     maisRecente: { data, titulo },
     processo: {
@@ -509,25 +516,63 @@ describe('"Pede providência por": o ato que gera o selo, quando não é o da li
     },
   });
 
-  it('mostra o ato quando a linha exibe OUTRA movimentação', () => {
-    expect(atoQueGeraAProvidencia(linha('2026-10-01T12:00:00.000Z', 'Juntada de petição'))).toEqual({
+  it('com providência, a linha é sobre o ato que a gera; o último andamento vai à parte', () => {
+    expect(atoExibido(linha('2026-10-01T12:00:00.000Z', 'Juntada de petição'))).toMatchObject({
       rotulo: 'Ato ordinatório',
       data: ATO.data,
       tipo: 'intimacao',
+      daProvidencia: true,
+      igualAAtualizacao: false,
+      ultimoAndamento: { rotulo: 'Juntada de petição', data: '2026-10-01T12:00:00.000Z' },
     });
   });
 
-  it('é o mesmo ato (rótulo e data iguais): nada a mais', () => {
-    expect(atoQueGeraAProvidencia(linha(ATO.data, ATO.rotulo))).toBeNull();
+  it('é o mesmo ato (rótulo e data iguais): sem segunda linha, e o trecho da atualização é dele', () => {
+    const a = atoExibido(linha(ATO.data, ATO.rotulo));
+    expect(a.ultimoAndamento).toBeNull();
+    expect(a.igualAAtualizacao).toBe(true);
+    expect(a.daProvidencia).toBe(true);
   });
 
   it('mesmo rótulo em outra data é outro ato', () => {
-    expect(atoQueGeraAProvidencia(linha('2026-10-01T12:00:00.000Z', ATO.rotulo))).not.toBeNull();
+    const a = atoExibido(linha('2026-10-01T12:00:00.000Z', ATO.rotulo));
+    expect(a.igualAAtualizacao).toBe(false);
+    expect(a.ultimoAndamento).not.toBeNull();
   });
 
-  it('sem providência pendente, nada a dizer', () => {
-    expect(atoQueGeraAProvidencia(linha('2026-10-01T12:00:00.000Z', 'x', 'cumprida'))).toBeNull();
-    expect(atoQueGeraAProvidencia({ maisRecente: { data: null }, processo: null })).toBeNull();
+  it('sem providência pendente, a linha é a de antes: a atualização, sem segunda linha', () => {
+    for (const l of [
+      linha('2026-10-01T12:00:00.000Z', 'x', 'cumprida'),
+      { maisRecente: { data: '2026-10-01T12:00:00.000Z', titulo: 'x' }, processo: null },
+    ]) {
+      expect(atoExibido(l)).toMatchObject({
+        rotulo: 'x',
+        data: '2026-10-01T12:00:00.000Z',
+        daProvidencia: false,
+        ultimoAndamento: null,
+      });
+    }
+  });
+
+  it('a data do ato da linha é a do ato da providência (o caso 11/09 × "Decisão 29/09")', () => {
+    const l = {
+      maisRecente: { data: '2026-09-11T15:00:00.000Z', titulo: 'Despacho' },
+      processo: {
+        tribunal: null,
+        pedeProvidencia: true,
+        providencia: {
+          situacao: 'pede' as const,
+          motivo: { ...ATO, rotulo: 'Decisão', data: '2026-09-29T15:00:00.000Z', tipo: 'outro' as const },
+          cumpridoEm: null,
+        },
+      },
+    };
+    expect(atoExibido(l).data).toBe('2026-09-29T15:00:00.000Z');
+    expect(atoExibido(l).ultimoAndamento?.data).toBe('2026-09-11T15:00:00.000Z');
+  });
+
+  it('o destinatário do ato vai junto, e é desconhecido quando o servidor não o disse', () => {
+    expect(atoExibido(linha('2026-10-01T12:00:00.000Z', 'x')).paraOUsuario).toBe('desconhecido');
   });
 
   it('o selo do tipo é Intimação ou Citação, e só isso', () => {
@@ -546,5 +591,92 @@ describe('script da tela: o texto novo não fala em prazo', () => {
       '',
     );
     expect(semAviso).not.toMatch(/prazo/i);
+  });
+});
+
+describe('"Detectado" legível (v0.37.6)', () => {
+  it('só passa a data absoluta quando a diferença para o ato é maior que 7 dias', () => {
+    const ato = '2026-09-21T15:00:00.000Z';
+    expect(detectadoDistanteDoAto(ato, '2026-09-28T14:00:00.000Z')).toBe(false); // 6d23h
+    expect(detectadoDistanteDoAto(ato, '2026-09-28T15:00:00.000Z')).toBe(false); // 7d exatos
+    expect(detectadoDistanteDoAto(ato, '2026-09-28T15:00:01.000Z')).toBe(true);
+    expect(detectadoDistanteDoAto(ato, '2026-10-07T12:00:00.000Z')).toBe(true); // o caso 21/09 × "há 2 dias"
+  });
+
+  it('não decide sem as duas datas', () => {
+    expect(detectadoDistanteDoAto(null, '2026-10-07T12:00:00.000Z')).toBe(false);
+    expect(detectadoDistanteDoAto('2026-09-21T15:00:00.000Z', null)).toBe(false);
+    expect(detectadoDistanteDoAto('lixo', '2026-10-07T12:00:00.000Z')).toBe(false);
+  });
+
+  it('dd/mm no fuso de Brasília, não em UTC', () => {
+    expect(diaMesBrasilia('2026-10-07T12:00:00.000Z')).toBe('07/10');
+    // 01:00 UTC de 08/10 ainda é 22h de 07/10 em Brasília.
+    expect(diaMesBrasilia('2026-10-08T01:00:00.000Z')).toBe('07/10');
+    expect(diaMesBrasilia(null)).toBe('');
+    expect(diaMesBrasilia('lixo')).toBe('');
+  });
+});
+
+describe('intimação a outro destinatário (v0.37.6): contagem, frase e filtro', () => {
+  const outro = { rotulo: 'Intimação', data: '2026-10-01T12:00:00.000Z', chave: 'k', tipo: 'intimacao', paraOUsuario: 'nao' };
+  const g = (pede: boolean, prov: object | null) => ({
+    numero: '1',
+    maisRecente: { data: null, detectadaEm: null },
+    quantidade: 0,
+    naoVistas: 0,
+    processo: { tribunal: 'TJGO', pedeProvidencia: pede, providencia: prov as never },
+  });
+
+  it('conta só quem o filtro deixou de fora por causa dela', () => {
+    const grupos = [
+      g(false, { situacao: 'outro', motivo: outro, cumpridoEm: null, outroDestinatario: outro }),
+      g(true, { situacao: 'pede', motivo: outro, cumpridoEm: null, outroDestinatario: outro }),
+      g(false, null),
+    ];
+    expect(contarSaidasDaProvidencia(grupos).outros).toBe(1);
+  });
+
+  it('a frase diz "N com intimação a outro destinatário" e some em zero', () => {
+    expect(frasesDeSaidas(0, 0, 30, 3).outros).toBe('3 com intimação a outro destinatário');
+    expect(frasesDeSaidas(0, 0, 30, 0).outros).toBe('');
+    expect(Object.values(frasesDeSaidas(1, 2, 30, 3)).join(' ')).not.toMatch(/prazo/i);
+  });
+
+  it('o filtro "outros" lista esses processos; o de providência não os inclui', () => {
+    const a = g(false, { situacao: 'outro', motivo: outro, cumpridoEm: null, outroDestinatario: outro });
+    const b = g(true, { situacao: 'pede', motivo: outro, cumpridoEm: null, outroDestinatario: outro });
+    expect(filtrarPorSituacao([a, b], 'outros')).toEqual([a]);
+    expect(filtrarPorSituacao([a, b], 'providencia')).toEqual([b]);
+    expect(filtrarPorSituacao([a, b], 'todas')).toHaveLength(2);
+  });
+});
+
+describe('ordenar por "Data do ato" usa a data que a linha mostra (v0.37.6)', () => {
+  const l = (numero: string, dataUltima: string, providenciaEm: string | null) => ({
+    numero,
+    maisRecente: { data: dataUltima, detectadaEm: dataUltima },
+    quantidade: 1,
+    naoVistas: 0,
+    processo: {
+      tribunal: 'TJGO',
+      pedeProvidencia: providenciaEm !== null,
+      providencia:
+        providenciaEm === null
+          ? null
+          : {
+              situacao: 'pede' as const,
+              motivo: { rotulo: 'Decisão', data: providenciaEm, chave: 'k', tipo: 'outro' as const },
+              cumpridoEm: null,
+            },
+    },
+  });
+
+  it('a linha com providência ordena pela data do ato da providência', () => {
+    // A: último andamento em 10/10, mas a providência é de 01/09. B: 20/09, sem providência.
+    const a = l('A', '2026-10-10T12:00:00.000Z', '2026-09-01T12:00:00.000Z');
+    const b = l('B', '2026-09-20T12:00:00.000Z', null);
+    const ordem = ordenarGrupos([a, b], { chave: 'dataAto', direcao: 'desc' }).map((x) => x.numero);
+    expect(ordem).toEqual(['B', 'A']);
   });
 });
