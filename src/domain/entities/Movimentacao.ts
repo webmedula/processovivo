@@ -1,3 +1,5 @@
+import type { ParaOUsuario } from './destinatarioDaComunicacao.js';
+
 /**
  * Um andamento do processo.
  *
@@ -60,6 +62,19 @@ export interface Movimentacao {
    * e o identificador da comunicação já mora em `idExterno` (`djen:<id>`).
    */
   readonly tipoComunicacao?: string;
+  /**
+   * Inscrições (`47383/GO`) dos advogados a quem a comunicação do DJEN foi
+   * dirigida. TRANSITÓRIO (v0.37.6): vive só em memória até o acompanhamento ser
+   * gravado, quando `comIndicadorDeDestinatario` o troca por `paraOUsuario`. Não
+   * persiste e não sai na API. Ver `destinatarioDaComunicacao.ts`.
+   */
+  readonly destinatariosOab?: readonly string[];
+  /**
+   * A comunicação é dirigida ao workspace? `nao` tira a INTIMAÇÃO/CITAÇÃO da
+   * regra de "pede providência por 30 dias" (volta à regra comum do ato).
+   * Ausente = `desconhecido`: o comportamento anterior à v0.37.6.
+   */
+  readonly paraOUsuario?: ParaOUsuario;
   /** Se o ato abre prazo ou pede providência. Ver `triagem.ts`. */
   readonly exigeAcao?: boolean;
 }

@@ -1,4 +1,5 @@
 import { chaveDaMovimentacao } from './Acompanhamento.js';
+import type { ParaOUsuario } from './destinatarioDaComunicacao.js';
 import type { Movimentacao } from './Movimentacao.js';
 import { tipoDaComunicacao } from './tipoDaComunicacao.js';
 import type { TipoDaComunicacao } from './tipoDaComunicacao.js';
@@ -54,6 +55,11 @@ export interface AtoDaProvidencia {
   readonly chave: string;
   /** Só o DJEN informa; `outro` para todo o resto. */
   readonly tipo: TipoDaComunicacao;
+  /**
+   * A comunicação do Diário é dirigida ao workspace? (v0.37.6.) `desconhecido`
+   * para ato que não é do DJEN, retrato anterior à v0.37.6 ou OAB não cadastrada.
+   */
+  readonly paraOUsuario: ParaOUsuario;
 }
 
 /** A marca do advogado: "cumpri tudo até este ato". Ver `ServicoAcompanhamento.marcarComoCumprido`. */
@@ -75,6 +81,14 @@ export interface LeituraDaProvidencia {
    * mais de N dias".
    */
   readonly venceuPorTempo?: AtoDaProvidencia;
+  /**
+   * Intimação/citação do Diário dirigida a OUTRO destinatário, dentro da janela da
+   * intimação e sem marca de cumprido (v0.37.6). Não pede providência por ser
+   * intimação — volta à regra comum do ato —, mas a tela a mostra e conta: um
+   * "nao" calculado por inscrição pode errar (sócio com outra OAB), então o
+   * processo nunca sai do alcance do advogado sem uma frase que o diga.
+   */
+  readonly outroDestinatario?: AtoDaProvidencia;
 }
 
 /**
@@ -152,21 +166,36 @@ export function lerProvidencia(
   let pendente: AtoDaProvidencia | undefined;
   let coberto: AtoDaProvidencia | undefined;
   let venceu: AtoDaProvidencia | undefined;
+  let outroDestinatario: AtoDaProvidencia | undefined;
   const maisRecente = (a: AtoDaProvidencia | undefined, b: AtoDaProvidencia): AtoDaProvidencia =>
     !a || b.data.getTime() > a.data.getTime() ? b : a;
 
   for (const m of movs) {
-    if (!(m.exigeAcao ?? triar(m).exigeAcao)) continue;
-    const tipo = tipoDaComunicacao(m.tipoComunicacao);
+    const tipoDoDiario = tipoDaComunicacao(m.tipoComunicacao);
+    const paraOUsuario = m.paraOUsuario ?? 'desconhecido';
+    // Intimação a outro destinatário: volta à regra comum do ato. O `exigeAcao`
+    // gravado pode ter nascido da cláusula da intimação, então é recalculado.
+    const aOutro = tipoDoDiario !== 'outro' && paraOUsuario === 'nao';
+    const exige = aOutro ? triar(m).exigeAcao : (m.exigeAcao ?? triar(m).exigeAcao);
+    const tipo = aOutro ? 'outro' : tipoDoDiario;
     const ato: AtoDaProvidencia = {
       rotulo: m.titulo,
       data: m.data,
       chave: chaveDaMovimentacao(m),
       tipo,
+      paraOUsuario,
     };
+    const marcado = cumprido !== undefined && m.data.getTime() <= cumprido.ate.getTime();
+
+    if (aOutro && !marcado) {
+      const dentroDaJanelaDoDiario =
+        m.data.getTime() >= inicioDaJanelaDePendencia(agora, janelaIntimacaoDias).getTime();
+      if (dentroDaJanelaDoDiario) outroDestinatario = maisRecente(outroDestinatario, ato);
+    }
+
+    if (!exige) continue;
     const janela = tipo === 'outro' ? janelaDias : janelaIntimacaoDias;
     const dentro = m.data.getTime() >= inicioDaJanelaDePendencia(agora, janela).getTime();
-    const marcado = cumprido !== undefined && m.data.getTime() <= cumprido.ate.getTime();
 
     if (dentro && !marcado) pendente = maisRecente(pendente, ato);
     else if (dentro && marcado) coberto = maisRecente(coberto, ato);
@@ -174,11 +203,13 @@ export function lerProvidencia(
   }
 
   // Cobertura e vencimento só informam quando nada mais pede providência: com um
-  // ato pendente, a linha é sobre ele.
+  // ato pendente, a linha é sobre ele. `outroDestinatario` é a exceção: é um
+  // aviso sobre o processo, não sobre o ato da linha, e segue junto.
   return {
     ...(pendente ? { pendente } : {}),
     ...(!pendente && coberto ? { coberto } : {}),
     ...(!pendente && venceu ? { venceuPorTempo: venceu } : {}),
+    ...(outroDestinatario ? { outroDestinatario } : {}),
   };
 }
 

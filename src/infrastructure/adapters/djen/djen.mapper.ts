@@ -1,3 +1,4 @@
+import { chaveDeOab } from '../../../domain/entities/destinatarioDaComunicacao.js';
 import { NumeroCNJ } from '../../../domain/entities/NumeroCNJ.js';
 import type { Movimentacao } from '../../../domain/entities/Movimentacao.js';
 import type { Advogado, Parte, PoloProcessual } from '../../../domain/entities/Parte.js';
@@ -75,6 +76,21 @@ function mapearAdvogados(comunicacao: ComunicacaoDjen): Advogado[] {
 }
 
 /**
+ * Inscrições dos advogados a quem a comunicação foi dirigida, no formato de
+ * comparação (`47383/GO`). Só as que têm número e UF legíveis; vazio quando a
+ * comunicação não traz advogado (parte sem advogado) — e então o destinatário é
+ * DESCONHECIDO, não "outro". Transitório: ver `Movimentacao.destinatariosOab`.
+ */
+export function inscricoesDosDestinatarios(comunicacao: ComunicacaoDjen): string[] {
+  const vistas = new Set<string>();
+  for (const entrada of comunicacao.destinatarioadvogados ?? []) {
+    const chave = chaveDeOab(entrada.advogado.numero_oab, entrada.advogado.uf_oab);
+    if (chave) vistas.add(chave);
+  }
+  return [...vistas];
+}
+
+/**
  * Sentinelas que o DJEN devolve NO LUGAR do inteiro teor quando o documento não
  * é público.
  *
@@ -119,6 +135,8 @@ export function mapearMovimentacao(comunicacao: ComunicacaoDjen): Movimentacao {
     (texto ? primeiraLinhaSignificativa(texto) : '') ||
     'Publicação';
 
+  const destinatariosOab = inscricoesDosDestinatarios(comunicacao);
+
   return {
     data: parseDataDisponibilizacao(
       comunicacao.data_disponibilizacao,
@@ -134,6 +152,7 @@ export function mapearMovimentacao(comunicacao: ComunicacaoDjen): Movimentacao {
     ...(comunicacao.tipoComunicacao?.trim()
       ? { tipoComunicacao: comunicacao.tipoComunicacao.trim() }
       : {}),
+    ...(destinatariosOab.length > 0 ? { destinatariosOab } : {}),
   };
 }
 

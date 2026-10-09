@@ -62,7 +62,13 @@ export class CachedProcessoProvider implements ProcessoProvider {
     if (emCache) return reidratarProcesso(emCache, true);
 
     const processo = await this.provider.buscarPorNumero(numero.digitos);
-    await this.cache.set(chave, serializarProcesso(processo), this.ttlNumero);
+    // O cache guarda as inscrições transitórias do DJEN: a sincronização que
+    // lê daqui precisa delas para calcular `paraOUsuario`.
+    await this.cache.set(
+      chave,
+      serializarProcesso(processo, { preservarDestinatarios: true }),
+      this.ttlNumero,
+    );
     return processo;
   }
 
@@ -73,7 +79,11 @@ export class CachedProcessoProvider implements ProcessoProvider {
     if (emCache) return emCache.map((p) => reidratarProcesso(p, true));
 
     const processos = await this.provider.buscarPorOab(oab, uf);
-    await this.cache.set(chave, processos.map(serializarProcesso), this.ttlOab);
+    await this.cache.set(
+      chave,
+      processos.map((p) => serializarProcesso(p, { preservarDestinatarios: true })),
+      this.ttlOab,
+    );
     return processos;
   }
 

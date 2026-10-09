@@ -86,6 +86,47 @@ describe('reparo das novidades da avalanche', () => {
     expect(diagnosticarAvalanche(db).totalNaoLidas).toBe(0);
   });
 
+  describe('resíduo que o critério da 0.37.5 deixa (v0.37.6, investigação; nada é aplicado)', () => {
+    // O critério complementar PROPOSTO: lote menor, mas só se TODOS os atos forem antigos.
+    const PROPOSTO = { tamanhoMinimoDoLote: 5, diasDeAtraso: 30, fracaoDeAntigos: 1 };
+
+    it('um lote de 12 novidades antigas detectadas juntas FICA DE FORA do critério atual', () => {
+      inserir('ws-a', 'p1', 12); // 12 atos de 2024 no mesmo instante: a assinatura do despejo, em tamanho menor
+      expect(diagnosticarAvalanche(db).totalNaoLidas).toBe(0);
+    });
+
+    it('o critério complementar proposto (5+ e 100% antigos) o pegaria', () => {
+      inserir('ws-a', 'p1', 12);
+      expect(diagnosticarAvalanche(db, PROPOSTO).totalNaoLidas).toBe(12);
+    });
+
+    it('e continuaria deixando em paz o lote pequeno de atos recentes e o lote misto', () => {
+      const ins = db.prepare(
+        `INSERT INTO novidades (workspace, numero, data, titulo, detectada_em) VALUES ('w', ?, ?, ?, ?)`,
+      );
+      for (let i = 0; i < 6; i++) {
+        ins.run('recente', new Date(Date.parse(DETECTADA) - i * 3_600_000).toISOString(), `Ato ${i}`, DETECTADA);
+      }
+      // 7 antigos + 1 recente: não é 100% antigo, então o complemento não o toca.
+      inserir('w', 'misto', 7);
+      ins.run('misto', new Date(Date.parse(DETECTADA) - 3_600_000).toISOString(), 'Ato novo', DETECTADA);
+      expect(diagnosticarAvalanche(db, PROPOSTO).totalNaoLidas).toBe(0);
+    });
+
+    it('ato de 16 dias detectado "há 2 dias" (o caso 21/09) NÃO é pego por nenhum dos dois: 30 dias de atraso é o piso', () => {
+      const ins = db.prepare(
+        `INSERT INTO novidades (workspace, numero, data, titulo, detectada_em) VALUES ('w', 'p', ?, ?, ?)`,
+      );
+      for (let i = 0; i < 25; i++) {
+        ins.run(new Date(Date.parse(DETECTADA) - (16 + i * 0.01) * 86_400_000).toISOString(), `Ato ${i}`, DETECTADA);
+      }
+      expect(diagnosticarAvalanche(db).totalNaoLidas).toBe(0);
+      expect(diagnosticarAvalanche(db, PROPOSTO).totalNaoLidas).toBe(0);
+      // Só baixar o piso o pegaria — e ele passaria a pegar também o atraso legítimo do DataJud.
+      expect(diagnosticarAvalanche(db, { ...PROPOSTO, diasDeAtraso: 14 }).totalNaoLidas).toBe(25);
+    });
+  });
+
   it('lote grande de atos RECENTES não é avalanche: é uma publicação em massa de verdade', () => {
     const ins = db.prepare(
       `INSERT INTO novidades (workspace, numero, data, titulo, detectada_em) VALUES ('w', 'p', ?, ?, ?)`,

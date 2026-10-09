@@ -30,10 +30,21 @@ export interface NovidadeSintetica {
   vista: boolean;
 }
 
+export interface AtoSintetico {
+  rotulo: string;
+  data: string;
+  chave: string;
+  tipo: 'intimacao' | 'citacao' | 'outro';
+  /** (v0.37.6) Como a API: a comunicação é dirigida a quem acompanha? */
+  paraOUsuario?: 'sim' | 'nao' | 'desconhecido';
+}
+
 export interface ProvidenciaSintetica {
-  situacao: 'pede' | 'cumprida' | 'venceu';
-  motivo: { rotulo: string; data: string; chave: string; tipo: 'intimacao' | 'citacao' | 'outro' };
+  situacao: 'pede' | 'cumprida' | 'venceu' | 'outro';
+  motivo: AtoSintetico;
   cumpridoEm: string | null;
+  /** (v0.37.6) Intimação/citação do Diário dirigida a outro destinatário. */
+  outroDestinatario?: AtoSintetico | null;
 }
 
 export interface GrupoSintetico {

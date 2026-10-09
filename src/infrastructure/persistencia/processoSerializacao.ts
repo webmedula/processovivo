@@ -27,7 +27,26 @@ export interface ProcessoSerializado {
   procedencia: { provider: string; consultadoEm: string };
 }
 
-export function serializarProcesso(processo: Processo): ProcessoSerializado {
+export interface OpcoesDeSerializacao {
+  /**
+   * Mantém `destinatariosOab` (as inscrições de advogados da comunicação do
+   * DJEN). SÓ o cache em memória pede: o dado precisa chegar à gravação do
+   * acompanhamento, que o troca por `paraOUsuario`. Banco e API nunca.
+   */
+  readonly preservarDestinatarios?: boolean;
+}
+
+/** Tira o campo transitório `destinatariosOab` (inscrição de terceiro não se guarda). */
+export function semDestinatarios(m: Movimentacao): Movimentacao {
+  if (m.destinatariosOab === undefined) return m;
+  const { destinatariosOab: _descartado, ...resto } = m;
+  return resto;
+}
+
+export function serializarProcesso(
+  processo: Processo,
+  opcoes: OpcoesDeSerializacao = {},
+): ProcessoSerializado {
   return {
     numero: processo.numero.digitos,
     tribunal: processo.tribunal,
@@ -43,7 +62,7 @@ export function serializarProcesso(processo: Processo): ProcessoSerializado {
     segredoJustica: processo.segredoJustica,
     partes: [...processo.partes],
     movimentacoes: processo.movimentacoes.map((m) => ({
-      ...m,
+      ...(opcoes.preservarDestinatarios ? m : semDestinatarios(m)),
       data: m.data.toISOString(),
     })),
     procedencia: {
