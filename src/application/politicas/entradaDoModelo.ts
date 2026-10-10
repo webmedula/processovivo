@@ -108,13 +108,24 @@ function dataParaTexto(data: Date): string {
   return `${dd}/${mm}/${local.getUTCFullYear()}`;
 }
 
-function corpoDoAto(ato: AtoParaAnalisar): string {
+export function corpoDoAto(ato: AtoParaAnalisar): string {
   const conteudo = ato.conteudo?.trim();
   if (conteudo) return conteudo;
   return (ato.complementos ?? [])
     .map((c) => c.trim())
     .filter(Boolean)
     .join('\n');
+}
+
+/**
+ * O critério ÚNICO de "há texto para analisar": o corpo do ato (nunca só o título)
+ * tem pelo menos `MINIMO_DE_CARACTERES_DO_TEXTO` caracteres. Exportado para que a
+ * sonda de diagnóstico conte com a MESMA regra que decide se o modelo é chamado.
+ */
+export function temTextoSuficiente(ato: AtoParaAnalisar): boolean {
+  return (
+    corpoDoAto(ato).replace(/\s+/g, ' ').trim().length >= MINIMO_DE_CARACTERES_DO_TEXTO
+  );
 }
 
 export function prepararEntrada(
@@ -126,8 +137,7 @@ export function prepararEntrada(
   const maximo = opcoes.maximoDeCaracteres ?? MAXIMO_DE_CARACTERES_DO_TEXTO;
 
   const corpoBruto = corpoDoAto(ato);
-  const suficiente =
-    corpoBruto.replace(/\s+/g, ' ').trim().length >= MINIMO_DE_CARACTERES_DO_TEXTO;
+  const suficiente = temTextoSuficiente(ato);
 
   // Redige cada pedaço com o MESMO redator: o mesmo nome vira o mesmo marcador.
   const corpo = redator.redigir(corpoBruto);

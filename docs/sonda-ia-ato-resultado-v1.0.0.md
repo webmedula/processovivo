@@ -47,10 +47,9 @@ Números (contados por código, sem imprimir texto):
   O título sozinho nunca basta.
 
 **O que eu não consegui medir:** a taxa real de atos com texto suficiente **na carteira dos
-usuários**. Isso exige abrir o banco de produção, e a especificação (e o pedido) proíbem a sonda
-de fazê-lo. Se o dono quiser o número antes da Etapa 2, o caminho seguro é uma **sonda de
-contagem somente-leitura** no padrão de `scripts/diagnostico-providencia.mjs` (abre o banco com
-`readOnly`, só imprime contagens). Não escrevi — não foi pedido — e deixo a decisão com o dono.
+usuários**: exige abrir o banco de produção, e a sonda de IA não o faz. Para isso existe a sonda
+de contagem **somente leitura** `scripts/diagnostico-texto-por-ato.mjs` (seção 9), que o dono
+roda no Console do serviço e que devolve só números.
 
 Consequência para a Etapa 2: o corpo do ato deve ser lido **no servidor**, do retrato
 (`acompanhamentos` / `novidades`), e não do que a tela recebe — a tela recebe só os primeiros
@@ -352,3 +351,64 @@ node scripts/sonda-ia-ato.mjs --avaliacao=/dados/sonda-ia-ato/planilha-AAAA-MM-D
 
 (o `metricas.json` precisa estar ao lado da planilha). A saída diz, por modelo e variante, se cumpre o
 critério e qual é o mais barato que cumpre.
+
+---
+
+## 9. Diagnóstico do texto por ato — `scripts/diagnostico-texto-por-ato.mjs` (v1.0.0)
+
+Mede, **na carteira real e só com contagens**, o que a seção 1(a) não consegue: quantos atos têm
+texto para a análise por IA ler. Mesmo padrão de `diagnostico-providencia.mjs`: banco aberto
+`readOnly` + `query_only` **sem `abrirBanco`** (sem esquema, sem migração, sem retrocarga), sem
+rede, sem modelo, sem gravar nada além de um arquivo de números em `os.tmpdir()`.
+
+### O comando (no Console do serviço; a imagem já traz `dist/` e `scripts/`)
+
+```
+node scripts/diagnostico-texto-por-ato.mjs                                   # todas as contas, cada uma em seu bloco, mais o total
+node scripts/diagnostico-texto-por-ato.mjs --workspace=ana@escritorio.com.br  # uma conta (id ou e-mail)
+node scripts/diagnostico-texto-por-ato.mjs --janela-dias=30                   # janela dos "últimos N dias" (padrão 30)
+```
+
+Fora da imagem, rode `npm run build` antes. Variáveis lidas: `PROCESSOVIVO_DB_PATH` e
+`PENDENCIA_JANELA_DIAS` (as mesmas do serviço). Código de saída: 0 ok; 1 banco não abriu;
+2 argumento ou conta inválidos.
+
+### O que conta, por conta (workspace)
+
+- processos acompanhados (e quantos sem retrato e quantos em segredo de justiça);
+- atos do retrato (movimentações **e** comunicações do DJEN) **no total e nos últimos 30 dias** (pela
+  data do ato);
+- **por fonte** — DJEN, DataJud, MNI (e "outra", só se houver) —, em quatro categorias **exclusivas
+  que somam o total**, nesta precedência:
+  1. **segredo** — o processo está em segredo de justiça (o ato nunca seria enviado, tenha texto ou não);
+  2. **indisponível** — o aviso "arquivos digitais indisponíveis" (`teorIndisponivel`, ou o texto do
+     aviso) em vez do teor;
+  3. **suficiente** — o corpo do ato tem ao menos 80 caracteres; **é `temTextoSuficiente`, a mesma
+     função que `prepararEntrada` usa para decidir se o modelo é chamado** (um teste compara as
+     duas em sete casos de borda, inclusive 79 × 80 caracteres);
+  4. **curto** — o resto (com o subtotal "sem texto algum", só o rótulo — o caso típico do DataJud);
+- **entre os processos que pedem providência hoje** (`estadoDaPasta` = PROVIDENCIA, a mesma função
+  e as mesmas janelas da rota `GET /v1/novidades`, incluindo a marca de "cumprido"): quantos têm o
+  **ato da providência** com texto suficiente, e os que caem em indisponível, segredo e curto. O ato
+  é o `pendente` do estado, localizado no retrato pela `chaveDaMovimentacao`; "não localizado"
+  deve ser 0.
+
+A fonte de cada ato é o campo `fonte`; sem ele, o prefixo do `idExterno` (`djen:`, `mni:`); sem
+ele, a única fonte do retrato; senão "outra". O MNI só aparece se o retrato do acompanhamento o
+trouxe (hoje o MNI alimenta peças e a Pasta, não a cadeia do acompanhamento — se vier 0, é isso).
+
+### O que sai, e o que não sai
+
+- Terminal: só contagens. E-mail **mascarado** (`a***@dominio`); nenhum número de processo, nenhum
+  texto, nenhum rótulo de ato. As contas aparecem como "Conta 1", "Conta 2"…
+- `os.tmpdir()/diagnostico-texto-por-ato-tabela.json`: **só números** (a única string é a versão da
+  sonda); nem e-mail, nem identificador de workspace, nem número de processo.
+- O texto do ato é **lido em memória** (é preciso medir o tamanho), mas nunca impresso, gravado nem
+  posto em mensagem de erro.
+- Nunca consulta a coluna de senha nem as credenciais de tribunal.
+
+Testes (`tests/main/diagnostico-texto-por-ato.spec.ts`, sintéticos): contagens por conta (a outra
+conta não entra), categorias exclusivas somando o total, fonte pelo campo e pelo prefixo, segredo
+acima do texto, providência, janela como argumento, banco intacto (hash e `mtime`), banco
+inexistente sem criar arquivo, ausência de texto/número/e-mail/senha no terminal e no arquivo, e
+ausência de import de rede ou de `abrirBanco`.
