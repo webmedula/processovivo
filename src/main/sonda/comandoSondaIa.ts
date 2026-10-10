@@ -1,6 +1,19 @@
 import { isAbsolute, join, relative, resolve } from 'node:path';
+import { prepararEntrada } from '../../application/politicas/entradaDoModelo.js';
+import { ZdrIndisponivelError } from '../../domain/errors/index.js';
+import {
+  modeloTemZdr,
+  modelosComZdr,
+  precosEstimados,
+  provedorConfirmadoZdr,
+  type ListaZdrLida,
+  type ModeloPublico,
+} from '../../infrastructure/adapters/modelo/endpointsZdr.js';
+import type {
+  DetalheDeErro,
+  TransporteDeModelo,
+} from '../../infrastructure/adapters/modelo/TransporteOpenRouter.js';
 import { pareceValorDeExemplo } from '../../infrastructure/config/placeholder.js';
-import type { TransporteDeModelo } from '../../infrastructure/adapters/modelo/TransporteGateway.js';
 import {
   CsvDeCasosInvalidoError,
   lerCasosCsv,
@@ -14,19 +27,19 @@ import {
   executarSonda,
   fixtureDeRespostas,
   gerarPlanilha,
+  metadadosDasChamadas,
   nomeSeguroDoModelo,
   PlanilhaDeAvaliacaoInvalidaError,
   tabelaDeMetricas,
   VERSAO_DA_SONDA,
   type MetricasDoGrupo,
-  type PrecoPorToken,
   type Variante,
 } from './sondaIaAto.js';
 
 /**
  * Comando `scripts/sonda-ia-ato.mjs`. Toda E/S passa pelo `AmbienteDaSonda`, e é
  * por isso que dá para provar em teste que ele não grava nada dentro do
- * repositório com dado de caso real.
+ * repositório com dado de caso real e que a chave nunca aparece na saída.
  */
 
 export interface AmbienteDaSonda {
@@ -37,10 +50,14 @@ export interface AmbienteDaSonda {
   readonly lerStdin: () => Promise<string>;
   readonly gravarArquivo: (caminho: string, conteudo: string) => Promise<void>;
   readonly existeArquivo: (caminho: string) => Promise<boolean>;
-  readonly criarTransporte: (chave: string) => TransporteDeModelo;
-  readonly precosDoCatalogo: (
+  readonly criarTransporte: (
     chave: string,
-  ) => Promise<ReadonlyMap<string, PrecoPorToken>>;
+    opcoes?: { readonly aoFalhar?: (d: DetalheDeErro) => void },
+  ) => TransporteDeModelo;
+  /** Lista pública de endpoints com ZDR (precisa da chave; não leva texto de caso). */
+  readonly buscarEndpointsZdr: (chave: string) => Promise<ListaZdrLida>;
+  /** Lista pública de modelos (sem chave). Só o teste de falha fechada usa. */
+  readonly buscarModelosPublicos: () => Promise<readonly ModeloPublico[]>;
   readonly hoje: () => string;
   readonly agora: () => number;
   readonly dormir: (ms: number) => Promise<void>;
@@ -48,17 +65,23 @@ export interface AmbienteDaSonda {
   readonly aviso: (linha: string) => void;
 }
 
-const AJUDA = `Sonda de IA do ato v${VERSAO_DA_SONDA} — não consulta tribunal nem abre o banco.
+const AJUDA = `Sonda de IA do ato v${VERSAO_DA_SONDA} (OpenRouter, ZDR em toda chamada) — não consulta tribunal nem abre o banco.
+Precisa de OPENROUTER_API_KEY no ambiente (nunca é impressa).
 
-Rodar a comparação (precisa de AI_GATEWAY_API_KEY no ambiente):
+1. Ver quais modelos têm endpoint ZDR (não envia texto de caso):
+  node scripts/sonda-ia-ato.mjs --listar-modelos-zdr
+  node scripts/sonda-ia-ato.mjs --listar-modelos-zdr=claude
+2. Rodar a comparação (recusa modelo que não esteja na lista ZDR):
   node scripts/sonda-ia-ato.mjs --modelos=a,b,c                       # só os casos SINTÉTICOS
   node scripts/sonda-ia-ato.mjs --modelos=a,b,c --arquivo=/dados/casos.csv
   cat casos.csv | node scripts/sonda-ia-ato.mjs --modelos=a,b,c --stdin
-Julgar a planilha preenchida pelo Autran:
+3. Julgar a planilha preenchida pelo Autran:
   node scripts/sonda-ia-ato.mjs --avaliacao=/dados/sonda-ia-ato/planilha-AAAA-MM-DD.csv
+4. Teste de falha fechada (UMA chamada, texto sintético, modelo SEM endpoint ZDR):
+  node scripts/sonda-ia-ato.mjs --teste-falha-fechada[=<modelo>]
 
 Opções: --variantes=sem-titulos,com-titulos  --saida=<pasta>  --pausa-ms=<n>
-        --com-sinteticos (junto de --arquivo/--stdin)  --fixtures=<pasta>  --ajuda
+        --com-sinteticos (junto de --arquivo/--stdin)  --fixtures=<pasta>  --fixtures-saida=<pasta>  --ajuda
 CSV de casos (separador ";"): id;tipo_comunicacao;classe;texto
   opcionais: titulo;data (dd/mm/aaaa);anteriores (títulos separados por "|");injecao (sim/nao)
 O arquivo e a saída ficam FORA do repositório. Nenhum texto de caso real vai para o terminal.`;
@@ -95,6 +118,11 @@ function lerModelos(valor: string | undefined): string[] {
 }
 
 const VARIANTES_VALIDAS: readonly Variante[] = ['sem-titulos', 'com-titulos'];
+
+/** Tira a chave de qualquer texto que vá ao terminal (defesa extra; ela nunca é posta lá). */
+function semChave(texto: string, chave: string): string {
+  return chave === '' ? texto : texto.split(chave).join('[chave]');
+}
 
 export async function executarComandoSondaIa(
   argv: readonly string[],
@@ -153,27 +181,81 @@ export async function executarComandoSondaIa(
       return 0;
     }
 
-    // --- chave: recusa antes de qualquer coisa ---
-    const chave = amb.env['AI_GATEWAY_API_KEY']?.trim();
+    // --- chave: recusa antes de qualquer rede ---
+    const chave = amb.env['OPENROUTER_API_KEY']?.trim();
     if (!chave) {
       amb.aviso(
-        'AI_GATEWAY_API_KEY não está definida. A sonda não roda sem a chave do gateway.',
+        'OPENROUTER_API_KEY não está definida. A sonda não roda sem a chave do OpenRouter.',
       );
       return 2;
     }
     if (pareceValorDeExemplo(chave)) {
       amb.aviso(
-        'AI_GATEWAY_API_KEY parece um valor de exemplo que ninguém substituiu. Recusado.',
+        'OPENROUTER_API_KEY parece um valor de exemplo que ninguém substituiu. Recusado.',
       );
       return 2;
+    }
+
+    // --- lista de endpoints ZDR: obrigatória para qualquer coisa daqui em diante ---
+    let lista: ListaZdrLida;
+    try {
+      lista = await amb.buscarEndpointsZdr(chave);
+    } catch (erro) {
+      amb.aviso(
+        `Não consegui obter a lista de endpoints com ZDR (${semChave(erro instanceof Error ? erro.message : 'erro', chave)}). ` +
+          'Sem ela a ZDR não pode ser confirmada, então nada foi enviado.',
+      );
+      return 2;
+    }
+
+    // --- só listar ---
+    if (op.has('listar-modelos-zdr')) {
+      const filtro = op.get('listar-modelos-zdr');
+      const ids = modelosComZdr(lista.endpoints, filtro === 'true' ? undefined : filtro);
+      if (lista.itensRecebidos > 0 && lista.endpoints.length === 0) {
+        amb.aviso(
+          'A lista veio, mas nenhum item trouxe os campos esperados (model_id e provider_name/tag). ' +
+            `Campos do primeiro item: ${lista.camposDoPrimeiroItem.join(', ')}. Relate este aviso; nada foi enviado.`,
+        );
+        return 2;
+      }
+      for (const id of ids) amb.saida(id);
+      amb.aviso(
+        `${ids.length} modelos com ao menos um endpoint ZDR` +
+          (filtro && filtro !== 'true' ? ` (filtro "${filtro}")` : '') +
+          ` · ${lista.endpoints.length} endpoints no total · consultado em ${amb.hoje()}.`,
+      );
+      return 0;
+    }
+
+    // --- teste de falha fechada: UMA chamada, texto sintético, modelo sem endpoint ZDR ---
+    if (op.has('teste-falha-fechada')) {
+      return await testeDeFalhaFechada(
+        op.get('teste-falha-fechada') ?? 'true',
+        chave,
+        lista,
+        amb,
+      );
     }
 
     const modelos = lerModelos(op.get('modelos'));
     if (modelos.length === 0) {
       amb.aviso(
-        'Informe os modelos: --modelos=a,b,c (nomes do catálogo do gateway; nada fica fixo no código).',
+        'Informe os modelos: --modelos=a,b,c (use --listar-modelos-zdr para ver os nomes).',
       );
       return 1;
+    }
+    const foraDaLista = modelos.filter((m) => !modeloTemZdr(lista.endpoints, m));
+    if (foraDaLista.length > 0) {
+      for (const m of foraDaLista) {
+        amb.aviso(
+          `Modelo recusado: "${m}" não tem nenhum endpoint com ZDR na lista do OpenRouter.`,
+        );
+      }
+      amb.aviso(
+        'Nada foi enviado. Use --listar-modelos-zdr para ver os nomes que servem.',
+      );
+      return 2;
     }
     const variantes = (op.get('variantes') ?? VARIANTES_VALIDAS.join(','))
       .split(',')
@@ -224,23 +306,14 @@ export async function executarComandoSondaIa(
         `${modelos.length} modelos, ${variantes.length} variantes. ZDR em toda chamada.`,
     );
 
-    let precos: ReadonlyMap<string, PrecoPorToken> = new Map();
-    let fontePrecos = 'preço informado pelo gateway na resposta, quando houve';
-    try {
-      precos = await amb.precosDoCatalogo(chave);
-      fontePrecos = 'tabela de preços do catálogo do gateway';
-    } catch {
-      amb.aviso(
-        'Não consegui ler a tabela de preços do catálogo; o custo só aparece se o gateway o informar.',
-      );
-    }
-
     const pausa = Number(op.get('pausa-ms') ?? '0');
     const resultado = await executarSonda({
       casos,
       modelos,
       variantes: variantes as Variante[],
       transporte: amb.criarTransporte(chave),
+      provedorConfirmadoZdr: (modelo, provedor) =>
+        provedorConfirmadoZdr(lista.endpoints, modelo, provedor),
       agora: amb.agora,
       dormir: amb.dormir,
       ...(Number.isFinite(pausa) && pausa > 0 ? { pausaMs: pausa } : {}),
@@ -249,21 +322,38 @@ export async function executarComandoSondaIa(
 
     for (const m of resultado.modelosSemZdr) {
       amb.aviso(
-        `SEM ZDR: nenhum provedor com retenção zero para "${m}". Modelo fora da comparação; nenhuma chamada sem ZDR foi feita.`,
+        `SEM ZDR: o OpenRouter não achou provedor com retenção zero para "${m}". Modelo fora da comparação; nenhuma chamada sem ZDR foi feita.`,
+      );
+    }
+    for (const m of resultado.modelosProvedorNaoConfirmado) {
+      amb.aviso(
+        `PROVEDOR NÃO CONFIRMADO ZDR: "${m}" respondeu por um provedor que não consta (ou não foi informado) na lista ZDR. ` +
+          'Resposta DESCARTADA e modelo parado. Se isto se repetir com ZDR ligada, é BLOQUEANTE: avise o responsável.',
       );
     }
     for (const f of resultado.modelosComFalha) {
       amb.aviso(`Modelo "${f.modelo}" abandonado após falhas seguidas: ${f.motivo}`);
     }
-    if (resultado.modelosSemZdr.length === modelos.length) {
+    const excluidos = new Set([
+      ...resultado.modelosSemZdr,
+      ...resultado.modelosProvedorNaoConfirmado,
+    ]);
+    if (modelos.every((m) => excluidos.has(m))) {
       amb.aviso(
-        'NENHUM dos modelos tem provedor com ZDR. A sonda para aqui; avise o responsável.',
+        'NENHUM dos modelos pôde ser usado com ZDR confirmada. A sonda para aqui; avise o responsável.',
       );
       return 3;
     }
 
+    const precos = precosEstimados(lista.endpoints);
     const metricas = calcularMetricas(resultado.registros, precos);
-    amb.saida(tabelaDeMetricas(metricas, { fonte: fontePrecos, data: amb.hoje() }));
+    amb.saida(
+      tabelaDeMetricas(metricas, {
+        fonte:
+          'openrouter = usage.cost devolvido na resposta; estimativa = tokens × preço MÁXIMO dos endpoints ZDR da lista (usada só quando faltou o custo)',
+        data: amb.hoje(),
+      }),
+    );
     for (const m of metricas) {
       if (m.provedores.length > 0)
         amb.saida(
@@ -276,6 +366,10 @@ export async function executarComandoSondaIa(
       join(pastaDeSaida, 'metricas.json'),
       JSON.stringify(metricas, null, 2) + '\n',
     );
+    await amb.gravarArquivo(
+      join(pastaDeSaida, `chamadas-${data}.json`),
+      JSON.stringify(metadadosDasChamadas(resultado.registros), null, 2) + '\n',
+    );
     const planilha = join(pastaDeSaida, `planilha-${data}.csv`);
     await amb.gravarArquivo(planilha, gerarPlanilha(resultado.registros));
     amb.aviso(
@@ -283,15 +377,21 @@ export async function executarComandoSondaIa(
     );
 
     // Só resposta de caso SINTÉTICO vira fixture; `fixtureDeRespostas` já filtra por origem.
+    const fixturesSaida = resolve(op.get('fixtures-saida') ?? fixtures);
     for (const modelo of modelos) {
       const conteudo = fixtureDeRespostas(resultado.registros, modelo, data);
-      if (conteudo) {
-        const arquivo = join(
-          fixtures,
-          `respostas-${nomeSeguroDoModelo(modelo)}-${data}.json`,
-        );
+      if (!conteudo) continue;
+      const arquivo = join(
+        fixturesSaida,
+        `respostas-${nomeSeguroDoModelo(modelo)}-${data}.json`,
+      );
+      try {
         await amb.gravarArquivo(arquivo, conteudo);
         amb.aviso(`Fixture gravada: ${arquivo}`);
+      } catch {
+        amb.aviso(
+          `Não consegui gravar a fixture em ${fixturesSaida} (pasta sem permissão?). Use --fixtures-saida=<pasta do volume>; o resto da rodada está salvo.`,
+        );
       }
     }
     return 0;
@@ -303,8 +403,104 @@ export async function executarComandoSondaIa(
       amb.aviso(`Entrada inválida: ${erro.message}`);
       return 1;
     }
-    // Mensagem genérica: o erro de baixo pode carregar trecho de texto de ato.
+    // Mensagem genérica: o erro de baixo pode carregar trecho de texto de ato ou a chave.
     amb.aviso('Falha inesperada na sonda (detalhes omitidos de propósito).');
     return 4;
+  }
+}
+
+/**
+ * Teste de falha fechada. Faz UMA chamada, com o primeiro caso SINTÉTICO, a um modelo
+ * que a lista ZDR diz NÃO ter endpoint ZDR (o dado do usuário é inventado, então é
+ * seguro mostrar status e corpo do erro). Resultados possíveis:
+ *   - erro reconhecido como "sem provedor": é o comportamento esperado (código 0);
+ *   - erro de outro tipo: mostra status e corpo para ajustar a classificação (código 5);
+ *   - o OpenRouter RESPONDEU: bloqueante (código 6).
+ */
+async function testeDeFalhaFechada(
+  pedido: string,
+  chave: string,
+  lista: ListaZdrLida,
+  amb: AmbienteDaSonda,
+): Promise<number> {
+  let modelo = pedido;
+  if (pedido === 'true') {
+    const publicos = await amb.buscarModelosPublicos();
+    const comZdr = new Set(modelosComZdr(lista.endpoints));
+    const candidatos = publicos
+      .filter((m) => !comZdr.has(m.id) && !m.id.endsWith(':free'))
+      .sort(
+        (a, b) =>
+          (a.precoEntrada && a.precoEntrada > 0 ? a.precoEntrada : Infinity) -
+            (b.precoEntrada && b.precoEntrada > 0 ? b.precoEntrada : Infinity) ||
+          a.id.localeCompare(b.id),
+      );
+    const escolhido = candidatos[0];
+    if (!escolhido) {
+      amb.aviso(
+        'Não achei modelo público fora da lista ZDR. Informe um: --teste-falha-fechada=<modelo>.',
+      );
+      return 2;
+    }
+    modelo = escolhido.id;
+    amb.aviso(`Modelo escolhido (o mais barato fora da lista ZDR): ${modelo}`);
+  }
+  if (modeloTemZdr(lista.endpoints, modelo)) {
+    amb.aviso(
+      `"${modelo}" TEM endpoint ZDR; não serve para o teste. Escolha outro, fora de --listar-modelos-zdr.`,
+    );
+    return 2;
+  }
+  const sintetico = lerCasosSinteticos(
+    await amb.lerArquivo(
+      join(amb.raizDoRepositorio, 'tests/fixtures/ia-ato/casos-sinteticos.json'),
+    ),
+  ).find((c) => c.id.startsWith('s01'));
+  if (!sintetico) {
+    amb.aviso('Caso sintético s01 não encontrado em tests/fixtures/ia-ato/.');
+    return 2;
+  }
+  const entrada = prepararEntrada(
+    { data: sintetico.data, titulo: sintetico.titulo, conteudo: sintetico.texto },
+    {},
+    { pessoas: sintetico.pessoas },
+  );
+  const detalhes: DetalheDeErro[] = [];
+  const transporte = amb.criarTransporte(chave, { aoFalhar: (d) => detalhes.push(d) });
+  const mostrarDetalhes = (): void => {
+    for (const d of detalhes) {
+      amb.saida(
+        `  HTTP ${d.status ?? '—'} · corpo: ${semChave((d.corpo ?? '').slice(0, 800), chave) || '(vazio)'}`,
+      );
+    }
+  };
+  amb.aviso('Uma única chamada, com ZDR, texto sintético. Nenhuma outra será feita.');
+  try {
+    const r = await transporte.gerar({
+      modelo,
+      sistema: entrada.sistema,
+      usuario: entrada.usuario,
+    });
+    amb.saida(
+      `BLOQUEANTE: o OpenRouter RESPONDEU para "${modelo}" (provedor: ${r.provedor ?? 'não informado'}), que não tem endpoint ZDR na lista.`,
+    );
+    amb.saida(
+      'A exigência de ZDR pode não estar sendo respeitada. Não use o OpenRouter para texto real e relate este resultado.',
+    );
+    return 6;
+  } catch (erro) {
+    if (erro instanceof ZdrIndisponivelError) {
+      amb.saida(
+        `FALHOU FECHADO (esperado) para "${modelo}": nenhum provedor ZDR atendeu e nada foi repetido.`,
+      );
+      mostrarDetalhes();
+      return 0;
+    }
+    amb.saida(
+      `Houve erro para "${modelo}", mas NÃO foi reconhecido como "sem provedor ZDR" (${erro instanceof Error ? erro.message : 'erro'}). ` +
+        'Registre o status e o corpo abaixo e me envie, para ajustar a classificação:',
+    );
+    mostrarDetalhes();
+    return 5;
   }
 }

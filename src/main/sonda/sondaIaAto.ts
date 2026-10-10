@@ -15,23 +15,20 @@ import {
   ZdrIndisponivelError,
 } from '../../domain/errors/index.js';
 import { lerRespostaDoModelo } from '../../infrastructure/adapters/modelo/esquemaDaAnalise.js';
-import type {
-  RoteamentoObservado,
-  TransporteDeModelo,
-} from '../../infrastructure/adapters/modelo/TransporteGateway.js';
+import type { TransporteDeModelo } from '../../infrastructure/adapters/modelo/TransporteOpenRouter.js';
 import { escreverCsv, lerCsv, type CasoDaSonda } from './casosDaSonda.js';
 
 /**
- * Núcleo da sonda de IA do ato (v1.0.0). Não consulta tribunal, não abre banco.
+ * Núcleo da sonda de IA do ato (v1.1.0). Não consulta tribunal, não abre banco.
  *
  * Duas variantes por modelo: SEM e COM os títulos dos andamentos anteriores. Cada
- * chamada passa pelo `TransporteDeModelo` injetado — em produção o gateway com
+ * chamada passa pelo `TransporteDeModelo` injetado — em produção o OpenRouter com
  * ZDR; nos testes, um dublê. Resposta de caso REAL nunca é guardada: só os
  * números agregados e o texto já verificado que vai para a planilha do Autran
  * (no volume, fora do repositório).
  */
 
-export const VERSAO_DA_SONDA = '1.0.0';
+export const VERSAO_DA_SONDA = '1.1.0';
 
 export type Variante = 'sem-titulos' | 'com-titulos';
 
@@ -58,14 +55,18 @@ export interface RegistroDaChamada {
     | 'resposta_invalida'
     | 'erro'
     | 'sem_texto'
-    | 'sem_zdr';
+    | 'sem_zdr'
+    | 'provedor_nao_confirmado';
   readonly verificacao?: ResultadoDaVerificacao;
   readonly indeterminado: boolean;
   readonly latenciaMs?: number;
   readonly tokensEntrada?: number;
   readonly tokensSaida?: number;
   readonly custoUsd?: number;
-  readonly roteamento?: RoteamentoObservado;
+  /** Quem serviu a chamada, como a resposta informa (nome do provedor, nada mais). */
+  readonly provedor?: string;
+  /** O provedor que serviu consta entre os endpoints ZDR do modelo? */
+  readonly zdrConfirmado: boolean;
   readonly repeticoes: number;
   readonly injecao: boolean;
   /** A saída trouxe o canário da injeção (o modelo obedeceu ao texto do ato). */
@@ -80,6 +81,11 @@ export interface OpcoesDaExecucao {
   readonly modelos: readonly string[];
   readonly variantes: readonly Variante[];
   readonly transporte: TransporteDeModelo;
+  /** O provedor que serviu consta entre os endpoints ZDR deste modelo? Desconhecido = não. */
+  readonly provedorConfirmadoZdr: (
+    modelo: string,
+    provedor: string | undefined,
+  ) => boolean;
   readonly agora: () => number;
   readonly pausaMs?: number;
   readonly dormir?: (ms: number) => Promise<void>;
@@ -89,6 +95,8 @@ export interface OpcoesDaExecucao {
 export interface ResultadoDaExecucao {
   readonly registros: readonly RegistroDaChamada[];
   readonly modelosSemZdr: readonly string[];
+  /** Respondeu por provedor fora da lista ZDR: resposta descartada, modelo parado. */
+  readonly modelosProvedorNaoConfirmado: readonly string[];
   readonly modelosComFalha: readonly {
     readonly modelo: string;
     readonly motivo: string;
@@ -105,6 +113,7 @@ function pareceObedecer(caso: CasoDaSonda, bruto: unknown): boolean | undefined 
 export async function executarSonda(op: OpcoesDaExecucao): Promise<ResultadoDaExecucao> {
   const registros: RegistroDaChamada[] = [];
   const modelosSemZdr: string[] = [];
+  const modelosProvedorNaoConfirmado: string[] = [];
   const modelosComFalha: { modelo: string; motivo: string }[] = [];
   const dormir = op.dormir ?? (async () => undefined);
 
@@ -125,6 +134,7 @@ export async function executarSonda(op: OpcoesDaExecucao): Promise<ResultadoDaEx
           injecao: caso.injecao,
           repeticoes: 0,
           indeterminado: false,
+          zdrConfirmado: false,
         } as const;
 
         // A variante "com títulos" só existe para o caso que trouxe títulos.
@@ -183,6 +193,25 @@ export async function executarSonda(op: OpcoesDaExecucao): Promise<ResultadoDaEx
           if (!resposta || !transporteFinal)
             throw new RespostaInvalidaError(op.transporte.nome, 'vazia');
           falhasSeguidas = 0;
+          // A resposta só vale se quem serviu consta entre os endpoints ZDR do modelo.
+          // Se o OpenRouter respondeu por outro (ou não disse quem), a resposta é
+          // DESCARTADA sem verificar, sem métrica e sem guardar: o modelo para aqui.
+          const zdrConfirmado = op.provedorConfirmadoZdr(
+            modelo,
+            transporteFinal.provedor,
+          );
+          if (!zdrConfirmado) {
+            modelosProvedorNaoConfirmado.push(modelo);
+            registros.push({
+              ...base,
+              estado: 'provedor_nao_confirmado',
+              latenciaMs,
+              ...(transporteFinal.provedor ? { provedor: transporteFinal.provedor } : {}),
+              repeticoes,
+            });
+            parar = true;
+            continue;
+          }
           const verificacao = verificarAnalise(resposta, entrada.textoEnviado);
           const obedeceu = pareceObedecer(caso, transporteFinal.objeto);
           registros.push({
@@ -200,7 +229,8 @@ export async function executarSonda(op: OpcoesDaExecucao): Promise<ResultadoDaEx
             ...(transporteFinal.custoUsd !== undefined
               ? { custoUsd: transporteFinal.custoUsd }
               : {}),
-            roteamento: transporteFinal.roteamento,
+            ...(transporteFinal.provedor ? { provedor: transporteFinal.provedor } : {}),
+            zdrConfirmado,
             repeticoes,
             ...(obedeceu !== undefined ? { injecaoObedecida: obedeceu } : {}),
             ...(caso.origem === 'sintetico'
@@ -240,7 +270,7 @@ export async function executarSonda(op: OpcoesDaExecucao): Promise<ResultadoDaEx
       }
     }
   }
-  return { registros, modelosSemZdr, modelosComFalha };
+  return { registros, modelosSemZdr, modelosProvedorNaoConfirmado, modelosComFalha };
 }
 
 // --- métricas ----------------------------------------------------------------
@@ -283,7 +313,7 @@ export interface MetricasDoGrupo {
   readonly tokensEntradaMedia?: number;
   readonly tokensSaidaMedia?: number;
   readonly custoMedioUsd?: number;
-  readonly fonteDoCusto: 'gateway' | 'tabela-de-precos' | 'nao-medido';
+  readonly fonteDoCusto: 'openrouter' | 'estimativa' | 'nao-medido';
   readonly injecao: {
     readonly casos: number;
     readonly esquemaMantido: number;
@@ -321,10 +351,10 @@ export function calcularMetricas(
     for (const r of respondidas) {
       if (r.custoUsd !== undefined) {
         custos.push(r.custoUsd);
-        origemDoCusto = 'gateway';
+        origemDoCusto = 'openrouter';
       } else if (preco && r.tokensEntrada !== undefined && r.tokensSaida !== undefined) {
         custos.push(r.tokensEntrada * preco.entrada + r.tokensSaida * preco.saida);
-        if (origemDoCusto !== 'gateway') origemDoCusto = 'tabela-de-precos';
+        if (origemDoCusto !== 'openrouter') origemDoCusto = 'estimativa';
       }
     }
 
@@ -346,8 +376,7 @@ export function calcularMetricas(
     );
 
     const provedores = new Set<string>();
-    for (const r of grupo)
-      if (r.roteamento?.provedorFinal) provedores.add(r.roteamento.provedorFinal);
+    for (const r of grupo) if (r.provedor) provedores.add(r.provedor);
 
     const taxaCitacao = razao(validas, emitidas);
     return {
@@ -635,7 +664,8 @@ export function fixtureDeRespostas(
           casoId: r.casoId,
           variante: r.variante,
           sha256DoTextoEnviado: r.sha256DoTextoEnviado,
-          roteamento: r.roteamento ?? null,
+          provedor: r.provedor ?? null,
+          zdrConfirmado: r.zdrConfirmado,
           tokensEntrada: r.tokensEntrada ?? null,
           tokensSaida: r.tokensSaida ?? null,
           resposta: r.respostaCrua,
@@ -649,4 +679,38 @@ export function fixtureDeRespostas(
 
 export function nomeSeguroDoModelo(modelo: string): string {
   return modelo.replace(/[^A-Za-z0-9._-]+/g, '__');
+}
+
+export interface MetadadoDaChamada {
+  /** Ordem na rodada. Nunca o id do caso: o id de caso real é do Autran e fica só na planilha. */
+  readonly ordem: number;
+  readonly modelo: string;
+  readonly variante: Variante;
+  readonly estado: RegistroDaChamada['estado'];
+  readonly provedor: string | null;
+  readonly latenciaMs: number | null;
+  readonly tokensEntrada: number | null;
+  readonly tokensSaida: number | null;
+  readonly custoUsd: number | null;
+  readonly zdrConfirmado: 'sim' | 'não';
+}
+
+/** Metadado por chamada: modelo, quem serviu, latência, tokens, custo, ZDR confirmada. Nada de texto de caso. */
+export function metadadosDasChamadas(
+  registros: readonly RegistroDaChamada[],
+): MetadadoDaChamada[] {
+  return registros
+    .filter((r) => r.estado !== 'sem_texto')
+    .map((r, i) => ({
+      ordem: i + 1,
+      modelo: r.modelo,
+      variante: r.variante,
+      estado: r.estado,
+      provedor: r.provedor ?? null,
+      latenciaMs: r.latenciaMs ?? null,
+      tokensEntrada: r.tokensEntrada ?? null,
+      tokensSaida: r.tokensSaida ?? null,
+      custoUsd: r.custoUsd ?? null,
+      zdrConfirmado: r.zdrConfirmado ? 'sim' : 'não',
+    }));
 }

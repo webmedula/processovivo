@@ -178,3 +178,27 @@ temas claro e escuro, axe. `npm run check` verde.
 
 - **v1.0.0 (10/10/2026):** primeira versão, com as três decisões do dono (entrada só com texto do sistema e por botão; função liberada com
   aviso de upgrade para quem não tem o plano IA; avaliação pelo Autran).
+
+## Errata v1.0.1 (10/10/2026)
+
+Esta errata corrige o **transporte** e registra uma decisão do dono. O resto da especificação não foi reescrito.
+
+1. **O transporte é o OpenRouter, não o AI Gateway da Vercel.** Onde as seções 3.7, 8, 10, 11 e 13.5 falam em
+   AI Gateway, `providerOptions.gateway.zeroDataRetention` ou conta Vercel Pro/Enterprise, leia: o
+   transporte envia `provider.zdr: true` (e `data_collection: "deny"`) **em toda chamada** ao OpenRouter,
+   e a ZDR da própria conta do OpenRouter também deve estar ligada (a da chamada só pode ligá-la, nunca
+   desligar a da conta). A conta Vercel deixa de ser requisito; a decisão 13.5 fica sem objeto.
+2. **A variável da chave é `OPENROUTER_API_KEY`** (nome nativo de terceiros, no lugar de `AI_GATEWAY_API_KEY`).
+   Continua valendo: nunca em log, planilha, JSON ou resposta, e valor de exemplo barrado por
+   `pareceValorDeExemplo()`. As variáveis do produto seguem o prefixo `PROCESSOVIVO_IA_*`.
+3. **Não mudam:** a porta `AnalisadorDeAto`; a regra de que a **ZDR falha fechado, sempre** (sem provedor
+   ZDR, nada é repetido sem ZDR; qualquer erro 4xx não é repetido; só 429/5xx/rede, no máximo 2 vezes,
+   sempre com `zdr: true`); a redação, a verificação, o esquema de saída fechado e os critérios da sonda.
+   A sonda **acrescenta** duas travas: o modelo precisa constar na lista pública de endpoints ZDR, e o
+   provedor que serviu a chamada precisa constar na lista daquele modelo (senão a resposta é descartada).
+4. **O plano IA é obrigatório, sem exceção** (decisão do dono). Isso inclui o workspace **sem assinatura**
+   (chave de API), que hoje passa livre pela regra geral de planos: para a análise por IA ele **não** passa.
+   A Etapa 2 implementa essa exceção e a **registra no `CLAUDE.md`**, junto da regra "análise por IA por
+   botão, só texto do sistema, redigida, com citação verificada e ZDR falhando fechado; desligada por padrão".
+5. A seção 10 (DPA, subprocessadores, termos de uso, LGPD) passa a nomear o **OpenRouter** e o provedor do
+   modelo como operadores a avaliar.

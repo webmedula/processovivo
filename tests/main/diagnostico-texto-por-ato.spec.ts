@@ -353,7 +353,7 @@ describe('diagnóstico do texto por ato', () => {
       const imports = [...fonte.matchAll(/from '([^']+)'/g)].map((m) => m[1] ?? '');
       expect(
         imports.filter((i) =>
-          /HttpClient|TransporteGateway|Adapter(?!.*djen\.mapper)|fetch|node:https?/.test(
+          /HttpClient|TransporteOpenRouter|Adapter(?!.*djen\.mapper)|fetch|node:https?/.test(
             i,
           ),
         ),

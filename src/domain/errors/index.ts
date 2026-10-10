@@ -407,10 +407,10 @@ export class ChaveApiNaoEncontradaError extends DomainError {
 }
 
 /**
- * O gateway de IA não tem NENHUM provedor com retenção zero (ZDR) para o modelo
- * pedido (HTTP 400 `no_providers_available`). É indisponibilidade, não defeito:
- * quem chama NÃO repete, porque a única repetição possível seria sem ZDR, e isso
- * está proibido. Especializa `ProviderIndisponivelError` para quem já trata
+ * O OpenRouter não tem NENHUM provedor com retenção zero (ZDR) para o modelo pedido
+ * (ou nenhum que cumpra também os demais requisitos do pedido). É indisponibilidade,
+ * não defeito: quem chama NÃO repete, porque a única repetição possível seria sem ZDR,
+ * e isso está proibido. Especializa `ProviderIndisponivelError` para quem já trata
  * indisponibilidade continuar tratando.
  */
 export class ZdrIndisponivelError extends ProviderIndisponivelError {

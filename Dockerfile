@@ -64,6 +64,9 @@ COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY package.json ./
 COPY scripts ./scripts
+# Casos SINTÉTICOS (inventados) da sonda de IA do ato: `scripts/sonda-ia-ato.mjs` os lê.
+# Não há dado real aqui; só texto de teste.
+COPY tests/fixtures/ia-ato ./tests/fixtures/ia-ato
 
 # Diretório do banco, criado ANTES de trocar de usuário e com dono `node` —
 # senão o processo sobe sem permissão de escrever e quebra na primeira gravação.

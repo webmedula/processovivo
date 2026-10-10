@@ -1,15 +1,21 @@
-# Sonda de IA do ato — resultado v1.0.0 (Etapa 1)
+# Sonda de IA do ato — resultado v1.0.1 (Etapa 1, transporte OpenRouter)
 
-Documento: `sonda-ia-ato-resultado-v1.0.0` · 10/10/2026 · especificação:
-`ia-analise-do-ato-especificacao-v1.0.0` (seções 4 a 7 e 11).
-Versão da sonda: **1.0.0**. Versão do produto: **inalterada (0.37.6)** — esta etapa não muda
-comportamento de produto, só acrescenta módulos puros, o transporte do gateway (ainda sem uso
-no serviço) e a sonda.
+Documento: `sonda-ia-ato-resultado-v1.0.0` (o nome do arquivo não muda; o conteúdo está na **v1.0.1**) ·
+10/10/2026 · especificação: `ia-analise-do-ato-especificacao-v1.0.0` (seções 4 a 7 e 11, mais a
+"Errata v1.0.1").
+Versão da sonda: **1.1.0** (era 1.0.0, com o AI Gateway da Vercel). Versão do produto:
+**inalterada (0.37.6)** — esta etapa não muda comportamento de produto, só acrescenta módulos
+puros, o transporte (ainda sem uso no serviço) e a sonda.
+
+**Por que a v1.0.1:** o dono não usará o AI Gateway da Vercel — a retenção zero por chamada exige
+plano Pro ou Enterprise e a conta dele é Hobby. O transporte passou a ser o **OpenRouter**
+(`provider.zdr: true`). Redação, verificação, esquema de saída, casos sintéticos, planilha do
+Autran, critérios e a regra "ZDR falha fechada, sempre" **não mudaram**.
 
 Este documento **não contém texto, nome, CPF nem número de processo de caso real**. Tudo o que
 está medido aqui veio de código e de capturas já versionadas; **a sonda ainda não foi rodada
-contra modelo nenhum** (sem chave do gateway e sem rede neste ambiente). A seção 5 diz o que
-isso quer dizer.
+contra modelo nenhum** (sem chave e sem rede neste ambiente) e **o OpenRouter nunca foi
+chamado**. A seção 6 diz o que isso quer dizer.
 
 ---
 
@@ -76,203 +82,316 @@ Consequência para a Etapa 2: o corpo do ato deve ser lido **no servidor**, do r
 - **Aviso de plano já usado:** `ServicoAssinaturas.exigir` lança `RecursoNaoIncluidoNoPlanoError`
   (HTTP 403) com o nome do plano atual e o menor plano que traz o recurso.
 
-### (c) Configuração de chave de gateway de IA
+### (c) Configuração de chave de IA
 
-**Não existe.** Nenhuma ocorrência de `AI_GATEWAY`, `VERCEL` ou de variável de IA em `src/`,
-`.env.example` ou `DEPLOY.md`. Esta etapa não a acrescenta ao `env.ts`: a sonda lê
-`AI_GATEWAY_API_KEY` direto do ambiente (é um script de operador). A validação no arranque do
-serviço (`..._IA_HABILITADA`, etc.) é da Etapa 2.
+**Não existe** na aplicação. Nenhuma variável de IA em `src/`, `.env.example` ou `DEPLOY.md`. A
+sonda lê `OPENROUTER_API_KEY` direto do ambiente (é um script de operador; nome nativo de
+terceiros, como era `AI_GATEWAY_API_KEY`). A validação no arranque do serviço
+(`PROCESSOVIVO_IA_HABILITADA`, etc.) é da Etapa 2.
 
 ---
 
-## 2. Biblioteca escolhida
+## 2. OpenRouter: o que a documentação diz (as 6 investigações)
 
-**`ai@7.0.137` (AI SDK da Vercel), versão exata, dependência de produção.** `createGateway`
-vem do próprio pacote (`@ai-sdk/gateway@4.0.110`, trazido por ele).
+**Limite desta investigação, dito de início:** neste ambiente o acesso a `openrouter.ai` está
+fechado (DNS/proxy) — não consegui abrir as páginas da documentação, nem chamar a API. O que está
+abaixo vem de (i) **resumos de busca** sobre as páginas oficiais, consultados em **10/10/2026**,
+(ii) o **código-fonte do pacote do SDK** instalado (`@openrouter/ai-sdk-provider@3.1.0`), e (iii)
+testes de fio com HTTP dublado. Cada item diz qual das três o sustenta e o que **ficou sem
+confirmação**. Páginas consultadas (via busca):
 
-Por quê:
+- `https://openrouter.ai/docs/guides/routing/provider-selection` (campos do objeto `provider`);
+- `https://openrouter.ai/docs/features/zdr` (Zero Data Retention);
+- `https://openrouter.ai/docs/api/api-reference/endpoints/list-endpoints-zdr` (lista de endpoints ZDR);
+- `https://openrouter.ai/docs/guides/administration/usage-accounting` (uso e custo);
+- `https://openrouter.ai/docs/api-reference/limits` (limites e créditos por chave);
+- `https://openrouter.ai/blog/insights/ai-data-residency/` (comportamento de `allow_fallbacks: false`).
 
-- é o caminho **documentado** do gateway, e `providerOptions: { gateway: { zeroDataRetention:
-true } }` é a forma nativa de pedir ZDR por requisição — confirmei no tipo
-  `GatewayProviderOptions` e **no corpo HTTP que o SDK de fato envia** (teste de fio, seção 4);
-- saída estruturada (`Output.object` + Zod) já vem pronta, e `maxRetries: 0` desliga a repetição
-  escondida — qualquer repetição passa por código nosso, sempre com ZDR;
-- `getAvailableModels()` devolve o preço por token do catálogo, que a sonda usa para estimar custo;
-- o Zod do SDK (3.25.x) é compatível com o `^3.23.8` do projeto;
-- alternativa descartada: chamar o endpoint do gateway com `fetch` próprio. Evita uma dependência,
-  mas reimplementa protocolo, erros e esquema à mão — e o gateway tem protocolo versionado
-  (`/v4/ai/language-model`) que o SDK acompanha.
+### 2.1 Como exigir ZDR por chamada
 
-Custo da escolha: a árvore de dependências cresce (`ai`, `@ai-sdk/*`, `@workflow/*`, `undici`,
-`eventsource-parser` etc.; 10 pacotes a mais no `npm ci`). Nada nativo, nada para compilar no
-Alpine. O CLAUDE.md abre exceção para o Zod; esta é uma segunda dependência de I/O em
-`infrastructure/` e **precisa ficar registrada** lá na Etapa 2.
+- `provider.zdr` (booleano): "restringe o roteamento apenas a endpoints ZDR"; sem valor padrão. É um
+  **OU** com a configuração ZDR da conta e de guardrails — a chamada **só pode ligar** a ZDR, nunca
+  desligar a da conta. _(documentação, via busca)_
+- `provider.data_collection` **existe**, com `"allow"` (padrão) ou `"deny"`; `"deny"` exclui endpoints
+  que guardam dado de forma não transitória ou podem treinar com ele. _(documentação, via busca; e os
+  tipos do SDK: `data_collection?: 'allow' | 'deny'`)_ → **a sonda usa os dois**.
+- `provider.allow_fallbacks` (padrão `true`): com `false`, se nenhum provedor da lista estiver
+  disponível o serviço devolve **erro** em vez de rotear para um não conforme. _(blog de residência
+  de dados, via busca)_
+- **Os provedores de reserva respeitam a ZDR? A documentação consultada não o afirma com todas as
+  letras.** O que ela diz é que `zdr` restringe o roteamento a endpoints ZDR (ou seja, o conjunto de
+  candidatos já nasce filtrado), mas isso é inferência minha, não frase da página.
+  **Decisão:** a sonda envia `allow_fallbacks: false` (sem reserva) e, ainda assim, confere depois
+  quem serviu (2.3 e 2.4). Se o teste mostrar que a reserva respeita a ZDR, a restrição pode ser
+  relaxada — é uma constante (`PREFERENCIAS_DE_PROVEDOR`).
+- `provider.require_parameters: true` também vai em toda chamada: só admite endpoint que cumpra
+  `response_format` (saída estruturada). Sem isso o esquema fechado poderia ser ignorado em
+  silêncio por um endpoint que não o suporta.
+- **Verificado no fio** (SDK real, `fetch` dublado): o corpo enviado a `POST /api/v1/chat/completions`
+  leva `"provider": {"zdr": true, "data_collection": "deny", "allow_fallbacks": false,
+"require_parameters": true}`, `response_format` com `json_schema` estrito e a chave **só** no
+  cabeçalho `authorization`.
+
+### 2.2 O que o OpenRouter faz quando nenhum provedor ZDR atende — **NÃO CONFIRMADO**
+
+A documentação não diz. A única pista (fonte de terceiros, não oficial) é que um **404 "No
+endpoints found"** aparece quando todos os provedores atrás de um modelo ficam fora dos filtros.
+**O código HTTP e o corpo reais não foram obtidos**, porque o teste exige uma chamada de rede, que
+não fiz (pedido expresso). Entreguei o comando que a faz com texto sintético
+(`--teste-falha-fechada`, seção 8): ele imprime o status e o corpo do erro, e diz se o
+comportamento foi "falhou fechado" (esperado), "erro de outro tipo" (me mande o status e o corpo
+para eu ajustar a classificação) ou **"respondeu mesmo assim" (bloqueante)**.
+
+Como o código se protege **sem depender desse conhecimento**:
+
+1. toda tentativa — inclusive as repetições — leva `zdr: true`; nenhum caminho do código envia sem ele;
+2. qualquer 4xx (inclusive 404 e 400) **nunca é repetido**; só 429, 5xx e falha de rede, no máximo 2
+   vezes, com espera crescente (1 s, 3 s) e a MESMA `zdr: true`;
+3. 400/404 com uma frase de "sem provedor" (`no endpoints found`, `no allowed providers`, `zdr`,
+   `data policy`…) vira `ZdrIndisponivelError` — o modelo sai da comparação, com o erro mostrado;
+4. mesmo que o OpenRouter responda ignorando a ZDR, a resposta só vale se quem serviu consta na
+   lista ZDR do modelo (2.3/2.4); senão é **descartada** e o modelo para.
+
+### 2.3 Como saber quem atendeu — **o campo existe no SDK; falta ver numa resposta real**
+
+As páginas de documentação que consegui ler pela busca **não** descrevem um campo de provedor na
+resposta de chat completions. Já o **esquema de resposta do SDK** tem `provider?: string` no nível
+superior e o expõe em `providerMetadata.openrouter.provider`; o teste de fio confirma que a sonda
+o lê. A sonda registra por chamada **só** esse nome (e o usa para a conferência 2.4).
+**Se a resposta real não trouxer o campo, toda resposta é tratada como "provedor não confirmado" e
+descartada** — falha fechada, ao custo de a sonda não servir até se achar o campo (o teste de falha
+fechada e a primeira rodada sintética mostram isso na hora).
+
+### 2.4 Lista pública de endpoints com ZDR
+
+- Rota: `GET https://openrouter.ai/api/v1/endpoints/zdr` (a página da ZDR a cita como forma
+  programática; a lista "é atualizada automaticamente quando a política de dados de um provedor muda").
+- **Precisa de chave:** a especificação OpenAPI da rota marca o cabeçalho `Authorization: Bearer
+<chave>` como obrigatório. A sonda o envia — e por isso **a listagem usa a chave, mas não envia
+  texto de caso nenhum**. _(uma réplica de terceiros diz que o recurso pode depender de habilitação
+  na conta; não confirmado.)_
+- Formato: `{ "data": [ { name, model_id, model_name, context_length, pricing, provider_name, tag,
+quantization, max_completion_tokens, … } ] }` — **um item por endpoint** (modelo × provedor). _(página
+  da rota e réplica, via busca; **nenhuma captura real**)_
+- Por modelo: sim — agrupa-se por `model_id`; "modelo com ao menos um endpoint ZDR" = aparece na lista.
+- **Como a sonda lida com a incerteza do formato:** o esquema é frouxo (`passthrough`, campos
+  opcionais). Se a lista vier mas nenhum item tiver `model_id` e `provider_name`/`tag`, a sonda **para**
+  e imprime só os **nomes** dos campos do primeiro item (nunca valores), para o ajuste ser de uma linha.
+  `--listar-modelos-zdr` mostra os ids; `--modelos=…` **recusa a rodada inteira** se algum modelo
+  não estiver na lista; a conferência do provedor que serviu compara (sem caixa nem pontuação) com
+  `provider_name`, `tag` e o trecho da `tag` antes da `/`.
+
+### 2.5 Custo
+
+- O `usage` vem **sempre** na resposta (`usage: {include: true}` e `stream_options.include_usage`
+  estão **obsoletos e sem efeito**): tokens de entrada/saída, `cost` (o que foi cobrado da conta,
+  em créditos ≈ USD) e `cost_details.upstream_inference_cost` (só para BYOK). _(documentação de uso, via busca)_
+  O SDK entrega isso em `providerMetadata.openrouter.usage.cost` — lido e testado no fio.
+- A tabela diz a **fonte** (`openrouter` = `usage.cost` da resposta) e a data da rodada. Se faltar o
+  custo, a sonda **estima** `tokens × preço` com o **maior** preço entre os endpoints ZDR do modelo
+  (da própria lista) e rotula como **`estimativa`**.
+- **Limite de gasto:** existe **por chave** (cota de créditos opcional, com `limit_reset` para
+  zerar periodicamente); passar dele devolve **HTTP 402**; `GET /api/v1/key` informa limite e saldo.
+  Há também o saldo da conta (créditos pré-pagos). _(página de limites, via busca; os passos exatos
+  da tela de chaves **não** foram confirmados — a seção 8 os dá com a ressalva.)_
+
+### 2.6 Biblioteca escolhida
+
+**`@openrouter/ai-sdk-provider@3.1.0`**, versão exata, dependência de produção, junto de `ai@7.0.137`
+(já usado na 1.0.0).
+
+| Critério                                               | `@openrouter/ai-sdk-provider@3.1.0`                         | `@ai-sdk/openai-compatible@3.0.67`               | `fetch` direto + Zod |
+| ------------------------------------------------------ | ----------------------------------------------------------- | ------------------------------------------------ | -------------------- |
+| Compatível com `ai@7`                                  | sim (`peerDependencies: ai ^7`)                             | sim                                              | n/a                  |
+| Dependências próprias                                  | **nenhuma** (só peers: `ai`, `zod`)                         | 2 (`@ai-sdk/provider`, `@ai-sdk/provider-utils`) | nenhuma              |
+| `provider.zdr` / `data_collection` / `allow_fallbacks` | **tipados** no `chat(modelo, { provider })`                 | só via corpo extra, sem tipo                     | à mão                |
+| Provedor que serviu                                    | `providerMetadata.openrouter.provider`                      | não mapeia o campo                               | à mão                |
+| Custo (`usage.cost`)                                   | `providerMetadata.openrouter.usage.cost`                    | não mapeia                                       | à mão                |
+| Saída estruturada                                      | `response_format: json_schema` estrito, via `Output.object` | idem                                             | à mão                |
+| Injeção de `fetch` para teste de fio                   | sim                                                         | sim                                              | sim                  |
+
+Escolhi o primeiro: é o único que passa `provider.zdr` **tipado**, devolve o provedor e o custo e
+não acrescenta dependência transitiva. Verificado no fio (teste automatizado). O pacote do gateway
+da Vercel deixou de ser usado: o código não o importa; `ai` o traz como dependência transitiva
+(`@ai-sdk/gateway`), mas **nenhuma chamada passa por ele**.
 
 ---
 
 ## 3. O que foi construído
 
-| Peça                                                              | Onde                                                               | Observação                                                 |
-| ----------------------------------------------------------------- | ------------------------------------------------------------------ | ---------------------------------------------------------- |
-| Vocabulário fechado (`parece_pedir`, códigos de atenção, limites) | `domain/entities/vocabularioDaAnalise.ts`                          | sem imports; contrato entre modelo, verificação e tela     |
-| `redigirParaIA` / `criarRedator`                                  | `application/politicas/redigirParaIA.ts`                           | pura; seção 5                                              |
-| `verificarAnalise`                                                | `application/politicas/verificarAnalise.ts`                        | pura; seção 6; `VERSAO_DAS_REGRAS_DE_VERIFICACAO = 1.0.0`  |
-| `prepararEntrada` (suficiência, truncamento, prompt)              | `application/politicas/entradaDoModelo.ts`                         | `VERSAO_PROMPT = ato-1.0.0`                                |
-| Esquema Zod fechado                                               | `infrastructure/adapters/modelo/esquemaDaAnalise.ts`               | `.strict()`, sem limites de tamanho no que vai ao provedor |
-| `TransporteGateway` (ZDR fixo)                                    | `infrastructure/adapters/modelo/TransporteGateway.ts`              | injetável; ZDR não tem parâmetro que o desligue            |
-| Preços do catálogo                                                | `infrastructure/adapters/modelo/catalogoDoGateway.ts`              | só metadados públicos                                      |
-| `ZdrIndisponivelError`                                            | `domain/errors/index.ts`                                           | subclasse de `ProviderIndisponivelError`                   |
-| Núcleo, métricas, planilha, julgamento                            | `main/sonda/sondaIaAto.ts`, `comandoSondaIa.ts`, `casosDaSonda.ts` | adaptador de entrada: pode importar tudo                   |
-| Comando                                                           | `scripts/sonda-ia-ato.mjs`                                         | fino, no padrão das outras sondas                          |
-| 12 casos sintéticos                                               | `tests/fixtures/ia-ato/casos-sinteticos.json`                      | tudo inventado; CNJ com DV válido                          |
+| Peça                                                              | Onde                                                               | Observação                                                             |
+| ----------------------------------------------------------------- | ------------------------------------------------------------------ | ---------------------------------------------------------------------- |
+| Vocabulário fechado (`parece_pedir`, códigos de atenção, limites) | `domain/entities/vocabularioDaAnalise.ts`                          | sem imports; **inalterado**                                            |
+| `redigirParaIA` / `criarRedator`                                  | `application/politicas/redigirParaIA.ts`                           | pura; **inalterada**                                                   |
+| `verificarAnalise`                                                | `application/politicas/verificarAnalise.ts`                        | pura; **inalterada**                                                   |
+| `prepararEntrada`, `temTextoSuficiente`                           | `application/politicas/entradaDoModelo.ts`                         | `VERSAO_PROMPT = ato-1.0.0`; **inalterada**                            |
+| Esquema Zod fechado                                               | `infrastructure/adapters/modelo/esquemaDaAnalise.ts`               | `.strict()`; **inalterado**                                            |
+| **`TransporteOpenRouter`** (ZDR fixo)                             | `infrastructure/adapters/modelo/TransporteOpenRouter.ts`           | **novo**; substitui `TransporteGateway`                                |
+| **Lista ZDR e conferência do provedor**                           | `infrastructure/adapters/modelo/endpointsZdr.ts`                   | **novo**; usa o `HttpClient` do projeto; substitui `catalogoDoGateway` |
+| `ZdrIndisponivelError`                                            | `domain/errors/index.ts`                                           | subclasse de `ProviderIndisponivelError`; texto atualizado             |
+| Núcleo, métricas, planilha, julgamento                            | `main/sonda/sondaIaAto.ts`, `comandoSondaIa.ts`, `casosDaSonda.ts` | provedor + `zdrConfirmado` por chamada                                 |
+| Comando                                                           | `scripts/sonda-ia-ato.mjs` (**v1.1.0**)                            | `--listar-modelos-zdr`, `--teste-falha-fechada`, `--fixtures-saida`    |
+| 12 casos sintéticos                                               | `tests/fixtures/ia-ato/casos-sinteticos.json`                      | inalterados; agora também copiados para a imagem (`Dockerfile`)        |
 
-A Etapa 2 **importa** estes módulos (`redigirParaIA`, `verificarAnalise`, `prepararEntrada`,
-`TransporteGateway`, esquema); nada deles precisa ser movido ou copiado.
+**Mudança na imagem:** uma linha no `Dockerfile` (`COPY tests/fixtures/ia-ato ./tests/fixtures/ia-ato`)
+para a sonda achar, dentro do contêiner, os casos **sintéticos** (inventados). Não toca `ENV`, porta,
+caminho do banco nem credencial. Sem ela, os comandos (b) e (e) da seção 8 não funcionariam no Easypanel.
 
-Decisões de desenho que a especificação deixava abertas (todas reversíveis, todas testadas):
+Removidos de vez: `TransporteGateway.ts`, `catalogoDoGateway.ts`, `AI_GATEWAY_API_KEY` e
+`providerOptions.gateway` (nada de código morto; o único resquício textual é a palavra "gateway" em
+comentários históricos do `CLAUDE.md` sobre pagamento, que é outro assunto).
 
-1. **`indeterminado` sem citação é resultado legítimo**, mostrado sem resumo. A seção 3.3 diz que
-   "sem citação para o ponto principal o resultado é 'não foi possível analisar'", e a 3.4 que
-   "indeterminado é uma resposta legítima" — as duas só convivem se `indeterminado` com
-   `trecho_chave` vazio passar. Qualquer outro valor com citação inválida vira "não verificado".
-2. **Expressão proibida derruba o resultado inteiro** (a seção 6.3 diz "resultado com elas é
-   descartado"); número inventado e citação inválida de **ação** derrubam só o item.
-   Número inventado no **resumo** descarta o resumo e mantém `parece_pedir` + citação.
-3. **A lista de proibidas vale para o que o modelo escreve** (resumo e ação), **não para a
-   citação** — a citação é literal do ato, e o ato pode legitimamente dizer "recorra".
-4. **Número verificado por token com separador** ("10/11/2026" tem de aparecer assim, ou por
-   extenso "10 de novembro de 2026"). Dígitos soltos que existem em outro lugar do texto não
-   absolvem uma data inventada.
-5. **Marcadores de pessoa seguem a ordem do retrato**, não a ordem de aparição: o texto redigido
-   (e, na Etapa 2, a chave de cache) não varia conforme quais nomes o ato cita.
-6. **Só o corpo do ato é verificado.** Classe, tribunal e os títulos anteriores vão num bloco
-   `<contexto>` fora do campo `<ato>`; citar deles não verifica.
-7. **A saída é validada duas vezes**: o SDK valida com o esquema, e a verificação confere forma
-   (280/160 caracteres, 3 ações, 2 pontos). Os limites **não vão no esquema do provedor**: alguns
-   recusam `maxLength` em saída estruturada, e a recusa derrubaria o modelo inteiro da comparação.
+### Decisões de desenho (todas reversíveis, todas testadas)
+
+As sete da v1.0.0 (verificação) continuam valendo. Novas:
+
+1. **Pré-checagem obrigatória:** sem conseguir a lista ZDR (rede, chave recusada, formato
+   inesperado), **nada é enviado** — a ZDR não pode ser confirmada.
+2. **Modelo fora da lista recusa a rodada inteira** (não só aquele modelo): um erro de digitação não
+   pode reduzir a comparação em silêncio.
+3. **Provedor não confirmado = resposta descartada + modelo parado + aviso alto.** O texto do caso já
+   saiu da máquina nesse momento; por isso o aviso diz que, se se repetir com a ZDR ligada, é bloqueante.
+4. **`allow_fallbacks: false`** (2.1).
+5. **Metadado por chamada** (`chamadas-AAAA-MM-DD.json`, no volume): modelo, variante, estado, provedor,
+   latência, tokens, custo, `zdrConfirmado` sim/não e a ordem na rodada — **nunca** o id do caso nem texto.
+6. **Teste de falha fechada** só com o caso sintético `s01`, e só ali o status e o corpo do erro vão ao
+   terminal (`aoFalhar` não é ligado em rodada com caso real).
 
 ---
 
 ## 4. O que foi medido (sem rede)
 
-Testes novos: **98** (arquivos de `redigirParaIA`/`verificarAnalise`/`entradaDoModelo`/transporte
+Testes de unidade, sem rede e sem tempo real (transporte e HTTP dublados):
 
-- a sonda), todos verdes, sem rede e sem tempo real.
+- **ZDR no fio** (SDK real, `fetch` dublado): o corpo leva `provider.zdr: true` e `data_collection:
+deny`; a **chave só no cabeçalho**; 429 pela rede gera nova tentativa **também com `zdr: true`**;
+  404 "No endpoints found" vira `ZdrIndisponivelError` com **uma única requisição**; resposta fora do
+  esquema vira `RespostaInvalidaError` sem repetir; resposta sem `provider` chega como "não informado".
+- **Transporte:** toda chamada ao SDK carrega `provider.zdr: true`; chamada **sem** `zdr` (ou sem
+  `data_collection: deny`) lança `ProviderIndisponivelError` **antes de qualquer rede** (o executor
+  não é chamado); "sem provedor" não gera segunda chamada; 429 repete com 1 s; 5xx repete no máximo 2
+  vezes com 1 s e 3 s, todas com ZDR; 401/402/404/400 comuns não repetem; a mensagem do erro nunca
+  copia o corpo nem a chave.
+- **Lista ZDR:** leitura, filtro por texto, `modeloTemZdr`, conferência do provedor (caixa,
+  pontuação, `tag`), preço estimado, formato inesperado (só nomes de campo), chave só no cabeçalho e
+  nunca em mensagem de erro, falha de rede com mensagem fixa.
+- **Sonda:** recusa sem `OPENROUTER_API_KEY` e com valor de exemplo, **antes de qualquer rede**; a
+  chave nunca aparece no terminal nem nos arquivos; **modelo fora da lista recusa a rodada**; lista
+  indisponível ou sem os campos esperados não envia nada; provedor fora da lista **descarta a
+  resposta** e para só aquele modelo; `--fixtures-saida`; metadado por chamada sem texto; teste de
+  falha fechada nos três desfechos (fechou / erro de outro tipo / respondeu = bloqueante).
+- Mantidos da v1.0.0: redação, verificação, `--arquivo`/`--stdin` sem gravar nada no repositório,
+  resposta crua só de caso sintético, planilha e julgamento.
 
-* **Redação:** cada padrão (CNJ formatado e corrido, CPF formatado/mascarado/corrido, CNPJ, e-mail,
-  quatro formas de telefone, quatro de OAB), texto sem nada a redigir, prazo/data/valor
-  **intactos**, nome parcial, caixa e acento, dois pedaços do mesmo nome → um marcador, palavra que
-  só contém o nome, passada única, restauração, mesmo mapa entre ato e títulos.
-* **Verificação:** citação com acento/caixa/espaço diferentes, inexistente, vazia, curta; número de
-  dias, hora, data por extenso e numérica, número inventado em resumo e em ação; as expressões
-  proibidas (incluindo a palavra que só _contém_ a proibida); limites de forma; saída que obedece
-  à injeção.
-* **ZDR:** (i) toda chamada ao SDK leva `zeroDataRetention: true`, temperatura 0 e nenhuma
-  repetição automática; (ii) **no fio** — o SDK real, com o HTTP dublado — o **corpo da requisição**
-  leva `providerOptions.gateway.zeroDataRetention: true`, o esquema fechado e nenhuma ferramenta;
-  (iii) HTTP 400 `no_providers_available` vira `ZdrIndisponivelError` com **uma única
-  requisição**; HTTP 500 também não é repetido pelo SDK; (iv) a sonda tira o modelo da comparação e
-  nunca chama de novo; (v) todos os modelos sem ZDR → código de saída 3 e aviso.
-* **Sonda:** recusa sem chave e com valor de exemplo (`pareceValorDeExemplo`), nunca imprime a
-  chave; `--stdin` e `--arquivo` não gravam **nada** dentro do repositório (CSV real dentro do
-  repositório é recusado; saída dentro do repositório é recusada, com a exceção de `dados/`, que
-  já está no `.gitignore` e é o volume); o texto do caso real não aparece na planilha nem nas
-  métricas; resposta crua só de caso sintético; os dados pessoais dos 12 casos sintéticos **não
-  aparecem em nenhum prompt** enviado ao modelo dublado.
-* **Injeção:** o texto sintético `s06` tenta fechar o campo (`</ato>`), mandar um valor fora do
-  vocabulário, acrescentar um campo e fazer o modelo dizer "prazo fatal de 3 dias". O campo
-  não é fechável (`<`/`>` neutralizados); valor fora do vocabulário e campo extra falham no esquema
-  `.strict()`; "prazo fatal", número inventado e citação inventada falham na verificação.
-  A sonda ainda conta o _canário_ (`CANARIO-7731`) para saber se o modelo **obedeceu**.
-
-**Não medido (precisa de chamada real):** qual modelo atende, se a ZDR funciona **na conta**,
-roteamento (quais provedores atenderam), latência p50/p95, tokens e custo por análise, taxa de
-citações verificadas, taxa de descarte, taxa de "não verificado"/"indeterminado" **de cada
-modelo**, comportamento real nos casos de injeção e o julgamento do Autran. Os números dessas
-colunas só existem depois da rodada real.
+**Não medido (precisa de chamada real, e eu não fiz nenhuma):** o status e o corpo reais de "sem
+provedor ZDR"; se o campo `provider` vem na resposta; o formato real da lista ZDR; qual modelo atende
+com ZDR na conta; latência, tokens e custo; taxa de citações verificadas, descarte, "não verificado" e
+"indeterminado" de cada modelo; o comportamento real nos casos de injeção; o julgamento do Autran.
 
 ---
 
-## 5. O que a sonda não consegue medir, e riscos que ficam abertos
+## 5. Divergências entre a especificação e o código
 
-1. **Formato real do `providerMetadata.gateway`.** O SDK tipa esse campo como JSON livre. A sonda
-   lê `routing.finalProvider`, `generationId` e `cost` (número ou texto numérico) e grava o objeto
-   `routing` inteiro como veio, mas **o formato foi suposto**, não observado. Se vier diferente, o
-   custo cai para a tabela de preços do catálogo (e a tabela diz a fonte) e o roteamento aparece
-   como "—". Isso é para ser olhado na primeira rodada real.
-2. **O corpo do erro `no_providers_available`** é reconhecido por texto (`type`, `code`, mensagem,
-   corpo) porque o SDK não tem classe própria; o teste usa um corpo plausível. Se o gateway
-   mudar o texto, o erro cai em "indisponível" genérico — **continua sem repetir e sem
-   retenção**, mas deixa de ser rotulado como "sem ZDR". Também a ser conferido na rodada real.
-3. **Plano da Vercel.** A seção 10 exige conta Pro ou Enterprise para ZDR por requisição. A sonda
-   não consegue distinguir "plano insuficiente" de "modelo sem provedor ZDR": ambos podem aparecer
-   como `no_providers_available`. **O dono precisa confirmar o plano** (decisão 13.5).
-4. **Preço.** A tabela de preços sai do catálogo no momento da rodada (a data é impressa). Não há
-   preço fixo no código.
-5. **Truncamento de nomes parciais.** Quando um nome aparece só pelo primeiro nome ou por um
-   pedaço, a restauração de marcador devolve o nome **completo do retrato**, que pode não casar
-   caractere a caractere com o texto original do ato. Na Etapa 2, o destaque da citação ao lado do
-   texto precisa degradar para "mostrar a citação restaurada, sem marca de posição" quando não
-   achar o trecho no original.
-6. **Sobre-redação deliberada.** Nome isolado de pessoa física com 4+ letras é redigido em todo o
-   texto ("Silva" some mesmo quando é parte de outra palavra de nome comum). É o lado seguro; o
-   custo é o modelo ler `[PARTE A]` onde havia um sobrenome comum. A rodada real mostra se atrapalha.
+1. **Workspace sem assinatura passa livre** (`ServicoAssinaturas.exigir`) — **resolvida pelo dono:**
+   a errata v1.0.1 da especificação registra que o plano IA é **obrigatório, sem exceção**. A
+   Etapa 2 implementa a exceção ao `CLAUDE.md` (que hoje deixa a chave de API sem assinatura passar
+   livre) e **registra a decisão no `CLAUDE.md`**.
+2. **O CSV do Autran tem 4 colunas**, e a variante "com títulos" precisa dos títulos anteriores: a sonda
+   aceita uma 5ª coluna **opcional** `anteriores` (títulos separados por `|`). Sem ela, a variante só
+   roda nos casos sintéticos.
+3. **A planilha tem uma coluna a mais:** `id;modelo;variante;resultado;avaliacao`.
+4. **Prefixo das variáveis da Etapa 2:** `PROCESSOVIVO_IA_HABILITADA`, `_IA_MODELO`, `_IA_COTA_MENSAL`,
+   `_IA_ZDR`. A chave do transporte é `OPENROUTER_API_KEY`.
+5. **A especificação cita o AI Gateway e `zeroDataRetention`** nas seções 3.7, 8 e 10: a "Errata
+   v1.0.1" no fim dela corrige o transporte; o resto não foi reescrito.
+6. **O dono não precisa mais de conta Vercel Pro/Enterprise** (decisão 13.5 da especificação),
+   mas precisa **ligar a ZDR na conta do OpenRouter** (seção 8) — a chamada só pode ligar a ZDR, nunca
+   desligar a da conta.
+
+Nada mais conflita com o código ou o `CLAUDE.md`.
 
 ---
 
-## 6. Divergências entre a especificação e o código
+## 6. O que a sonda não consegue medir, e riscos abertos
 
-1. **Workspace sem assinatura passa livre** (`ServicoAssinaturas.exigir` devolve sem lançar
-   quando não há assinatura — decisão registrada no `CLAUDE.md` para não derrubar integrações por
-   chave de API). A especificação diz que "sem o recurso do plano IA, nenhuma chamada ao
-   modelo". Aplicado literalmente, **uma chave de API sem assinatura chamaria o modelo sem plano
-   nenhum**, gastando a cota do operador. Proposta para a Etapa 2: para `analiseIa` exigir
-   assinatura **explícita** (não passar livre), além da cota mensal. **Preciso da sua decisão** —
-   isso contradiz uma regra do CLAUDE.md e por isso não vou assumir.
-2. **Cota "por workspace"** vs. workspaces de chave de API: mesma questão; a cota por workspace
-   existe, mas o workspace da chave de API é o do operador.
-3. **O CSV do Autran tem 4 colunas**, e a variante "com os títulos anteriores" precisa dos títulos
-   anteriores. A sonda aceita uma 5ª coluna **opcional** `anteriores` (títulos separados por `|`).
-   Sem ela, a variante "com títulos" só roda nos casos sintéticos. É uma extensão do formato que
-   você pediu; ver o passo a passo para o Autran.
-4. **A planilha tem uma coluna a mais:** `id;modelo;variante;resultado;avaliacao` (o pedido listava
-   `id;modelo;resultado; avaliacao`). Sem `variante` não dá para saber de qual das duas rodadas é
-   cada linha. A coluna `avaliacao` fica vazia, como pedido (valores: `util`, `errado`, `perigoso`).
-5. **A spec cita `..._IA_HABILITADA` e semelhantes** com o "prefixo em vigor": o prefixo em vigor
-   no `env.ts` para variáveis do produto é `PROCESSOVIVO_` (as de fonte usam `DATAJUD_`, `MNI_`,
-   `LEITOR_`…). A Etapa 2 usará `PROCESSOVIVO_IA_HABILITADA`, `PROCESSOVIVO_IA_MODELO`,
-   `PROCESSOVIVO_IA_COTA_MENSAL` e `PROCESSOVIVO_IA_ZDR`. O nome `AI_GATEWAY_API_KEY` é o do
-   gateway e fica como está.
-
-Nada na especificação conflita com o código no restante.
+1. **Documentação lida por resumo, não na fonte** (2). Cada afirmação da seção 2 diz de onde vem.
+   O que decide está nos testes de fio (SDK) e no comando de falha fechada.
+2. **Formato real da lista ZDR e do campo `provider` da resposta** (2.3, 2.4): se diferirem, a sonda
+   **recusa** (não adivinha) e diz o que viu. O custo desse acaso é uma rodada perdida, não vazamento.
+3. **A ZDR por chamada é um OU com a da conta** (2.1): a chamada não consegue desligar o que a conta
+   exige. Isso é bom — mas significa que, **se a conta tiver filtros que excluam todos os endpoints do
+   modelo**, o erro "sem provedor" pode vir da conta, não da chamada. A mensagem não distingue.
+4. **ZDR não é "não treina" nem "não vê":** o texto redigido **é enviado** a um provedor externo
+   (que, por contrato, não o guarda). A seção 10 da especificação (DPA, subprocessadores, termos de
+   uso, LGPD) continua valendo e agora deve citar o **OpenRouter** e o **provedor do modelo**.
+5. **Sobre-redação deliberada** e **restauração de nomes parciais** (v1.0.0, itens 5 e 6) — inalterados.
+6. **Conferência do provedor** compara nomes por texto normalizado; se o nome da resposta e o da lista
+   usarem convenções diferentes (ex.: "Google" × "Google AI Studio"), a resposta é descartada
+   (falha fechada) até se ajustar a regra. O comando de teste e a primeira rodada sintética mostram.
 
 ---
 
 ## 7. Recomendação
 
 **Ainda não há recomendação de modelo nem de variante — e eu não vou inventar uma.** Sem rodar a
-sonda não existe número de qualidade, ZDR ou custo, e a especificação diz que o modelo é escolhido
-pela sonda.
+sonda não existe número de qualidade, ZDR confirmada ou custo, e a especificação diz que o modelo é
+escolhido pela sonda.
 
-O que posso recomendar sobre **como escolher os modelos** a comparar (nomes saem do catálogo do
-gateway no dia; não fixo nenhum):
+**Como escolher os 3 a 5 modelos** (o OpenRouter muda o catálogo toda semana e eu não consegui ler a
+lista ZDR de hoje, então **não cravo identificadores**): rode `--listar-modelos-zdr=<família>` e
+escolha, **entre os que a lista confirmar**, um por faixa:
 
-- um **pequeno/barato**, um **médio** e um **maior**, todos com **saída estruturada** e todos
-  que o catálogo deixe usar com ZDR;
-- começar pela **variante sem títulos anteriores**: ela é mais barata, tem menos superfície para
-  o modelo citar o que não deve, e a variante com títulos só compensa se melhorar `parece_pedir`
-  de forma visível no julgamento do Autran;
-- rodar primeiro **só os casos sintéticos** (sem `--arquivo`), para ver o roteamento, a ZDR, o
-  formato de custo e gerar as fixtures da Etapa 2; só depois os casos do Autran.
+| Faixa              | O que procurar                                                                  | Por quê                                                       |
+| ------------------ | ------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| Pequeno / barato   | família "haiku", "flash", "mini" ou "small"                                     | é o piso de custo; se cumprir o critério, vence               |
+| Médio              | família "sonnet", "gpt" (versão média) ou "gemini" (pro)                        | o ponto de equilíbrio provável                                |
+| Maior              | família "opus", "gpt" (topo)                                                    | teto de qualidade, para saber quanto se perde indo para baixo |
+| Reserva (opcional) | um modelo aberto grande (ex.: "llama", "qwen", "deepseek") **com endpoint ZDR** | pode ser bem mais barato; só entra se a lista o confirmar     |
 
-Critério (seção 11): citações verificadas ≥ 95%, zero "perigoso", "errado" ≤ 10%; vence o modelo
-mais barato que cumprir. A sonda aplica exatamente isso em `--avaliacao`.
+Todos precisam suportar **saída estruturada** (a sonda manda `require_parameters: true`; um modelo que
+não a suporte devolve erro de "sem provedor", e a sonda o trata como falha fechada, sem repetir).
+Comece pela **variante sem títulos anteriores** (mais barata, menos superfície); a "com títulos" só
+compensa se melhorar `parece_pedir` visivelmente no julgamento do Autran.
+
+Critério (seção 11 da especificação): citações verificadas ≥ 95%, zero "perigoso", "errado" ≤ 10%; vence
+o modelo mais barato que cumprir. A sonda aplica exatamente isso em `--avaliacao`.
 
 ---
 
-## 8. Como rodar (para quem não é técnico)
+## 8. Como rodar (passo a passo)
 
-### O CSV que o Autran prepara
+### 8.1 Criar a conta e a chave no OpenRouter
+
+1. Abra `https://openrouter.ai`, clique em **Sign in** e crie a conta (e-mail ou Google).
+2. **Créditos:** menu da conta → **Credits** → adicione um valor pequeno (por exemplo **US$ 5**). O
+   OpenRouter é pré-pago; sem créditos a chamada devolve erro 402.
+3. **Ligar a exigência de ZDR na conta** (a defesa do lado da conta): menu da conta → **Settings** →
+   **Privacy**. Para **cada grupo de modelos** que aparecer, desligue a opção que permite que seus
+   dados sejam usados para treino/publicação e **ligue a opção que restringe a endpoints com retenção
+   zero (ZDR)**. _Os nomes exatos dos botões mudam; se algo não bater com o texto acima, mande uma
+   captura de tela — não avance até a ZDR da conta estar ligada._ A sonda também pede ZDR em cada
+   chamada, mas a da conta é a rede de segurança.
+4. **Criar a chave:** menu da conta → **Keys** (ou **Settings → Keys**) → **Create key**. Dê um nome
+   (ex.: `processovivo-sonda`). **Defina o limite de gasto da chave** (campo de limite de créditos
+   — por exemplo **US$ 5**): quando acabar, a chave para (erro 402) em vez de gastar mais. Clique em
+   criar e **copie a chave agora** — ela só aparece uma vez.
+
+### 8.2 Colocar a chave no Easypanel (sem colar em nenhum outro lugar)
+
+1. Easypanel → seu projeto → o serviço `processovivo` → aba **Environment** (variáveis de ambiente).
+2. Acrescente **uma linha**: `OPENROUTER_API_KEY=` seguida da chave colada. **Só ali** — não cole a
+   chave em conversa, e-mail, planilha, arquivo ou no Console.
+3. **Salve** e **reinicie/redeploy** o serviço (a variável só vale depois disso).
+4. Abra o **Console** do serviço e entre na pasta: `cd /app`.
+
+### 8.3 Apagar a chave depois
+
+1. Easypanel → **Environment** → apague a linha `OPENROUTER_API_KEY` → salve → reinicie.
+2. OpenRouter → **Keys** → ao lado da chave → **Delete** (ou **Disable**). Isto é o que de fato a invalida.
+3. Apague o CSV do Autran do volume (`rm /dados/casos.csv`) e, se quiser, a pasta
+   `/dados/sonda-ia-ato`.
+
+### 8.4 O CSV que o Autran prepara
 
 Um arquivo de texto, salvo como **CSV com ponto e vírgula (`;`)**, em UTF-8, com esta primeira linha:
 
@@ -281,76 +400,79 @@ id;tipo_comunicacao;classe;texto
 ```
 
 - `id`: um código curto que **ele** inventa (`c01`, `c02`…), sem número de processo e sem nome.
-  Aparece na planilha de volta, para ele reconhecer o caso.
-- `tipo_comunicacao`: `Intimação`, `Citação` ou vazio.
-- `classe`: a classe processual, como aparece na tela (ou vazio).
-- `texto`: o texto do ato **já anonimizado por ele** (sem nome de parte, de advogado, CPF, número de
-  processo, e-mail, telefone). Se o texto tiver `;` ou quebra de linha, vai entre aspas duplas
-  (`"..."`); uma aspa dentro do texto vira duas (`""`). Excel e Planilhas Google fazem isso sozinhos ao
-  salvar como CSV.
-- Opcionais, se ele quiser: `titulo`, `data` (dd/mm/aaaa), `anteriores` (os títulos dos 5 andamentos
-  anteriores, separados por `|` — **sem isso a variante "com títulos" não roda para o caso**) e `injecao`
-  (`sim` nos casos com instrução injetada).
-- Cerca de 20 linhas, cobrindo: intimação para manifestar, determinação a cumprir, audiência designada,
-  apenas ciência, despacho sem providência, texto com instrução injetada, texto curto, texto longo e
-  ato com nomes/CPF (a redação automática é testada nesse último).
+- `tipo_comunicacao`: `Intimação`, `Citação` ou vazio. `classe`: a classe processual (ou vazio).
+- `texto`: o texto do ato **já anonimizado por ele**. Se tiver `;` ou quebra de linha, vai entre aspas
+  duplas (`"..."`); uma aspa dentro do texto vira duas (`""`). Excel e Planilhas Google fazem isso
+  sozinhos ao salvar como CSV.
+- Opcionais: `titulo`, `data` (dd/mm/aaaa), `anteriores` (os títulos dos 5 andamentos anteriores,
+  separados por `|` — **sem isso a variante "com títulos" não roda para o caso**) e `injecao` (`sim`).
+- Cerca de 20 linhas: intimação para manifestar, determinação a cumprir, audiência designada, apenas
+  ciência, despacho sem providência, texto com instrução injetada, texto curto, texto longo, ato com
+  nomes/CPF.
 
-Esse arquivo **nunca** vai para o GitHub, nem por e-mail em claro: é entregue ao dono, que o coloca no
-servidor.
+O arquivo **nunca** vai para o GitHub nem por e-mail em claro: é entregue ao dono, que o coloca no
+volume (`/dados/casos.csv`, pelo gerenciador de arquivos do Easypanel ou `scp`) **ou** o cola no
+Console com `--stdin` (termine com Enter e **Ctrl+D**; nada fica gravado).
 
-### Como o dono coloca o CSV no servidor (duas formas)
+### 8.5 Os comandos (Console do Easypanel; antes: `cd /app`)
 
-**Forma 1 — arquivo no volume.** No painel do servidor (Console / Terminal do contêiner `processovivo`):
+`--modelos` recebe os nomes **separados por vírgula, sem espaço** (`--modelos=a/um,b/dois,c/tres`). A
+variante é `--variantes=` com `sem-titulos`, `com-titulos` ou as duas separadas por vírgula (sem o
+argumento, roda as duas).
 
-1. Envie o arquivo para a pasta de dados do serviço (a mesma do banco, normalmente `/dados`). No
-   CyberPanel, é o Gerenciador de Arquivos da pasta do volume; no terminal do VPS, `scp casos.csv
-usuario@servidor:/caminho/do/volume/`.
-2. Confira que chegou: `ls -l /dados/casos.csv`.
-3. Rode a sonda apontando para ele (passo seguinte).
-4. Quando terminar, **apague**: `rm /dados/casos.csv`.
-
-**Forma 2 — sem criar arquivo (`--stdin`).** No Console do serviço, cole o conteúdo do CSV direto no
-terminal:
+**(a) listar modelos com ZDR** (não envia texto de caso)
 
 ```
-node scripts/sonda-ia-ato.mjs --modelos=a,b,c --stdin
+cd /app
+node scripts/sonda-ia-ato.mjs --listar-modelos-zdr
+node scripts/sonda-ia-ato.mjs --listar-modelos-zdr=claude
 ```
 
-Cole o texto do CSV, tecle Enter e depois **Ctrl+D** (isso diz "acabou"). O texto não fica gravado em
-arquivo nenhum.
-
-### O comando
-
-Primeiro, **só com os casos inventados** (sem arquivo), para ver se a conta do gateway e a ZDR
-funcionam e para gerar as fixtures da Etapa 2:
+**(b) rodar só com os casos sintéticos**
 
 ```
-AI_GATEWAY_API_KEY=<a chave, definida no ambiente do serviço> \
-node scripts/sonda-ia-ato.mjs --modelos=<modelo-pequeno>,<modelo-medio>,<modelo-maior>
+cd /app
+node scripts/sonda-ia-ato.mjs --modelos=a/um,b/dois,c/tres --fixtures-saida=/dados/sonda-ia-ato/fixtures
 ```
 
-(Os nomes dos modelos são os do catálogo do AI Gateway, no formato `provedor/modelo`. A sonda não traz
-nome nenhum fixo.) Depois, **com os casos do Autran**:
+**(c) rodar com o CSV do Autran** (por arquivo ou por `--stdin`)
 
 ```
-node scripts/sonda-ia-ato.mjs --modelos=<a>,<b>,<c> --arquivo=/dados/casos.csv
+cd /app
+node scripts/sonda-ia-ato.mjs --modelos=a/um,b/dois,c/tres --arquivo=/dados/casos.csv --variantes=sem-titulos
+node scripts/sonda-ia-ato.mjs --modelos=a/um,b/dois,c/tres --stdin --variantes=sem-titulos
 ```
 
-A sonda imprime a tabela (taxa de citações verificadas, descartes, "não verificado", "indeterminado",
-latência p50/p95, tokens, custo por análise, injeção) e grava, na pasta `sonda-ia-ato/` ao lado do banco:
-`planilha-AAAA-MM-DD.csv` (para o Autran) e `metricas.json`.
-
-### A avaliação do Autran e o veredito
-
-O Autran abre `planilha-AAAA-MM-DD.csv`, lê a coluna `resultado` e preenche `avaliacao` com `util`,
-`errado` ou `perigoso` (uma palavra por linha). Devolvida a planilha, o veredito sai com:
+**(d) julgar a planilha preenchida pelo Autran**
 
 ```
+cd /app
 node scripts/sonda-ia-ato.mjs --avaliacao=/dados/sonda-ia-ato/planilha-AAAA-MM-DD.csv
 ```
 
-(o `metricas.json` precisa estar ao lado da planilha). A saída diz, por modelo e variante, se cumpre o
-critério e qual é o mais barato que cumpre.
+**(e) teste de falha fechada** (UMA chamada, texto sintético, modelo SEM endpoint ZDR)
+
+```
+cd /app
+node scripts/sonda-ia-ato.mjs --teste-falha-fechada
+node scripts/sonda-ia-ato.mjs --teste-falha-fechada=fab/modelo-que-nao-esta-na-lista-zdr
+```
+
+Sem valor, a sonda escolhe sozinha o modelo público **mais barato que não consta** na lista ZDR e diz
+qual. O resultado imprime o **código HTTP e o corpo** do erro — é o que falta registrar na seção 2.2.
+Saídas: `0` = falhou fechado (esperado); `5` = erro de outro tipo (me envie o status e o corpo);
+`6` = **o OpenRouter respondeu mesmo sem ZDR — bloqueante, não use para texto real**.
+
+A rodada (b)/(c) grava, no volume (`/dados/sonda-ia-ato/` ao lado do banco): `planilha-AAAA-MM-DD.csv`
+(para o Autran), `metricas.json` e `chamadas-AAAA-MM-DD.json` (metadado por chamada, sem texto). Com
+casos sintéticos grava também `respostas-<modelo>-<data>.json` na pasta de `--fixtures-saida` — esses
+arquivos são **inventados** e podem ser baixados e entregues para virarem fixtures da Etapa 2.
+
+### 8.6 A avaliação do Autran
+
+O Autran abre `planilha-AAAA-MM-DD.csv`, lê a coluna `resultado` e preenche `avaliacao` com `util`,
+`errado` ou `perigoso` (uma palavra por linha). Devolvida a planilha, o comando (d) diz, por modelo e
+variante, se cumpre o critério e qual é o mais barato que cumpre (precisa do `metricas.json` ao lado).
 
 ---
 

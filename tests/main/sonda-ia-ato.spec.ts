@@ -5,11 +5,12 @@ import {
   ProviderIndisponivelError,
   ZdrIndisponivelError,
 } from '../../src/domain/errors/index.js';
+import type { ListaZdrLida } from '../../src/infrastructure/adapters/modelo/endpointsZdr.js';
 import type {
   PedidoAoModelo,
   RespostaDoTransporte,
   TransporteDeModelo,
-} from '../../src/infrastructure/adapters/modelo/TransporteGateway.js';
+} from '../../src/infrastructure/adapters/modelo/TransporteOpenRouter.js';
 import { lerCasosCsv, lerCasosSinteticos } from '../../src/main/sonda/casosDaSonda.js';
 import {
   executarComandoSondaIa,
@@ -52,7 +53,7 @@ function transporteQueCita(
         tokensEntrada: 1000,
         tokensSaida: 100,
         custoUsd: custo,
-        roteamento: { provedorFinal: 'provedor-dublado' },
+        provedor: 'Provedor Dublado',
       };
       return resposta;
     },
@@ -109,6 +110,7 @@ describe('executarSonda', () => {
       modelos: ['m/pequeno'],
       variantes: ['sem-titulos'],
       transporte: transporteQueCita(chamadas),
+      provedorConfirmadoZdr: () => true,
       agora: () => 0,
     });
     const curto = r.registros.find((x) => x.casoId === 's07-texto-curto');
@@ -123,6 +125,7 @@ describe('executarSonda', () => {
       modelos: ['m/pequeno'],
       variantes: ['com-titulos'],
       transporte: transporteQueCita(chamadas),
+      provedorConfirmadoZdr: () => true,
       agora: () => 0,
     });
     const tudo = chamadas.map((c) => c.usuario + c.sistema).join('\n');
@@ -160,6 +163,7 @@ describe('executarSonda', () => {
       modelos: ['m/sem-zdr', 'm/com-zdr'],
       variantes: ['sem-titulos', 'com-titulos'],
       transporte,
+      provedorConfirmadoZdr: () => true,
       agora: () => 0,
     });
     expect(chamadas).toBe(1);
@@ -175,7 +179,7 @@ describe('executarSonda', () => {
       nome: 'dublado',
       gerar: async () => {
         n += 1;
-        return { objeto: { qualquer: 'coisa' }, roteamento: {} };
+        return { objeto: { qualquer: 'coisa' }, provedor: 'Provedor Dublado' };
       },
     };
     const r = await executarSonda({
@@ -183,6 +187,7 @@ describe('executarSonda', () => {
       modelos: ['m/x'],
       variantes: ['sem-titulos'],
       transporte,
+      provedorConfirmadoZdr: () => true,
       agora: () => 0,
     });
     expect(n).toBe(2);
@@ -203,6 +208,7 @@ describe('executarSonda', () => {
       modelos: ['m/x'],
       variantes: ['sem-titulos'],
       transporte,
+      provedorConfirmadoZdr: () => true,
       agora: () => 0,
     });
     expect(n).toBe(3);
@@ -222,7 +228,7 @@ describe('executarSonda', () => {
           acoes_possiveis: [],
           pontos_de_atencao: [],
         },
-        roteamento: {},
+        provedor: 'Provedor Dublado',
       }),
     };
     const r = await executarSonda({
@@ -230,6 +236,7 @@ describe('executarSonda', () => {
       modelos: ['m/x'],
       variantes: ['sem-titulos'],
       transporte: obediente,
+      provedorConfirmadoZdr: () => true,
       agora: () => 0,
     });
     const [m] = calcularMetricas(r.registros);
@@ -245,6 +252,7 @@ describe('executarSonda', () => {
       modelos: ['m/x'],
       variantes: ['sem-titulos'],
       transporte: transporteQueCita(),
+      provedorConfirmadoZdr: () => true,
       agora: () => 0,
     });
     expect(r.registros.find((x) => x.origem === 'real')?.respostaCrua).toBeUndefined();
@@ -252,14 +260,66 @@ describe('executarSonda', () => {
   });
 });
 
+describe('executarSonda — provedor não confirmado', () => {
+  it('resposta de provedor fora da lista é descartada sem verificar nem guardar, e SÓ aquele modelo para', async () => {
+    const r = await executarSonda({
+      casos: casosSinteticos,
+      modelos: ['m/intruso', 'm/certo'],
+      variantes: ['sem-titulos'],
+      transporte: {
+        nome: 'dublado',
+        gerar: async (p) => ({
+          ...(await transporteQueCita().gerar(p)),
+          provedor: p.modelo === 'm/intruso' ? 'Provedor Intruso' : 'Provedor Dublado',
+        }),
+      },
+      provedorConfirmadoZdr: (_m, provedor) => provedor === 'Provedor Dublado',
+      agora: () => 0,
+    });
+    expect(r.modelosProvedorNaoConfirmado).toEqual(['m/intruso']);
+    const doIntruso = r.registros.filter((x) => x.modelo === 'm/intruso');
+    expect(doIntruso).toHaveLength(1);
+    expect(doIntruso[0]).toMatchObject({
+      estado: 'provedor_nao_confirmado',
+      zdrConfirmado: false,
+    });
+    expect(doIntruso[0]?.verificacao).toBeUndefined();
+    expect(doIntruso[0]?.respostaCrua).toBeUndefined();
+    expect(
+      r.registros.some(
+        (x) => x.modelo === 'm/certo' && x.estado === 'verificada' && x.zdrConfirmado,
+      ),
+    ).toBe(true);
+  });
+
+  it('provedor não informado pela resposta também é "não confirmado"', async () => {
+    const r = await executarSonda({
+      casos: casosSinteticos.slice(0, 2),
+      modelos: ['m/x'],
+      variantes: ['sem-titulos'],
+      transporte: {
+        nome: 'dublado',
+        gerar: async (p) => {
+          const { provedor: _p, ...resto } = await transporteQueCita().gerar(p);
+          return resto;
+        },
+      },
+      provedorConfirmadoZdr: (_m, provedor) => provedor === 'Provedor Dublado',
+      agora: () => 0,
+    });
+    expect(r.modelosProvedorNaoConfirmado).toEqual(['m/x']);
+  });
+});
+
 describe('calcularMetricas', () => {
-  it('calcula p50/p95, custo, taxa de citação e usa o custo do gateway quando há', async () => {
+  it('calcula p50/p95, custo, taxa de citação e usa o custo informado pelo OpenRouter quando há', async () => {
     let t = 0;
     const r = await executarSonda({
       casos: casosSinteticos.filter((c) => !c.injecao && c.id !== 's07-texto-curto'),
       modelos: ['m/x'],
       variantes: ['sem-titulos'],
       transporte: transporteQueCita([], 0.002),
+      provedorConfirmadoZdr: () => true,
       agora: () => (t += 100),
     });
     const [m] = calcularMetricas(
@@ -269,12 +329,12 @@ describe('calcularMetricas', () => {
     expect(m?.analises).toBe(10);
     expect(m?.taxaCitacaoVerificada).toBe(1);
     expect(m?.custoMedioUsd).toBeCloseTo(0.002);
-    expect(m?.fonteDoCusto).toBe('gateway');
+    expect(m?.fonteDoCusto).toBe('openrouter');
     expect(m?.latenciaP50Ms).toBe(100);
-    expect(m?.provedores).toEqual(['provedor-dublado']);
+    expect(m?.provedores).toEqual(['Provedor Dublado']);
   });
 
-  it('sem custo no gateway, calcula pela tabela de preços por token', async () => {
+  it('sem custo na resposta, calcula pela tabela de preços por token', async () => {
     const transporte: TransporteDeModelo = {
       nome: 'dublado',
       gerar: async (p) => {
@@ -288,13 +348,14 @@ describe('calcularMetricas', () => {
       modelos: ['m/x'],
       variantes: ['sem-titulos'],
       transporte,
+      provedorConfirmadoZdr: () => true,
       agora: () => 0,
     });
     const [m] = calcularMetricas(
       r.registros,
       new Map([['m/x', { entrada: 1e-6, saida: 2e-6 }]]),
     );
-    expect(m?.fonteDoCusto).toBe('tabela-de-precos');
+    expect(m?.fonteDoCusto).toBe('estimativa');
     expect(m?.custoMedioUsd).toBeCloseTo(1000 * 1e-6 + 100 * 2e-6);
   });
 });
@@ -306,6 +367,7 @@ describe('planilha e julgamento', () => {
       modelos: ['m/x'],
       variantes: ['sem-titulos'],
       transporte: transporteQueCita(),
+      provedorConfirmadoZdr: () => true,
       agora: () => 0,
     });
     const csv = gerarPlanilha(r.registros);
@@ -399,6 +461,20 @@ interface Gravacao {
   conteudo: string;
 }
 
+const MODELOS_ZDR = ['m/a', 'm/b', 'provedor/modelo-x', 'm/pequeno'];
+const LISTA_ZDR: ListaZdrLida = {
+  itensRecebidos: MODELOS_ZDR.length,
+  camposDoPrimeiroItem: ['model_id', 'provider_name'],
+  endpoints: MODELOS_ZDR.map((modelo) => ({
+    modelo,
+    provedor: 'Provedor Dublado',
+    tag: 'dublado',
+    precoEntrada: 0.000001,
+    precoSaida: 0.000002,
+  })),
+};
+const CHAVE = 'sk-or-chave-de-teste-minuscula-123';
+
 function ambiente(
   sobrepor: Partial<AmbienteDaSonda> & { arquivos?: Record<string, string> } = {},
 ): {
@@ -407,14 +483,16 @@ function ambiente(
   saida: string[];
   avisos: string[];
   chamadas: PedidoAoModelo[];
+  pedidosDeLista: string[];
 } {
   const gravados: Gravacao[] = [];
   const saida: string[] = [];
   const avisos: string[] = [];
   const chamadas: PedidoAoModelo[] = [];
+  const pedidosDeLista: string[] = [];
   const arquivos = sobrepor.arquivos ?? {};
   const amb: AmbienteDaSonda = {
-    env: { AI_GATEWAY_API_KEY: 'chave-de-teste-minuscula-123' },
+    env: { OPENROUTER_API_KEY: CHAVE },
     raizDoRepositorio: '/repo',
     lerArquivo: async (c) => {
       if (c.endsWith('casos-sinteticos.json')) return SINTETICOS;
@@ -429,7 +507,15 @@ function ambiente(
     },
     existeArquivo: async () => false,
     criarTransporte: () => transporteQueCita(chamadas),
-    precosDoCatalogo: async () => new Map(),
+    buscarEndpointsZdr: async (chave) => {
+      pedidosDeLista.push(chave);
+      return LISTA_ZDR;
+    },
+    buscarModelosPublicos: async () => [
+      { id: 'm/a' },
+      { id: 'sem/zdr-caro', precoEntrada: 0.00005 },
+      { id: 'sem/zdr-barato', precoEntrada: 0.000001 },
+    ],
     hoje: () => '2026-10-10',
     agora: () => 0,
     dormir: async () => undefined,
@@ -437,33 +523,35 @@ function ambiente(
     aviso: (l) => avisos.push(l),
     ...sobrepor,
   };
-  return { amb, gravados, saida, avisos, chamadas };
+  return { amb, gravados, saida, avisos, chamadas, pedidosDeLista };
 }
 
 describe('comando da sonda', () => {
-  it('recusa rodar sem AI_GATEWAY_API_KEY, sem chamar nada', async () => {
-    const { amb, avisos, chamadas } = ambiente({ env: {} });
-    expect(await executarComandoSondaIa(['--modelos=a'], amb)).toBe(2);
-    expect(avisos.join('\n')).toMatch(/AI_GATEWAY_API_KEY/);
+  it('recusa rodar sem OPENROUTER_API_KEY, sem rede e sem chamar nada', async () => {
+    const { amb, avisos, chamadas, pedidosDeLista } = ambiente({ env: {} });
+    expect(await executarComandoSondaIa(['--modelos=m/a'], amb)).toBe(2);
+    expect(avisos.join('\n')).toMatch(/OPENROUTER_API_KEY/);
     expect(chamadas).toHaveLength(0);
+    expect(pedidosDeLista).toHaveLength(0);
   });
 
   it('recusa valor de exemplo e nunca imprime a chave', async () => {
-    const exemplo = 'COLE_AQUI_A_CHAVE_DO_GATEWAY';
-    const { amb, avisos, saida, chamadas } = ambiente({
-      env: { AI_GATEWAY_API_KEY: exemplo },
+    const exemplo = 'COLE_AQUI_A_CHAVE_DO_OPENROUTER';
+    const { amb, avisos, saida, chamadas, pedidosDeLista } = ambiente({
+      env: { OPENROUTER_API_KEY: exemplo },
     });
-    expect(await executarComandoSondaIa(['--modelos=a'], amb)).toBe(2);
+    expect(await executarComandoSondaIa(['--modelos=m/a'], amb)).toBe(2);
     expect([...avisos, ...saida].join('\n')).not.toContain(exemplo);
     expect(chamadas).toHaveLength(0);
+    expect(pedidosDeLista).toHaveLength(0);
   });
 
-  it('com chave válida nunca a imprime', async () => {
-    const { amb, avisos, saida } = ambiente();
-    await executarComandoSondaIa(['--modelos=a', '--saida=/dados/sonda'], amb);
-    expect([...avisos, ...saida].join('\n')).not.toContain(
-      'chave-de-teste-minuscula-123',
-    );
+  it('com chave válida, a chave nunca aparece na saída, nos arquivos gravados nem nos avisos', async () => {
+    const { amb, avisos, saida, gravados } = ambiente();
+    await executarComandoSondaIa(['--modelos=m/a', '--saida=/dados/sonda'], amb);
+    await executarComandoSondaIa(['--listar-modelos-zdr'], amb);
+    const tudo = [...avisos, ...saida, ...gravados.map((g) => g.conteudo)].join('\n');
+    expect(tudo).not.toContain(CHAVE);
   });
 
   it('sem --modelos não adivinha nome de modelo', async () => {
@@ -474,7 +562,58 @@ describe('comando da sonda', () => {
     expect(chamadas).toHaveLength(0);
   });
 
-  it('--stdin com caso real: roda, grava planilha e métricas no volume e NADA no repositório', async () => {
+  describe('pré-checagem pela lista ZDR', () => {
+    it('--listar-modelos-zdr imprime só ids, com filtro por texto, sem enviar caso algum', async () => {
+      const { amb, saida, chamadas, pedidosDeLista } = ambiente();
+      expect(await executarComandoSondaIa(['--listar-modelos-zdr=MODELO'], amb)).toBe(0);
+      expect(saida).toEqual(['provedor/modelo-x']);
+      expect(await executarComandoSondaIa(['--listar-modelos-zdr'], amb)).toBe(0);
+      expect(saida.slice(1)).toEqual(['m/a', 'm/b', 'm/pequeno', 'provedor/modelo-x']);
+      expect(chamadas).toHaveLength(0);
+      expect(pedidosDeLista).toEqual([CHAVE, CHAVE]);
+    });
+
+    it('lista que veio mas sem os campos esperados: mostra só os NOMES dos campos e não segue', async () => {
+      const { amb, avisos, saida } = ambiente({
+        buscarEndpointsZdr: async () => ({
+          itensRecebidos: 3,
+          camposDoPrimeiroItem: ['fornecedor', 'identificador'],
+          endpoints: [],
+        }),
+      });
+      expect(await executarComandoSondaIa(['--listar-modelos-zdr'], amb)).toBe(2);
+      expect(avisos.join('\n')).toContain('fornecedor, identificador');
+      expect(saida).toEqual([]);
+    });
+
+    it('modelo fora da lista é RECUSADO com o motivo, e nada é enviado nem gravado', async () => {
+      const { amb, avisos, chamadas, gravados } = ambiente();
+      const codigo = await executarComandoSondaIa(
+        ['--modelos=m/a,fab/sem-zdr', '--saida=/dados/sonda'],
+        amb,
+      );
+      expect(codigo).toBe(2);
+      expect(avisos.join('\n')).toMatch(/"fab\/sem-zdr" não tem nenhum endpoint com ZDR/);
+      expect(chamadas).toHaveLength(0);
+      expect(gravados).toHaveLength(0);
+    });
+
+    it('sem conseguir a lista (rede, chave recusada), a ZDR não pode ser confirmada: nada é enviado', async () => {
+      const { amb, avisos, chamadas } = ambiente({
+        buscarEndpointsZdr: async () => {
+          throw new ProviderIndisponivelError(
+            'openrouter',
+            `chave recusada (HTTP 401) ${CHAVE}`,
+          );
+        },
+      });
+      expect(await executarComandoSondaIa(['--modelos=m/a'], amb)).toBe(2);
+      expect(chamadas).toHaveLength(0);
+      expect(avisos.join('\n')).not.toContain(CHAVE);
+    });
+  });
+
+  it('--stdin com caso real: roda, grava planilha, métricas e metadados no volume e NADA no repositório', async () => {
     const { amb, gravados, chamadas } = ambiente();
     const codigo = await executarComandoSondaIa(
       ['--modelos=m/a,m/b', '--stdin', '--saida=/dados/sonda'],
@@ -483,14 +622,43 @@ describe('comando da sonda', () => {
     expect(codigo).toBe(0);
     expect(chamadas.length).toBeGreaterThan(0);
     expect(gravados.map((g) => g.caminho).sort()).toEqual([
+      '/dados/sonda/chamadas-2026-10-10.json',
       '/dados/sonda/metricas.json',
       '/dados/sonda/planilha-2026-10-10.csv',
     ]);
     for (const g of gravados) expect(g.caminho.startsWith('/repo')).toBe(false);
-    // O texto do caso real não vai para a planilha nem para as métricas.
     expect(gravados.map((g) => g.conteudo).join('\n')).not.toContain(
       'laudo pericial juntado aos autos',
     );
+  });
+
+  it('o metadado por chamada tem modelo, provedor, latência, tokens, custo e zdr_confirmado — e nenhum texto nem id de caso real', async () => {
+    const { amb, gravados } = ambiente();
+    await executarComandoSondaIa(
+      ['--modelos=m/a', '--stdin', '--saida=/dados/sonda'],
+      amb,
+    );
+    const arquivo = gravados.find((g) => g.caminho.includes('chamadas-'));
+    const itens = JSON.parse(arquivo?.conteudo ?? '[]') as Array<Record<string, unknown>>;
+    expect(itens.length).toBeGreaterThan(0);
+    expect(Object.keys(itens[0] ?? {}).sort()).toEqual([
+      'custoUsd',
+      'estado',
+      'latenciaMs',
+      'modelo',
+      'ordem',
+      'provedor',
+      'tokensEntrada',
+      'tokensSaida',
+      'variante',
+      'zdrConfirmado',
+    ]);
+    expect(itens[0]).toMatchObject({
+      modelo: 'm/a',
+      provedor: 'Provedor Dublado',
+      zdrConfirmado: 'sim',
+    });
+    expect(arquivo?.conteudo).not.toContain('r1');
   });
 
   it('--arquivo: lê do caminho informado, e recusa CSV de caso real dentro do repositório', async () => {
@@ -548,9 +716,36 @@ describe('comando da sonda', () => {
       '/repo/tests/fixtures/ia-ato/respostas-provedor__modelo-x-2026-10-10.json',
     );
     const dados = JSON.parse(fixture?.conteudo ?? '{}') as {
-      respostas: Array<{ casoId: string }>;
+      respostas: Array<{ casoId: string; provedor: string; zdrConfirmado: boolean }>;
     };
     expect(dados.respostas.every((r) => r.casoId.startsWith('s'))).toBe(true);
+    expect(
+      dados.respostas.every((r) => r.provedor === 'Provedor Dublado' && r.zdrConfirmado),
+    ).toBe(true);
+  });
+
+  it('--fixtures-saida manda as fixtures para outra pasta (o volume), e falha de gravação não derruba a rodada', async () => {
+    const a = ambiente();
+    await executarComandoSondaIa(
+      ['--modelos=m/a', '--saida=/dados/sonda', '--fixtures-saida=/dados/sonda/fixtures'],
+      a.amb,
+    );
+    expect(a.gravados.find((g) => g.caminho.includes('respostas-'))?.caminho).toBe(
+      '/dados/sonda/fixtures/respostas-m__a-2026-10-10.json',
+    );
+
+    const gravados: string[] = [];
+    const b = ambiente({
+      gravarArquivo: async (caminho) => {
+        if (caminho.includes('respostas-')) throw new Error('EACCES');
+        gravados.push(caminho);
+      },
+    });
+    expect(
+      await executarComandoSondaIa(['--modelos=m/a', '--saida=/dados/sonda'], b.amb),
+    ).toBe(0);
+    expect(gravados.some((c) => c.endsWith('.csv'))).toBe(true);
+    expect(b.avisos.join('\n')).toMatch(/--fixtures-saida/);
   });
 
   it('caso real sem --com-sinteticos não grava fixture alguma', async () => {
@@ -566,7 +761,7 @@ describe('comando da sonda', () => {
     ).toBe(false);
   });
 
-  it('nenhum modelo com ZDR: para (código 3) e avisa', async () => {
+  it('nenhum modelo com ZDR no OpenRouter: para (código 3) e avisa', async () => {
     const { amb, avisos } = ambiente({
       criarTransporte: () => ({
         nome: 'dublado',
@@ -578,7 +773,30 @@ describe('comando da sonda', () => {
     expect(
       await executarComandoSondaIa(['--modelos=m/a,m/b', '--saida=/dados/sonda'], amb),
     ).toBe(3);
-    expect(avisos.join('\n')).toMatch(/NENHUM dos modelos tem provedor com ZDR/);
+    expect(avisos.join('\n')).toMatch(
+      /NENHUM dos modelos pôde ser usado com ZDR confirmada/,
+    );
+  });
+
+  it('provedor fora da lista ZDR: resposta DESCARTADA, nada de planilha com ela, aviso de provedor não confirmado', async () => {
+    const { amb, avisos, gravados } = ambiente({
+      criarTransporte: () => ({
+        nome: 'dublado',
+        gerar: async (p) => ({
+          ...(await transporteQueCita().gerar(p)),
+          provedor: 'Provedor Intruso',
+        }),
+      }),
+    });
+    expect(
+      await executarComandoSondaIa(
+        ['--modelos=m/a', '--stdin', '--saida=/dados/sonda'],
+        amb,
+      ),
+    ).toBe(3);
+    expect(avisos.join('\n')).toMatch(/PROVEDOR NÃO CONFIRMADO ZDR/);
+    const planilha = gravados.find((g) => g.caminho.endsWith('.csv'));
+    expect(planilha).toBeUndefined();
   });
 
   it('--avaliacao julga a planilha preenchida sem precisar de chave', async () => {
@@ -595,5 +813,81 @@ describe('comando da sonda', () => {
       ),
     ).toBe(0);
     expect(saida.join('\n')).toMatch(/2 avaliados/);
+  });
+
+  describe('teste de falha fechada', () => {
+    const comTransporte = (
+      gerar: TransporteDeModelo['gerar'],
+      falhas: Array<{ status?: number; corpo?: string }> = [],
+    ) =>
+      ambiente({
+        criarTransporte: (_chave, opcoes) => ({
+          nome: 'dublado',
+          gerar: async (p) => {
+            try {
+              return await gerar(p);
+            } catch (e) {
+              for (const f of falhas) opcoes?.aoFalhar?.(f);
+              throw e;
+            }
+          },
+        }),
+      });
+
+    it('sem argumento, escolhe o modelo FORA da lista ZDR mais barato e mostra status e corpo do erro esperado', async () => {
+      const pedidos: PedidoAoModelo[] = [];
+      const t = comTransporte(
+        async (p) => {
+          pedidos.push(p);
+          throw new ZdrIndisponivelError('dublado', p.modelo);
+        },
+        [{ status: 404, corpo: '{"error":{"message":"No endpoints found"}}' }],
+      );
+      expect(await executarComandoSondaIa(['--teste-falha-fechada'], t.amb)).toBe(0);
+      expect(pedidos).toHaveLength(1);
+      expect(pedidos[0]?.modelo).toBe('sem/zdr-barato');
+      const tudo = t.saida.join('\n');
+      expect(tudo).toMatch(/FALHOU FECHADO/);
+      expect(tudo).toContain('HTTP 404');
+      expect(tudo).toContain('No endpoints found');
+      expect(tudo).not.toContain(CHAVE);
+    });
+
+    it('usa só texto SINTÉTICO (o caso s01), nunca caso real', async () => {
+      const pedidos: PedidoAoModelo[] = [];
+      const t = comTransporte(async (p) => {
+        pedidos.push(p);
+        throw new ZdrIndisponivelError('dublado', p.modelo);
+      });
+      await executarComandoSondaIa(['--teste-falha-fechada=sem/zdr-barato'], t.amb);
+      expect(pedidos[0]?.usuario).toContain('contestação');
+      expect(pedidos[0]?.usuario).not.toContain('Horácio');
+    });
+
+    it('recusa modelo que TEM endpoint ZDR: o teste não serviria', async () => {
+      const t = comTransporte(async () => {
+        throw new Error('não deveria chamar');
+      });
+      expect(await executarComandoSondaIa(['--teste-falha-fechada=m/a'], t.amb)).toBe(2);
+      expect(t.chamadas).toHaveLength(0);
+    });
+
+    it('erro de outro tipo: pede para registrar status e corpo (código 5)', async () => {
+      const t = comTransporte(async () => {
+        throw new ProviderIndisponivelError('dublado', 'o OpenRouter respondeu HTTP 418');
+      }, [{ status: 418, corpo: 'bule' }]);
+      expect(
+        await executarComandoSondaIa(['--teste-falha-fechada=sem/zdr-barato'], t.amb),
+      ).toBe(5);
+      expect(t.saida.join('\n')).toContain('HTTP 418');
+    });
+
+    it('se o OpenRouter RESPONDER sem endpoint ZDR: bloqueante (código 6)', async () => {
+      const t = comTransporte(async (p) => transporteQueCita().gerar(p));
+      expect(
+        await executarComandoSondaIa(['--teste-falha-fechada=sem/zdr-barato'], t.amb),
+      ).toBe(6);
+      expect(t.saida.join('\n')).toMatch(/BLOQUEANTE/);
+    });
   });
 });
