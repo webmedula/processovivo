@@ -407,6 +407,25 @@ export class ChaveApiNaoEncontradaError extends DomainError {
 }
 
 /**
+ * O gateway de IA não tem NENHUM provedor com retenção zero (ZDR) para o modelo
+ * pedido (HTTP 400 `no_providers_available`). É indisponibilidade, não defeito:
+ * quem chama NÃO repete, porque a única repetição possível seria sem ZDR, e isso
+ * está proibido. Especializa `ProviderIndisponivelError` para quem já trata
+ * indisponibilidade continuar tratando.
+ */
+export class ZdrIndisponivelError extends ProviderIndisponivelError {
+  override readonly codigo: string = 'ZDR_INDISPONIVEL';
+
+  constructor(provider: string, readonly modelo: string) {
+    super(
+      provider,
+      `nenhum provedor com retenção zero de dados (ZDR) disponível para o modelo "${modelo}"; ` +
+        'a chamada NÃO é repetida sem ZDR',
+    );
+  }
+}
+
+/**
  * O MNI está em pausa porque o tribunal devolveu HTTP 403.
  *
  * É um `ProviderIndisponivelError` — quem já tratava indisponibilidade continua
