@@ -10,7 +10,11 @@ import {
   modeloTemZdr,
   modelosComZdr,
   precosEstimados,
-  provedorConfirmadoZdr,
+  parConfirmadoZdr,
+  ehApelidoOuVariante,
+  lerEndpointsPublicos,
+  provedoresPermitidos,
+  slugDoProvedor,
 } from '../../src/infrastructure/adapters/modelo/endpointsZdr.js';
 import {
   HttpClient,
@@ -75,18 +79,80 @@ describe('lista de endpoints ZDR', () => {
   });
 
   it.each([
-    ['nome igual', 'Provedor Alfa', true],
-    ['sem caixa nem pontuação', 'provedor-alfa', true],
-    ['pelo nome com espaço', 'Amazon Bedrock', true],
-    ['pelo trecho da tag antes da barra', 'amazon-bedrock', true],
-    ['provedor de OUTRO modelo', 'Provedor Beta', false],
-    ['provedor desconhecido', 'Provedor Zeta', false],
-    ['vazio', '', false],
-    ['ausente', undefined, false],
-  ])('provedor servido (%s)', (_n, provedor, esperado) => {
-    expect(provedorConfirmadoZdr(lista.endpoints, 'fab/modelo-grande', provedor)).toBe(
-      esperado,
+    ['nome igual', 'fab/modelo-grande', 'Provedor Alfa', true],
+    ['sem caixa nem pontuação', 'fab/modelo-grande', 'provedor-alfa', true],
+    ['pelo nome com espaço', 'fab/modelo-grande', 'Amazon Bedrock', true],
+    ['pelo trecho da tag antes da barra', 'fab/modelo-grande', 'amazon-bedrock', true],
+    ['provedor de OUTRO modelo', 'fab/modelo-grande', 'Provedor Beta', false],
+    ['provedor desconhecido', 'fab/modelo-grande', 'Provedor Zeta', false],
+    [
+      'modelo resolvido que a lista não tem (alias que resolveu para outro)',
+      'fab/outro-modelo',
+      'Provedor Alfa',
+      false,
+    ],
+    ['modelo resolvido ausente', undefined, 'Provedor Alfa', false],
+    ['provedor vazio', 'fab/modelo-grande', '', false],
+    ['provedor ausente', 'fab/modelo-grande', undefined, false],
+  ])(
+    'par (modelo da resposta, provedor da resposta): %s',
+    (_n, modelo, provedor, esperado) => {
+      expect(parConfirmadoZdr(lista.endpoints, modelo, provedor)).toBe(esperado);
+    },
+  );
+
+  it('o par é pelo modelo DEVOLVIDO: o mesmo provedor vale para um modelo e não para outro', () => {
+    expect(parConfirmadoZdr(lista.endpoints, 'fab/modelo-pequeno', 'Provedor Beta')).toBe(
+      true,
     );
+    expect(parConfirmadoZdr(lista.endpoints, 'fab/modelo-grande', 'Provedor Beta')).toBe(
+      false,
+    );
+  });
+
+  it.each([
+    ['~deepseek/deepseek-flash-latest', true],
+    ['fab/modelo:free', true],
+    ['fab/modelo:online', true],
+    ['fab/modelo-grande', false],
+    ['deepseek/deepseek-chat-v3-0324', false],
+  ])('apelido ou variante: "%s" → %s', (id, esperado) => {
+    expect(ehApelidoOuVariante(id)).toBe(esperado);
+  });
+
+  it('slugs permitidos: a tag antes da barra, sem repetir, só dos endpoints DESTE modelo', () => {
+    expect(slugDoProvedor('deepinfra/fp8')).toBe('deepinfra');
+    expect(slugDoProvedor('Alfa')).toBe('alfa');
+    expect(provedoresPermitidos(lista.endpoints, 'fab/modelo-grande')).toEqual([
+      'alfa',
+      'amazon-bedrock',
+    ]);
+    expect(provedoresPermitidos(lista.endpoints, 'fab/modelo-pequeno')).toEqual(['beta']);
+    expect(provedoresPermitidos(lista.endpoints, 'nao/existe')).toEqual([]);
+    expect(
+      provedoresPermitidos(
+        lerListaZdr({ data: [{ model_id: 'x/y', provider_name: 'Sem Tag' }] }).endpoints,
+        'x/y',
+      ),
+    ).toEqual([]);
+  });
+
+  it('detalhe público de um modelo: lê os endpoints com tag e ignora os sem tag', () => {
+    expect(
+      lerEndpointsPublicos({
+        data: {
+          endpoints: [
+            { provider_name: 'A', tag: 'a/fp8' },
+            { provider_name: 'Sem' },
+            { tag: 'b' },
+          ],
+        },
+      }),
+    ).toEqual([
+      { provedor: 'A', tag: 'a/fp8' },
+      { provedor: '', tag: 'b' },
+    ]);
+    expect(() => lerEndpointsPublicos({ data: [] })).toThrow(RespostaInvalidaError);
   });
 
   it('o preço estimado é o MAIOR entre os endpoints do modelo', () => {

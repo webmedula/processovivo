@@ -202,10 +202,32 @@ describe('limpeza do inteiro teor', () => {
    * este teste é o lugar de registrá-la.
    */
   const ENTIDADES_REAIS = [
-    'Aacute', 'ccedil', 'aacute', 'ordf', 'iacute', 'nbsp', 'Oacute', 'ordm',
-    'sect', 'oacute', 'otilde', 'atilde', 'Ccedil', 'Acirc', 'Iacute', 'gt',
-    'Atilde', 'acirc', 'uacute', 'Ecirc', 'amp', 'agrave', 'ndash', 'eacute',
-    'Eacute', 'Uacute',
+    'Aacute',
+    'ccedil',
+    'aacute',
+    'ordf',
+    'iacute',
+    'nbsp',
+    'Oacute',
+    'ordm',
+    'sect',
+    'oacute',
+    'otilde',
+    'atilde',
+    'Ccedil',
+    'Acirc',
+    'Iacute',
+    'gt',
+    'Atilde',
+    'acirc',
+    'uacute',
+    'Ecirc',
+    'amp',
+    'agrave',
+    'ndash',
+    'eacute',
+    'Eacute',
+    'Uacute',
   ];
 
   it('resolve todas as entidades que o DJEN emite de fato', () => {
@@ -346,8 +368,16 @@ describe('agrupamento de comunicações em processos', () => {
   it('usa a vara da publicação mais recente quando o processo muda de vara', () => {
     const { processos } = agruparEmProcessos(
       [
-        comunicacao({ id: 1, data_disponibilizacao: '2026-01-10', nomeOrgao: 'Vara Antiga' }),
-        comunicacao({ id: 2, data_disponibilizacao: '2026-09-04', nomeOrgao: 'Vara Atual' }),
+        comunicacao({
+          id: 1,
+          data_disponibilizacao: '2026-01-10',
+          nomeOrgao: 'Vara Antiga',
+        }),
+        comunicacao({
+          id: 2,
+          data_disponibilizacao: '2026-09-04',
+          nomeOrgao: 'Vara Atual',
+        }),
       ],
       AGORA,
     );

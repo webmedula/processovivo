@@ -136,7 +136,7 @@ ui/analiseIA.ts                             botão, painel e avaliação (script
   2. ler o DPA e a política do provedor do modelo e da Vercel; perguntar por escrito região e subprocessadores;
   3. listar os dois como operadores nos **termos de uso e na política de privacidade** (pendência R3 do documento de planos);
   4. o advogado é o controlador dos dados do cliente dele: avaliar com ele ou com consultoria o que consta no contrato do plano IA.
-  Não sou advogado; a orientação da OAB e a LGPD ficam com quem for.
+     Não sou advogado; a orientação da OAB e a LGPD ficam com quem for.
 - Por isso a chave `..._IA_HABILITADA` nasce `false`. O dono liga quando decidir.
 
 ## 11. Etapa 1 — sonda de avaliação (antes de qualquer produto)
@@ -202,3 +202,8 @@ Esta errata corrige o **transporte** e registra uma decisão do dono. O resto da
    botão, só texto do sistema, redigida, com citação verificada e ZDR falhando fechado; desligada por padrão".
 5. A seção 10 (DPA, subprocessadores, termos de uso, LGPD) passa a nomear o **OpenRouter** e o provedor do
    modelo como operadores a avaliar.
+6. **Errata v1.0.2 (sonda 1.1.1):** a chamada fica **restrita aos provedores que a lista ZDR indica para o
+   modelo** (`provider.only`, com `allow_fallbacks: false`), porque conferir depois da resposta não impede
+   que o texto já tenha sido enviado; a conferência pós-resposta é sempre pelo **par** (`model` e `provider`
+   devolvidos pela resposta), nunca pelo id pedido; apelidos (`~…`) e variantes (`:…`) de modelo não são
+   aceitos. O Autran e o dono nada precisam mudar; vale para o adapter da Etapa 2.

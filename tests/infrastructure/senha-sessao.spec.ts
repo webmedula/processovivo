@@ -54,7 +54,11 @@ describe('senha — scrypt', () => {
     const partes = guardarSenha(SENHA).split('$');
     // Regravação manual com N baixo, usando o mesmo formato.
     const sal = Buffer.from(partes[4] ?? '', 'base64url');
-    const derivada = scryptSync(SENHA.normalize('NFKC'), sal, 64, { N: 1024, r: 8, p: 1 });
+    const derivada = scryptSync(SENHA.normalize('NFKC'), sal, 64, {
+      N: 1024,
+      r: 8,
+      p: 1,
+    });
     const gravado = `${antigo}$${sal.toString('base64url')}$${derivada.toString('base64url')}`;
 
     expect(conferirSenha(SENHA, gravado)).toBe(true);

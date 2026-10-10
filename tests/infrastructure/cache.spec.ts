@@ -133,7 +133,10 @@ describe('CachedProcessoProvider', () => {
 
   it('cacheia a busca por OAB com TTL próprio, mais curto', async () => {
     const clock = new ClockFalso();
-    const origem = new ProviderFalso({ nome: 'origem', porOab: async () => [umProcesso()] });
+    const origem = new ProviderFalso({
+      nome: 'origem',
+      porOab: async () => [umProcesso()],
+    });
     const provider = new CachedProcessoProvider({
       provider: origem,
       cache: new InMemoryCache({ clock }),

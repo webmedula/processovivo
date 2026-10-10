@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Sonda de IA do ato (v1.1.0) — NÃO consulta tribunal e NÃO abre o banco.
+ * Sonda de IA do ato (v1.1.1) — NÃO consulta tribunal e NÃO abre o banco.
  *
  * Compara 3 ou 4 modelos pelo OpenRouter, SEMPRE com retenção zero de
  * dados (ZDR) por requisição (`provider.zdr: true`), na tarefa "ler o ato e dizer o que ele parece
@@ -12,7 +12,8 @@
  *   node scripts/sonda-ia-ato.mjs --modelos=a,b,c --arquivo=/dados/casos.csv
  *   cat casos.csv | node scripts/sonda-ia-ato.mjs --modelos=a,b,c --stdin
  *   node scripts/sonda-ia-ato.mjs --avaliacao=/dados/sonda-ia-ato/planilha-AAAA-MM-DD.csv
- *   node scripts/sonda-ia-ato.mjs --teste-falha-fechada[=modelo]     # 1 chamada, texto sintético
+ *   node scripts/sonda-ia-ato.mjs --controle-positivo[=modelo]       # 1 chamada, texto sintético, modelo COM ZDR
+ *   node scripts/sonda-ia-ato.mjs --controle-negativo[=modelo]       # 1 chamada, texto sintético, modelo SEM ZDR
  *   node scripts/sonda-ia-ato.mjs --ajuda
  *
  * Variável: OPENROUTER_API_KEY (nunca impressa). Toda a lógica está em
@@ -32,7 +33,7 @@ const carregar = (caminho) =>
 
 const { executarComandoSondaIa } = await carregar('../dist/main/sonda/comandoSondaIa.js');
 const { TransporteOpenRouter } = await carregar('../dist/infrastructure/adapters/modelo/TransporteOpenRouter.js');
-const { buscarEndpointsZdr, buscarModelosPublicos } = await carregar('../dist/infrastructure/adapters/modelo/endpointsZdr.js');
+const { buscarEndpointsZdr, buscarModelosPublicos, buscarEndpointsPublicosDoModelo } = await carregar('../dist/infrastructure/adapters/modelo/endpointsZdr.js');
 const { HttpClient } = await carregar('../dist/infrastructure/http/HttpClient.js');
 
 const http = new HttpClient({ timeoutMs: 30_000, tentativas: 2 });
@@ -56,6 +57,7 @@ const codigo = await executarComandoSondaIa(process.argv.slice(2), {
   criarTransporte: (chave, opcoes) => new TransporteOpenRouter({ chave, ...opcoes }),
   buscarEndpointsZdr: (chave) => buscarEndpointsZdr(http, chave),
   buscarModelosPublicos: () => buscarModelosPublicos(http),
+  buscarEndpointsPublicosDoModelo: (modelo) => buscarEndpointsPublicosDoModelo(http, modelo),
   hoje: () => new Date().toISOString().slice(0, 10),
   agora: () => performance.now(),
   dormir: (ms) => dormir(ms),

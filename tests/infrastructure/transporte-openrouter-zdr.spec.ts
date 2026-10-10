@@ -7,14 +7,19 @@ import {
 } from '../../src/domain/errors/index.js';
 import {
   exigirZdr,
-  PREFERENCIAS_DE_PROVEDOR,
+  PREFERENCIAS_BASE_DE_PROVEDOR,
   TransporteOpenRouter,
   type ChamadaAoSdk,
   type DetalheDeErro,
   type ExecutorDoSdk,
 } from '../../src/infrastructure/adapters/modelo/TransporteOpenRouter.js';
 
-const PEDIDO = { modelo: 'fab/modelo-falso', sistema: 'sistema', usuario: 'usuario' };
+const PEDIDO = {
+  modelo: 'fab/modelo-falso',
+  sistema: 'sistema',
+  usuario: 'usuario',
+  provedoresPermitidos: ['alfa', 'beta'],
+};
 const CHAVE = 'sk-or-chave-de-teste-123456';
 
 const erroHttp = (status: number, corpo = '{"error":{"message":"x"}}'): APICallError =>
@@ -83,7 +88,8 @@ describe('TransporteOpenRouter — ZDR falha fechada', () => {
       expect(c.temperatura).toBe(0);
       expect(c.tentativasAutomaticas).toBe(0);
     }
-    expect(Object.isFrozen(PREFERENCIAS_DE_PROVEDOR)).toBe(true);
+    expect(Object.isFrozen(PREFERENCIAS_BASE_DE_PROVEDOR)).toBe(true);
+    for (const c of chamadas) expect(c.provider.only).toEqual(['alfa', 'beta']);
   });
 
   it('chamada sem zdr é recusada ANTES de qualquer rede', async () => {
@@ -93,7 +99,7 @@ describe('TransporteOpenRouter — ZDR falha fechada', () => {
       temperatura: 0,
       tentativasAutomaticas: 0,
       timeoutMs: 1,
-      provider: { data_collection: 'deny' },
+      provider: { data_collection: 'deny', only: ['alfa'] },
     });
     await expect(t.gerar(PEDIDO)).rejects.toBeInstanceOf(ProviderIndisponivelError);
     expect(chamadas).toHaveLength(0);
@@ -109,18 +115,45 @@ describe('TransporteOpenRouter — ZDR falha fechada', () => {
     for (const provider of [
       undefined,
       {},
-      { zdr: false, data_collection: 'deny' },
-      { zdr: true },
-      { zdr: true, data_collection: 'allow' },
+      { zdr: false, data_collection: 'deny', only: ['alfa'] },
+      { zdr: true, only: ['alfa'] },
+      { zdr: true, data_collection: 'allow', only: ['alfa'] },
+      { zdr: true, data_collection: 'deny' },
+      { zdr: true, data_collection: 'deny', only: [] },
+      { zdr: true, data_collection: 'deny', only: [''] },
     ]) {
       expect(() => exigirZdr({ ...base, provider } as unknown as ChamadaAoSdk)).toThrow(
         ProviderIndisponivelError,
       );
     }
     expect(() =>
-      exigirZdr({ ...base, provider: PREFERENCIAS_DE_PROVEDOR }),
+      exigirZdr({
+        ...base,
+        provider: { ...PREFERENCIAS_BASE_DE_PROVEDOR, only: ['alfa'] },
+      }),
     ).not.toThrow();
   });
+
+  it('sem provider.only (ou vazio) a chamada é recusada ANTES de qualquer rede — a restrição é preventiva', async () => {
+    for (const permitidos of [[], ['']]) {
+      const { t, chamadas } = transporte([ok]);
+      await expect(
+        t.gerar({ ...PEDIDO, provedoresPermitidos: permitidos }),
+      ).rejects.toBeInstanceOf(ProviderIndisponivelError);
+      expect(chamadas).toHaveLength(0);
+    }
+  });
+
+  it.each(['~deepseek/deepseek-flash-latest', 'fab/modelo:free', 'fab/modelo:online'])(
+    'apelido ou variante "%s" é recusado ANTES de qualquer rede',
+    async (modelo) => {
+      const { t, chamadas } = transporte([ok]);
+      const erro = await t.gerar({ ...PEDIDO, modelo }).catch((e: unknown) => e);
+      expect(erro).toBeInstanceOf(ProviderIndisponivelError);
+      expect((erro as Error).message).toMatch(/apelido ou variante/);
+      expect(chamadas).toHaveLength(0);
+    },
+  );
 
   it.each([
     [
@@ -222,9 +255,10 @@ describe('TransporteOpenRouter — ZDR falha fechada', () => {
       { aoFalhar: (d) => vistos.push(d) },
     );
     await t.gerar(PEDIDO).catch(() => undefined);
-    expect(vistos).toEqual([
-      { status: 404, corpo: '{"error":{"message":"No endpoints found"}}' },
-    ]);
+    expect(vistos[0]).toMatchObject({
+      status: 404,
+      corpo: '{"error":{"message":"No endpoints found"}}',
+    });
   });
 });
 
@@ -369,5 +403,67 @@ describe('TransporteOpenRouter — no fio (SDK real, HTTP dublado)', () => {
     const w = fio([() => json(semProvedor)]);
     const r = await new TransporteOpenRouter({ chave: CHAVE, fetch: w.f }).gerar(PEDIDO);
     expect(r.provedor === undefined || r.provedor === '').toBe(true);
+  });
+
+  it('o corpo enviado leva provider.only (a restrição aos provedores ZDR do modelo) e a repetição por 429 também', async () => {
+    const w = fio([
+      () => json({ error: { message: 'limite', code: 429 } }, 429),
+      () => json(corpoOk),
+    ]);
+    await new TransporteOpenRouter({
+      chave: CHAVE,
+      fetch: w.f,
+      dormir: async () => undefined,
+    }).gerar(PEDIDO);
+    expect(w.corpos).toHaveLength(2);
+    for (const c of w.corpos)
+      expect((c['provider'] as { only?: string[] }).only).toEqual(['alfa', 'beta']);
+  });
+
+  it('devolve os campos model e provider DA RESPOSTA e o corpo enviado SEM texto e SEM chave', async () => {
+    const w = fio([() => json({ ...corpoOk, model: 'fab/modelo-resolvido' })]);
+    const r = await new TransporteOpenRouter({ chave: CHAVE, fetch: w.f }).gerar({
+      ...PEDIDO,
+      sistema: 'INSTRUCAO-FIXA-LONGA '.repeat(20),
+      usuario: 'TEXTO-SINTETICO-DO-ATO '.repeat(10),
+    });
+    expect(r.modeloResolvido).toBe('fab/modelo-resolvido');
+    expect(r.provedor).toBe('Provedor Alfa');
+    expect(r.diagnostico).toMatchObject({
+      modeloResolvido: 'fab/modelo-resolvido',
+      provedorDaResposta: 'Provedor Alfa',
+    });
+    const enviado = JSON.stringify(r.diagnostico.corpoEnviado);
+    expect(enviado).not.toContain('TEXTO-SINTETICO');
+    expect(enviado).not.toContain('INSTRUCAO-FIXA');
+    expect(enviado).not.toContain(CHAVE);
+    expect(enviado).toContain('[omitido:');
+    expect(r.diagnostico.corpoEnviado).toMatchObject({
+      model: 'fab/modelo-falso',
+      provider: {
+        zdr: true,
+        data_collection: 'deny',
+        allow_fallbacks: false,
+        only: ['alfa', 'beta'],
+      },
+    });
+  });
+
+  it('o erro devolve ao aoFalhar o corpo enviado saneado, e nunca o texto', async () => {
+    const vistos: DetalheDeErro[] = [];
+    const w = fio([
+      () => json({ error: { message: 'No endpoints found', code: 404 } }, 404),
+    ]);
+    await new TransporteOpenRouter({
+      chave: CHAVE,
+      fetch: w.f,
+      aoFalhar: (d) => vistos.push(d),
+    })
+      .gerar({ ...PEDIDO, usuario: 'TEXTO-SINTETICO-DO-ATO ' })
+      .catch(() => undefined);
+    expect(JSON.stringify(vistos[0]?.corpoEnviado)).not.toContain('TEXTO-SINTETICO');
+    expect(vistos[0]?.corpoEnviado).toMatchObject({
+      provider: { only: ['alfa', 'beta'] },
+    });
   });
 });

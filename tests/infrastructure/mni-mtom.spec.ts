@@ -1,7 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { lerRespostaSoap, resolverReferencia } from '../../src/infrastructure/adapters/mni/mtom.js';
+import {
+  lerRespostaSoap,
+  resolverReferencia,
+} from '../../src/infrastructure/adapters/mni/mtom.js';
 import { abrirEnvelope } from '../../src/infrastructure/adapters/mni/mni.mapper.js';
 
 /**
@@ -52,7 +55,8 @@ describe('MTOM — resposta real do MNI/TJGO', () => {
   });
 
   it('aceita resposta em XML puro, sem multipart', () => {
-    const xml = '<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body><ns:r xmlns:ns="x"><sucesso>true</sucesso></ns:r></soap:Body></soap:Envelope>';
+    const xml =
+      '<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body><ns:r xmlns:ns="x"><sucesso>true</sucesso></ns:r></soap:Body></soap:Envelope>';
     const lida = lerRespostaSoap('text/xml;charset=UTF-8', Buffer.from(xml));
 
     expect(abrirEnvelope(lida.xml).sucesso).toBe(true);

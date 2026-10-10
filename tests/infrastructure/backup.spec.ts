@@ -50,12 +50,14 @@ describe('backup', () => {
     // O que importa não é o arquivo existir: é ele ABRIR e ter o conteúdo.
     // Backup que ninguém abriu é suposição, não cópia.
     const copia = new DatabaseSync(r.caminho, { readOnly: true });
-    const contas = copia.prepare('SELECT COUNT(*) AS n FROM usuarios').get() as unknown as {
+    const contas = copia
+      .prepare('SELECT COUNT(*) AS n FROM usuarios')
+      .get() as unknown as {
       n: number;
     };
-    const processos = copia
-      .prepare('SELECT numero FROM acompanhamentos')
-      .all() as Array<{ numero: string }>;
+    const processos = copia.prepare('SELECT numero FROM acompanhamentos').all() as Array<{
+      numero: string;
+    }>;
 
     expect(contas.n).toBe(1);
     expect(processos[0]?.numero).toBe('03115172220158090051');
@@ -77,7 +79,9 @@ describe('backup', () => {
     db.close();
 
     const copia = new DatabaseSync(r.caminho, { readOnly: true });
-    const n = copia.prepare('SELECT COUNT(*) AS n FROM acompanhamentos').get() as unknown as {
+    const n = copia
+      .prepare('SELECT COUNT(*) AS n FROM acompanhamentos')
+      .get() as unknown as {
       n: number;
     };
     expect(n.n).toBe(2);
@@ -240,10 +244,12 @@ describe('backup', () => {
     // perdesse isto, o advogado voltaria a operar sem o último processo que
     // mandou acompanhar — e sem nada indicando a falta.
     const vivo = abrirBanco(banco);
-    vivo.prepare(
-      `INSERT INTO acompanhamentos (workspace, numero, criado_em)
+    vivo
+      .prepare(
+        `INSERT INTO acompanhamentos (workspace, numero, criado_em)
        VALUES (?, ?, ?)`,
-    ).run('ws1', '00008323520184013202', new Date().toISOString());
+      )
+      .run('ws1', '00008323520184013202', new Date().toISOString());
 
     const copia = gerarBackup({ caminhoBanco: banco });
     vivo.close();

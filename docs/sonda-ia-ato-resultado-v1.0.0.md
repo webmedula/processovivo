@@ -1,9 +1,10 @@
-# Sonda de IA do ato — resultado v1.0.1 (Etapa 1, transporte OpenRouter)
+# Sonda de IA do ato — resultado v1.0.2 (Etapa 1, transporte OpenRouter)
 
-Documento: `sonda-ia-ato-resultado-v1.0.0` (o nome do arquivo não muda; o conteúdo está na **v1.0.1**) ·
+Documento: `sonda-ia-ato-resultado-v1.0.0` (o nome do arquivo não muda; o conteúdo está na **v1.0.2**) ·
 10/10/2026 · especificação: `ia-analise-do-ato-especificacao-v1.0.0` (seções 4 a 7 e 11, mais a
 "Errata v1.0.1").
-Versão da sonda: **1.1.0** (era 1.0.0, com o AI Gateway da Vercel). Versão do produto:
+Versão da sonda: **1.1.1** (1.1.0 = troca do AI Gateway da Vercel pelo OpenRouter; 1.1.1 = correção do
+controle de falha fechada e trava preventiva por provedor, seção 2.8). Versão do produto:
 **inalterada (0.37.6)** — esta etapa não muda comportamento de produto, só acrescenta módulos
 puros, o transporte (ainda sem uso no serviço) e a sonda.
 
@@ -132,25 +133,26 @@ confirmação**. Páginas consultadas (via busca):
 "require_parameters": true}`, `response_format` com `json_schema` estrito e a chave **só** no
   cabeçalho `authorization`.
 
-### 2.2 O que o OpenRouter faz quando nenhum provedor ZDR atende — **NÃO CONFIRMADO**
+### 2.2 O que o OpenRouter faz quando nenhum provedor ZDR atende — **AINDA NÃO CONFIRMADO** (ver 2.8)
 
 A documentação não diz. A única pista (fonte de terceiros, não oficial) é que um **404 "No
 endpoints found"** aparece quando todos os provedores atrás de um modelo ficam fora dos filtros.
-**O código HTTP e o corpo reais não foram obtidos**, porque o teste exige uma chamada de rede, que
-não fiz (pedido expresso). Entreguei o comando que a faz com texto sintético
-(`--teste-falha-fechada`, seção 8): ele imprime o status e o corpo do erro, e diz se o
-comportamento foi "falhou fechado" (esperado), "erro de outro tipo" (me mande o status e o corpo
-para eu ajustar a classificação) ou **"respondeu mesmo assim" (bloqueante)**.
+**O primeiro teste real (10/10/2026) não respondeu a esta pergunta**: ele escolheu um APELIDO
+(`~deepseek/deepseek-flash-latest`) e foi respondido por um provedor (Morph), mas o teste estava
+errado (2.8) — não prova que o OpenRouter ignorou a ZDR. A pergunta continua aberta e agora tem
+dois controles que a respondem de verdade (`--controle-positivo` e `--controle-negativo`, seção 8).
 
 Como o código se protege **sem depender desse conhecimento**:
 
 1. toda tentativa — inclusive as repetições — leva `zdr: true`; nenhum caminho do código envia sem ele;
-2. qualquer 4xx (inclusive 404 e 400) **nunca é repetido**; só 429, 5xx e falha de rede, no máximo 2
-   vezes, com espera crescente (1 s, 3 s) e a MESMA `zdr: true`;
-3. 400/404 com uma frase de "sem provedor" (`no endpoints found`, `no allowed providers`, `zdr`,
+2. **restrição preventiva** `provider.only` aos provedores que a lista ZDR indica para o modelo (2.8);
+3. qualquer 4xx (inclusive 404 e 400) **nunca é repetido**; só 429, 5xx e falha de rede, no máximo 2
+   vezes, com espera crescente (1 s, 3 s) e a MESMA `zdr: true` e a MESMA restrição;
+4. 400/404 com uma frase de "sem provedor" (`no endpoints found`, `no allowed providers`, `zdr`,
    `data policy`…) vira `ZdrIndisponivelError` — o modelo sai da comparação, com o erro mostrado;
-4. mesmo que o OpenRouter responda ignorando a ZDR, a resposta só vale se quem serviu consta na
-   lista ZDR do modelo (2.3/2.4); senão é **descartada** e o modelo para.
+5. mesmo que o OpenRouter responda ignorando a ZDR, a resposta só vale se o PAR (modelo que a resposta
+   devolveu, provedor que a resposta devolveu) consta na lista ZDR; senão é **descartada** e o modelo para.
+   (Isto é a ÚLTIMA barreira: não impede que o texto já tenha sido enviado — por isso existe o item 2.)
 
 ### 2.3 Como saber quem atendeu — **o campo existe no SDK; falta ver numa resposta real**
 
@@ -217,21 +219,93 @@ da Vercel deixou de ser usado: o código não o importa; `ai` o traz como depend
 
 ---
 
+### 2.7 Outras formas de ver a política de um endpoint, sem enviar texto
+
+_(Não consegui abrir a documentação — o que segue vem de resumos de busca e do que a API faz parte
+da referência; **não foi confirmado numa chamada real**.)_
+
+- **Lista ZDR** `GET /api/v1/endpoints/zdr` — já usada; é a única fonte que afirma ZDR por endpoint.
+- **Detalhe público do modelo** `GET /api/v1/models/{autor}/{modelo}/endpoints` — lista os endpoints
+  reais de UM modelo (nome do provedor, `tag`, preço, quantização). Não afirma ZDR; serve para dizer
+  **quem poderia atender** o modelo. A sonda o usa no controle negativo, para restringir a chamada aos
+  provedores reais do modelo (nenhum com ZDR) e testar se o OpenRouter recusa.
+- **Páginas e dados de provedor** (`/api/v1/providers`, com os links de política de privacidade e de
+  termos): é política ESCRITA do provedor, não afirmação de ZDR por endpoint.
+- **Consulta da geração** `GET /api/v1/generation?id=…` devolve, depois da chamada, o provedor e o
+  modelo que serviram. É conferência POSTERIOR — não impede o envio — e hoje a própria resposta já
+  traz `model` e `provider`.
+- A **configuração ZDR da conta** (Settings → Privacy) é a outra metade: a chamada só pode ligá-la,
+  nunca desligá-la.
+
+Conclusão: **não há consulta que diga "este endpoint tem ZDR" fora da lista ZDR**; o que a sonda faz
+é cruzar a lista (quem tem ZDR) com o detalhe do modelo (quem existe) e com a resposta (quem serviu).
+
+### 2.8 O primeiro teste real e a correção da v1.1.1
+
+**O que foi reportado:** `--teste-falha-fechada` escolheu `~deepseek/deepseek-flash-latest`; uma única
+chamada, com `provider.zdr: true`; o OpenRouter respondeu, pelo provedor **Morph**; a sonda marcou
+BLOQUEANTE (código 6).
+
+**O que o código da v1.1.0 fazia:** o seletor tirou o "modelo fora da lista ZDR" do catálogo público e
+comparou o **id pedido** com a lista. O nome com `~` é um **apelido** (`…-latest`) que o OpenRouter
+resolve para OUTRO modelo; o id do apelido nunca está na lista ZDR (a lista tem ids de modelos reais),
+então o teste achou que o modelo "não tem ZDR" por construção. A chamada **nunca** comparou o par (modelo
+que a resposta devolveu, provedor): o transporte nem devolvia o campo `model` da resposta, e o teste só
+imprimia o provedor. **Conclusão: o resultado é falha do teste (um controle negativo inválido), e NÃO
+prova que o OpenRouter ignorou a ZDR** — pode ser que o modelo para o qual o apelido resolveu tenha um
+endpoint ZDR na Morph. Também **não prova o contrário**: o que o OpenRouter faz com um modelo realmente
+sem ZDR segue sem confirmação até o `--controle-negativo` rodar.
+_(Que "`~…`" seja um apelido que aponta para outro modelo é a leitura do nome e do comportamento
+descrito; não consegui confirmá-la na documentação.)_
+
+**O que mudou na v1.1.1:**
+
+1. **Nunca mais apelido nem variante.** Qualquer id com `~` ou `:` (`:free`, `:online`, `:floor`…) é
+   recusado — em `--modelos`, nos dois controles, no seletor automático e **no próprio transporte**,
+   antes de qualquer rede. (`:online` ainda manda o texto a um buscador; `:floor` muda o roteamento.)
+2. **A conferência é sempre pelo PAR devolvido:** `parConfirmadoZdr(lista, model_da_resposta,
+provider_da_resposta)`. O id pedido não entra. Resposta sem `model` ou sem `provider` = não
+   confirmado = descartada.
+3. **Rastro por chamada, sem texto e sem chave** (`chamadas-AAAA-MM-DD.json` e na tela dos controles):
+   o corpo enviado (`model`, `temperature`, `provider`, `response_format`; o conteúdo das mensagens vira
+   `[omitido: N caracteres]`; campos de segredo viram `[omitido]`) e os campos `model` e `provider` da
+   resposta.
+4. **Trava preventiva `provider.only`:** cada chamada vai restrita aos provedores que a lista ZDR indica
+   para AQUELE modelo (os slugs: a `tag` antes da `/`), com `allow_fallbacks: false`. Se a lista não
+   permitir montar a restrição (modelo sem `tag`), **não há chamada**. Conferir depois da resposta não
+   impede que o texto já tenha sido enviado; restringir antes, sim — desde que o OpenRouter honre `only`
+   e `zdr`, que é justamente o que os dois controles testam.
+5. **Dois controles no lugar do teste antigo:**
+   - `--controle-positivo[=modelo]`: modelo COM ZDR (o mais barato da lista, se não se informar), restrito
+     aos provedores da lista. Deve responder, e o par (modelo da resposta, provedor) deve estar na lista.
+     Saída 0 = ok; 5 = erro; 6 = respondeu mas o par não consta.
+   - `--controle-negativo[=modelo]`: modelo REAL (sem `~`, sem `:`) SEM endpoint ZDR na lista, restrito
+     aos provedores REAIS dele (do detalhe público do modelo), com `zdr: true`. Deve ser recusado antes de
+     responder (saída 0). Se responder, é bloqueante (saída 6).
+
+**Limites honestos desta correção:** (i) o slug que `provider.only` entende é suposto igual à `tag` da
+lista antes da `/` — se a lista usar outra convenção, o OpenRouter recusa por slug desconhecido e o
+controle positivo falha (fecha, não vaza); (ii) no controle negativo uma recusa pode vir de slug errado
+em vez de falta de ZDR — por isso a saída mostra os slugs usados e o controle positivo deve ser rodado
+primeiro com o mesmo critério; (iii) nada disto foi rodado contra o OpenRouter.
+
+---
+
 ## 3. O que foi construído
 
-| Peça                                                              | Onde                                                               | Observação                                                             |
-| ----------------------------------------------------------------- | ------------------------------------------------------------------ | ---------------------------------------------------------------------- |
-| Vocabulário fechado (`parece_pedir`, códigos de atenção, limites) | `domain/entities/vocabularioDaAnalise.ts`                          | sem imports; **inalterado**                                            |
-| `redigirParaIA` / `criarRedator`                                  | `application/politicas/redigirParaIA.ts`                           | pura; **inalterada**                                                   |
-| `verificarAnalise`                                                | `application/politicas/verificarAnalise.ts`                        | pura; **inalterada**                                                   |
-| `prepararEntrada`, `temTextoSuficiente`                           | `application/politicas/entradaDoModelo.ts`                         | `VERSAO_PROMPT = ato-1.0.0`; **inalterada**                            |
-| Esquema Zod fechado                                               | `infrastructure/adapters/modelo/esquemaDaAnalise.ts`               | `.strict()`; **inalterado**                                            |
-| **`TransporteOpenRouter`** (ZDR fixo)                             | `infrastructure/adapters/modelo/TransporteOpenRouter.ts`           | **novo**; substitui `TransporteGateway`                                |
-| **Lista ZDR e conferência do provedor**                           | `infrastructure/adapters/modelo/endpointsZdr.ts`                   | **novo**; usa o `HttpClient` do projeto; substitui `catalogoDoGateway` |
-| `ZdrIndisponivelError`                                            | `domain/errors/index.ts`                                           | subclasse de `ProviderIndisponivelError`; texto atualizado             |
-| Núcleo, métricas, planilha, julgamento                            | `main/sonda/sondaIaAto.ts`, `comandoSondaIa.ts`, `casosDaSonda.ts` | provedor + `zdrConfirmado` por chamada                                 |
-| Comando                                                           | `scripts/sonda-ia-ato.mjs` (**v1.1.0**)                            | `--listar-modelos-zdr`, `--teste-falha-fechada`, `--fixtures-saida`    |
-| 12 casos sintéticos                                               | `tests/fixtures/ia-ato/casos-sinteticos.json`                      | inalterados; agora também copiados para a imagem (`Dockerfile`)        |
+| Peça                                                              | Onde                                                               | Observação                                                                               |
+| ----------------------------------------------------------------- | ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------- |
+| Vocabulário fechado (`parece_pedir`, códigos de atenção, limites) | `domain/entities/vocabularioDaAnalise.ts`                          | sem imports; **inalterado**                                                              |
+| `redigirParaIA` / `criarRedator`                                  | `application/politicas/redigirParaIA.ts`                           | pura; **inalterada**                                                                     |
+| `verificarAnalise`                                                | `application/politicas/verificarAnalise.ts`                        | pura; **inalterada**                                                                     |
+| `prepararEntrada`, `temTextoSuficiente`                           | `application/politicas/entradaDoModelo.ts`                         | `VERSAO_PROMPT = ato-1.0.0`; **inalterada**                                              |
+| Esquema Zod fechado                                               | `infrastructure/adapters/modelo/esquemaDaAnalise.ts`               | `.strict()`; **inalterado**                                                              |
+| **`TransporteOpenRouter`** (ZDR fixo)                             | `infrastructure/adapters/modelo/TransporteOpenRouter.ts`           | **novo**; substitui `TransporteGateway`                                                  |
+| **Lista ZDR e conferência do provedor**                           | `infrastructure/adapters/modelo/endpointsZdr.ts`                   | **novo**; usa o `HttpClient` do projeto; substitui `catalogoDoGateway`                   |
+| `ZdrIndisponivelError`                                            | `domain/errors/index.ts`                                           | subclasse de `ProviderIndisponivelError`; texto atualizado                               |
+| Núcleo, métricas, planilha, julgamento                            | `main/sonda/sondaIaAto.ts`, `comandoSondaIa.ts`, `casosDaSonda.ts` | provedor + `zdrConfirmado` por chamada                                                   |
+| Comando                                                           | `scripts/sonda-ia-ato.mjs` (**v1.1.1**)                            | `--listar-modelos-zdr`, `--controle-positivo`, `--controle-negativo`, `--fixtures-saida` |
+| 12 casos sintéticos                                               | `tests/fixtures/ia-ato/casos-sinteticos.json`                      | inalterados; agora também copiados para a imagem (`Dockerfile`)                          |
 
 **Mudança na imagem:** uma linha no `Dockerfile` (`COPY tests/fixtures/ia-ato ./tests/fixtures/ia-ato`)
 para a sonda achar, dentro do contêiner, os casos **sintéticos** (inventados). Não toca `ENV`, porta,
@@ -450,21 +524,25 @@ cd /app
 node scripts/sonda-ia-ato.mjs --avaliacao=/dados/sonda-ia-ato/planilha-AAAA-MM-DD.csv
 ```
 
-**(e) teste de falha fechada** (UMA chamada, texto sintético, modelo SEM endpoint ZDR)
+**(e) controles de ZDR** (UMA chamada cada, texto sintético) — rode o positivo primeiro
 
 ```
 cd /app
-node scripts/sonda-ia-ato.mjs --teste-falha-fechada
-node scripts/sonda-ia-ato.mjs --teste-falha-fechada=fab/modelo-que-nao-esta-na-lista-zdr
+node scripts/sonda-ia-ato.mjs --controle-positivo
+node scripts/sonda-ia-ato.mjs --controle-positivo=fab/modelo-que-esta-na-lista-zdr
+node scripts/sonda-ia-ato.mjs --controle-negativo
+node scripts/sonda-ia-ato.mjs --controle-negativo=fab/modelo-real-que-nao-esta-na-lista-zdr
 ```
 
-Sem valor, a sonda escolhe sozinha o modelo público **mais barato que não consta** na lista ZDR e diz
-qual. O resultado imprime o **código HTTP e o corpo** do erro — é o que falta registrar na seção 2.2.
-Saídas: `0` = falhou fechado (esperado); `5` = erro de outro tipo (me envie o status e o corpo);
-`6` = **o OpenRouter respondeu mesmo sem ZDR — bloqueante, não use para texto real**.
+Sem valor, o positivo usa o modelo mais barato COM ZDR da lista, e o negativo o modelo real mais barato
+FORA da lista. Nomes com `~` ou `:` são recusados. Cada controle imprime o modelo pedido, o campo `model`
+e o campo `provider` da resposta, os provedores a que a chamada ficou restrita e o corpo enviado (sem texto
+e sem chave). Saídas — positivo: `0` ok, `5` erro (me envie), `6` respondeu mas o par não consta na lista;
+negativo: `0` recusado antes de responder (esperado), `5` erro não reconhecido como recusa (me envie o
+status e o corpo), `6` **respondeu — bloqueante, não use o OpenRouter para texto real**.
 
 A rodada (b)/(c) grava, no volume (`/dados/sonda-ia-ato/` ao lado do banco): `planilha-AAAA-MM-DD.csv`
-(para o Autran), `metricas.json` e `chamadas-AAAA-MM-DD.json` (metadado por chamada, sem texto). Com
+(para o Autran), `metricas.json` e `chamadas-AAAA-MM-DD.json` (por chamada: modelo pedido e devolvido, provedor, restrição `only`, corpo enviado sem texto, latência, tokens, custo, `zdrConfirmado`). Com
 casos sintéticos grava também `respostas-<modelo>-<data>.json` na pasta de `--fixtures-saida` — esses
 arquivos são **inventados** e podem ser baixados e entregues para virarem fixtures da Etapa 2.
 

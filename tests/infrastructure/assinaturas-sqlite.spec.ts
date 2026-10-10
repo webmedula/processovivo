@@ -159,7 +159,9 @@ describe('RepositorioAssinaturasSqlite', () => {
       usuarios: {} as RepositorioUsuarios,
       logger: loggerSilencioso,
     });
-    await expect(servico.exigir('ws1', 'consulta')).rejects.toThrow(PlanoDesconhecidoError);
+    await expect(servico.exigir('ws1', 'consulta')).rejects.toThrow(
+      PlanoDesconhecidoError,
+    );
     await expect(servico.resumo('ws1')).rejects.toThrow(PlanoDesconhecidoError);
   });
 });

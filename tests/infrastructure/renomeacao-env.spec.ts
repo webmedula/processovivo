@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { avisosDeRenomeacao, carregarConfig } from '../../src/infrastructure/config/env.js';
+import {
+  avisosDeRenomeacao,
+  carregarConfig,
+} from '../../src/infrastructure/config/env.js';
 
 const CHAVE = 'chave-de-teste-1234567890';
 

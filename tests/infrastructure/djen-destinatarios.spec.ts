@@ -15,10 +15,14 @@ import { Processo } from '../../src/domain/entities/Processo.js';
  * captura REAL (não editada) prova o formato; os demais casos derivam dela.
  */
 const REAL = respostaDjenSchema.parse(
-  JSON.parse(readFileSync(new URL('../fixtures/djen-comunica-real.json', import.meta.url), 'utf8')),
+  JSON.parse(
+    readFileSync(new URL('../fixtures/djen-comunica-real.json', import.meta.url), 'utf8'),
+  ),
 ).items[0] as ComunicacaoDjen;
 
-const variante = (advogados: ComunicacaoDjen['destinatarioadvogados']): ComunicacaoDjen => ({
+const variante = (
+  advogados: ComunicacaoDjen['destinatarioadvogados'],
+): ComunicacaoDjen => ({
   ...REAL,
   destinatarioadvogados: advogados,
 });
@@ -40,17 +44,28 @@ describe('inscrições dos advogados da comunicação do DJEN', () => {
     const m = mapearMovimentacao(REAL);
     expect(m.destinatariosOab).toEqual(inscricoesDosDestinatarios(REAL));
     expect(m.tipoComunicacao).toBe('Intimação');
-    expect(JSON.stringify(m)).not.toContain(REAL.destinatarioadvogados?.[0]?.advogado.nome as string);
+    expect(JSON.stringify(m)).not.toContain(
+      REAL.destinatarioadvogados?.[0]?.advogado.nome as string,
+    );
   });
 
   it('sem advogado (parte sem advogado) ou sem inscrição legível, o campo não existe', () => {
     expect(mapearMovimentacao(variante([])).destinatariosOab).toBeUndefined();
     expect(mapearMovimentacao(variante(null)).destinatariosOab).toBeUndefined();
-    expect(mapearMovimentacao(variante([adv('Fulano', null, 'GO'), adv('Beltrano', '123', null)])).destinatariosOab).toBeUndefined();
+    expect(
+      mapearMovimentacao(
+        variante([adv('Fulano', null, 'GO'), adv('Beltrano', '123', null)]),
+      ).destinatariosOab,
+    ).toBeUndefined();
   });
 
   it('vários advogados: todas as inscrições legíveis, sem repetir', () => {
-    const c = variante([adv('A', '0123', 'go'), adv('B', '456', 'SP'), adv('A2', '123', 'GO'), adv('C', null, 'SP')]);
+    const c = variante([
+      adv('A', '0123', 'go'),
+      adv('B', '456', 'SP'),
+      adv('A2', '123', 'GO'),
+      adv('C', null, 'SP'),
+    ]);
     expect(inscricoesDosDestinatarios(c)).toEqual(['123/GO', '456/SP']);
   });
 });
@@ -60,7 +75,11 @@ describe('a serialização do banco nunca leva inscrição de terceiro', () => {
     numero: NumeroCNJ.criar('1234567-47.2023.8.26.0100'),
     tribunal: 'TJSP',
     movimentacoes: [{ ...mapearMovimentacao(REAL), destinatariosOab: ['777/GO'] }],
-    procedencia: { provider: 'djen', consultadoEm: new Date('2026-10-01T00:00:00Z'), deCache: false },
+    procedencia: {
+      provider: 'djen',
+      consultadoEm: new Date('2026-10-01T00:00:00Z'),
+      deCache: false,
+    },
   });
 
   it('por padrão (banco) as inscrições são removidas', () => {
@@ -68,6 +87,8 @@ describe('a serialização do banco nunca leva inscrição de terceiro', () => {
   });
 
   it('o cache em memória as preserva, para a sincronização que lê dele', () => {
-    expect(JSON.stringify(serializarProcesso(processo, { preservarDestinatarios: true }))).toContain('777/GO');
+    expect(
+      JSON.stringify(serializarProcesso(processo, { preservarDestinatarios: true })),
+    ).toContain('777/GO');
   });
 });

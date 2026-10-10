@@ -24,7 +24,9 @@ describe('RepositorioPlanosSqlite', () => {
   it('o banco novo já nasce com os três planos da semente, idênticos', async () => {
     // As assinaturas de antes da v0.28.0 apontam para estes códigos: se a
     // semente não entrasse, a primeira consulta de cada assinante falharia.
-    expect(await repo.listar()).toEqual(PLANOS_INICIAIS.map((p) => ({ ...p, recursos: [...p.recursos] })));
+    expect(await repo.listar()).toEqual(
+      PLANOS_INICIAIS.map((p) => ({ ...p, recursos: [...p.recursos] })),
+    );
   });
 
   it('salva e lê um plano novo, com preço nulo ou inteiro', async () => {
@@ -105,11 +107,21 @@ describe('RepositorioRegrasDeAssinaturaSqlite', () => {
   });
 
   it('grava e regrava a linha única', async () => {
-    await repo.salvar({ diasDeTeste: 7, planoDoTeste: 'acompanhamento', diasDeCarencia: 3 });
+    await repo.salvar({
+      diasDeTeste: 7,
+      planoDoTeste: 'acompanhamento',
+      diasDeCarencia: 3,
+    });
     await repo.salvar({ diasDeTeste: 10, planoDoTeste: 'pecas', diasDeCarencia: 5 });
 
-    expect(await repo.ler()).toEqual({ diasDeTeste: 10, planoDoTeste: 'pecas', diasDeCarencia: 5 });
-    const { total } = db.prepare('SELECT COUNT(*) AS total FROM regras_assinatura').get() as {
+    expect(await repo.ler()).toEqual({
+      diasDeTeste: 10,
+      planoDoTeste: 'pecas',
+      diasDeCarencia: 5,
+    });
+    const { total } = db
+      .prepare('SELECT COUNT(*) AS total FROM regras_assinatura')
+      .get() as {
       total: number;
     };
     expect(total).toBe(1);

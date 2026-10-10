@@ -188,21 +188,57 @@ export function modeloTemZdr(endpoints: readonly EndpointZdr[], modelo: string):
 }
 
 /**
- * O provedor que serviu a chamada consta entre os endpoints ZDR DESTE modelo? Compara o
- * nome devolvido pela resposta com `provider_name` e com `tag` (inteira e só o trecho
- * antes de "/"), sem caixa nem pontuação. Nome ausente ou desconhecido = NÃO confirmado.
+ * Id de roteamento que NÃO é um modelo: `~fabricante/modelo-latest` é um APELIDO que o
+ * OpenRouter resolve para outro modelo, e `modelo:free`, `:online`, `:floor`… mudam o
+ * roteamento (`:online` ainda manda o texto a um buscador). Comparar a lista ZDR pelo id de
+ * um apelido é comparar o que não é o modelo servido — foi o defeito do teste da v1.1.0.
  */
-export function provedorConfirmadoZdr(
+export function ehApelidoOuVariante(id: string): boolean {
+  return id.includes('~') || id.includes(':');
+}
+
+/** O "slug" de provedor que `provider.only` entende: a `tag` antes da "/" (ex.: `deepinfra/fp8` → `deepinfra`). */
+export function slugDoProvedor(tag: string): string {
+  return (tag.split('/')[0] ?? '').trim().toLowerCase();
+}
+
+/**
+ * Os provedores a que a chamada fica RESTRITA (`provider.only`): os slugs dos endpoints que a
+ * lista ZDR indica para ESTE modelo. Vazio = a lista não permite montar a restrição, e então
+ * NÃO há chamada: restringir antes de enviar é a única coisa que impede o texto de chegar a
+ * um provedor sem ZDR (conferir depois da resposta não impede nada).
+ */
+export function provedoresPermitidos(
   endpoints: readonly EndpointZdr[],
   modelo: string,
+): string[] {
+  const slugs = new Set<string>();
+  for (const e of endpoints) {
+    if (e.modelo !== modelo) continue;
+    const slug = slugDoProvedor(e.tag);
+    if (slug !== '') slugs.add(slug);
+  }
+  return [...slugs].sort();
+}
+
+/**
+ * O PAR (modelo que a resposta devolveu, provedor que a resposta devolveu) consta na lista
+ * ZDR? Compara o nome do provedor com `provider_name` e com a `tag` (inteira e só o trecho
+ * antes de "/"), sem caixa nem pontuação. Modelo ou provedor ausente/desconhecido = NÃO
+ * confirmado. Nunca se compara pelo id PEDIDO: um apelido não é o modelo servido.
+ */
+export function parConfirmadoZdr(
+  endpoints: readonly EndpointZdr[],
+  modeloResolvido: string | undefined,
   provedor: string | undefined,
 ): boolean {
+  const modelo = modeloResolvido?.trim();
   const servido = normalizarNome(provedor ?? '');
-  if (servido === '') return false;
+  if (!modelo || servido === '') return false;
   return endpoints
     .filter((e) => e.modelo === modelo)
     .some((e) =>
-      [e.provedor, e.tag, e.tag.split('/')[0] ?? ''].some(
+      [e.provedor, e.tag, slugDoProvedor(e.tag)].some(
         (nome) => nome !== '' && normalizarNome(nome) === servido,
       ),
     );
@@ -222,4 +258,57 @@ export function precosEstimados(
     });
   }
   return mapa;
+}
+
+// --- endpoints públicos de UM modelo (detalhe, sem enviar texto) ------------------------
+
+const esquemaDosEndpointsDoModelo = z
+  .object({
+    data: z
+      .object({
+        endpoints: z.array(
+          z
+            .object({ provider_name: z.string().optional(), tag: z.string().optional() })
+            .passthrough(),
+        ),
+      })
+      .passthrough(),
+  })
+  .passthrough();
+
+export interface EndpointPublico {
+  readonly provedor: string;
+  readonly tag: string;
+}
+
+/** Lê `GET /models/{autor}/{modelo}/endpoints` (público). Item sem `tag` é ignorado: slug não se adivinha. */
+export function lerEndpointsPublicos(corpo: unknown): EndpointPublico[] {
+  const lido = esquemaDosEndpointsDoModelo.safeParse(corpo);
+  if (!lido.success) {
+    throw new RespostaInvalidaError(
+      NOME_DO_OPENROUTER,
+      'os endpoints do modelo vieram em formato inesperado',
+    );
+  }
+  return lido.data.data.endpoints
+    .filter((e) => (e.tag ?? '').trim() !== '')
+    .map((e) => ({
+      provedor: (e.provider_name ?? '').trim(),
+      tag: (e.tag ?? '').trim(),
+    }));
+}
+
+export async function buscarEndpointsPublicosDoModelo(
+  http: HttpClient,
+  modelo: string,
+): Promise<EndpointPublico[]> {
+  if (ehApelidoOuVariante(modelo) || !/^[\w.-]+\/[\w.-]+$/.test(modelo)) {
+    throw new RespostaInvalidaError(
+      NOME_DO_OPENROUTER,
+      'id de modelo inválido para consultar endpoints',
+    );
+  }
+  return lerEndpointsPublicos(
+    await buscarJson(http, `${URL_BASE_DO_OPENROUTER}/models/${modelo}/endpoints`),
+  );
 }

@@ -15,11 +15,14 @@ import {
   ZdrIndisponivelError,
 } from '../../domain/errors/index.js';
 import { lerRespostaDoModelo } from '../../infrastructure/adapters/modelo/esquemaDaAnalise.js';
-import type { TransporteDeModelo } from '../../infrastructure/adapters/modelo/TransporteOpenRouter.js';
+import type {
+  DiagnosticoDaChamada,
+  TransporteDeModelo,
+} from '../../infrastructure/adapters/modelo/TransporteOpenRouter.js';
 import { escreverCsv, lerCsv, type CasoDaSonda } from './casosDaSonda.js';
 
 /**
- * Núcleo da sonda de IA do ato (v1.1.0). Não consulta tribunal, não abre banco.
+ * Núcleo da sonda de IA do ato (v1.1.1). Não consulta tribunal, não abre banco.
  *
  * Duas variantes por modelo: SEM e COM os títulos dos andamentos anteriores. Cada
  * chamada passa pelo `TransporteDeModelo` injetado — em produção o OpenRouter com
@@ -28,7 +31,7 @@ import { escreverCsv, lerCsv, type CasoDaSonda } from './casosDaSonda.js';
  * (no volume, fora do repositório).
  */
 
-export const VERSAO_DA_SONDA = '1.1.0';
+export const VERSAO_DA_SONDA = '1.1.1';
 
 export type Variante = 'sem-titulos' | 'com-titulos';
 
@@ -65,7 +68,13 @@ export interface RegistroDaChamada {
   readonly custoUsd?: number;
   /** Quem serviu a chamada, como a resposta informa (nome do provedor, nada mais). */
   readonly provedor?: string;
-  /** O provedor que serviu consta entre os endpoints ZDR do modelo? */
+  /** O modelo que a resposta diz ter servido (campo `model`); difere do pedido se o id era um alias. */
+  readonly modeloResolvido?: string;
+  /** A restrição enviada (`provider.only`): slugs de provedor, nada de texto. */
+  readonly provedoresPermitidos?: readonly string[];
+  /** Corpo enviado SANEADO + campos model/provider da resposta (ver `diagnosticoDeChamada.ts`). */
+  readonly diagnostico?: DiagnosticoDaChamada;
+  /** O PAR (modelo resolvido, provedor) consta na lista ZDR? */
   readonly zdrConfirmado: boolean;
   readonly repeticoes: number;
   readonly injecao: boolean;
@@ -81,9 +90,17 @@ export interface OpcoesDaExecucao {
   readonly modelos: readonly string[];
   readonly variantes: readonly Variante[];
   readonly transporte: TransporteDeModelo;
-  /** O provedor que serviu consta entre os endpoints ZDR deste modelo? Desconhecido = não. */
-  readonly provedorConfirmadoZdr: (
-    modelo: string,
+  /**
+   * Os provedores a que a chamada fica RESTRITA (`provider.only`) para este modelo, segundo a
+   * lista ZDR. Vazio = não dá para restringir = NÃO há chamada.
+   */
+  readonly provedoresPermitidos: (modelo: string) => readonly string[];
+  /**
+   * O PAR (modelo que a resposta devolveu, provedor que a resposta devolveu) consta na lista
+   * ZDR? Desconhecido = não. Nunca se compara pelo id pedido.
+   */
+  readonly parConfirmadoZdr: (
+    modeloResolvido: string | undefined,
     provedor: string | undefined,
   ) => boolean;
   readonly agora: () => number;
@@ -163,6 +180,15 @@ export async function executarSonda(op: OpcoesDaExecucao): Promise<ResultadoDaEx
           `${modelo} · ${variante} · ${caso.origem === 'real' ? `caso ${indice}` : caso.id}`,
         );
 
+        // Trava PREVENTIVA: sem a lista dos provedores ZDR deste modelo, nada é enviado.
+        const permitidos = op.provedoresPermitidos(modelo);
+        if (permitidos.length === 0) {
+          modelosSemZdr.push(modelo);
+          registros.push({ ...base, estado: 'sem_zdr' });
+          parar = true;
+          continue;
+        }
+
         const inicio = op.agora();
         let repeticoes = 0;
         try {
@@ -177,6 +203,7 @@ export async function executarSonda(op: OpcoesDaExecucao): Promise<ResultadoDaEx
                 modelo,
                 sistema: entrada.sistema,
                 usuario: entrada.usuario,
+                provedoresPermitidos: permitidos,
               });
               resposta = lerRespostaDoModelo(transporteFinal.objeto);
               if (!resposta)
@@ -196,8 +223,8 @@ export async function executarSonda(op: OpcoesDaExecucao): Promise<ResultadoDaEx
           // A resposta só vale se quem serviu consta entre os endpoints ZDR do modelo.
           // Se o OpenRouter respondeu por outro (ou não disse quem), a resposta é
           // DESCARTADA sem verificar, sem métrica e sem guardar: o modelo para aqui.
-          const zdrConfirmado = op.provedorConfirmadoZdr(
-            modelo,
+          const zdrConfirmado = op.parConfirmadoZdr(
+            transporteFinal.modeloResolvido,
             transporteFinal.provedor,
           );
           if (!zdrConfirmado) {
@@ -207,6 +234,11 @@ export async function executarSonda(op: OpcoesDaExecucao): Promise<ResultadoDaEx
               estado: 'provedor_nao_confirmado',
               latenciaMs,
               ...(transporteFinal.provedor ? { provedor: transporteFinal.provedor } : {}),
+              ...(transporteFinal.modeloResolvido
+                ? { modeloResolvido: transporteFinal.modeloResolvido }
+                : {}),
+              provedoresPermitidos: permitidos,
+              diagnostico: transporteFinal.diagnostico,
               repeticoes,
             });
             parar = true;
@@ -230,6 +262,11 @@ export async function executarSonda(op: OpcoesDaExecucao): Promise<ResultadoDaEx
               ? { custoUsd: transporteFinal.custoUsd }
               : {}),
             ...(transporteFinal.provedor ? { provedor: transporteFinal.provedor } : {}),
+            ...(transporteFinal.modeloResolvido
+              ? { modeloResolvido: transporteFinal.modeloResolvido }
+              : {}),
+            provedoresPermitidos: permitidos,
+            diagnostico: transporteFinal.diagnostico,
             zdrConfirmado,
             repeticoes,
             ...(obedeceu !== undefined ? { injecaoObedecida: obedeceu } : {}),
@@ -687,7 +724,15 @@ export interface MetadadoDaChamada {
   readonly modelo: string;
   readonly variante: Variante;
   readonly estado: RegistroDaChamada['estado'];
+  /** `provider` da resposta. */
   readonly provedor: string | null;
+  /** O id pedido e o `model` que a resposta devolveu (difere se o pedido era um alias). */
+  readonly modeloPedido: string;
+  readonly modeloResolvido: string | null;
+  /** A restrição enviada (`provider.only`). */
+  readonly provedoresPermitidos: readonly string[] | null;
+  /** O corpo enviado SEM texto e SEM chave. */
+  readonly corpoEnviado: unknown;
   readonly latenciaMs: number | null;
   readonly tokensEntrada: number | null;
   readonly tokensSaida: number | null;
@@ -707,6 +752,10 @@ export function metadadosDasChamadas(
       variante: r.variante,
       estado: r.estado,
       provedor: r.provedor ?? null,
+      modeloPedido: r.modelo,
+      modeloResolvido: r.modeloResolvido ?? null,
+      provedoresPermitidos: r.provedoresPermitidos ?? null,
+      corpoEnviado: r.diagnostico?.corpoEnviado ?? null,
       latenciaMs: r.latenciaMs ?? null,
       tokensEntrada: r.tokensEntrada ?? null,
       tokensSaida: r.tokensSaida ?? null,

@@ -54,6 +54,15 @@ function transporteQueCita(
         tokensSaida: 100,
         custoUsd: custo,
         provedor: 'Provedor Dublado',
+        modeloResolvido: pedido.modelo,
+        diagnostico: {
+          corpoEnviado: {
+            model: pedido.modelo,
+            provider: { only: pedido.provedoresPermitidos },
+          },
+          modeloResolvido: pedido.modelo,
+          provedorDaResposta: 'Provedor Dublado',
+        },
       };
       return resposta;
     },
@@ -110,7 +119,8 @@ describe('executarSonda', () => {
       modelos: ['m/pequeno'],
       variantes: ['sem-titulos'],
       transporte: transporteQueCita(chamadas),
-      provedorConfirmadoZdr: () => true,
+      provedoresPermitidos: () => ['dublado'],
+      parConfirmadoZdr: () => true,
       agora: () => 0,
     });
     const curto = r.registros.find((x) => x.casoId === 's07-texto-curto');
@@ -125,7 +135,8 @@ describe('executarSonda', () => {
       modelos: ['m/pequeno'],
       variantes: ['com-titulos'],
       transporte: transporteQueCita(chamadas),
-      provedorConfirmadoZdr: () => true,
+      provedoresPermitidos: () => ['dublado'],
+      parConfirmadoZdr: () => true,
       agora: () => 0,
     });
     const tudo = chamadas.map((c) => c.usuario + c.sistema).join('\n');
@@ -163,7 +174,8 @@ describe('executarSonda', () => {
       modelos: ['m/sem-zdr', 'm/com-zdr'],
       variantes: ['sem-titulos', 'com-titulos'],
       transporte,
-      provedorConfirmadoZdr: () => true,
+      provedoresPermitidos: () => ['dublado'],
+      parConfirmadoZdr: () => true,
       agora: () => 0,
     });
     expect(chamadas).toBe(1);
@@ -179,7 +191,11 @@ describe('executarSonda', () => {
       nome: 'dublado',
       gerar: async () => {
         n += 1;
-        return { objeto: { qualquer: 'coisa' }, provedor: 'Provedor Dublado' };
+        return {
+          objeto: { qualquer: 'coisa' },
+          provedor: 'Provedor Dublado',
+          diagnostico: { corpoEnviado: null },
+        };
       },
     };
     const r = await executarSonda({
@@ -187,7 +203,8 @@ describe('executarSonda', () => {
       modelos: ['m/x'],
       variantes: ['sem-titulos'],
       transporte,
-      provedorConfirmadoZdr: () => true,
+      provedoresPermitidos: () => ['dublado'],
+      parConfirmadoZdr: () => true,
       agora: () => 0,
     });
     expect(n).toBe(2);
@@ -208,7 +225,8 @@ describe('executarSonda', () => {
       modelos: ['m/x'],
       variantes: ['sem-titulos'],
       transporte,
-      provedorConfirmadoZdr: () => true,
+      provedoresPermitidos: () => ['dublado'],
+      parConfirmadoZdr: () => true,
       agora: () => 0,
     });
     expect(n).toBe(3);
@@ -229,6 +247,7 @@ describe('executarSonda', () => {
           pontos_de_atencao: [],
         },
         provedor: 'Provedor Dublado',
+        diagnostico: { corpoEnviado: null },
       }),
     };
     const r = await executarSonda({
@@ -236,7 +255,8 @@ describe('executarSonda', () => {
       modelos: ['m/x'],
       variantes: ['sem-titulos'],
       transporte: obediente,
-      provedorConfirmadoZdr: () => true,
+      provedoresPermitidos: () => ['dublado'],
+      parConfirmadoZdr: () => true,
       agora: () => 0,
     });
     const [m] = calcularMetricas(r.registros);
@@ -252,7 +272,8 @@ describe('executarSonda', () => {
       modelos: ['m/x'],
       variantes: ['sem-titulos'],
       transporte: transporteQueCita(),
-      provedorConfirmadoZdr: () => true,
+      provedoresPermitidos: () => ['dublado'],
+      parConfirmadoZdr: () => true,
       agora: () => 0,
     });
     expect(r.registros.find((x) => x.origem === 'real')?.respostaCrua).toBeUndefined();
@@ -273,7 +294,8 @@ describe('executarSonda — provedor não confirmado', () => {
           provedor: p.modelo === 'm/intruso' ? 'Provedor Intruso' : 'Provedor Dublado',
         }),
       },
-      provedorConfirmadoZdr: (_m, provedor) => provedor === 'Provedor Dublado',
+      provedoresPermitidos: () => ['dublado'],
+      parConfirmadoZdr: (_m, provedor) => provedor === 'Provedor Dublado',
       agora: () => 0,
     });
     expect(r.modelosProvedorNaoConfirmado).toEqual(['m/intruso']);
@@ -304,10 +326,82 @@ describe('executarSonda — provedor não confirmado', () => {
           return resto;
         },
       },
-      provedorConfirmadoZdr: (_m, provedor) => provedor === 'Provedor Dublado',
+      provedoresPermitidos: () => ['dublado'],
+      parConfirmadoZdr: (_m, provedor) => provedor === 'Provedor Dublado',
       agora: () => 0,
     });
     expect(r.modelosProvedorNaoConfirmado).toEqual(['m/x']);
+  });
+});
+
+describe('executarSonda — trava preventiva e par', () => {
+  it('sem provedores ZDR para o modelo (lista sem slug), NENHUMA chamada é feita', async () => {
+    const chamadas: PedidoAoModelo[] = [];
+    const r = await executarSonda({
+      casos: casosSinteticos,
+      modelos: ['m/sem-slug'],
+      variantes: ['sem-titulos'],
+      transporte: transporteQueCita(chamadas),
+      provedoresPermitidos: () => [],
+      parConfirmadoZdr: () => true,
+      agora: () => 0,
+    });
+    expect(chamadas).toHaveLength(0);
+    expect(r.modelosSemZdr).toEqual(['m/sem-slug']);
+    expect(r.registros.map((x) => x.estado)).toEqual(['sem_zdr']);
+  });
+
+  it('toda chamada leva a restrição aos provedores permitidos DAQUELE modelo', async () => {
+    const chamadas: PedidoAoModelo[] = [];
+    await executarSonda({
+      casos: casosSinteticos.slice(0, 2),
+      modelos: ['m/a', 'm/b'],
+      variantes: ['sem-titulos'],
+      transporte: transporteQueCita(chamadas),
+      provedoresPermitidos: (m) => (m === 'm/a' ? ['alfa'] : ['beta', 'gama']),
+      parConfirmadoZdr: () => true,
+      agora: () => 0,
+    });
+    expect(
+      chamadas
+        .filter((c) => c.modelo === 'm/a')
+        .every((c) => c.provedoresPermitidos.join() === 'alfa'),
+    ).toBe(true);
+    expect(
+      chamadas
+        .filter((c) => c.modelo === 'm/b')
+        .every((c) => c.provedoresPermitidos.join() === 'beta,gama'),
+    ).toBe(true);
+  });
+
+  it('a conferência recebe o modelo e o provedor DEVOLVIDOS pela resposta, não o id pedido', async () => {
+    const vistos: Array<[string | undefined, string | undefined]> = [];
+    const r = await executarSonda({
+      casos: casosSinteticos.slice(0, 1),
+      modelos: ['m/pedido'],
+      variantes: ['sem-titulos'],
+      transporte: {
+        nome: 'dublado',
+        gerar: async (p) => ({
+          ...(await transporteQueCita().gerar(p)),
+          modeloResolvido: 'm/devolvido',
+          provedor: 'Provedor X',
+        }),
+      },
+      provedoresPermitidos: () => ['x'],
+      parConfirmadoZdr: (modelo, provedor) => {
+        vistos.push([modelo, provedor]);
+        return modelo === 'm/pedido';
+      },
+      agora: () => 0,
+    });
+    expect(vistos).toEqual([['m/devolvido', 'Provedor X']]);
+    expect(r.modelosProvedorNaoConfirmado).toEqual(['m/pedido']);
+    expect(r.registros[0]).toMatchObject({
+      estado: 'provedor_nao_confirmado',
+      modeloResolvido: 'm/devolvido',
+      provedor: 'Provedor X',
+    });
   });
 });
 
@@ -319,7 +413,8 @@ describe('calcularMetricas', () => {
       modelos: ['m/x'],
       variantes: ['sem-titulos'],
       transporte: transporteQueCita([], 0.002),
-      provedorConfirmadoZdr: () => true,
+      provedoresPermitidos: () => ['dublado'],
+      parConfirmadoZdr: () => true,
       agora: () => (t += 100),
     });
     const [m] = calcularMetricas(
@@ -348,7 +443,8 @@ describe('calcularMetricas', () => {
       modelos: ['m/x'],
       variantes: ['sem-titulos'],
       transporte,
-      provedorConfirmadoZdr: () => true,
+      provedoresPermitidos: () => ['dublado'],
+      parConfirmadoZdr: () => true,
       agora: () => 0,
     });
     const [m] = calcularMetricas(
@@ -367,7 +463,8 @@ describe('planilha e julgamento', () => {
       modelos: ['m/x'],
       variantes: ['sem-titulos'],
       transporte: transporteQueCita(),
-      provedorConfirmadoZdr: () => true,
+      provedoresPermitidos: () => ['dublado'],
+      parConfirmadoZdr: () => true,
       agora: () => 0,
     });
     const csv = gerarPlanilha(r.registros);
@@ -468,7 +565,7 @@ const LISTA_ZDR: ListaZdrLida = {
   endpoints: MODELOS_ZDR.map((modelo) => ({
     modelo,
     provedor: 'Provedor Dublado',
-    tag: 'dublado',
+    tag: 'dublado/fp8',
     precoEntrada: 0.000001,
     precoSaida: 0.000002,
   })),
@@ -511,6 +608,9 @@ function ambiente(
       pedidosDeLista.push(chave);
       return LISTA_ZDR;
     },
+    buscarEndpointsPublicosDoModelo: async () => [
+      { provedor: 'Provedor Real', tag: 'real/bf16' },
+    ],
     buscarModelosPublicos: async () => [
       { id: 'm/a' },
       { id: 'sem/zdr-caro', precoEntrada: 0.00005 },
@@ -553,6 +653,22 @@ describe('comando da sonda', () => {
     const tudo = [...avisos, ...saida, ...gravados.map((g) => g.conteudo)].join('\n');
     expect(tudo).not.toContain(CHAVE);
   });
+
+  it.each(['~deepseek/deepseek-flash-latest', 'm/a:free', 'm/a:online'])(
+    '--modelos recusa o apelido/variante "%s" sem enviar nada (mesmo que o resto esteja na lista)',
+    async (apelido) => {
+      const { amb, avisos, chamadas, gravados } = ambiente();
+      expect(
+        await executarComandoSondaIa(
+          [`--modelos=m/a,${apelido}`, '--saida=/dados/sonda'],
+          amb,
+        ),
+      ).toBe(2);
+      expect(avisos.join('\n')).toMatch(/apelido \(~\) ou uma variante/);
+      expect(chamadas).toHaveLength(0);
+      expect(gravados).toHaveLength(0);
+    },
+  );
 
   it('sem --modelos não adivinha nome de modelo', async () => {
     const { amb, chamadas } = ambiente();
@@ -641,21 +757,30 @@ describe('comando da sonda', () => {
     const arquivo = gravados.find((g) => g.caminho.includes('chamadas-'));
     const itens = JSON.parse(arquivo?.conteudo ?? '[]') as Array<Record<string, unknown>>;
     expect(itens.length).toBeGreaterThan(0);
-    expect(Object.keys(itens[0] ?? {}).sort()).toEqual([
-      'custoUsd',
-      'estado',
-      'latenciaMs',
-      'modelo',
-      'ordem',
-      'provedor',
-      'tokensEntrada',
-      'tokensSaida',
-      'variante',
-      'zdrConfirmado',
-    ]);
+    expect(Object.keys(itens[0] ?? {}).sort()).toEqual(
+      [
+        'corpoEnviado',
+        'custoUsd',
+        'estado',
+        'latenciaMs',
+        'modeloPedido',
+        'modeloResolvido',
+        'modelo',
+        'ordem',
+        'provedor',
+        'provedoresPermitidos',
+        'tokensEntrada',
+        'tokensSaida',
+        'variante',
+        'zdrConfirmado',
+      ].sort(),
+    );
     expect(itens[0]).toMatchObject({
       modelo: 'm/a',
+      modeloPedido: 'm/a',
+      modeloResolvido: 'm/a',
       provedor: 'Provedor Dublado',
+      provedoresPermitidos: ['dublado'],
       zdrConfirmado: 'sim',
     });
     expect(arquivo?.conteudo).not.toContain('r1');
@@ -815,15 +940,19 @@ describe('comando da sonda', () => {
     expect(saida.join('\n')).toMatch(/2 avaliados/);
   });
 
-  describe('teste de falha fechada', () => {
+  describe('controles (uma chamada, texto sintético)', () => {
+    /** Transporte que registra o pedido e devolve/lança o que o teste mandar. */
     const comTransporte = (
       gerar: TransporteDeModelo['gerar'],
-      falhas: Array<{ status?: number; corpo?: string }> = [],
-    ) =>
-      ambiente({
+      falhas: Array<{ status?: number; corpo?: string; corpoEnviado?: unknown }> = [],
+      sobrepor: Partial<AmbienteDaSonda> = {},
+    ) => {
+      const pedidos: PedidoAoModelo[] = [];
+      const t = ambiente({
         criarTransporte: (_chave, opcoes) => ({
           nome: 'dublado',
           gerar: async (p) => {
+            pedidos.push(p);
             try {
               return await gerar(p);
             } catch (e) {
@@ -832,62 +961,208 @@ describe('comando da sonda', () => {
             }
           },
         }),
+        ...sobrepor,
+      });
+      return { ...t, pedidos };
+    };
+
+    describe('positivo', () => {
+      it('modelo COM ZDR responde e o par (modelo da resposta, provedor) está na lista: OK, com o rastro sem texto', async () => {
+        const t = comTransporte(async (p) => transporteQueCita().gerar(p));
+        expect(await executarComandoSondaIa(['--controle-positivo=m/a'], t.amb)).toBe(0);
+        expect(t.pedidos).toHaveLength(1);
+        expect(t.pedidos[0]?.provedoresPermitidos).toEqual(['dublado']);
+        const tudo = t.saida.join('\n');
+        expect(tudo).toMatch(/OK: respondeu/);
+        expect(tudo).toContain('modelo pedido: m/a');
+        expect(tudo).toContain('campo "model" da resposta: m/a');
+        expect(tudo).toContain('campo "provider" da resposta: Provedor Dublado');
+        expect(tudo).toContain('provider.only enviado: dublado');
+        expect(tudo).not.toContain(CHAVE);
       });
 
-    it('sem argumento, escolhe o modelo FORA da lista ZDR mais barato e mostra status e corpo do erro esperado', async () => {
-      const pedidos: PedidoAoModelo[] = [];
-      const t = comTransporte(
-        async (p) => {
-          pedidos.push(p);
-          throw new ZdrIndisponivelError('dublado', p.modelo);
+      it('sem argumento escolhe o modelo mais barato COM ZDR e de id real', async () => {
+        const t = comTransporte(async (p) => transporteQueCita().gerar(p));
+        expect(await executarComandoSondaIa(['--controle-positivo'], t.amb)).toBe(0);
+        expect(t.pedidos[0]?.modelo).toBe('m/a');
+      });
+
+      it('compara o PAR devolvido, não o id pedido: modelo resolvido fora da lista é BLOQUEANTE (código 6)', async () => {
+        const t = comTransporte(async (p) => ({
+          ...(await transporteQueCita().gerar(p)),
+          modeloResolvido: 'outro/modelo-resolvido',
+        }));
+        expect(await executarComandoSondaIa(['--controle-positivo=m/a'], t.amb)).toBe(6);
+        expect(t.saida.join('\n')).toMatch(/BLOQUEANTE/);
+        expect(t.saida.join('\n')).toContain(
+          'campo "model" da resposta: outro/modelo-resolvido',
+        );
+      });
+
+      it('provedor da resposta fora da lista também é bloqueante', async () => {
+        const t = comTransporte(async (p) => ({
+          ...(await transporteQueCita().gerar(p)),
+          provedor: 'Provedor Intruso',
+        }));
+        expect(await executarComandoSondaIa(['--controle-positivo=m/a'], t.amb)).toBe(6);
+      });
+
+      it.each(['~deepseek/deepseek-flash-latest', 'm/a:free'])(
+        'recusa "%s" (apelido/variante) sem enviar nada',
+        async (modelo) => {
+          const t = comTransporte(async () => {
+            throw new Error('não deveria chamar');
+          });
+          expect(
+            await executarComandoSondaIa([`--controle-positivo=${modelo}`], t.amb),
+          ).toBe(2);
+          expect(t.pedidos).toHaveLength(0);
         },
-        [{ status: 404, corpo: '{"error":{"message":"No endpoints found"}}' }],
       );
-      expect(await executarComandoSondaIa(['--teste-falha-fechada'], t.amb)).toBe(0);
-      expect(pedidos).toHaveLength(1);
-      expect(pedidos[0]?.modelo).toBe('sem/zdr-barato');
-      const tudo = t.saida.join('\n');
-      expect(tudo).toMatch(/FALHOU FECHADO/);
-      expect(tudo).toContain('HTTP 404');
-      expect(tudo).toContain('No endpoints found');
-      expect(tudo).not.toContain(CHAVE);
-    });
 
-    it('usa só texto SINTÉTICO (o caso s01), nunca caso real', async () => {
-      const pedidos: PedidoAoModelo[] = [];
-      const t = comTransporte(async (p) => {
-        pedidos.push(p);
-        throw new ZdrIndisponivelError('dublado', p.modelo);
+      it('recusa modelo que NÃO tem ZDR (é caso do controle negativo)', async () => {
+        const t = comTransporte(async () => {
+          throw new Error('não deveria chamar');
+        });
+        expect(
+          await executarComandoSondaIa(['--controle-positivo=fab/sem-zdr'], t.amb),
+        ).toBe(2);
+        expect(t.pedidos).toHaveLength(0);
       });
-      await executarComandoSondaIa(['--teste-falha-fechada=sem/zdr-barato'], t.amb);
-      expect(pedidos[0]?.usuario).toContain('contestação');
-      expect(pedidos[0]?.usuario).not.toContain('Horácio');
-    });
 
-    it('recusa modelo que TEM endpoint ZDR: o teste não serviria', async () => {
-      const t = comTransporte(async () => {
-        throw new Error('não deveria chamar');
+      it('lista sem slug (tag) para o modelo: não dá para restringir, então não envia', async () => {
+        const t = comTransporte(async (p) => transporteQueCita().gerar(p), [], {
+          buscarEndpointsZdr: async () => ({
+            itensRecebidos: 1,
+            camposDoPrimeiroItem: [],
+            endpoints: [{ modelo: 'm/a', provedor: 'Sem Tag', tag: '' }],
+          }),
+        });
+        expect(await executarComandoSondaIa(['--controle-positivo=m/a'], t.amb)).toBe(2);
+        expect(t.pedidos).toHaveLength(0);
       });
-      expect(await executarComandoSondaIa(['--teste-falha-fechada=m/a'], t.amb)).toBe(2);
-      expect(t.chamadas).toHaveLength(0);
+
+      it('erro: mostra status, corpo e corpo enviado saneado (código 5)', async () => {
+        const t = comTransporte(async () => {
+          throw new ProviderIndisponivelError(
+            'dublado',
+            'o OpenRouter respondeu HTTP 418',
+          );
+        }, [
+          {
+            status: 418,
+            corpo: 'bule',
+            corpoEnviado: {
+              model: 'm/a',
+              messages: [{ role: 'user', conteudo: '[omitido: 10 caracteres]' }],
+            },
+          },
+        ]);
+        expect(await executarComandoSondaIa(['--controle-positivo=m/a'], t.amb)).toBe(5);
+        expect(t.saida.join('\n')).toContain('HTTP 418');
+        expect(t.saida.join('\n')).toContain('[omitido: 10 caracteres]');
+      });
     });
 
-    it('erro de outro tipo: pede para registrar status e corpo (código 5)', async () => {
-      const t = comTransporte(async () => {
-        throw new ProviderIndisponivelError('dublado', 'o OpenRouter respondeu HTTP 418');
-      }, [{ status: 418, corpo: 'bule' }]);
-      expect(
-        await executarComandoSondaIa(['--teste-falha-fechada=sem/zdr-barato'], t.amb),
-      ).toBe(5);
-      expect(t.saida.join('\n')).toContain('HTTP 418');
-    });
+    describe('negativo', () => {
+      it('modelo REAL sem ZDR: recusado antes de responder (código 0), restrito aos provedores reais, e mostra status e corpo', async () => {
+        const t = comTransporte(
+          async (p) => {
+            throw new ZdrIndisponivelError('dublado', p.modelo);
+          },
+          [
+            {
+              status: 404,
+              corpo: '{"error":{"message":"No endpoints found"}}',
+              corpoEnviado: { provider: { zdr: true, only: ['real'] } },
+            },
+          ],
+        );
+        expect(await executarComandoSondaIa(['--controle-negativo'], t.amb)).toBe(0);
+        expect(t.pedidos).toHaveLength(1);
+        expect(t.pedidos[0]?.modelo).toBe('sem/zdr-barato');
+        expect(t.pedidos[0]?.provedoresPermitidos).toEqual(['real']);
+        const tudo = t.saida.join('\n');
+        expect(tudo).toMatch(/RECUSADO ANTES DE RESPONDER/);
+        expect(tudo).toContain('HTTP 404');
+        expect(tudo).toContain('"zdr":true');
+        expect(tudo).not.toContain(CHAVE);
+      });
 
-    it('se o OpenRouter RESPONDER sem endpoint ZDR: bloqueante (código 6)', async () => {
-      const t = comTransporte(async (p) => transporteQueCita().gerar(p));
-      expect(
-        await executarComandoSondaIa(['--teste-falha-fechada=sem/zdr-barato'], t.amb),
-      ).toBe(6);
-      expect(t.saida.join('\n')).toMatch(/BLOQUEANTE/);
+      it('nunca escolhe apelido (~) nem variante (:), mesmo que seja o mais barato fora da lista', async () => {
+        const t = comTransporte(
+          async (p) => {
+            throw new ZdrIndisponivelError('dublado', p.modelo);
+          },
+          [],
+          {
+            buscarModelosPublicos: async () => [
+              { id: '~deepseek/deepseek-flash-latest', precoEntrada: 0.0000001 },
+              { id: 'fab/modelo:free', precoEntrada: 0.0000001 },
+              { id: 'real/modelo-pago', precoEntrada: 0.000002 },
+            ],
+          },
+        );
+        await executarComandoSondaIa(['--controle-negativo'], t.amb);
+        expect(t.pedidos.map((p) => p.modelo)).toEqual(['real/modelo-pago']);
+      });
+
+      it.each(['~deepseek/deepseek-flash-latest', 'fab/modelo:online'])(
+        'recusa "%s" informado à mão, sem enviar nada',
+        async (modelo) => {
+          const t = comTransporte(async (p) => transporteQueCita().gerar(p));
+          expect(
+            await executarComandoSondaIa([`--controle-negativo=${modelo}`], t.amb),
+          ).toBe(2);
+          expect(t.pedidos).toHaveLength(0);
+        },
+      );
+
+      it('recusa modelo que TEM ZDR: o controle não serviria', async () => {
+        const t = comTransporte(async (p) => transporteQueCita().gerar(p));
+        expect(await executarComandoSondaIa(['--controle-negativo=m/a'], t.amb)).toBe(2);
+        expect(t.pedidos).toHaveLength(0);
+      });
+
+      it('sem conseguir os provedores reais do modelo, não envia', async () => {
+        const t = comTransporte(async (p) => transporteQueCita().gerar(p), [], {
+          buscarEndpointsPublicosDoModelo: async () => {
+            throw new Error('formato');
+          },
+        });
+        expect(
+          await executarComandoSondaIa(['--controle-negativo=sem/zdr-barato'], t.amb),
+        ).toBe(2);
+        expect(t.pedidos).toHaveLength(0);
+      });
+
+      it('se o OpenRouter RESPONDER: BLOQUEANTE (código 6), com o rastro model/provider/corpo', async () => {
+        const t = comTransporte(async (p) => ({
+          ...(await transporteQueCita().gerar(p)),
+          provedor: 'Morph',
+          modeloResolvido: 'fab/resolvido',
+        }));
+        expect(
+          await executarComandoSondaIa(['--controle-negativo=sem/zdr-barato'], t.amb),
+        ).toBe(6);
+        const tudo = t.saida.join('\n');
+        expect(tudo).toMatch(/BLOQUEANTE: o OpenRouter RESPONDEU/);
+        expect(tudo).toContain('campo "provider" da resposta: Morph');
+        expect(tudo).toContain('campo "model" da resposta: fab/resolvido');
+      });
+
+      it('erro que não é reconhecido como recusa: registra status e corpo (código 5)', async () => {
+        const t = comTransporte(async () => {
+          throw new ProviderIndisponivelError(
+            'dublado',
+            'o OpenRouter respondeu HTTP 418',
+          );
+        }, [{ status: 418, corpo: 'bule' }]);
+        expect(
+          await executarComandoSondaIa(['--controle-negativo=sem/zdr-barato'], t.amb),
+        ).toBe(5);
+        expect(t.saida.join('\n')).toContain('HTTP 418');
+      });
     });
   });
 });
