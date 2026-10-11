@@ -9,6 +9,40 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.38.1] — 2026-10-11
+
+**Exceção de teste fechado da análise por IA, ligada por variável — a remover antes de abrir ao
+público.** Uma integração que entra por chave de API (sem conta e sem e-mail) não é alcançável pelo
+`/admin` nem pelo CLI de assinaturas, que só aceitam e-mail. Em vez de gravar assinatura (que traria
+vencimento e, depois da carência, 402 nas peças, Pasta, leitor e calendário dessa integração), a
+liberação vira configuração.
+
+### Adicionado
+
+- `PROCESSOVIVO_IA_WORKSPACES_LIBERADOS`: lista, separada por vírgula, de ids de workspace (16
+  hexadecimais). Workspace da lista passa na checagem do plano IA **sem assinatura, só para
+  `analiseIa`**. Vazia (padrão) = comportamento de sempre.
+- **Nada mais muda:** peças, Pasta, leitor e calendário seguem como estavam; nenhuma linha é criada
+  em `assinaturas`; continua exigindo `PROCESSOVIVO_IA_HABILITADA=true` e todas as outras travas
+  (ZDR, redação, verificação, limite de uso, segredo de justiça). Quem não está na lista e não tem
+  o plano continua vendo "A análise por IA faz parte do plano IA…".
+- Validação no arranque (mesmo com a IA desligada): item fora do formato derruba o arranque com a
+  **posição** do item — o valor não é repetido, porque pode ser uma chave de API colada por engano.
+- Log e tela só mostram o id **mascarado** (`1ed3…1867`). Com a lista ligada o arranque registra um
+  aviso lembrando de removê-la.
+
+### Não muda
+
+- A venda do plano IA continua travada (`analiseIa` segue `implementado: false`).
+
+### Testes
+
+- Listado e sem assinatura chama o adaptador dublado; não listado e sem assinatura não chama; lista
+  vazia mantém o comportamento atual; id inválido derruba o arranque (e a mensagem não traz o valor);
+  nenhuma linha em `assinaturas`; o log nunca traz o id completo.
+
+---
+
 ## [0.38.0] — 2026-10-11
 
 **Analisar com IA** (beta fechado). Um botão na tabela de Atualizações manda **um ato** a um modelo

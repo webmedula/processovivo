@@ -114,4 +114,59 @@ describe('tabela analises_ia', () => {
     // Nenhuma coluna guarda o texto do ato.
     expect(colunas.some((c) => /texto|conteudo/.test(c))).toBe(false);
   });
+
+  describe('workspaces liberados (teste fechado, v0.38.1)', () => {
+    const ID = '1ed3b9b0ba131867';
+
+    it('vazia por padrão: comportamento de sempre', () => {
+      expect(carregarConfig(BASE).ia.workspacesLiberados).toEqual([]);
+      expect(
+        carregarConfig({ ...BASE, PROCESSOVIVO_IA_WORKSPACES_LIBERADOS: ' , ' }).ia
+          .workspacesLiberados,
+      ).toEqual([]);
+    });
+
+    it('lê a lista separada por vírgula, normaliza caixa e remove repetição', () => {
+      const c = carregarConfig({
+        ...BASE,
+        PROCESSOVIVO_IA_WORKSPACES_LIBERADOS: ` ${ID.toUpperCase()}, aaaa0000bbbb1111 ,${ID}`,
+      });
+      expect(c.ia.workspacesLiberados).toEqual([ID, 'aaaa0000bbbb1111']);
+    });
+
+    it.each([
+      ['curto demais', '1ed3b9b0'],
+      ['longo demais', ID + 'ff'],
+      ['não hexadecimal', '1ed3b9b0ba13186z'],
+      ['um bom e um ruim', ID + ',xyz'],
+    ])('id com formato inválido (%s) derruba o arranque', (_nome, valor) => {
+      expect(() =>
+        carregarConfig({ ...BASE, PROCESSOVIVO_IA_WORKSPACES_LIBERADOS: valor }),
+      ).toThrow(/PROCESSOVIVO_IA_WORKSPACES_LIBERADOS/);
+    });
+
+    it('a mensagem diz a posição do item e NUNCA repete o valor (pode ser uma chave de API colada)', () => {
+      const chaveColada = 'chave-de-api-colada-por-engano-0123456789abcdef';
+      const erro = (() => {
+        try {
+          carregarConfig({
+            ...BASE,
+            PROCESSOVIVO_IA_WORKSPACES_LIBERADOS: `${ID},${chaveColada}`,
+          });
+        } catch (e) {
+          return e as Error;
+        }
+        return undefined;
+      })();
+      expect(erro?.message).toContain('item 2');
+      expect(erro?.message).not.toContain(chaveColada);
+      expect(erro?.message).not.toContain(ID);
+    });
+
+    it('é validada mesmo com a IA desligada, e não liga a IA', () => {
+      const c = carregarConfig({ ...BASE, PROCESSOVIVO_IA_WORKSPACES_LIBERADOS: ID });
+      expect(c.ia.habilitada).toBe(false);
+      expect(c.ia.chave).toBe('');
+    });
+  });
 });
