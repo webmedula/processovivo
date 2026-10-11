@@ -3,10 +3,12 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   ProviderIndisponivelError,
+  SemProvedorQueAtendaError,
   ZdrIndisponivelError,
 } from '../../src/domain/errors/index.js';
 import type { ListaZdrLida } from '../../src/infrastructure/adapters/modelo/endpointsZdr.js';
 import type {
+  Degrau,
   PedidoAoModelo,
   RespostaDoTransporte,
   TransporteDeModelo,
@@ -15,6 +17,7 @@ import { lerCasosCsv, lerCasosSinteticos } from '../../src/main/sonda/casosDaSon
 import {
   executarComandoSondaIa,
   type AmbienteDaSonda,
+  type TransporteComDiagnostico,
 } from '../../src/main/sonda/comandoSondaIa.js';
 import {
   calcularJulgamento,
@@ -467,7 +470,7 @@ describe('planilha e julgamento', () => {
       parConfirmadoZdr: () => true,
       agora: () => 0,
     });
-    const csv = gerarPlanilha(r.registros);
+    const csv = gerarPlanilha(r.registros, { incluirSinteticos: true }) ?? '';
     expect(csv.split('\n')[0]).toBe('id;modelo;variante;resultado;avaliacao');
     expect(csv).not.toMatch(/1000001-12|Horácio|exemplo\.invalid|000\.000\.001/);
     const linhas = csv.trim().split('\n');
@@ -617,6 +620,10 @@ function ambiente(
       { id: 'sem/zdr-barato', precoEntrada: 0.000001 },
     ],
     hoje: () => '2026-10-10',
+    hora: () => '0930',
+    criarTransporteDeDiagnostico: () => {
+      throw new Error('diagnóstico não dublado neste teste');
+    },
     agora: () => 0,
     dormir: async () => undefined,
     saida: (l) => saida.push(l),
@@ -738,9 +745,9 @@ describe('comando da sonda', () => {
     expect(codigo).toBe(0);
     expect(chamadas.length).toBeGreaterThan(0);
     expect(gravados.map((g) => g.caminho).sort()).toEqual([
-      '/dados/sonda/chamadas-2026-10-10.json',
-      '/dados/sonda/metricas.json',
-      '/dados/sonda/planilha-2026-10-10.csv',
+      '/dados/sonda/chamadas-2026-10-10-0930.json',
+      '/dados/sonda/metricas-2026-10-10-0930.json',
+      '/dados/sonda/planilha-2026-10-10-0930.csv',
     ]);
     for (const g of gravados) expect(g.caminho.startsWith('/repo')).toBe(false);
     expect(gravados.map((g) => g.conteudo).join('\n')).not.toContain(
@@ -759,8 +766,12 @@ describe('comando da sonda', () => {
     expect(itens.length).toBeGreaterThan(0);
     expect(Object.keys(itens[0] ?? {}).sort()).toEqual(
       [
+        'camposDoUsage',
         'corpoEnviado',
         'custoUsd',
+        'funilDoErro',
+        'passoDoErro',
+        'tokensRaciocinio',
         'estado',
         'latenciaMs',
         'modeloPedido',
@@ -869,7 +880,7 @@ describe('comando da sonda', () => {
     expect(
       await executarComandoSondaIa(['--modelos=m/a', '--saida=/dados/sonda'], b.amb),
     ).toBe(0);
-    expect(gravados.some((c) => c.endsWith('.csv'))).toBe(true);
+    expect(gravados.some((c) => c.includes('metricas-'))).toBe(true);
     expect(b.avisos.join('\n')).toMatch(/--fixtures-saida/);
   });
 
@@ -1164,5 +1175,511 @@ describe('comando da sonda', () => {
         expect(t.saida.join('\n')).toContain('HTTP 418');
       });
     });
+  });
+});
+
+// --- v1.2.0: passo do erro, diagnóstico em degraus, latência, rodada ------------------
+
+describe('passo do erro de roteamento (nunca chamar de "sem ZDR" o que não é)', () => {
+  const semProvedor =
+    (passo: string | undefined, funil: unknown) => async (p: PedidoAoModelo) => {
+      if (p.modelo === 'm/a')
+        throw new SemProvedorQueAtendaError('dublado', p.modelo, passo, funil);
+      return transporteQueCita().gerar(p);
+    };
+
+  it('outro passo: diz "SEM PROVEDOR", NÃO "sem ZDR", e mostra failed_routing_step e routing_funnel', async () => {
+    const { amb, avisos } = ambiente({
+      criarTransporte: () => ({
+        nome: 'dublado',
+        gerar: semProvedor('parametros', { total: 3, apos_parametros: 0 }),
+      }),
+    });
+    expect(
+      await executarComandoSondaIa(
+        ['--modelos=m/a,m/b', '--stdin', '--saida=/dados/sonda'],
+        amb,
+      ),
+    ).toBe(0);
+    const tudo = avisos.join('\n');
+    expect(tudo).toMatch(/SEM PROVEDOR para "m\/a"/);
+    expect(tudo).toMatch(/NÃO está provado que seja falta de ZDR/);
+    expect(tudo).toContain('failed_routing_step: parametros');
+    expect(tudo).toContain('routing_funnel: {"total":3,"apos_parametros":0}');
+    expect(tudo).toContain('--diagnosticar-modelo=m/a');
+    expect(tudo).not.toMatch(/SEM ZDR/);
+  });
+
+  it('passo ausente: diz "(não informado)" em vez de supor ZDR', async () => {
+    const { amb, avisos } = ambiente({
+      criarTransporte: () => ({
+        nome: 'dublado',
+        gerar: semProvedor(undefined, undefined),
+      }),
+    });
+    await executarComandoSondaIa(
+      ['--modelos=m/a,m/b', '--stdin', '--saida=/dados/sonda'],
+      amb,
+    );
+    expect(avisos.join('\n')).toContain('failed_routing_step: (não informado)');
+    expect(avisos.join('\n')).not.toMatch(/SEM ZDR/);
+  });
+
+  it('só o filtro de política de dados vira "SEM ZDR", sempre com o passo e o funil', async () => {
+    const { amb, avisos } = ambiente({
+      criarTransporte: () => ({
+        nome: 'dublado',
+        gerar: async (p) => {
+          if (p.modelo === 'm/a')
+            throw new ZdrIndisponivelError('dublado', p.modelo, 'data_policy', {
+              total: 4,
+              depois: 0,
+            });
+          return transporteQueCita().gerar(p);
+        },
+      }),
+    });
+    await executarComandoSondaIa(
+      ['--modelos=m/a,m/b', '--stdin', '--saida=/dados/sonda'],
+      amb,
+    );
+    const tudo = avisos.join('\n');
+    expect(tudo).toMatch(
+      /SEM ZDR \(o roteamento parou no filtro de política de dados\) para "m\/a"/,
+    );
+    expect(tudo).toContain('failed_routing_step: data_policy');
+    expect(tudo).toContain('routing_funnel: {"total":4,"depois":0}');
+  });
+
+  it('o passo e o funil vão para o metadado da chamada', async () => {
+    const { amb, gravados } = ambiente({
+      criarTransporte: () => ({
+        nome: 'dublado',
+        gerar: semProvedor('parametros', { total: 3 }),
+      }),
+    });
+    await executarComandoSondaIa(
+      ['--modelos=m/a,m/b', '--stdin', '--saida=/dados/sonda'],
+      amb,
+    );
+    const itens = JSON.parse(
+      gravados.find((g) => g.caminho.includes('chamadas-'))?.conteudo ?? '[]',
+    ) as Array<Record<string, unknown>>;
+    expect(itens.find((i) => i['modelo'] === 'm/a')).toMatchObject({
+      estado: 'sem_provedor',
+      passoDoErro: 'parametros',
+      funilDoErro: { total: 3 },
+    });
+  });
+
+  it('todos parados (por qualquer motivo) = código 3', async () => {
+    const { amb } = ambiente({
+      criarTransporte: () => ({
+        nome: 'dublado',
+        gerar: async (p) => {
+          throw new SemProvedorQueAtendaError('dublado', p.modelo, 'parametros');
+        },
+      }),
+    });
+    expect(
+      await executarComandoSondaIa(
+        ['--modelos=m/a,m/b', '--stdin', '--saida=/dados/sonda'],
+        amb,
+      ),
+    ).toBe(3);
+  });
+});
+
+describe('contabilidade da rodada (por que n não é o total de casos)', () => {
+  it('n + sem texto + erros + inválidas + parados = casos; o texto curto não é chamado e erro não entra em n', async () => {
+    let chamada = 0;
+    const r = await executarSonda({
+      casos: casosSinteticos,
+      modelos: ['m/x'],
+      variantes: ['sem-titulos'],
+      transporte: {
+        nome: 'dublado',
+        gerar: async (p) => {
+          chamada += 1;
+          if (chamada === 4)
+            throw new ProviderIndisponivelError('dublado', 'tempo esgotado');
+          return transporteQueCita().gerar(p);
+        },
+      },
+      provedoresPermitidos: () => ['dublado'],
+      parConfirmadoZdr: () => true,
+      agora: () => 0,
+    });
+    const [m] = calcularMetricas(r.registros);
+    expect(casosSinteticos).toHaveLength(12);
+    expect(m).toMatchObject({
+      analises: 10,
+      semTexto: 1,
+      erros: 1,
+      respostasInvalidas: 0,
+      interrompidos: 0,
+    });
+    expect((m?.analises ?? 0) + (m?.semTexto ?? 0) + (m?.erros ?? 0)).toBe(12);
+  });
+
+  it('a tabela mostra s/texto, erros, inválidas e parados ao lado de n', async () => {
+    const { amb, saida } = ambiente();
+    await executarComandoSondaIa(['--modelos=m/a', '--saida=/dados/sonda'], amb);
+    const cabecalho = saida.find((l) => l.startsWith('modelo')) ?? '';
+    for (const col of ['n ', 's/texto', 'erros', 'inválidas', 'parados'])
+      expect(cabecalho).toContain(col);
+  });
+});
+
+describe('rodada: planilha, métricas por sufixo e custo', () => {
+  it('rodada SÓ sintética não gera planilha do Autran (e diz por quê)', async () => {
+    const { amb, gravados, avisos } = ambiente();
+    await executarComandoSondaIa(['--modelos=m/a', '--saida=/dados/sonda'], amb);
+    expect(gravados.some((g) => g.caminho.endsWith('.csv'))).toBe(false);
+    expect(avisos.join('\n')).toMatch(/Planilha do Autran NÃO gerada/);
+    expect(
+      gravados.some((g) => g.caminho === '/dados/sonda/metricas-2026-10-10-0930.json'),
+    ).toBe(true);
+  });
+
+  it('rodada com caso real gera planilha e métricas com o MESMO sufixo (data-hora)', async () => {
+    const { amb, gravados } = ambiente();
+    await executarComandoSondaIa(
+      ['--modelos=m/a', '--stdin', '--saida=/dados/sonda'],
+      amb,
+    );
+    const nomes = gravados.map((g) => g.caminho.split('/').pop());
+    expect(nomes).toContain('planilha-2026-10-10-0930.csv');
+    expect(nomes).toContain('metricas-2026-10-10-0930.json');
+  });
+
+  it('--avaliacao lê as métricas do MESMO sufixo da planilha, não as de outra rodada', async () => {
+    const planilha =
+      'id;modelo;variante;resultado;avaliacao\nc1;m/a;sem-titulos;x;util\nc2;m/a;sem-titulos;x;util\n';
+    const dela = JSON.stringify([
+      {
+        modelo: 'm/a',
+        variante: 'sem-titulos',
+        taxaCitacaoVerificada: 0.99,
+        custoMedioUsd: 0.001,
+      },
+    ]);
+    const deOutra = JSON.stringify([
+      {
+        modelo: 'm/a',
+        variante: 'sem-titulos',
+        taxaCitacaoVerificada: 0.2,
+        custoMedioUsd: 0.001,
+      },
+    ]);
+    const arquivos = {
+      '/dados/sonda/planilha-2026-10-10-0930.csv': planilha,
+      '/dados/sonda/metricas-2026-10-10-0930.json': dela,
+      '/dados/sonda/metricas-2026-10-11-1500.json': deOutra,
+      '/dados/sonda/metricas.json': deOutra,
+    };
+    const { amb, saida } = ambiente({
+      env: {},
+      arquivos,
+      existeArquivo: async (c) => c in arquivos,
+    });
+    expect(
+      await executarComandoSondaIa(
+        ['--avaliacao=/dados/sonda/planilha-2026-10-10-0930.csv', '--saida=/dados/sonda'],
+        amb,
+      ),
+    ).toBe(0);
+    expect(saida.join('\n')).toMatch(/CUMPRE o critério/);
+  });
+
+  it('sem custo na resposta, estima pelo preço da lista pública e rotula "estimativa"', async () => {
+    const { amb, saida } = ambiente({
+      buscarEndpointsZdr: async () => ({
+        itensRecebidos: 1,
+        camposDoPrimeiroItem: [],
+        endpoints: [
+          { modelo: 'm/novo', provedor: 'Provedor Dublado', tag: 'dublado/fp8' },
+        ],
+      }),
+      buscarModelosPublicos: async () => [
+        { id: 'm/novo', precoEntrada: 0.000001, precoSaida: 0.000002 },
+      ],
+      criarTransporte: () => ({
+        nome: 'dublado',
+        gerar: async (p) => {
+          const { custoUsd: _c, ...resto } = await transporteQueCita().gerar(p);
+          return { ...resto, modeloResolvido: 'm/novo' };
+        },
+      }),
+    });
+    await executarComandoSondaIa(['--modelos=m/novo', '--saida=/dados/sonda'], amb);
+    const tabela = saida.join('\n');
+    expect(tabela).toMatch(/estimativa/);
+    expect(tabela).not.toMatch(/Custo NÃO medido/);
+  });
+
+  it('sem custo na resposta e sem preço em lista alguma: diz "não medido" e aponta camposDoUsage', async () => {
+    const { amb, saida } = ambiente({
+      buscarEndpointsZdr: async () => ({
+        itensRecebidos: 1,
+        camposDoPrimeiroItem: [],
+        endpoints: [
+          { modelo: 'm/novo', provedor: 'Provedor Dublado', tag: 'dublado/fp8' },
+        ],
+      }),
+      buscarModelosPublicos: async () => [],
+      criarTransporte: () => ({
+        nome: 'dublado',
+        gerar: async (p) => {
+          const { custoUsd: _c, ...resto } = await transporteQueCita().gerar(p);
+          return { ...resto, modeloResolvido: 'm/novo' };
+        },
+      }),
+    });
+    await executarComandoSondaIa(['--modelos=m/novo', '--saida=/dados/sonda'], amb);
+    expect(saida.join('\n')).toMatch(/Custo NÃO medido para m\/novo/);
+    expect(saida.join('\n')).toMatch(/camposDoUsage/);
+  });
+
+  it('--raciocinio, --max-tokens e --timeout-ms chegam ao transporte da rodada; valores inválidos são recusados', async () => {
+    const vistas: unknown[] = [];
+    const { amb } = ambiente({
+      criarTransporte: (_c, opcoes) => {
+        vistas.push(opcoes);
+        return transporteQueCita();
+      },
+    });
+    await executarComandoSondaIa(
+      [
+        '--modelos=m/a',
+        '--raciocinio=desligado',
+        '--max-tokens=800',
+        '--timeout-ms=90000',
+        '--saida=/dados/sonda',
+      ],
+      amb,
+    );
+    expect(vistas[0]).toMatchObject({
+      ajustes: { raciocinio: 'desligado', maxTokens: 800 },
+      timeoutMs: 90000,
+    });
+    for (const ruim of ['--raciocinio=muito', '--max-tokens=3', '--timeout-ms=10']) {
+      const t = ambiente();
+      expect(await executarComandoSondaIa(['--modelos=m/a', ruim], t.amb)).toBe(1);
+      expect(t.chamadas).toHaveLength(0);
+    }
+  });
+});
+
+describe('diagnóstico em degraus (--diagnosticar-modelo)', () => {
+  type Passo = (p: PedidoAoModelo, degrau: Degrau) => Promise<RespostaDoTransporte>;
+  const diag = (
+    passo: Passo,
+    falhas: Array<{ status?: number; corpo?: string }> = [],
+  ) => {
+    const chamadas: Array<{ degrau: Degrau; pedido: PedidoAoModelo }> = [];
+    const t = ambiente({
+      criarTransporteDeDiagnostico: (_c, opcoes): TransporteComDiagnostico => ({
+        nome: 'dublado',
+        gerar: async () => {
+          throw new Error('o diagnóstico só usa gerarDiagnostico');
+        },
+        gerarDiagnostico: async (pedido, degrau) => {
+          chamadas.push({ degrau, pedido });
+          try {
+            return await passo(pedido, degrau);
+          } catch (e) {
+            for (const f of falhas) opcoes?.aoFalhar?.(f);
+            throw e;
+          }
+        },
+      }),
+    });
+    return { ...t, degraus: chamadas };
+  };
+  const falhaPassos =
+    (...degrausQueFalham: Degrau[]): Passo =>
+    async (p, degrau) => {
+      if (degrausQueFalham.includes(degrau)) {
+        throw new SemProvedorQueAtendaError('dublado', p.modelo, `passo_${degrau}`, {
+          total: 4,
+          restantes: 0,
+        });
+      }
+      return transporteQueCita().gerar(p);
+    };
+
+  it('para no PRIMEIRO degrau que responde e diz qual foi, o par e o passo dos que falharam', async () => {
+    const t = diag(falhaPassos('A'));
+    expect(await executarComandoSondaIa(['--diagnosticar-modelo=m/a'], t.amb)).toBe(0);
+    expect(t.degraus.map((d) => d.degrau)).toEqual(['A', 'B']);
+    const tudo = t.saida.join('\n');
+    expect(tudo).toContain('Degrau A');
+    expect(tudo).toContain('SEM PROVEDOR (NÃO é o filtro de política de dados)');
+    expect(tudo).toContain('failed_routing_step: passo_A');
+    expect(tudo).toContain('routing_funnel: {"total":4,"restantes":0}');
+    expect(tudo).toContain('Funcionou no degrau B');
+    expect(tudo).toContain('require_parameters');
+    expect(tudo).toContain('campo "model" da resposta: m/a');
+    expect(tudo).toContain('campo "provider" da resposta: Provedor Dublado');
+    expect(tudo).toContain('par (model, provider) na lista ZDR: sim');
+    expect(tudo).not.toContain(CHAVE);
+  });
+
+  it.each([
+    [['A', 'B'] as Degrau[], 'C', /json_schema ESTRITO/],
+    [['A', 'B', 'C'] as Degrau[], 'D', /provider\.only/],
+  ])(
+    'falhando %j, funciona em %s e explica a causa',
+    async (falham, funcionou, causa) => {
+      const t = diag(falhaPassos(...falham));
+      expect(await executarComandoSondaIa(['--diagnosticar-modelo=m/a'], t.amb)).toBe(0);
+      expect(t.degraus.at(-1)?.degrau).toBe(funcionou);
+      expect(t.saida.join('\n')).toMatch(causa);
+    },
+  );
+
+  it('degrau D com par FORA da lista é DESCARTADO (código 6)', async () => {
+    const t = diag(async (p, degrau) => {
+      if (degrau !== 'D') throw new SemProvedorQueAtendaError('dublado', p.modelo, 'x');
+      return { ...(await transporteQueCita().gerar(p)), provedor: 'Provedor Intruso' };
+    });
+    expect(await executarComandoSondaIa(['--diagnosticar-modelo=m/a'], t.amb)).toBe(6);
+    expect(t.saida.join('\n')).toMatch(/DESCARTADO/);
+  });
+
+  it('degrau D com par NA lista vale (código 0)', async () => {
+    const t = diag(falhaPassos('A', 'B', 'C'));
+    expect(await executarComandoSondaIa(['--diagnosticar-modelo=m/a'], t.amb)).toBe(0);
+    expect(t.saida.join('\n')).toContain('par (model, provider) na lista ZDR: sim');
+  });
+
+  it('o par é o devolvido pela resposta: modelo resolvido fora da lista descarta mesmo antes do D', async () => {
+    const t = diag(async (p) => ({
+      ...(await transporteQueCita().gerar(p)),
+      modeloResolvido: 'outro/resolvido',
+    }));
+    expect(await executarComandoSondaIa(['--diagnosticar-modelo=m/a'], t.amb)).toBe(6);
+    expect(t.degraus.map((d) => d.degrau)).toEqual(['A']);
+  });
+
+  it('nenhum degrau responde: código 5, com o passo e o funil de CADA degrau', async () => {
+    const t = diag(falhaPassos('A', 'B', 'C', 'D'), [
+      { status: 404, corpo: '{"error":{"message":"x"}}' },
+    ]);
+    expect(await executarComandoSondaIa(['--diagnosticar-modelo=m/a'], t.amb)).toBe(5);
+    const tudo = t.saida.join('\n');
+    for (const d of ['A', 'B', 'C', 'D'])
+      expect(tudo).toContain(`failed_routing_step: passo_${d}`);
+    expect(tudo).toContain('HTTP 404');
+  });
+
+  it('só o filtro de política de dados é chamado de "SEM ZDR" no diagnóstico', async () => {
+    const t = diag(async (p) => {
+      throw new ZdrIndisponivelError('dublado', p.modelo, 'data_policy', { total: 2 });
+    });
+    await executarComandoSondaIa(['--diagnosticar-modelo=m/a'], t.amb);
+    expect(t.saida.join('\n')).toMatch(
+      /SEM ZDR \(o roteamento parou no filtro de política de dados\)/,
+    );
+  });
+
+  it('todos os pedidos saem restritos aos provedores da lista; apelido, modelo sem ZDR e modelo vazio são recusados sem enviar', async () => {
+    const t = diag(falhaPassos());
+    await executarComandoSondaIa(['--diagnosticar-modelo=m/a'], t.amb);
+    expect(t.degraus[0]?.pedido.provedoresPermitidos).toEqual(['dublado']);
+    for (const ruim of [
+      '~deepseek/deepseek-flash-latest',
+      'm/a:free',
+      'fab/sem-zdr',
+      '',
+    ]) {
+      const x = diag(falhaPassos());
+      expect(await executarComandoSondaIa([`--diagnosticar-modelo=${ruim}`], x.amb)).toBe(
+        2,
+      );
+      expect(x.degraus).toHaveLength(0);
+    }
+  });
+});
+
+describe('medida de latência (--medir-latencia)', () => {
+  const comAjustes = (
+    gerar: (p: PedidoAoModelo, ajustes: unknown) => Promise<RespostaDoTransporte>,
+  ) => {
+    const usados: unknown[] = [];
+    const t = ambiente({
+      criarTransporte: (_c, opcoes) => ({
+        nome: 'dublado',
+        gerar: async (p) => {
+          usados.push(opcoes?.ajustes ?? {});
+          return gerar(p, opcoes?.ajustes);
+        },
+      }),
+    });
+    return { ...t, usados };
+  };
+
+  it('roda cada configuração (padrão, raciocínio em 4 níveis, max_tokens) e imprime p50/p95 e tokens de raciocínio', async () => {
+    const t = comAjustes(async (p, ajustes) => ({
+      ...(await transporteQueCita().gerar(p)),
+      tokensSaida: (ajustes as { raciocinio?: string }).raciocinio ? 120 : 900,
+      tokensRaciocinio: (ajustes as { raciocinio?: string }).raciocinio ? 0 : 800,
+    }));
+    expect(
+      await executarComandoSondaIa(['--medir-latencia=m/a', '--repeticoes=2'], t.amb),
+    ).toBe(0);
+    expect(t.usados).toHaveLength(14);
+    const tudo = t.saida.join('\n');
+    for (const c of [
+      'padrao',
+      'raciocinio=desligado',
+      'raciocinio=nenhum',
+      'raciocinio=minimo',
+      'raciocinio=baixo',
+      'padrao+max_tokens=800',
+      'desligado+max_tokens=800',
+    ]) {
+      expect(tudo).toContain(c);
+    }
+    expect(tudo).toMatch(/p50 ms/);
+    expect(t.usados).toContainEqual({ raciocinio: 'desligado', maxTokens: 800 });
+  });
+
+  it('configuração que o modelo recusa aparece com o passo, sem derrubar a medida', async () => {
+    const t = comAjustes(async (p, ajustes) => {
+      if ((ajustes as { raciocinio?: string }).raciocinio === 'nenhum') {
+        throw new SemProvedorQueAtendaError('dublado', p.modelo, 'parametros');
+      }
+      return transporteQueCita().gerar(p);
+    });
+    expect(
+      await executarComandoSondaIa(['--medir-latencia=m/a', '--repeticoes=1'], t.amb),
+    ).toBe(0);
+    expect(t.saida.join('\n')).toContain('passo parametros');
+  });
+
+  it('par fora da lista em qualquer configuração: BLOQUEANTE (código 6) e a medida para', async () => {
+    const t = comAjustes(async (p) => ({
+      ...(await transporteQueCita().gerar(p)),
+      provedor: 'Provedor Intruso',
+    }));
+    expect(
+      await executarComandoSondaIa(['--medir-latencia=m/a', '--repeticoes=1'], t.amb),
+    ).toBe(6);
+    expect(t.usados).toHaveLength(1);
+  });
+
+  it('toda chamada sai restrita aos provedores da lista; apelido e modelo sem ZDR são recusados sem enviar', async () => {
+    const t = comAjustes(async (p) => {
+      expect(p.provedoresPermitidos).toEqual(['dublado']);
+      return transporteQueCita().gerar(p);
+    });
+    await executarComandoSondaIa(['--medir-latencia=m/a', '--repeticoes=1'], t.amb);
+    for (const ruim of ['~x/y-latest', 'fab/sem-zdr']) {
+      const x = comAjustes(async (p) => transporteQueCita().gerar(p));
+      expect(await executarComandoSondaIa([`--medir-latencia=${ruim}`], x.amb)).toBe(2);
+      expect(x.usados).toHaveLength(0);
+    }
   });
 });

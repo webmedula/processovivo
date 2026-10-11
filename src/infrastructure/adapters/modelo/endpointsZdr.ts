@@ -40,7 +40,13 @@ const esquemaDosModelos = z
       z
         .object({
           id: z.string(),
-          pricing: z.object({ prompt: z.unknown().optional() }).passthrough().optional(),
+          pricing: z
+            .object({
+              prompt: z.unknown().optional(),
+              completion: z.unknown().optional(),
+            })
+            .passthrough()
+            .optional(),
         })
         .passthrough(),
     ),
@@ -59,6 +65,7 @@ export interface EndpointZdr {
 export interface ModeloPublico {
   readonly id: string;
   readonly precoEntrada?: number;
+  readonly precoSaida?: number;
 }
 
 /** Os nomes dos campos do primeiro item (nunca os valores): diagnóstico de formato inesperado. */
@@ -119,7 +126,12 @@ export function lerModelosPublicos(corpo: unknown): ModeloPublico[] {
   }
   return lido.data.data.map((m) => {
     const p = numero(m.pricing?.prompt);
-    return { id: m.id, ...(p !== undefined ? { precoEntrada: p } : {}) };
+    const c = numero(m.pricing?.completion);
+    return {
+      id: m.id,
+      ...(p !== undefined ? { precoEntrada: p } : {}),
+      ...(c !== undefined ? { precoSaida: c } : {}),
+    };
   });
 }
 

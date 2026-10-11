@@ -3,11 +3,13 @@ import { APICallError, generateText, NoObjectGeneratedError, Output } from 'ai';
 import {
   ProviderIndisponivelError,
   RespostaInvalidaError,
+  SemProvedorQueAtendaError,
   ZdrIndisponivelError,
 } from '../../../domain/errors/index.js';
 import { esquemaDaResposta } from './esquemaDaAnalise.js';
 import { sanearCorpoEnviado } from './diagnosticoDeChamada.js';
 import { ehApelidoOuVariante, NOME_DO_OPENROUTER } from './endpointsZdr.js';
+import { ehFiltroDePoliticaDeDados, extrairRoteamento } from './roteamentoDoErro.js';
 
 /**
  * Transporte até o modelo de linguagem (infraestrutura, injetável): o OpenRouter, com
@@ -37,6 +39,8 @@ export interface DiagnosticoDaChamada {
   readonly modeloResolvido?: string;
   /** Campo `provider` da resposta. */
   readonly provedorDaResposta?: string;
+  /** NOMES dos campos do `usage` da resposta (nunca valores): mostra de onde o custo poderia sair. */
+  readonly camposDoUsage?: readonly string[];
 }
 
 export interface RespostaDoTransporte {
@@ -49,6 +53,8 @@ export interface RespostaDoTransporte {
   readonly diagnostico: DiagnosticoDaChamada;
   readonly tokensEntrada?: number;
   readonly tokensSaida?: number;
+  /** Tokens de raciocínio, quando o modelo os informa (fazem parte de `tokensSaida`). */
+  readonly tokensRaciocinio?: number;
   /** `usage.cost` da resposta (créditos do OpenRouter = USD), quando vem. */
   readonly custoUsd?: number;
 }
@@ -59,19 +65,20 @@ export interface TransporteDeModelo {
 }
 
 /**
- * As preferências de roteamento, FIXAS. `zdr` restringe o roteamento a endpoints com
- * retenção zero; `data_collection: 'deny'` exclui quem guarda dado para treino;
- * `require_parameters` só admite endpoint que cumpra a saída estruturada (sem isso o
- * esquema fechado poderia ser ignorado em silêncio); `allow_fallbacks: false` porque a
+ * As preferências de roteamento. `zdr` restringe o roteamento a endpoints com retenção zero e
+ * `data_collection: 'deny'` exclui quem guarda dado para treino — estes dois são FIXOS e
+ * obrigatórios em TODA chamada, inclusive nas de diagnóstico. `allow_fallbacks: false` porque a
  * documentação consultada não afirma que os provedores de reserva respeitem a ZDR.
+ * `require_parameters` e `only` são o que a chamada normal sempre leva; só o diagnóstico em
+ * degraus (`gerarDiagnostico`) pode tirá-los, nunca a ZDR.
  */
 export interface PreferenciasDeProvedor {
   readonly zdr: true;
   readonly data_collection: 'deny';
   readonly allow_fallbacks: false;
-  readonly require_parameters: true;
+  readonly require_parameters?: true;
   /** Slugs permitidos (`provider.only`): só os endpoints ZDR do modelo, segundo a lista. */
-  readonly only: readonly string[];
+  readonly only?: readonly string[];
 }
 
 /** A parte fixa; `only` é acrescentado por chamada, a partir do pedido. */
@@ -82,6 +89,45 @@ export const PREFERENCIAS_BASE_DE_PROVEDOR = Object.freeze({
   require_parameters: true,
 } as const);
 
+/**
+ * Raciocínio do modelo (parâmetro `reasoning` do OpenRouter). `padrao` não envia nada. Os formatos
+ * vêm dos tipos do SDK (`effort`: none | minimal | low | …; `enabled`); qual o modelo aceita varia.
+ */
+export const NIVEIS_DE_RACIOCINIO = [
+  'padrao',
+  'desligado',
+  'nenhum',
+  'minimo',
+  'baixo',
+] as const;
+export type NivelDeRaciocinio = (typeof NIVEIS_DE_RACIOCINIO)[number];
+
+export function corpoDoRaciocinio(
+  nivel: NivelDeRaciocinio,
+): Record<string, unknown> | undefined {
+  switch (nivel) {
+    case 'padrao':
+      return undefined;
+    case 'desligado':
+      return { enabled: false };
+    case 'nenhum':
+      return { effort: 'none' };
+    case 'minimo':
+      return { effort: 'minimal' };
+    case 'baixo':
+      return { effort: 'low' };
+  }
+}
+
+/** Ajustes de desempenho. Nada aqui toca a ZDR. */
+export interface AjustesDeDesempenho {
+  readonly raciocinio?: NivelDeRaciocinio;
+  readonly maxTokens?: number;
+}
+
+/** Como a saída é pedida: esquema JSON estrito (`json_schema`) ou instrução no texto, validada por nós. */
+export type ModoDeSaida = 'esquema' | 'texto';
+
 /** O que vai ao SDK. Tipo próprio para o teste enxergar CADA chamada. */
 export interface ChamadaAoSdk {
   readonly modelo: string;
@@ -91,6 +137,9 @@ export interface ChamadaAoSdk {
   readonly tentativasAutomaticas: 0;
   readonly timeoutMs: number;
   readonly provider: PreferenciasDeProvedor;
+  readonly saida: ModoDeSaida;
+  readonly raciocinio?: Record<string, unknown>;
+  readonly maxTokens?: number;
 }
 
 export interface ResultadoBrutoDoSdk {
@@ -101,22 +150,29 @@ export interface ResultadoBrutoDoSdk {
   readonly corpoEnviado?: unknown;
   readonly tokensEntrada?: number | undefined;
   readonly tokensSaida?: number | undefined;
+  readonly tokensRaciocinio?: number | undefined;
   readonly custoUsd?: number | undefined;
+  readonly camposDoUsage?: readonly string[] | undefined;
 }
 
 export type ExecutorDoSdk = (chamada: ChamadaAoSdk) => Promise<ResultadoBrutoDoSdk>;
 
-/** Status e corpo do erro do OpenRouter. SÓ para o teste de falha fechada, com texto sintético. */
+/** Status, corpo e roteamento do erro do OpenRouter. SÓ para os controles, com texto sintético. */
 export interface DetalheDeErro {
   readonly status?: number;
   readonly corpo?: string;
   /** O corpo que foi enviado, já saneado (sem texto, sem chave). */
   readonly corpoEnviado?: unknown;
+  /** `failed_routing_step` do erro, quando o corpo o traz. */
+  readonly passo?: string;
+  /** `routing_funnel` do erro, quando o corpo o traz. */
+  readonly funil?: unknown;
 }
 
 export interface OpcoesDoTransporteOpenRouter {
   readonly chave: string;
   readonly timeoutMs?: number;
+  readonly ajustes?: AjustesDeDesempenho;
   /** Para teste. Em produção, o SDK. */
   readonly executar?: ExecutorDoSdk;
   /** Para teste de fio: intercepta o HTTP do SDK (o que de fato sai da máquina). */
@@ -127,6 +183,21 @@ export interface OpcoesDoTransporteOpenRouter {
   /** Recebe status e corpo de cada erro. Nunca ligado numa rodada com caso real. */
   readonly aoFalhar?: (detalhe: DetalheDeErro) => void;
 }
+
+/** Os degraus do diagnóstico: cada um tira UMA coisa a mais da chamada. A ZDR nunca sai. */
+export const DEGRAUS = ['A', 'B', 'C', 'D'] as const;
+export type Degrau = (typeof DEGRAUS)[number];
+
+export const DESCRICAO_DOS_DEGRAUS: Readonly<Record<Degrau, string>> = Object.freeze({
+  A: 'como na rodada (require_parameters, json_schema estrito, provider.only)',
+  B: 'sem require_parameters',
+  C: 'sem json_schema estrito (instrução no texto; validado por nós)',
+  D: 'sem provider.only (zdr continua true)',
+});
+
+/** Acrescentada ao sistema quando a saída é pedida "no texto" (degrau C em diante). */
+export const INSTRUCAO_DE_FORMATO_EM_TEXTO =
+  'FORMATO DA RESPOSTA: responda SOMENTE com um objeto JSON, sem texto antes ou depois e sem cercas de código, com exatamente as chaves parece_pedir, resumo, trecho_chave, acoes_possiveis (lista de objetos {acao, trecho}) e pontos_de_atencao (lista de códigos).';
 
 const TIMEOUT_PADRAO_MS = 60_000;
 const ESPERAS_PADRAO_MS = [1_000, 3_000] as const;
@@ -140,19 +211,47 @@ function numero(valor: unknown): number | undefined {
   return typeof n === 'number' && Number.isFinite(n) ? n : undefined;
 }
 
+/** Tira o primeiro objeto JSON de um texto (cercas de código e frases em volta são toleradas). */
+export function jsonDoTexto(texto: string): unknown {
+  const limpo = texto.replace(/```(?:json)?/gi, '');
+  const inicio = limpo.indexOf('{');
+  const fim = limpo.lastIndexOf('}');
+  if (inicio < 0 || fim <= inicio) {
+    throw new RespostaInvalidaError(
+      NOME_DO_OPENROUTER,
+      'a resposta em texto não trouxe um objeto JSON',
+    );
+  }
+  try {
+    return JSON.parse(limpo.slice(inicio, fim + 1)) as unknown;
+  } catch {
+    throw new RespostaInvalidaError(
+      NOME_DO_OPENROUTER,
+      'o JSON da resposta em texto é inválido',
+    );
+  }
+}
+
 function executorPadrao(chave: string, fetchImpl?: typeof fetch): ExecutorDoSdk {
   const openrouter = createOpenRouter({
     apiKey: chave,
     ...(fetchImpl ? { fetch: fetchImpl } : {}),
   });
   return async (chamada) => {
+    const { only, ...restoDoProvider } = chamada.provider;
     const resultado = await generateText({
       model: openrouter.chat(chamada.modelo, {
-        provider: { ...chamada.provider, only: [...chamada.provider.only] },
+        provider: { ...restoDoProvider, ...(only ? { only: [...only] } : {}) },
+        // `usage.include` pede a contabilização de uso (hoje pode ser redundante); o custo é lido da resposta.
+        usage: { include: true },
+        ...(chamada.raciocinio ? { extraBody: { reasoning: chamada.raciocinio } } : {}),
       }),
       system: chamada.sistema,
       prompt: chamada.usuario,
-      output: Output.object({ schema: esquemaDaResposta }),
+      ...(chamada.saida === 'esquema'
+        ? { output: Output.object({ schema: esquemaDaResposta }) }
+        : {}),
+      ...(chamada.maxTokens !== undefined ? { maxOutputTokens: chamada.maxTokens } : {}),
       temperature: chamada.temperatura,
       // Nenhuma repetição escondida no SDK: cada tentativa é decisão nossa e passa
       // por `montarChamada`, sempre com a ZDR.
@@ -177,29 +276,35 @@ function executorPadrao(chave: string, fetchImpl?: typeof fetch): ExecutorDoSdk 
         ? meta['provider']
         : undefined);
     const modeloResolvido = doCorpo('model') ?? resultado.response?.modelId;
-    const uso = ehObjeto(meta) ? meta['usage'] : undefined;
+    // Custo: primeiro do `usage` que o SDK já mapeou; depois do `usage` CRU da resposta.
+    const usoMapeado = ehObjeto(meta) ? meta['usage'] : undefined;
+    const usoCru = ehObjeto(corpoDaResposta) ? corpoDaResposta['usage'] : undefined;
+    const custoUsd =
+      (ehObjeto(usoMapeado) ? numero(usoMapeado['cost']) : undefined) ??
+      (ehObjeto(usoCru) ? numero(usoCru['cost']) : undefined);
     return {
-      objeto: resultado.output,
+      objeto:
+        chamada.saida === 'esquema' ? resultado.output : jsonDoTexto(resultado.text),
       provedor,
       modeloResolvido,
       corpoEnviado: (resultado.request as { body?: unknown } | undefined)?.body,
       tokensEntrada: resultado.usage?.inputTokens,
       tokensSaida: resultado.usage?.outputTokens,
-      custoUsd: ehObjeto(uso) ? numero(uso['cost']) : undefined,
+      tokensRaciocinio: resultado.usage?.outputTokenDetails?.reasoningTokens,
+      custoUsd,
+      camposDoUsage: ehObjeto(usoCru) ? Object.keys(usoCru).sort() : undefined,
     };
   };
 }
 
-/**
- * "Sem provedor que atenda" — o texto exato do OpenRouter NÃO está na documentação
- * consultada; a classificação é por status (400/404) E por frase, e a falha de
- * classificação é segura: o erro cai em "indisponível", que também NÃO repete.
- */
+/** Frases de "nenhum provedor atendeu". O texto exato NÃO está na documentação consultada. */
 const SEM_PROVEDOR =
   /no endpoints found|no allowed providers|no provider|zero.?data.?retention|\bzdr\b|data.?polic|provider.?routing|requirements/i;
 
-export function indicaSemProvedorZdr(status: number | undefined, corpo: string): boolean {
-  return (status === 404 || status === 400) && SEM_PROVEDOR.test(corpo);
+/** O erro (400/404) é do tipo "nenhum provedor atendeu" — pelo passo informado ou pela frase? */
+export function indicaSemProvedor(status: number | undefined, corpo: string): boolean {
+  if (status !== 404 && status !== 400) return false;
+  return extrairRoteamento(corpo).passo !== undefined || SEM_PROVEDOR.test(corpo);
 }
 
 function statusDe(erro: unknown): number | undefined {
@@ -219,14 +324,20 @@ function ehTransitorio(erro: unknown): boolean {
   const status = statusDe(erro);
   if (status !== undefined) return status === 429 || status >= 500;
   // Sem status: rede ou tempo esgotado. Esquema inválido NÃO é transitório.
-  return !NoObjectGeneratedError.isInstance(erro);
+  return (
+    !NoObjectGeneratedError.isInstance(erro) && !(erro instanceof RespostaInvalidaError)
+  );
 }
 
 /**
  * Traduz o erro do SDK para erro de domínio. NUNCA copia a mensagem nem o corpo
  * originais: o erro de um roteador pode ecoar trecho do pedido, e o pedido leva texto de ato.
+ *
+ * "Nenhum provedor atendeu" só vira "sem ZDR" quando o PASSO que falhou é o filtro de política
+ * de dados; nos demais casos o erro carrega o passo e o funil, e a causa fica visível.
  */
 function traduzirErro(erro: unknown, modelo: string): Error {
+  if (erro instanceof RespostaInvalidaError) return erro;
   if (NoObjectGeneratedError.isInstance(erro)) {
     return new RespostaInvalidaError(
       NOME_DO_OPENROUTER,
@@ -234,8 +345,12 @@ function traduzirErro(erro: unknown, modelo: string): Error {
     );
   }
   const status = statusDe(erro);
-  if (indicaSemProvedorZdr(status, corpoDe(erro))) {
-    return new ZdrIndisponivelError(NOME_DO_OPENROUTER, modelo);
+  const corpo = corpoDe(erro);
+  if (indicaSemProvedor(status, corpo)) {
+    const { passo, funil } = extrairRoteamento(corpo);
+    return ehFiltroDePoliticaDeDados(passo)
+      ? new ZdrIndisponivelError(NOME_DO_OPENROUTER, modelo, passo, funil)
+      : new SemProvedorQueAtendaError(NOME_DO_OPENROUTER, modelo, passo, funil);
   }
   if (
     erro instanceof Error &&
@@ -260,6 +375,7 @@ export class TransporteOpenRouter implements TransporteDeModelo {
   readonly nome = NOME_DO_OPENROUTER;
   private readonly executar: ExecutorDoSdk;
   private readonly timeoutMs: number;
+  private readonly ajustes: AjustesDeDesempenho;
   private readonly esperas: readonly [number, number];
   private readonly dormir: (ms: number) => Promise<void>;
   private readonly aoFalhar: ((d: DetalheDeErro) => void) | undefined;
@@ -267,17 +383,38 @@ export class TransporteOpenRouter implements TransporteDeModelo {
   constructor(opcoes: OpcoesDoTransporteOpenRouter) {
     this.executar = opcoes.executar ?? executorPadrao(opcoes.chave, opcoes.fetch);
     this.timeoutMs = opcoes.timeoutMs ?? TIMEOUT_PADRAO_MS;
+    this.ajustes = opcoes.ajustes ?? {};
     this.esperas = opcoes.esperasEntreTentativasMs ?? ESPERAS_PADRAO_MS;
     this.dormir = opcoes.dormir ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
     this.aoFalhar = opcoes.aoFalhar;
   }
 
+  /** A chamada da rodada: ZDR, `only`, `require_parameters` e esquema estrito, sempre. */
   async gerar(pedido: PedidoAoModelo): Promise<RespostaDoTransporte> {
+    return this.executarComTentativas(pedido, 'A');
+  }
+
+  /**
+   * SÓ para o diagnóstico em degraus (texto sintético). Cada degrau tira uma coisa a mais da
+   * chamada — `require_parameters`, o esquema estrito, `provider.only` —, mas `zdr: true` e
+   * `data_collection: 'deny'` seguem em TODOS: não existe degrau sem eles.
+   */
+  async gerarDiagnostico(
+    pedido: PedidoAoModelo,
+    degrau: Degrau,
+  ): Promise<RespostaDoTransporte> {
+    return this.executarComTentativas(pedido, degrau);
+  }
+
+  private async executarComTentativas(
+    pedido: PedidoAoModelo,
+    degrau: Degrau,
+  ): Promise<RespostaDoTransporte> {
     let ultimo: unknown;
     // 1 tentativa + no máximo 2 repetições, todas com a MESMA chamada, portanto com a ZDR.
     for (let tentativa = 0; tentativa <= this.esperas.length; tentativa++) {
-      const chamada = this.montarChamada(pedido);
-      exigirZdr(chamada);
+      const chamada = this.montarChamada(pedido, degrau);
+      exigirZdr(chamada, { admiteSemRestricao: degrau === 'D' });
       try {
         const bruto = await this.executar(chamada);
         return {
@@ -286,6 +423,7 @@ export class TransporteOpenRouter implements TransporteDeModelo {
             corpoEnviado: sanearCorpoEnviado(bruto.corpoEnviado),
             ...(bruto.modeloResolvido ? { modeloResolvido: bruto.modeloResolvido } : {}),
             ...(bruto.provedor ? { provedorDaResposta: bruto.provedor } : {}),
+            ...(bruto.camposDoUsage ? { camposDoUsage: bruto.camposDoUsage } : {}),
           },
           ...(bruto.modeloResolvido ? { modeloResolvido: bruto.modeloResolvido } : {}),
           ...(bruto.provedor !== undefined ? { provedor: bruto.provedor } : {}),
@@ -293,22 +431,29 @@ export class TransporteOpenRouter implements TransporteDeModelo {
             ? { tokensEntrada: bruto.tokensEntrada }
             : {}),
           ...(bruto.tokensSaida !== undefined ? { tokensSaida: bruto.tokensSaida } : {}),
+          ...(bruto.tokensRaciocinio !== undefined
+            ? { tokensRaciocinio: bruto.tokensRaciocinio }
+            : {}),
           ...(bruto.custoUsd !== undefined ? { custoUsd: bruto.custoUsd } : {}),
         };
       } catch (erro) {
         ultimo = erro;
         const status = statusDe(erro);
+        const roteamento = extrairRoteamento(corpoDe(erro));
         this.aoFalhar?.({
           ...(status !== undefined ? { status } : {}),
           corpo: corpoDe(erro),
           ...(APICallError.isInstance(erro)
             ? { corpoEnviado: sanearCorpoEnviado(erro.requestBodyValues) }
             : {}),
+          ...(roteamento.passo !== undefined ? { passo: roteamento.passo } : {}),
+          ...(roteamento.funil !== undefined ? { funil: roteamento.funil } : {}),
         });
         const traduzido = traduzirErro(erro, pedido.modelo);
         const podeRepetir =
           ehTransitorio(erro) &&
           !(traduzido instanceof ZdrIndisponivelError) &&
+          !(traduzido instanceof SemProvedorQueAtendaError) &&
           tentativa < this.esperas.length;
         if (!podeRepetir) throw traduzido;
         await this.dormir(this.esperas[tentativa] ?? 0);
@@ -317,29 +462,45 @@ export class TransporteOpenRouter implements TransporteDeModelo {
     throw traduzirErro(ultimo, pedido.modelo);
   }
 
-  private montarChamada(pedido: PedidoAoModelo): ChamadaAoSdk {
+  private montarChamada(pedido: PedidoAoModelo, degrau: Degrau): ChamadaAoSdk {
+    const raciocinio = corpoDoRaciocinio(this.ajustes.raciocinio ?? 'padrao');
     return {
       modelo: pedido.modelo,
-      sistema: pedido.sistema,
+      // No modo "texto" o formato vai por instrução; o resto do sistema não muda.
+      sistema:
+        degrau === 'C' || degrau === 'D'
+          ? `${pedido.sistema}\n\n${INSTRUCAO_DE_FORMATO_EM_TEXTO}`
+          : pedido.sistema,
       usuario: pedido.usuario,
       temperatura: 0,
       tentativasAutomaticas: 0,
       timeoutMs: this.timeoutMs,
       provider: {
-        ...PREFERENCIAS_BASE_DE_PROVEDOR,
-        only: [...pedido.provedoresPermitidos],
+        zdr: PREFERENCIAS_BASE_DE_PROVEDOR.zdr,
+        data_collection: PREFERENCIAS_BASE_DE_PROVEDOR.data_collection,
+        allow_fallbacks: PREFERENCIAS_BASE_DE_PROVEDOR.allow_fallbacks,
+        ...(degrau === 'A' ? { require_parameters: true as const } : {}),
+        ...(degrau !== 'D' ? { only: [...pedido.provedoresPermitidos] } : {}),
       },
+      saida: degrau === 'A' || degrau === 'B' ? 'esquema' : 'texto',
+      ...(raciocinio ? { raciocinio } : {}),
+      ...(this.ajustes.maxTokens !== undefined
+        ? { maxTokens: this.ajustes.maxTokens }
+        : {}),
     };
   }
 }
 
 /**
  * Cinto e suspensório: o tipo já impede, e esta checagem impede também um `as` futuro. Sem
- * `provider.zdr === true`, `data_collection: 'deny'` e uma restrição `only` NÃO vazia, nada sai
- * — a exceção é lançada ANTES de qualquer rede. Apelido (`~…`) e variante (`:…`) de modelo
- * também são recusados aqui: o que seria servido não é o id pedido.
+ * `provider.zdr === true` e `data_collection: 'deny'`, nada sai — a exceção é lançada ANTES de
+ * qualquer rede. Também exige a restrição `only` NÃO vazia, salvo no degrau D do diagnóstico
+ * (`admiteSemRestricao`), e recusa apelido (`~…`) e variante (`:…`) de modelo.
  */
-export function exigirZdr(chamada: ChamadaAoSdk): void {
+export function exigirZdr(
+  chamada: ChamadaAoSdk,
+  opcoes: { readonly admiteSemRestricao?: boolean } = {},
+): void {
   const p = chamada.provider as unknown;
   const recusa = (motivo: string): never => {
     throw new ProviderIndisponivelError(
@@ -350,15 +511,17 @@ export function exigirZdr(chamada: ChamadaAoSdk): void {
   if (!ehObjeto(p) || p['zdr'] !== true || p['data_collection'] !== 'deny') {
     recusa('a retenção zero (provider.zdr) não está ativa neste pedido');
   }
-  const only = ehObjeto(p) ? p['only'] : undefined;
-  if (
-    !Array.isArray(only) ||
-    only.length === 0 ||
-    !only.every((x) => typeof x === 'string' && x.trim() !== '')
-  ) {
-    recusa(
-      'a restrição aos provedores ZDR do modelo (provider.only) está ausente ou vazia',
-    );
+  if (opcoes.admiteSemRestricao !== true) {
+    const only = ehObjeto(p) ? p['only'] : undefined;
+    if (
+      !Array.isArray(only) ||
+      only.length === 0 ||
+      !only.every((x) => typeof x === 'string' && x.trim() !== '')
+    ) {
+      recusa(
+        'a restrição aos provedores ZDR do modelo (provider.only) está ausente ou vazia',
+      );
+    }
   }
   if (ehApelidoOuVariante(chamada.modelo)) {
     recusa('o id do modelo é um apelido ou variante (~ ou :), não um modelo real');

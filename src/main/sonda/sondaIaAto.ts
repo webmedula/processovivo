@@ -12,6 +12,7 @@ import type { RespostaDoModelo } from '../../domain/entities/vocabularioDaAnalis
 import {
   ProviderIndisponivelError,
   RespostaInvalidaError,
+  SemProvedorQueAtendaError,
   ZdrIndisponivelError,
 } from '../../domain/errors/index.js';
 import { lerRespostaDoModelo } from '../../infrastructure/adapters/modelo/esquemaDaAnalise.js';
@@ -22,7 +23,7 @@ import type {
 import { escreverCsv, lerCsv, type CasoDaSonda } from './casosDaSonda.js';
 
 /**
- * Núcleo da sonda de IA do ato (v1.1.1). Não consulta tribunal, não abre banco.
+ * Núcleo da sonda de IA do ato (v1.2.0). Não consulta tribunal, não abre banco.
  *
  * Duas variantes por modelo: SEM e COM os títulos dos andamentos anteriores. Cada
  * chamada passa pelo `TransporteDeModelo` injetado — em produção o OpenRouter com
@@ -31,7 +32,7 @@ import { escreverCsv, lerCsv, type CasoDaSonda } from './casosDaSonda.js';
  * (no volume, fora do repositório).
  */
 
-export const VERSAO_DA_SONDA = '1.1.1';
+export const VERSAO_DA_SONDA = '1.2.0';
 
 export type Variante = 'sem-titulos' | 'com-titulos';
 
@@ -59,13 +60,19 @@ export interface RegistroDaChamada {
     | 'erro'
     | 'sem_texto'
     | 'sem_zdr'
+    | 'sem_provedor'
     | 'provedor_nao_confirmado';
   readonly verificacao?: ResultadoDaVerificacao;
   readonly indeterminado: boolean;
   readonly latenciaMs?: number;
   readonly tokensEntrada?: number;
   readonly tokensSaida?: number;
+  /** Parte de `tokensSaida` gasta em raciocínio, quando o modelo informa. */
+  readonly tokensRaciocinio?: number;
   readonly custoUsd?: number;
+  /** `failed_routing_step` e `routing_funnel` do erro de roteamento (sem texto). */
+  readonly passoDoErro?: string;
+  readonly funilDoErro?: unknown;
   /** Quem serviu a chamada, como a resposta informa (nome do provedor, nada mais). */
   readonly provedor?: string;
   /** O modelo que a resposta diz ter servido (campo `model`); difere do pedido se o id era um alias. */
@@ -112,8 +119,18 @@ export interface OpcoesDaExecucao {
 export interface ResultadoDaExecucao {
   readonly registros: readonly RegistroDaChamada[];
   readonly modelosSemZdr: readonly string[];
+  /** Nenhum provedor atendeu por OUTRO filtro que não a política de dados: o passo vai junto. */
+  readonly modelosSemProvedor: readonly {
+    readonly modelo: string;
+    readonly passo?: string;
+    readonly funil?: unknown;
+  }[];
   /** Respondeu por provedor fora da lista ZDR: resposta descartada, modelo parado. */
   readonly modelosProvedorNaoConfirmado: readonly string[];
+  /** Para os modelos parados pelo filtro de política de dados: o passo e o funil do erro. */
+  readonly passosDeZdr: Readonly<
+    Record<string, { passo?: string | undefined; funil?: unknown; zdr: boolean }>
+  >;
   readonly modelosComFalha: readonly {
     readonly modelo: string;
     readonly motivo: string;
@@ -130,6 +147,11 @@ function pareceObedecer(caso: CasoDaSonda, bruto: unknown): boolean | undefined 
 export async function executarSonda(op: OpcoesDaExecucao): Promise<ResultadoDaExecucao> {
   const registros: RegistroDaChamada[] = [];
   const modelosSemZdr: string[] = [];
+  const semProvedorOuZdr = new Map<
+    string,
+    { passo?: string | undefined; funil?: unknown; zdr: boolean }
+  >();
+  const modelosSemProvedor: { modelo: string; passo?: string; funil?: unknown }[] = [];
   const modelosProvedorNaoConfirmado: string[] = [];
   const modelosComFalha: { modelo: string; motivo: string }[] = [];
   const dormir = op.dormir ?? (async () => undefined);
@@ -261,6 +283,9 @@ export async function executarSonda(op: OpcoesDaExecucao): Promise<ResultadoDaEx
             ...(transporteFinal.custoUsd !== undefined
               ? { custoUsd: transporteFinal.custoUsd }
               : {}),
+            ...(transporteFinal.tokensRaciocinio !== undefined
+              ? { tokensRaciocinio: transporteFinal.tokensRaciocinio }
+              : {}),
             ...(transporteFinal.provedor ? { provedor: transporteFinal.provedor } : {}),
             ...(transporteFinal.modeloResolvido
               ? { modeloResolvido: transporteFinal.modeloResolvido }
@@ -282,8 +307,35 @@ export async function executarSonda(op: OpcoesDaExecucao): Promise<ResultadoDaEx
         } catch (erro) {
           if (erro instanceof ZdrIndisponivelError) {
             // Falha fechado: este modelo sai da comparação; nunca há segunda chamada sem ZDR.
+            // Só chega aqui quando o PASSO que falhou é o filtro de política de dados.
             modelosSemZdr.push(modelo);
-            registros.push({ ...base, estado: 'sem_zdr' });
+            registros.push({
+              ...base,
+              estado: 'sem_zdr',
+              ...(erro.passo !== undefined ? { passoDoErro: erro.passo } : {}),
+              ...(erro.funil !== undefined ? { funilDoErro: erro.funil } : {}),
+            });
+            semProvedorOuZdr.set(modelo, {
+              passo: erro.passo,
+              funil: erro.funil,
+              zdr: true,
+            });
+            parar = true;
+            continue;
+          }
+          if (erro instanceof SemProvedorQueAtendaError) {
+            // Nenhum provedor atendeu, mas por OUTRO filtro (parâmetros, `only`…): não é "sem ZDR".
+            modelosSemProvedor.push({
+              modelo,
+              ...(erro.passo !== undefined ? { passo: erro.passo } : {}),
+              ...(erro.funil !== undefined ? { funil: erro.funil } : {}),
+            });
+            registros.push({
+              ...base,
+              estado: 'sem_provedor',
+              ...(erro.passo !== undefined ? { passoDoErro: erro.passo } : {}),
+              ...(erro.funil !== undefined ? { funilDoErro: erro.funil } : {}),
+            });
             parar = true;
             continue;
           }
@@ -307,12 +359,19 @@ export async function executarSonda(op: OpcoesDaExecucao): Promise<ResultadoDaEx
       }
     }
   }
-  return { registros, modelosSemZdr, modelosProvedorNaoConfirmado, modelosComFalha };
+  return {
+    registros,
+    modelosSemZdr,
+    modelosSemProvedor,
+    modelosProvedorNaoConfirmado,
+    modelosComFalha,
+    passosDeZdr: Object.fromEntries(semProvedorOuZdr),
+  };
 }
 
 // --- métricas ----------------------------------------------------------------
 
-function percentil(valores: readonly number[], p: number): number | undefined {
+export function percentil(valores: readonly number[], p: number): number | undefined {
   if (valores.length === 0) return undefined;
   const ordenados = [...valores].sort((a, b) => a - b);
   const posicao = Math.min(
@@ -322,7 +381,7 @@ function percentil(valores: readonly number[], p: number): number | undefined {
   return ordenados[posicao];
 }
 
-function media(valores: readonly number[]): number | undefined {
+export function media(valores: readonly number[]): number | undefined {
   return valores.length === 0
     ? undefined
     : valores.reduce((a, b) => a + b, 0) / valores.length;
@@ -335,6 +394,8 @@ export interface MetricasDoGrupo {
   readonly analises: number;
   readonly semTexto: number;
   readonly erros: number;
+  /** Parados antes de responder: sem ZDR, sem provedor ou provedor não confirmado. */
+  readonly interrompidos: number;
   readonly respostasInvalidas: number;
   readonly repeticoes: number;
   readonly citacoesEmitidas: number;
@@ -422,6 +483,9 @@ export function calcularMetricas(
       analises: n,
       semTexto: grupo.filter((r) => r.estado === 'sem_texto').length,
       erros: grupo.filter((r) => r.estado === 'erro').length,
+      interrompidos: grupo.filter((r) =>
+        ['sem_zdr', 'sem_provedor', 'provedor_nao_confirmado'].includes(r.estado),
+      ).length,
       respostasInvalidas: grupo.filter((r) => r.estado === 'resposta_invalida').length,
       repeticoes: grupo.reduce((a, r) => a + r.repeticoes, 0),
       citacoesEmitidas: emitidas,
@@ -478,6 +542,10 @@ export function tabelaDeMetricas(
     'modelo',
     'variante',
     'n',
+    's/texto',
+    'erros',
+    'inválidas',
+    'parados',
     'cit.verif.',
     'desc.cit.',
     'desc.núm.',
@@ -495,6 +563,10 @@ export function tabelaDeMetricas(
     m.modelo,
     m.variante,
     String(m.analises),
+    String(m.semTexto),
+    String(m.erros),
+    String(m.respostasInvalidas),
+    String(m.interrompidos),
     pct(m.taxaCitacaoVerificada),
     pct(m.taxaDescartePorCitacao),
     pct(m.taxaDescartePorNumero),
@@ -562,10 +634,16 @@ function textoDoResultado(r: RegistroDaChamada): string {
  * Sem número de processo e sem nome: o resultado sai do texto JÁ REDIGIDO.
  * Só casos reais, se houver; senão tudo (rodada de ensaio).
  */
-export function gerarPlanilha(registros: readonly RegistroDaChamada[]): string {
+export function gerarPlanilha(
+  registros: readonly RegistroDaChamada[],
+  opcoes: { readonly incluirSinteticos?: boolean } = {},
+): string | undefined {
   const comResultado = registros.filter((r) => r.verificacao !== undefined);
-  const reais = comResultado.filter((r) => r.origem === 'real');
-  const lista = reais.length > 0 ? reais : comResultado;
+  // Planilha de rodada SÓ sintética não é para o Autran avaliar: não é gerada (a menos que se peça).
+  const lista = comResultado.filter(
+    (r) => r.origem === 'real' || opcoes.incluirSinteticos === true,
+  );
+  if (lista.length === 0) return undefined;
   return escreverCsv([
     [...CABECALHO_DA_PLANILHA],
     ...lista.map((r) => [r.casoId, r.modelo, r.variante, textoDoResultado(r), '']),
@@ -733,6 +811,11 @@ export interface MetadadoDaChamada {
   readonly provedoresPermitidos: readonly string[] | null;
   /** O corpo enviado SEM texto e SEM chave. */
   readonly corpoEnviado: unknown;
+  /** Nomes dos campos do `usage` da resposta (nunca valores): de onde o custo poderia sair. */
+  readonly camposDoUsage: readonly string[] | null;
+  readonly tokensRaciocinio: number | null;
+  readonly passoDoErro: string | null;
+  readonly funilDoErro: unknown;
   readonly latenciaMs: number | null;
   readonly tokensEntrada: number | null;
   readonly tokensSaida: number | null;
@@ -756,6 +839,10 @@ export function metadadosDasChamadas(
       modeloResolvido: r.modeloResolvido ?? null,
       provedoresPermitidos: r.provedoresPermitidos ?? null,
       corpoEnviado: r.diagnostico?.corpoEnviado ?? null,
+      camposDoUsage: r.diagnostico?.camposDoUsage ?? null,
+      tokensRaciocinio: r.tokensRaciocinio ?? null,
+      passoDoErro: r.passoDoErro ?? null,
+      funilDoErro: r.funilDoErro ?? null,
       latenciaMs: r.latenciaMs ?? null,
       tokensEntrada: r.tokensEntrada ?? null,
       tokensSaida: r.tokensSaida ?? null,

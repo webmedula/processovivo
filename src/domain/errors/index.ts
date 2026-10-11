@@ -416,11 +416,46 @@ export class ChaveApiNaoEncontradaError extends DomainError {
 export class ZdrIndisponivelError extends ProviderIndisponivelError {
   override readonly codigo: string = 'ZDR_INDISPONIVEL';
 
-  constructor(provider: string, readonly modelo: string) {
+  /**
+   * @param passo  o `failed_routing_step` que o OpenRouter informou — aqui, o filtro de política de dados
+   * @param funil  o `routing_funnel` do erro (estrutura de contagens, sem texto)
+   */
+  constructor(
+    provider: string,
+    readonly modelo: string,
+    readonly passo?: string,
+    readonly funil?: unknown,
+  ) {
     super(
       provider,
-      `nenhum provedor com retenção zero de dados (ZDR) disponível para o modelo "${modelo}"; ` +
-        'a chamada NÃO é repetida sem ZDR',
+      `o roteamento parou no filtro de política de dados (ZDR) para o modelo "${modelo}"` +
+        (passo ? ` (passo: ${passo})` : '') +
+        '; a chamada NÃO é repetida sem ZDR',
+    );
+  }
+}
+
+/**
+ * Nenhum provedor atendeu, mas o passo do roteamento que falhou NÃO é o filtro de política de
+ * dados (é, por exemplo, o de parâmetros suportados ou o de `provider.only`). Não é "sem ZDR":
+ * chamar assim um 404 que veio de outro filtro esconderia a causa. Carrega o passo e o funil
+ * exatamente como o OpenRouter os informou. Também NÃO se repete.
+ */
+export class SemProvedorQueAtendaError extends ProviderIndisponivelError {
+  override readonly codigo: string = 'SEM_PROVEDOR_QUE_ATENDA';
+
+  constructor(
+    provider: string,
+    readonly modelo: string,
+    readonly passo?: string,
+    readonly funil?: unknown,
+  ) {
+    super(
+      provider,
+      `nenhum provedor atendeu "${modelo}": ` +
+        (passo
+          ? `o roteamento parou no passo "${passo}"`
+          : 'o erro não informou o passo do roteamento'),
     );
   }
 }

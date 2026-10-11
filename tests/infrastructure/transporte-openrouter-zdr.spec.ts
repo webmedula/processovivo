@@ -3,10 +3,14 @@ import { describe, expect, it } from 'vitest';
 import {
   ProviderIndisponivelError,
   RespostaInvalidaError,
+  SemProvedorQueAtendaError,
   ZdrIndisponivelError,
 } from '../../src/domain/errors/index.js';
 import {
   exigirZdr,
+  jsonDoTexto,
+  INSTRUCAO_DE_FORMATO_EM_TEXTO,
+  type Degrau,
   PREFERENCIAS_BASE_DE_PROVEDOR,
   TransporteOpenRouter,
   type ChamadaAoSdk,
@@ -111,6 +115,7 @@ describe('TransporteOpenRouter — ZDR falha fechada', () => {
       temperatura: 0 as const,
       tentativasAutomaticas: 0 as const,
       timeoutMs: 1,
+      saida: 'esquema' as const,
     };
     for (const provider of [
       undefined,
@@ -158,11 +163,11 @@ describe('TransporteOpenRouter — ZDR falha fechada', () => {
   it.each([
     [
       404,
-      '{"error":{"message":"No endpoints found matching your data policy (Zero data retention)","code":404}}',
+      '{"error":{"message":"No endpoints found matching your data policy (Zero data retention)","code":404,"metadata":{"failed_routing_step":"data_policy_filter","routing_funnel":{"total":7,"after_data_policy":0}}}}',
     ],
     [
       400,
-      '{"error":{"message":"No allowed providers are available for the selected model."}}',
+      '{"error":{"message":"No allowed providers are available for the selected model.","metadata":{"failed_routing_step":"zdr","routing_funnel":[{"step":"zdr","remaining":0}]}}}',
     ],
   ])(
     'HTTP %i "sem provedor" vira ZdrIndisponivelError e NÃO gera segunda chamada',
@@ -175,6 +180,56 @@ describe('TransporteOpenRouter — ZDR falha fechada', () => {
       expect(esperas).toEqual([]);
     },
   );
+
+  it('o passo NÃO é a política de dados: vira SemProvedorQueAtendaError com passo e funil, e NÃO "sem ZDR"', async () => {
+    const corpo =
+      '{"error":{"message":"No endpoints found","code":404,"metadata":{"failed_routing_step":"provider_only_filter","routing_funnel":{"total":7,"after_data_policy":3,"after_only":0}}}}';
+    const { t, chamadas, esperas } = transporte([falha(erroHttp(404, corpo)), ok]);
+    const erro = await t.gerar(PEDIDO).catch((e: unknown) => e);
+    expect(erro).toBeInstanceOf(SemProvedorQueAtendaError);
+    expect(erro).not.toBeInstanceOf(ZdrIndisponivelError);
+    expect(erro).toMatchObject({
+      passo: 'provider_only_filter',
+      funil: { total: 7, after_data_policy: 3, after_only: 0 },
+    });
+    expect((erro as Error).message).toContain('provider_only_filter');
+    expect(chamadas).toHaveLength(1);
+    expect(esperas).toEqual([]);
+  });
+
+  it('o passo é a política de dados: "sem ZDR", e o erro carrega o passo e o funil', async () => {
+    const corpo =
+      '{"error":{"message":"x","metadata":{"failed_routing_step":"data_policy_filter","routing_funnel":{"total":7,"after_data_policy":0}}}}';
+    const erro = await transporte([falha(erroHttp(404, corpo))])
+      .t.gerar(PEDIDO)
+      .catch((e: unknown) => e);
+    expect(erro).toBeInstanceOf(ZdrIndisponivelError);
+    expect(erro).toMatchObject({
+      passo: 'data_policy_filter',
+      funil: { total: 7, after_data_policy: 0 },
+    });
+  });
+
+  it('404 com a frase "No endpoints found" e SEM passo: não chama de "sem ZDR" — diz que o passo não veio', async () => {
+    const corpo =
+      '{"error":{"message":"No endpoints found matching your data policy","code":404}}';
+    const erro = await transporte([falha(erroHttp(404, corpo))])
+      .t.gerar(PEDIDO)
+      .catch((e: unknown) => e);
+    expect(erro).toBeInstanceOf(SemProvedorQueAtendaError);
+    expect(erro).not.toBeInstanceOf(ZdrIndisponivelError);
+    expect((erro as Error).message).toMatch(/não informou o passo/);
+  });
+
+  it('o aoFalhar recebe o passo e o funil do erro', async () => {
+    const vistos: DetalheDeErro[] = [];
+    const corpo =
+      '{"error":{"message":"x","metadata":{"failed_routing_step":"parametros","routing_funnel":{"total":3}}}}';
+    await transporte([falha(erroHttp(404, corpo))], { aoFalhar: (d) => vistos.push(d) })
+      .t.gerar(PEDIDO)
+      .catch(() => undefined);
+    expect(vistos[0]).toMatchObject({ passo: 'parametros', funil: { total: 3 } });
+  });
 
   it('404 que não fala de provedor, 401, 402 e 400 comum: erro de indisponibilidade, sem repetir', async () => {
     for (const [status, padrao] of [
@@ -357,7 +412,11 @@ describe('TransporteOpenRouter — no fio (SDK real, HTTP dublado)', () => {
       () =>
         json(
           {
-            error: { message: 'No endpoints found matching your data policy', code: 404 },
+            error: {
+              message: 'No endpoints found matching your data policy',
+              code: 404,
+              metadata: { failed_routing_step: 'data_policy_filter' },
+            },
           },
           404,
         ),
@@ -464,6 +523,236 @@ describe('TransporteOpenRouter — no fio (SDK real, HTTP dublado)', () => {
     expect(JSON.stringify(vistos[0]?.corpoEnviado)).not.toContain('TEXTO-SINTETICO');
     expect(vistos[0]?.corpoEnviado).toMatchObject({
       provider: { only: ['alfa', 'beta'] },
+    });
+  });
+
+  describe('degraus do diagnóstico (zdr sempre)', () => {
+    const corposDosDegraus = async (): Promise<
+      Record<Degrau, Record<string, unknown>>
+    > => {
+      const saida = {} as Record<Degrau, Record<string, unknown>>;
+      for (const degrau of ['A', 'B', 'C', 'D'] as const) {
+        const w = fio([
+          () =>
+            json(
+              degrau === 'C' || degrau === 'D'
+                ? {
+                    ...corpoOk,
+                    choices: [
+                      {
+                        index: 0,
+                        finish_reason: 'stop',
+                        message: {
+                          role: 'assistant',
+                          content:
+                            '```json\n{"parece_pedir":"indeterminado","resumo":"r","trecho_chave":"","acoes_possiveis":[],"pontos_de_atencao":[]}\n```',
+                        },
+                      },
+                    ],
+                  }
+                : corpoOk,
+            ),
+        ]);
+        const t = new TransporteOpenRouter({ chave: CHAVE, fetch: w.f });
+        const r = await t.gerarDiagnostico(PEDIDO, degrau);
+        expect(r.objeto).toMatchObject({ parece_pedir: 'indeterminado' });
+        saida[degrau] = w.corpos[0] as Record<string, unknown>;
+      }
+      return saida;
+    };
+
+    it('todos os degraus levam zdr: true e data_collection: deny; cada um tira UMA coisa a mais', async () => {
+      const c = await corposDosDegraus();
+      const prov = (d: Degrau): Record<string, unknown> =>
+        c[d]['provider'] as Record<string, unknown>;
+      for (const d of ['A', 'B', 'C', 'D'] as const) {
+        expect(prov(d)).toMatchObject({
+          zdr: true,
+          data_collection: 'deny',
+          allow_fallbacks: false,
+        });
+      }
+      // A: tudo.
+      expect(prov('A')).toMatchObject({
+        require_parameters: true,
+        only: ['alfa', 'beta'],
+      });
+      expect(c.A['response_format']).toBeDefined();
+      // B: sem require_parameters.
+      expect(prov('B')['require_parameters']).toBeUndefined();
+      expect(prov('B')['only']).toEqual(['alfa', 'beta']);
+      expect(c.B['response_format']).toBeDefined();
+      // C: sem esquema estrito (instrução no texto).
+      expect(c.C['response_format']).toBeUndefined();
+      expect(prov('C')['only']).toEqual(['alfa', 'beta']);
+      // D: sem provider.only.
+      expect(prov('D')['only']).toBeUndefined();
+      expect(c.D['response_format']).toBeUndefined();
+    });
+
+    it('a instrução de formato vai no sistema só nos degraus em texto (C e D)', async () => {
+      const w = fio([() => json(corpoOk)]);
+      const executados: string[] = [];
+      const t = new TransporteOpenRouter({
+        chave: CHAVE,
+        executar: async (c) => {
+          executados.push(c.sistema);
+          return { objeto: {} };
+        },
+      });
+      void w;
+      for (const d of ['A', 'B', 'C', 'D'] as const) await t.gerarDiagnostico(PEDIDO, d);
+      expect(executados.map((s) => s.includes(INSTRUCAO_DE_FORMATO_EM_TEXTO))).toEqual([
+        false,
+        false,
+        true,
+        true,
+      ]);
+    });
+
+    it('sem provider.only só o degrau D passa; a chamada normal (gerar) continua exigindo', async () => {
+      const chamadas: ChamadaAoSdk[] = [];
+      const t = new TransporteOpenRouter({
+        chave: CHAVE,
+        executar: async (c) => {
+          chamadas.push(c);
+          return { objeto: {} };
+        },
+      });
+      await t.gerarDiagnostico({ ...PEDIDO, provedoresPermitidos: [] }, 'D');
+      expect(chamadas).toHaveLength(1);
+      expect(chamadas[0]?.provider.only).toBeUndefined();
+      await expect(
+        t.gerarDiagnostico({ ...PEDIDO, provedoresPermitidos: [] }, 'A'),
+      ).rejects.toBeInstanceOf(ProviderIndisponivelError);
+      await expect(
+        t.gerar({ ...PEDIDO, provedoresPermitidos: [] }),
+      ).rejects.toBeInstanceOf(ProviderIndisponivelError);
+      expect(chamadas).toHaveLength(1);
+    });
+
+    it('nenhum degrau existe sem zdr: o D também recusa provider sem zdr', () => {
+      const base = {
+        ...PEDIDO,
+        temperatura: 0 as const,
+        tentativasAutomaticas: 0 as const,
+        timeoutMs: 1,
+        saida: 'texto' as const,
+      };
+      expect(() =>
+        exigirZdr(
+          { ...base, provider: { data_collection: 'deny' } } as unknown as ChamadaAoSdk,
+          { admiteSemRestricao: true },
+        ),
+      ).toThrow(ProviderIndisponivelError);
+    });
+
+    it('apelido é recusado também no diagnóstico, antes de qualquer rede', async () => {
+      const chamadas: ChamadaAoSdk[] = [];
+      const t = new TransporteOpenRouter({
+        chave: CHAVE,
+        executar: async (c) => {
+          chamadas.push(c);
+          return { objeto: {} };
+        },
+      });
+      await expect(
+        t.gerarDiagnostico({ ...PEDIDO, modelo: '~x/y-latest' }, 'D'),
+      ).rejects.toBeInstanceOf(ProviderIndisponivelError);
+      expect(chamadas).toHaveLength(0);
+    });
+
+    it('jsonDoTexto tolera cerca de código e frase em volta; texto sem JSON é resposta inválida', () => {
+      expect(jsonDoTexto('Claro:\n```json\n{"a":1}\n```')).toEqual({ a: 1 });
+      expect(() => jsonDoTexto('sem json aqui')).toThrow(RespostaInvalidaError);
+      expect(() => jsonDoTexto('{quebrado')).toThrow(RespostaInvalidaError);
+    });
+  });
+
+  describe('raciocínio, max_tokens, custo e uso', () => {
+    it.each([
+      ['padrao', undefined],
+      ['desligado', { enabled: false }],
+      ['nenhum', { effort: 'none' }],
+      ['minimo', { effort: 'minimal' }],
+      ['baixo', { effort: 'low' }],
+    ] as const)('raciocínio %s vai no corpo como %j', async (nivel, esperado) => {
+      const w = fio([() => json(corpoOk)]);
+      await new TransporteOpenRouter({
+        chave: CHAVE,
+        fetch: w.f,
+        ajustes: { raciocinio: nivel },
+      }).gerar(PEDIDO);
+      expect(w.corpos[0]?.['reasoning']).toEqual(esperado);
+      expect((w.corpos[0]?.['provider'] as { zdr?: boolean }).zdr).toBe(true);
+    });
+
+    it('max_tokens vai no corpo; sem o ajuste, não vai', async () => {
+      const com = fio([() => json(corpoOk)]);
+      await new TransporteOpenRouter({
+        chave: CHAVE,
+        fetch: com.f,
+        ajustes: { maxTokens: 800 },
+      }).gerar(PEDIDO);
+      expect(com.corpos[0]?.['max_tokens']).toBe(800);
+      const sem = fio([() => json(corpoOk)]);
+      await new TransporteOpenRouter({ chave: CHAVE, fetch: sem.f }).gerar(PEDIDO);
+      expect(sem.corpos[0]?.['max_tokens']).toBeUndefined();
+    });
+
+    it('o custo vem do usage.cost da resposta, e os NOMES dos campos do usage ficam no diagnóstico', async () => {
+      const w = fio([
+        () =>
+          json({
+            ...corpoOk,
+            usage: {
+              prompt_tokens: 10,
+              completion_tokens: 5,
+              total_tokens: 15,
+              cost: 0.0042,
+              cost_details: { upstream_inference_cost: 0.004 },
+              completion_tokens_details: { reasoning_tokens: 3 },
+            },
+          }),
+      ]);
+      const r = await new TransporteOpenRouter({ chave: CHAVE, fetch: w.f }).gerar(
+        PEDIDO,
+      );
+      expect(r.custoUsd).toBe(0.0042);
+      expect(r.tokensRaciocinio).toBe(3);
+      expect(r.diagnostico.camposDoUsage).toEqual([
+        'completion_tokens',
+        'completion_tokens_details',
+        'cost',
+        'cost_details',
+        'prompt_tokens',
+        'total_tokens',
+      ]);
+    });
+
+    it('sem usage.cost na resposta: custo ausente (não inventado), e os campos recebidos aparecem', async () => {
+      const w = fio([
+        () =>
+          json({
+            ...corpoOk,
+            usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+          }),
+      ]);
+      const r = await new TransporteOpenRouter({ chave: CHAVE, fetch: w.f }).gerar(
+        PEDIDO,
+      );
+      expect(r.custoUsd).toBeUndefined();
+      expect(r.diagnostico.camposDoUsage).toEqual([
+        'completion_tokens',
+        'prompt_tokens',
+        'total_tokens',
+      ]);
+    });
+
+    it('a contabilização de uso é pedida (usage.include) e o corpo não leva texto nem chave', async () => {
+      const w = fio([() => json(corpoOk)]);
+      await new TransporteOpenRouter({ chave: CHAVE, fetch: w.f }).gerar(PEDIDO);
+      expect(w.corpos[0]?.['usage']).toEqual({ include: true });
     });
   });
 });

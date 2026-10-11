@@ -1,6 +1,10 @@
-import { isAbsolute, join, relative, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { prepararEntrada } from '../../application/politicas/entradaDoModelo.js';
-import { ZdrIndisponivelError } from '../../domain/errors/index.js';
+import {
+  SemProvedorQueAtendaError,
+  ZdrIndisponivelError,
+} from '../../domain/errors/index.js';
+import { lerRespostaDoModelo } from '../../infrastructure/adapters/modelo/esquemaDaAnalise.js';
 import {
   ehApelidoOuVariante,
   modeloTemZdr,
@@ -13,10 +17,19 @@ import {
   type ListaZdrLida,
   type ModeloPublico,
 } from '../../infrastructure/adapters/modelo/endpointsZdr.js';
-import type {
-  DetalheDeErro,
-  TransporteDeModelo,
+import {
+  DEGRAUS,
+  DESCRICAO_DOS_DEGRAUS,
+  NIVEIS_DE_RACIOCINIO,
+  type AjustesDeDesempenho,
+  type DetalheDeErro,
+  type Degrau,
+  type NivelDeRaciocinio,
+  type PedidoAoModelo,
+  type RespostaDoTransporte,
+  type TransporteDeModelo,
 } from '../../infrastructure/adapters/modelo/TransporteOpenRouter.js';
+import { funilEmTexto } from '../../infrastructure/adapters/modelo/roteamentoDoErro.js';
 import { pareceValorDeExemplo } from '../../infrastructure/config/placeholder.js';
 import {
   CsvDeCasosInvalidoError,
@@ -31,7 +44,9 @@ import {
   executarSonda,
   fixtureDeRespostas,
   gerarPlanilha,
+  media,
   metadadosDasChamadas,
+  percentil,
   nomeSeguroDoModelo,
   PlanilhaDeAvaliacaoInvalidaError,
   tabelaDeMetricas,
@@ -46,6 +61,16 @@ import {
  * repositório com dado de caso real e que a chave nunca aparece na saída.
  */
 
+export interface OpcoesDoTransporteDaSonda {
+  readonly aoFalhar?: (d: DetalheDeErro) => void;
+  readonly ajustes?: AjustesDeDesempenho;
+  readonly timeoutMs?: number;
+}
+
+export interface TransporteComDiagnostico extends TransporteDeModelo {
+  gerarDiagnostico(pedido: PedidoAoModelo, degrau: Degrau): Promise<RespostaDoTransporte>;
+}
+
 export interface AmbienteDaSonda {
   readonly env: Readonly<Record<string, string | undefined>>;
   /** Raiz do repositório: nada de caso real nem de saída da sonda cai debaixo dela. */
@@ -56,8 +81,13 @@ export interface AmbienteDaSonda {
   readonly existeArquivo: (caminho: string) => Promise<boolean>;
   readonly criarTransporte: (
     chave: string,
-    opcoes?: { readonly aoFalhar?: (d: DetalheDeErro) => void },
+    opcoes?: OpcoesDoTransporteDaSonda,
   ) => TransporteDeModelo;
+  /** O mesmo transporte, com `gerarDiagnostico` (degraus). Só o diagnóstico em degraus usa. */
+  readonly criarTransporteDeDiagnostico: (
+    chave: string,
+    opcoes?: OpcoesDoTransporteDaSonda,
+  ) => TransporteComDiagnostico;
   /** Lista pública de endpoints com ZDR (precisa da chave; não leva texto de caso). */
   readonly buscarEndpointsZdr: (chave: string) => Promise<ListaZdrLida>;
   /** Lista pública de modelos (sem chave). Só o teste de falha fechada usa. */
@@ -67,6 +97,8 @@ export interface AmbienteDaSonda {
     modelo: string,
   ) => Promise<readonly EndpointPublico[]>;
   readonly hoje: () => string;
+  /** HHMM da rodada (relógio de parede): distingue duas rodadas do mesmo dia. */
+  readonly hora: () => string;
   readonly agora: () => number;
   readonly dormir: (ms: number) => Promise<void>;
   readonly saida: (linha: string) => void;
@@ -89,8 +121,13 @@ Precisa de OPENROUTER_API_KEY no ambiente (nunca é impressa).
   node scripts/sonda-ia-ato.mjs --controle-positivo[=<modelo COM ZDR>]   # deve responder, e o par (modelo, provedor) estar na lista
   node scripts/sonda-ia-ato.mjs --controle-negativo[=<modelo SEM ZDR>]   # deve ser recusado; se responder, é BLOQUEANTE
 Nomes com "~" (apelidos) e com ":" (variantes) são recusados em todos os comandos.
+5. Diagnóstico de um modelo que falha (UM caso sintético; zdr: true em TODOS os degraus):
+  node scripts/sonda-ia-ato.mjs --diagnosticar-modelo=<modelo>    # A como na rodada · B sem require_parameters · C sem json_schema estrito · D sem provider.only
+6. Latência (caso sintético, raciocínio e max_tokens variando; mede e compara):
+  node scripts/sonda-ia-ato.mjs --medir-latencia=<modelo> [--repeticoes=2]
 
 Opções: --variantes=sem-titulos,com-titulos  --saida=<pasta>  --pausa-ms=<n>
+        --raciocinio=padrao|desligado|nenhum|minimo|baixo  --max-tokens=<n>  --timeout-ms=<n>
         --com-sinteticos (junto de --arquivo/--stdin)  --fixtures=<pasta>  --fixtures-saida=<pasta>  --ajuda
 CSV de casos (separador ";"): id;tipo_comunicacao;classe;texto
   opcionais: titulo;data (dd/mm/aaaa);anteriores (títulos separados por "|");injecao (sim/nao)
@@ -163,7 +200,18 @@ export async function executarComandoSondaIa(
     const caminhoDaPlanilha = op.get('avaliacao');
     if (caminhoDaPlanilha) {
       const planilha = await amb.lerArquivo(caminhoDaPlanilha);
-      const caminhoDasMetricas = resolve(caminhoDaPlanilha, '..', 'metricas.json');
+      // A planilha e as métricas da MESMA rodada têm o mesmo sufixo (data-hora); uma rodada
+      // posterior nunca sobrescreve as métricas de uma planilha que ainda está com o Autran.
+      const pasta = dirname(resolve(caminhoDaPlanilha));
+      const doMesmoSufixo = join(
+        pasta,
+        basename(caminhoDaPlanilha)
+          .replace(/^planilha-/, 'metricas-')
+          .replace(/\.csv$/, '.json'),
+      );
+      const caminhoDasMetricas = (await amb.existeArquivo(doMesmoSufixo))
+        ? doMesmoSufixo
+        : join(pasta, 'metricas.json');
       let metricas: MetricasDoGrupo[] = [];
       if (await amb.existeArquivo(caminhoDasMetricas)) {
         metricas = JSON.parse(
@@ -171,7 +219,7 @@ export async function executarComandoSondaIa(
         ) as MetricasDoGrupo[];
       } else {
         amb.aviso(
-          'metricas.json não está ao lado da planilha: o critério de citações fica sem medida.',
+          'As métricas da rodada (metricas-<mesmo sufixo da planilha>.json) não estão ao lado da planilha: o critério de citações fica sem medida.',
         );
       }
       const julgamentos = calcularJulgamento(planilha, metricas);
@@ -239,6 +287,52 @@ export async function executarComandoSondaIa(
           ` · ${lista.endpoints.length} endpoints no total · consultado em ${amb.hoje()}.`,
       );
       return 0;
+    }
+
+    // --- ajustes de desempenho (não tocam a ZDR) ---
+    const raciocinio = (op.get('raciocinio') ?? 'padrao') as NivelDeRaciocinio;
+    if (!(NIVEIS_DE_RACIOCINIO as readonly string[]).includes(raciocinio)) {
+      amb.aviso(`--raciocinio inválido. Use: ${NIVEIS_DE_RACIOCINIO.join(', ')}.`);
+      return 1;
+    }
+    const maxTokens = op.has('max-tokens') ? Number(op.get('max-tokens')) : undefined;
+    if (maxTokens !== undefined && !(Number.isInteger(maxTokens) && maxTokens >= 50)) {
+      amb.aviso('--max-tokens precisa ser um inteiro de pelo menos 50.');
+      return 1;
+    }
+    const timeoutMs = op.has('timeout-ms') ? Number(op.get('timeout-ms')) : undefined;
+    if (timeoutMs !== undefined && !(Number.isInteger(timeoutMs) && timeoutMs >= 1000)) {
+      amb.aviso('--timeout-ms precisa ser um inteiro de pelo menos 1000.');
+      return 1;
+    }
+    const ajustes: AjustesDeDesempenho = {
+      ...(raciocinio !== 'padrao' ? { raciocinio } : {}),
+      ...(maxTokens !== undefined ? { maxTokens } : {}),
+    };
+
+    // --- diagnóstico em degraus e medida de latência: UM caso sintético ---
+    if (op.has('diagnosticar-modelo')) {
+      return await diagnosticarModelo(
+        op.get('diagnosticar-modelo') ?? '',
+        chave,
+        lista,
+        amb,
+        timeoutMs,
+      );
+    }
+    if (op.has('medir-latencia')) {
+      const repeticoes = Math.min(
+        5,
+        Math.max(1, Number(op.get('repeticoes') ?? '2') || 2),
+      );
+      return await medirLatencia(
+        op.get('medir-latencia') ?? '',
+        repeticoes,
+        chave,
+        lista,
+        amb,
+        timeoutMs,
+      );
     }
 
     // --- controles: UMA chamada cada, texto sintético ---
@@ -342,7 +436,10 @@ export async function executarComandoSondaIa(
       casos,
       modelos,
       variantes: variantes as Variante[],
-      transporte: amb.criarTransporte(chave),
+      transporte: amb.criarTransporte(chave, {
+        ...(Object.keys(ajustes).length > 0 ? { ajustes } : {}),
+        ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+      }),
       provedoresPermitidos: (modelo) => provedoresPermitidos(lista.endpoints, modelo),
       parConfirmadoZdr: (modeloResolvido, provedor) =>
         parConfirmadoZdr(lista.endpoints, modeloResolvido, provedor),
@@ -353,8 +450,18 @@ export async function executarComandoSondaIa(
     });
 
     for (const m of resultado.modelosSemZdr) {
+      const d = resultado.passosDeZdr[m];
       amb.aviso(
-        `SEM ZDR: o OpenRouter não achou provedor com retenção zero para "${m}". Modelo fora da comparação; nenhuma chamada sem ZDR foi feita.`,
+        `SEM ZDR (o roteamento parou no filtro de política de dados) para "${m}". ` +
+          `failed_routing_step: ${d?.passo ?? '(não informado)'} · routing_funnel: ${funilEmTexto(d?.funil)}. ` +
+          'Modelo fora da comparação; nenhuma chamada sem ZDR foi feita.',
+      );
+    }
+    for (const f of resultado.modelosSemProvedor) {
+      amb.aviso(
+        `SEM PROVEDOR para "${f.modelo}" — NÃO está provado que seja falta de ZDR: o roteamento parou em outro passo. ` +
+          `failed_routing_step: ${f.passo ?? '(não informado)'} · routing_funnel: ${funilEmTexto(f.funil)}. ` +
+          `Para achar a causa: --diagnosticar-modelo=${f.modelo}`,
       );
     }
     for (const m of resultado.modelosProvedorNaoConfirmado) {
@@ -368,6 +475,7 @@ export async function executarComandoSondaIa(
     }
     const excluidos = new Set([
       ...resultado.modelosSemZdr,
+      ...resultado.modelosSemProvedor.map((f) => f.modelo),
       ...resultado.modelosProvedorNaoConfirmado,
     ]);
     if (modelos.every((m) => excluidos.has(m))) {
@@ -377,12 +485,30 @@ export async function executarComandoSondaIa(
       return 3;
     }
 
+    // Preço para ESTIMAR o custo quando a resposta não o traz: primeiro a lista ZDR; para o modelo
+    // que ela não precifica, a lista pública de modelos (melhor esforço). Estimativa é rotulada.
     const precos = precosEstimados(lista.endpoints);
+    if (modelos.some((m) => !precos.has(m))) {
+      try {
+        for (const m of await amb.buscarModelosPublicos()) {
+          if (
+            modelos.includes(m.id) &&
+            !precos.has(m.id) &&
+            m.precoEntrada !== undefined &&
+            m.precoSaida !== undefined
+          ) {
+            precos.set(m.id, { entrada: m.precoEntrada, saida: m.precoSaida });
+          }
+        }
+      } catch {
+        /* sem preço público: o custo fica "não medido" e a tabela diz */
+      }
+    }
     const metricas = calcularMetricas(resultado.registros, precos);
     amb.saida(
       tabelaDeMetricas(metricas, {
         fonte:
-          'openrouter = usage.cost devolvido na resposta; estimativa = tokens × preço MÁXIMO dos endpoints ZDR da lista (usada só quando faltou o custo)',
+          'openrouter = usage.cost devolvido na resposta; estimativa = tokens × preço do modelo (lista ZDR, senão lista pública) usada só quando a resposta não trouxe o custo',
         data: amb.hoje(),
       }),
     );
@@ -391,22 +517,36 @@ export async function executarComandoSondaIa(
         amb.saida(
           `Provedores que atenderam ${m.modelo} · ${m.variante}: ${m.provedores.join(', ')}`,
         );
+      if (m.fonteDoCusto === 'nao-medido' && m.analises > 0) {
+        amb.saida(
+          `Custo NÃO medido para ${m.modelo} · ${m.variante}: a resposta não trouxe usage.cost e não há preço do modelo nas listas. ` +
+            'Campos do usage recebidos (só nomes) estão em chamadas-<rodada>.json (camposDoUsage).',
+        );
+      }
     }
 
     const data = amb.hoje();
+    const sufixo = `${data}-${amb.hora()}`;
     await amb.gravarArquivo(
-      join(pastaDeSaida, 'metricas.json'),
+      join(pastaDeSaida, `metricas-${sufixo}.json`),
       JSON.stringify(metricas, null, 2) + '\n',
     );
     await amb.gravarArquivo(
-      join(pastaDeSaida, `chamadas-${data}.json`),
+      join(pastaDeSaida, `chamadas-${sufixo}.json`),
       JSON.stringify(metadadosDasChamadas(resultado.registros), null, 2) + '\n',
     );
-    const planilha = join(pastaDeSaida, `planilha-${data}.csv`);
-    await amb.gravarArquivo(planilha, gerarPlanilha(resultado.registros));
-    amb.aviso(
-      `Planilha para o Autran: ${planilha} (preencher a coluna "avaliacao" com util, errado ou perigoso).`,
-    );
+    const csv = gerarPlanilha(resultado.registros);
+    if (csv !== undefined) {
+      const planilha = join(pastaDeSaida, `planilha-${sufixo}.csv`);
+      await amb.gravarArquivo(planilha, csv);
+      amb.aviso(
+        `Planilha para o Autran: ${planilha} (preencher a coluna "avaliacao" com util, errado ou perigoso). Métricas da mesma rodada: metricas-${sufixo}.json`,
+      );
+    } else {
+      amb.aviso(
+        'Planilha do Autran NÃO gerada: esta rodada só tem casos sintéticos (nada para o Autran avaliar).',
+      );
+    }
 
     // Só resposta de caso SINTÉTICO vira fixture; `fixtureDeRespostas` já filtra por origem.
     const fixturesSaida = resolve(op.get('fixtures-saida') ?? fixtures);
@@ -439,6 +579,274 @@ export async function executarComandoSondaIa(
     amb.aviso('Falha inesperada na sonda (detalhes omitidos de propósito).');
     return 4;
   }
+}
+
+/** Descreve por que uma chamada falhou: o passo do roteamento quando há, sem chamar de "sem ZDR" o que não é. */
+function descreverFalha(
+  erro: unknown,
+  detalhes: readonly DetalheDeErro[],
+  chave: string,
+): string[] {
+  const linhas: string[] = [];
+  if (erro instanceof ZdrIndisponivelError) {
+    linhas.push(
+      `SEM ZDR (o roteamento parou no filtro de política de dados) · failed_routing_step: ${erro.passo ?? '(não informado)'} · routing_funnel: ${funilEmTexto(erro.funil)}`,
+    );
+  } else if (erro instanceof SemProvedorQueAtendaError) {
+    linhas.push(
+      `SEM PROVEDOR (NÃO é o filtro de política de dados) · failed_routing_step: ${erro.passo ?? '(não informado)'} · routing_funnel: ${funilEmTexto(erro.funil)}`,
+    );
+  } else {
+    linhas.push(`erro: ${erro instanceof Error ? erro.message : 'desconhecido'}`);
+  }
+  const d = detalhes[detalhes.length - 1];
+  if (d) {
+    linhas.push(
+      `HTTP ${d.status ?? '—'} · corpo: ${semChave((d.corpo ?? '').slice(0, 800), chave) || '(vazio)'}`,
+    );
+  }
+  return linhas;
+}
+
+interface Preparo {
+  readonly modelo: string;
+  readonly permitidos: readonly string[];
+  readonly sistema: string;
+  readonly usuario: string;
+}
+
+/** O que os dois comandos de medida têm em comum: modelo real, com ZDR, restrito, e o caso s01. */
+async function prepararMedida(
+  pedido: string,
+  lista: ListaZdrLida,
+  amb: AmbienteDaSonda,
+): Promise<Preparo | number> {
+  const modelo = pedido.trim();
+  if (modelo === '' || modelo === 'true') {
+    amb.aviso('Informe o modelo: use o id de --listar-modelos-zdr.');
+    return 2;
+  }
+  if (ehApelidoOuVariante(modelo)) {
+    amb.aviso(
+      `"${modelo}" é um apelido (~) ou uma variante (:), não um modelo. Use o id real.`,
+    );
+    return 2;
+  }
+  if (!modeloTemZdr(lista.endpoints, modelo)) {
+    amb.aviso(`"${modelo}" NÃO tem endpoint ZDR na lista; nada foi enviado.`);
+    return 2;
+  }
+  const permitidos = provedoresPermitidos(lista.endpoints, modelo);
+  if (permitidos.length === 0) {
+    amb.aviso(
+      `A lista não traz o slug (tag) dos provedores de "${modelo}"; não dá para restringir a chamada.`,
+    );
+    return 2;
+  }
+  const caso = await escolherSintetico(amb);
+  if (!caso) {
+    amb.aviso('Caso sintético s01 não encontrado em tests/fixtures/ia-ato/.');
+    return 2;
+  }
+  const entrada = prepararEntrada(
+    { data: caso.data, titulo: caso.titulo, conteudo: caso.texto },
+    {},
+    { pessoas: caso.pessoas },
+  );
+  return { modelo, permitidos, sistema: entrada.sistema, usuario: entrada.usuario };
+}
+
+const CAUSA_POR_DEGRAU: Readonly<Record<Degrau, string>> = {
+  A: 'A funcionou: com as restrições da rodada o modelo responde. A falha anterior, se houve, era outra (limite, rede, provedor momentaneamente fora).',
+  B: 'Causa provável: require_parameters — algum parâmetro do pedido não é suportado por todos os provedores restritos.',
+  C: 'Causa provável: o json_schema ESTRITO não é suportado pelos provedores ZDR deste modelo (a saída em texto, validada aqui, funciona).',
+  D: 'Causa provável: provider.only — os slugs derivados da tag da lista ZDR não são os que o OpenRouter espera.',
+};
+
+/**
+ * Diagnóstico em degraus. UM caso sintético; `zdr: true` e `data_collection: deny` em TODOS os
+ * degraus. Cada degrau tira UMA coisa a mais (A como na rodada → B sem require_parameters → C sem
+ * json_schema estrito → D sem provider.only) e para no primeiro que responde. Toda resposta tem o
+ * par (modelo, provedor) conferido na lista ZDR; no degrau D, que não restringe provedor, um par
+ * fora da lista DESCARTA a resposta. Códigos: 0 respondeu e o par consta; 5 nenhum degrau
+ * respondeu; 6 respondeu mas o par NÃO consta (bloqueante).
+ */
+async function diagnosticarModelo(
+  pedido: string,
+  chave: string,
+  lista: ListaZdrLida,
+  amb: AmbienteDaSonda,
+  timeoutMs: number | undefined,
+): Promise<number> {
+  const preparo = await prepararMedida(pedido, lista, amb);
+  if (typeof preparo === 'number') return preparo;
+  const { modelo, permitidos } = preparo;
+  amb.aviso(
+    `Diagnóstico de "${modelo}": caso sintético, zdr: true em todos os degraus, provedores da lista [${permitidos.join(', ')}].`,
+  );
+  const pedidoAoModelo: PedidoAoModelo = {
+    modelo,
+    sistema: preparo.sistema,
+    usuario: preparo.usuario,
+    provedoresPermitidos: permitidos,
+  };
+  for (const degrau of DEGRAUS) {
+    const detalhes: DetalheDeErro[] = [];
+    const transporte = amb.criarTransporteDeDiagnostico(chave, {
+      aoFalhar: (d) => detalhes.push(d),
+      ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+    });
+    const inicio = amb.agora();
+    amb.saida(`Degrau ${degrau} — ${DESCRICAO_DOS_DEGRAUS[degrau]}`);
+    try {
+      const r = await transporte.gerarDiagnostico(pedidoAoModelo, degrau);
+      const latenciaMs = Math.max(0, amb.agora() - inicio);
+      const parOk = parConfirmadoZdr(lista.endpoints, r.modeloResolvido, r.provedor);
+      const esquemaOk = lerRespostaDoModelo(r.objeto) !== undefined;
+      amb.saida('  RESPONDEU.');
+      mostrarRastro(amb, chave, modelo, degrau === 'D' ? [] : permitidos, {
+        modeloResolvido: r.modeloResolvido,
+        provedor: r.provedor,
+        corpoEnviado: r.diagnostico.corpoEnviado,
+      });
+      amb.saida(
+        `  par (model, provider) na lista ZDR: ${parOk ? 'sim' : 'NÃO'} · saída no esquema (Zod): ${esquemaOk ? 'sim' : 'NÃO'} · latência: ${Math.round(latenciaMs)} ms · tokens: ${r.tokensEntrada ?? '—'} entrada, ${r.tokensSaida ?? '—'} saída` +
+          (r.tokensRaciocinio !== undefined
+            ? ` (${r.tokensRaciocinio} de raciocínio)`
+            : '') +
+          ` · custo: ${r.custoUsd !== undefined ? `$${r.custoUsd}` : 'não informado'}`,
+      );
+      if (!parOk) {
+        amb.saida(
+          degrau === 'D'
+            ? 'DESCARTADO: sem provider.only a resposta veio de um par que NÃO consta na lista ZDR — não vale. BLOQUEANTE para texto real sem a restrição.'
+            : 'BLOQUEANTE: respondeu, mas o par (modelo da resposta, provedor) NÃO consta na lista ZDR.',
+        );
+        return 6;
+      }
+      amb.saida(`=> Funcionou no degrau ${degrau}. ${CAUSA_POR_DEGRAU[degrau]}`);
+      return 0;
+    } catch (erro) {
+      for (const l of descreverFalha(erro, detalhes, chave)) amb.saida(`  ${l}`);
+    }
+  }
+  amb.saida(
+    '=> Nenhum degrau respondeu. Envie a saída acima inteira (passos e funis de cada degrau).',
+  );
+  return 5;
+}
+
+/**
+ * Mede o efeito de raciocínio e de `max_tokens` na latência. UM caso sintético, mesma chamada da
+ * rodada (zdr, only, require_parameters, esquema estrito), repetida; o que varia é só o
+ * `reasoning` (padrão, desligado, nenhum, mínimo, baixo) e o teto de tokens. A latência do
+ * modelo é o que a rodada real vai pagar por análise.
+ */
+async function medirLatencia(
+  pedido: string,
+  repeticoes: number,
+  chave: string,
+  lista: ListaZdrLida,
+  amb: AmbienteDaSonda,
+  timeoutMs: number | undefined,
+): Promise<number> {
+  const preparo = await prepararMedida(pedido, lista, amb);
+  if (typeof preparo === 'number') return preparo;
+  const { modelo, permitidos } = preparo;
+  const configuracoes: Array<{ rotulo: string; ajustes: AjustesDeDesempenho }> = [
+    { rotulo: 'padrao', ajustes: {} },
+    { rotulo: 'raciocinio=desligado', ajustes: { raciocinio: 'desligado' } },
+    { rotulo: 'raciocinio=nenhum', ajustes: { raciocinio: 'nenhum' } },
+    { rotulo: 'raciocinio=minimo', ajustes: { raciocinio: 'minimo' } },
+    { rotulo: 'raciocinio=baixo', ajustes: { raciocinio: 'baixo' } },
+    { rotulo: 'padrao+max_tokens=800', ajustes: { maxTokens: 800 } },
+    {
+      rotulo: 'desligado+max_tokens=800',
+      ajustes: { raciocinio: 'desligado', maxTokens: 800 },
+    },
+  ];
+  amb.aviso(
+    `Medida de latência de "${modelo}": ${configuracoes.length} configurações × ${repeticoes} repetições, caso sintético, zdr: true, provedores [${permitidos.join(', ')}].`,
+  );
+  const linhas: string[][] = [
+    [
+      'configuração',
+      'ok/total',
+      'p50 ms',
+      'p95 ms',
+      'tok.saí',
+      'raciocínio',
+      'US$',
+      'obs',
+    ],
+  ];
+  for (const c of configuracoes) {
+    const latencias: number[] = [];
+    const saidas: number[] = [];
+    const raciocinios: number[] = [];
+    const custos: number[] = [];
+    let obs = '';
+    let ok = 0;
+    for (let i = 0; i < repeticoes; i++) {
+      const detalhes: DetalheDeErro[] = [];
+      const transporte = amb.criarTransporte(chave, {
+        ajustes: c.ajustes,
+        aoFalhar: (d) => detalhes.push(d),
+        ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+      });
+      const inicio = amb.agora();
+      try {
+        const r = await transporte.gerar({
+          modelo,
+          sistema: preparo.sistema,
+          usuario: preparo.usuario,
+          provedoresPermitidos: permitidos,
+        });
+        const latenciaMs = Math.max(0, amb.agora() - inicio);
+        if (!parConfirmadoZdr(lista.endpoints, r.modeloResolvido, r.provedor)) {
+          amb.saida(
+            `BLOQUEANTE: com ${c.rotulo} o par (${r.modeloResolvido ?? '—'}, ${r.provedor ?? '—'}) NÃO consta na lista ZDR. A medida para aqui.`,
+          );
+          return 6;
+        }
+        if (lerRespostaDoModelo(r.objeto) === undefined) obs = 'saída fora do esquema';
+        else ok += 1;
+        latencias.push(latenciaMs);
+        if (r.tokensSaida !== undefined) saidas.push(r.tokensSaida);
+        if (r.tokensRaciocinio !== undefined) raciocinios.push(r.tokensRaciocinio);
+        if (r.custoUsd !== undefined) custos.push(r.custoUsd);
+      } catch (erro) {
+        const d = detalhes[detalhes.length - 1];
+        obs =
+          erro instanceof SemProvedorQueAtendaError ||
+          erro instanceof ZdrIndisponivelError
+            ? `passo ${erro.passo ?? '?'}`
+            : (erro instanceof Error ? erro.message : 'erro').slice(0, 60);
+        if (d?.status !== undefined) obs += ` (HTTP ${d.status})`;
+      }
+    }
+    const f = (v: number | undefined): string =>
+      v === undefined ? '—' : String(Math.round(v));
+    linhas.push([
+      c.rotulo,
+      `${ok}/${repeticoes}`,
+      f(percentil(latencias, 0.5)),
+      f(percentil(latencias, 0.95)),
+      f(media(saidas)),
+      raciocinios.length > 0 ? f(media(raciocinios)) : '—',
+      media(custos) === undefined ? '—' : `$${(media(custos) ?? 0).toFixed(5)}`,
+      obs,
+    ]);
+  }
+  const larguras = (linhas[0] ?? []).map((_, i) =>
+    Math.max(...linhas.map((l) => (l[i] ?? '').length)),
+  );
+  for (const l of linhas)
+    amb.saida(l.map((c, i) => c.padEnd(larguras[i] ?? 0)).join('  '));
+  amb.saida(
+    'Leitura: compare o p50 de "padrao" com o das demais. Configuração com erro (obs) = o modelo ou o provedor não aceita aquele parâmetro. max_tokens baixo pode cortar a saída (JSON inválido): só vale se ok/total ficar cheio.',
+  );
+  return 0;
 }
 
 function escolherSintetico(amb: AmbienteDaSonda): Promise<CasoDaSonda | undefined> {

@@ -1,10 +1,11 @@
-# Sonda de IA do ato — resultado v1.0.2 (Etapa 1, transporte OpenRouter)
+# Sonda de IA do ato — resultado v1.0.3 (Etapa 1, transporte OpenRouter)
 
-Documento: `sonda-ia-ato-resultado-v1.0.0` (o nome do arquivo não muda; o conteúdo está na **v1.0.2**) ·
+Documento: `sonda-ia-ato-resultado-v1.0.0` (o nome do arquivo não muda; o conteúdo está na **v1.0.3**) ·
 10/10/2026 · especificação: `ia-analise-do-ato-especificacao-v1.0.0` (seções 4 a 7 e 11, mais a
 "Errata v1.0.1").
-Versão da sonda: **1.1.1** (1.1.0 = troca do AI Gateway da Vercel pelo OpenRouter; 1.1.1 = correção do
-controle de falha fechada e trava preventiva por provedor, seção 2.8). Versão do produto:
+Versão da sonda: **1.2.0** (1.1.0 = troca do AI Gateway da Vercel pelo OpenRouter; 1.1.1 = correção do
+controle de falha fechada e trava preventiva por provedor, seção 2.8; 1.2.0 = passo do erro de roteamento,
+diagnóstico em degraus, medida de latência e contabilidade da rodada, seção 2.9). Versão do produto:
 **inalterada (0.37.6)** — esta etapa não muda comportamento de produto, só acrescenta módulos
 puros, o transporte (ainda sem uso no serviço) e a sonda.
 
@@ -291,21 +292,92 @@ primeiro com o mesmo critério; (iii) nada disto foi rodado contra o OpenRouter.
 
 ---
 
+### 2.9 A rodada de 5 modelos (11/10/2026) e a sonda 1.2.0
+
+**O que foi reportado (só casos sintéticos, sonda 1.1.1):** DeepSeek v4 flash funcionou — 100% das
+citações verificadas, injeção ok — mas com p50 de 29 s e p95 de 52 s e custo "não medido"; n = 10 (sem
+títulos) e 9 (com títulos). Os outros quatro (`google/gemini-3.8-flash`, `openai/gpt-5.4-mini`,
+`anthropic/claude-haiku-5.5`, `anthropic/claude-sonnet-5.5`) voltaram "SEM ZDR" apesar de constarem na lista ZDR.
+
+**1. "SEM ZDR" era um palpite.** A 1.1.1 classificava como "sem ZDR" qualquer 404/400 com uma frase de
+"nenhum provedor atendeu". Mas o mesmo 404 sai de qualquer filtro do roteamento (política de dados,
+parâmetros suportados — `require_parameters` com `json_schema` estrito —, `provider.only`, preço…). Agora
+o erro é lido por `failed_routing_step` e `routing_funnel` (buscados em qualquer nível do corpo, inclusive
+em JSON embutido em string): **só se o passo for o filtro de política de dados** (`data_policy`, `zdr`,
+`retention`, `privacy`, `data_collection`, `training`) vira "SEM ZDR"; nos demais, "SEM PROVEDOR (passo X)",
+e o passo e o funil aparecem SEMPRE, nos dois casos, no terminal e no `chamadas-<rodada>.json`.
+_Limite:_ o vocabulário dos nomes de passo não está documentado; a regra por palavra é provisória, e passo
+desconhecido nunca vira "sem ZDR". Corpo sem passo → "o erro não informou o passo".
+
+**2. Diagnóstico em degraus** (`--diagnosticar-modelo=<modelo>`; um caso sintético; `zdr: true` e
+`data_collection: deny` em TODOS os degraus — não existe degrau sem eles): A como na rodada → B sem
+`require_parameters` → C sem `json_schema` estrito (formato por instrução no texto; o JSON é lido e validado
+com o Zod do nosso lado) → D sem `provider.only`. Cada degrau tira uma coisa a mais (cumulativo); para no
+primeiro que responde e diz qual foi, o par (model, provider) e o passo/funil de cada degrau que falhou. No
+D, que não restringe provedor, a resposta só vale se o par constar na lista ZDR; senão é **descartada**
+(código 6). _Os degraus A–C continuam restritos a `only` e o D não:_ por isso o D só deve ser usado com
+texto sintético, como aqui. `data_collection: deny` não é um degrau (fica em todos); se nenhum degrau
+responder, é o próximo suspeito.
+
+**3. Latência.** O p50 de 29 s para uma saída de ~150 tokens aponta para **raciocínio** (tokens que o modelo
+gasta antes de responder). O OpenRouter tem o parâmetro `reasoning` (pelos tipos do SDK: `enabled`,
+`exclude`, `effort` = `xhigh | high | medium | low | minimal | none`, ou `max_tokens`) e o `max_tokens` da
+resposta. A sonda ganhou `--raciocinio=padrao|desligado|nenhum|minimo|baixo` (`desligado` = `{enabled:false}`,
+`nenhum` = `{effort:'none'}`, `minimo` = `{effort:'minimal'}`, `baixo` = `{effort:'low'}`; `padrao` não envia nada),
+`--max-tokens=<n>` e `--timeout-ms=<n>`; e **`--medir-latencia=<modelo>`**, que roda 7 configurações
+(padrão; os 4 níveis de raciocínio; `max_tokens=800` com e sem raciocínio desligado) × N repetições no mesmo
+caso sintético e imprime p50, p95, tokens de saída, tokens de raciocínio e custo. _Não medi o efeito_ (sem
+rede); o comando existe para o dono medir. Cuidados: nem todo modelo aceita todos os formatos (o que falhar
+aparece com o passo); `max_tokens` baixo com raciocínio ligado pode cortar a saída e invalidar o JSON — só
+vale se `ok/total` ficar cheio; "exclude" do raciocínio só esconde o texto, não encurta o tempo.
+O tempo limite por chamada (padrão 60 s) estava a poucos segundos do p95 de 52 s: `--timeout-ms` o ajusta.
+
+**4. Custo "não medido": por quê e o que mudou.** O custo só era lido do `usage.cost` que o SDK já mapeava
+da resposta; a estimativa por preço dependia de a lista ZDR trazer `pricing` do modelo. Os dois falharam,
+então a tabela disse "não medido". _Não consigo dizer qual dos dois motivos valeu_, porque não vi a
+resposta real: (a) a resposta não trazia `usage.cost` (a contabilização de uso pode precisar ser pedida) e
+(b) a lista ZDR não trazia preço naquele formato. Correções: o pedido agora envia `usage: {include: true}`; o
+custo é lido do `usage.cost` mapeado **e** do `usage` cru da resposta; o diagnóstico guarda os **nomes** dos
+campos do `usage` recebido (`camposDoUsage`, nunca valores) para mostrar de onde o custo sairia; sem custo na
+resposta, o preço vem da lista ZDR e, se faltar, da lista pública de modelos (rotulado **estimativa**); e,
+se nada servir, a tabela diz "Custo NÃO medido para <modelo>" e aponta `camposDoUsage`. Uma consulta
+posterior `GET /api/v1/generation?id=…` poderia dar o custo real depois da chamada; não foi implementada (é
+uma segunda chamada, e a primeira correção pode bastar).
+
+**5. Por que n = 10 e 9, e não 11.** Os casos sintéticos são 12. O `s07` ("Ciência da decisão.", 19
+caracteres) não tem texto suficiente (< 80) e **não é enviado ao modelo** nas duas variantes: sobram 11
+chamadas em cada variante. `n` conta só as análises que **voltaram no esquema e com o provedor confirmado**.
+Logo, em "sem títulos" uma chamada ficou fora de `n` e em "com títulos", duas — por erro (tempo esgotado,
+HTTP), resposta fora do esquema depois da única repetição ou descarte. A tabela da 1.1.1 não mostrava isso;
+a 1.2.0 mostra `s/texto`, `erros`, `inválidas` e `parados` ao lado de `n` (a soma fecha em 12), e o
+`chamadas-<rodada>.json` traz o `estado` de cada chamada. Para a rodada já feita, o `estado` está no
+`chamadas-…json` e `erros`/`respostasInvalidas` no `metricas.json`. A hipótese mais forte: tempo esgotado
+(60 s de limite contra p95 de 52 s) e/ou JSON fora do esquema com o `json_schema` estrito — mas é hipótese.
+
+**6. A planilha do Autran daquela rodada deve ser descartada.** Ela só tinha casos sintéticos (textos
+inventados e respostas de modelo a eles): não há nada a ser avaliado pelo Autran, e o `metricas.json` do
+mesmo dia seria sobrescrito/confundido com o de uma rodada real. Apague-a (e o `metricas.json` antigo). A
+1.2.0 muda isto: rodada **só sintética não gera planilha** (e diz por quê), e planilha e métricas passam a ter
+o mesmo sufixo `AAAA-MM-DD-HHMM` — `--avaliacao` lê as métricas do mesmo sufixo, então uma rodada posterior
+não corrompe o veredito de uma planilha que ainda está com o Autran.
+
+---
+
 ## 3. O que foi construído
 
-| Peça                                                              | Onde                                                               | Observação                                                                               |
-| ----------------------------------------------------------------- | ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------- |
-| Vocabulário fechado (`parece_pedir`, códigos de atenção, limites) | `domain/entities/vocabularioDaAnalise.ts`                          | sem imports; **inalterado**                                                              |
-| `redigirParaIA` / `criarRedator`                                  | `application/politicas/redigirParaIA.ts`                           | pura; **inalterada**                                                                     |
-| `verificarAnalise`                                                | `application/politicas/verificarAnalise.ts`                        | pura; **inalterada**                                                                     |
-| `prepararEntrada`, `temTextoSuficiente`                           | `application/politicas/entradaDoModelo.ts`                         | `VERSAO_PROMPT = ato-1.0.0`; **inalterada**                                              |
-| Esquema Zod fechado                                               | `infrastructure/adapters/modelo/esquemaDaAnalise.ts`               | `.strict()`; **inalterado**                                                              |
-| **`TransporteOpenRouter`** (ZDR fixo)                             | `infrastructure/adapters/modelo/TransporteOpenRouter.ts`           | **novo**; substitui `TransporteGateway`                                                  |
-| **Lista ZDR e conferência do provedor**                           | `infrastructure/adapters/modelo/endpointsZdr.ts`                   | **novo**; usa o `HttpClient` do projeto; substitui `catalogoDoGateway`                   |
-| `ZdrIndisponivelError`                                            | `domain/errors/index.ts`                                           | subclasse de `ProviderIndisponivelError`; texto atualizado                               |
-| Núcleo, métricas, planilha, julgamento                            | `main/sonda/sondaIaAto.ts`, `comandoSondaIa.ts`, `casosDaSonda.ts` | provedor + `zdrConfirmado` por chamada                                                   |
-| Comando                                                           | `scripts/sonda-ia-ato.mjs` (**v1.1.1**)                            | `--listar-modelos-zdr`, `--controle-positivo`, `--controle-negativo`, `--fixtures-saida` |
-| 12 casos sintéticos                                               | `tests/fixtures/ia-ato/casos-sinteticos.json`                      | inalterados; agora também copiados para a imagem (`Dockerfile`)                          |
+| Peça                                                              | Onde                                                               | Observação                                                                                                                                                              |
+| ----------------------------------------------------------------- | ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Vocabulário fechado (`parece_pedir`, códigos de atenção, limites) | `domain/entities/vocabularioDaAnalise.ts`                          | sem imports; **inalterado**                                                                                                                                             |
+| `redigirParaIA` / `criarRedator`                                  | `application/politicas/redigirParaIA.ts`                           | pura; **inalterada**                                                                                                                                                    |
+| `verificarAnalise`                                                | `application/politicas/verificarAnalise.ts`                        | pura; **inalterada**                                                                                                                                                    |
+| `prepararEntrada`, `temTextoSuficiente`                           | `application/politicas/entradaDoModelo.ts`                         | `VERSAO_PROMPT = ato-1.0.0`; **inalterada**                                                                                                                             |
+| Esquema Zod fechado                                               | `infrastructure/adapters/modelo/esquemaDaAnalise.ts`               | `.strict()`; **inalterado**                                                                                                                                             |
+| **`TransporteOpenRouter`** (ZDR fixo)                             | `infrastructure/adapters/modelo/TransporteOpenRouter.ts`           | **novo**; substitui `TransporteGateway`                                                                                                                                 |
+| **Lista ZDR e conferência do provedor**                           | `infrastructure/adapters/modelo/endpointsZdr.ts`                   | **novo**; usa o `HttpClient` do projeto; substitui `catalogoDoGateway`                                                                                                  |
+| `ZdrIndisponivelError`                                            | `domain/errors/index.ts`                                           | subclasse de `ProviderIndisponivelError`; texto atualizado                                                                                                              |
+| Núcleo, métricas, planilha, julgamento                            | `main/sonda/sondaIaAto.ts`, `comandoSondaIa.ts`, `casosDaSonda.ts` | provedor + `zdrConfirmado` por chamada                                                                                                                                  |
+| Comando                                                           | `scripts/sonda-ia-ato.mjs` (**v1.2.0**)                            | `--listar-modelos-zdr`, `--controle-positivo/negativo`, `--diagnosticar-modelo`, `--medir-latencia`, `--raciocinio`, `--max-tokens`, `--timeout-ms`, `--fixtures-saida` |
+| 12 casos sintéticos                                               | `tests/fixtures/ia-ato/casos-sinteticos.json`                      | inalterados; agora também copiados para a imagem (`Dockerfile`)                                                                                                         |
 
 **Mudança na imagem:** uma linha no `Dockerfile` (`COPY tests/fixtures/ia-ato ./tests/fixtures/ia-ato`)
 para a sonda achar, dentro do contêiner, os casos **sintéticos** (inventados). Não toca `ENV`, porta,
@@ -521,7 +593,7 @@ node scripts/sonda-ia-ato.mjs --modelos=a/um,b/dois,c/tres --stdin --variantes=s
 
 ```
 cd /app
-node scripts/sonda-ia-ato.mjs --avaliacao=/dados/sonda-ia-ato/planilha-AAAA-MM-DD.csv
+node scripts/sonda-ia-ato.mjs --avaliacao=/dados/sonda-ia-ato/planilha-AAAA-MM-DD-HHMM.csv
 ```
 
 **(e) controles de ZDR** (UMA chamada cada, texto sintético) — rode o positivo primeiro
@@ -541,16 +613,33 @@ e sem chave). Saídas — positivo: `0` ok, `5` erro (me envie), `6` respondeu m
 negativo: `0` recusado antes de responder (esperado), `5` erro não reconhecido como recusa (me envie o
 status e o corpo), `6` **respondeu — bloqueante, não use o OpenRouter para texto real**.
 
-A rodada (b)/(c) grava, no volume (`/dados/sonda-ia-ato/` ao lado do banco): `planilha-AAAA-MM-DD.csv`
-(para o Autran), `metricas.json` e `chamadas-AAAA-MM-DD.json` (por chamada: modelo pedido e devolvido, provedor, restrição `only`, corpo enviado sem texto, latência, tokens, custo, `zdrConfirmado`). Com
+**(g) diagnóstico em degraus** (modelo que falha; UM caso sintético; `zdr: true` em todos os degraus)
+
+```
+cd /app
+node scripts/sonda-ia-ato.mjs --diagnosticar-modelo=anthropic/claude-haiku-5.5
+```
+
+**(h) medir latência** (raciocínio e `max_tokens`; caso sintético; 7 configurações × N repetições)
+
+```
+cd /app
+node scripts/sonda-ia-ato.mjs --medir-latencia=deepseek/deepseek-v4-flash --repeticoes=2
+```
+
+Na rodada, `--raciocinio=desligado`, `--max-tokens=800` e `--timeout-ms=120000` aplicam o que a medida mostrar.
+
+A rodada (b)/(c) grava, no volume (`/dados/sonda-ia-ato/` ao lado do banco), com o sufixo da rodada
+`AAAA-MM-DD-HHMM`: `planilha-<sufixo>.csv` (para o Autran; **só em rodada com caso real**), `metricas-<sufixo>.json`
+e `chamadas-<sufixo>.json` (por chamada: modelo pedido e devolvido, provedor, restrição `only`, corpo enviado sem texto, latência, tokens, custo, `zdrConfirmado`). Com
 casos sintéticos grava também `respostas-<modelo>-<data>.json` na pasta de `--fixtures-saida` — esses
 arquivos são **inventados** e podem ser baixados e entregues para virarem fixtures da Etapa 2.
 
 ### 8.6 A avaliação do Autran
 
-O Autran abre `planilha-AAAA-MM-DD.csv`, lê a coluna `resultado` e preenche `avaliacao` com `util`,
+O Autran abre `planilha-AAAA-MM-DD-HHMM.csv`, lê a coluna `resultado` e preenche `avaliacao` com `util`,
 `errado` ou `perigoso` (uma palavra por linha). Devolvida a planilha, o comando (d) diz, por modelo e
-variante, se cumpre o critério e qual é o mais barato que cumpre (precisa do `metricas.json` ao lado).
+variante, se cumpre o critério e qual é o mais barato que cumpre (procura `metricas-<mesmo sufixo>.json` ao lado).
 
 ---
 

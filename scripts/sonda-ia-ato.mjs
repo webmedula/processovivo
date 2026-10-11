@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Sonda de IA do ato (v1.1.1) — NÃO consulta tribunal e NÃO abre o banco.
+ * Sonda de IA do ato (v1.2.0) — NÃO consulta tribunal e NÃO abre o banco.
  *
  * Compara 3 ou 4 modelos pelo OpenRouter, SEMPRE com retenção zero de
  * dados (ZDR) por requisição (`provider.zdr: true`), na tarefa "ler o ato e dizer o que ele parece
@@ -14,6 +14,8 @@
  *   node scripts/sonda-ia-ato.mjs --avaliacao=/dados/sonda-ia-ato/planilha-AAAA-MM-DD.csv
  *   node scripts/sonda-ia-ato.mjs --controle-positivo[=modelo]       # 1 chamada, texto sintético, modelo COM ZDR
  *   node scripts/sonda-ia-ato.mjs --controle-negativo[=modelo]       # 1 chamada, texto sintético, modelo SEM ZDR
+ *   node scripts/sonda-ia-ato.mjs --diagnosticar-modelo=modelo       # degraus A-D, caso sintético, zdr sempre
+ *   node scripts/sonda-ia-ato.mjs --medir-latencia=modelo            # raciocínio e max_tokens, caso sintético
  *   node scripts/sonda-ia-ato.mjs --ajuda
  *
  * Variável: OPENROUTER_API_KEY (nunca impressa). Toda a lógica está em
@@ -55,10 +57,12 @@ const codigo = await executarComandoSondaIa(process.argv.slice(2), {
   },
   existeArquivo: (c) => access(c).then(() => true, () => false),
   criarTransporte: (chave, opcoes) => new TransporteOpenRouter({ chave, ...opcoes }),
+  criarTransporteDeDiagnostico: (chave, opcoes) => new TransporteOpenRouter({ chave, ...opcoes }),
   buscarEndpointsZdr: (chave) => buscarEndpointsZdr(http, chave),
   buscarModelosPublicos: () => buscarModelosPublicos(http),
   buscarEndpointsPublicosDoModelo: (modelo) => buscarEndpointsPublicosDoModelo(http, modelo),
   hoje: () => new Date().toISOString().slice(0, 10),
+  hora: () => new Date().toISOString().slice(11, 16).replace(':', ''),
   agora: () => performance.now(),
   dormir: (ms) => dormir(ms),
   saida: (l) => console.log(l),
