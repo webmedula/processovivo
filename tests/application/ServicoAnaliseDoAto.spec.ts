@@ -1,0 +1,351 @@
+import { beforeEach, describe, expect, it } from 'vitest';
+import type { DatabaseSync } from 'node:sqlite';
+import { LimiteDeAnalises } from '../../src/application/politicas/limiteDeAnalises.js';
+import { ServicoAnaliseDoAto } from '../../src/application/services/ServicoAnaliseDoAto.js';
+import { chaveDaMovimentacao } from '../../src/domain/entities/Acompanhamento.js';
+import type { Movimentacao } from '../../src/domain/entities/Movimentacao.js';
+import { NumeroCNJ } from '../../src/domain/entities/NumeroCNJ.js';
+import { Processo } from '../../src/domain/entities/Processo.js';
+import {
+  AcompanhamentoNaoEncontradoError,
+  AnaliseNaoEncontradaError,
+  EntradaNaoAnalisavelError,
+  ProviderIndisponivelError,
+} from '../../src/domain/errors/index.js';
+import { abrirBanco } from '../../src/infrastructure/persistencia/sqlite/banco.js';
+import { RepositorioAcompanhamentosSqlite } from '../../src/infrastructure/persistencia/sqlite/RepositorioAcompanhamentosSqlite.js';
+import { RepositorioAnalisesSqlite } from '../../src/infrastructure/persistencia/sqlite/RepositorioAnalisesSqlite.js';
+import { ClockFalso } from '../helpers/leitor.js';
+import {
+  AnalisadorFalso,
+  LoggerColetor,
+  NOME_DA_PARTE,
+  respostaValida,
+  TEXTO_DO_ATO,
+} from '../helpers/analiseIa.js';
+import { NUMERO_TJSP_A } from '../helpers/fabricas.js';
+
+const WS_A = 'ws-a';
+const WS_B = 'ws-b';
+const NUMERO = NumeroCNJ.criar(NUMERO_TJSP_A).digitos;
+const DATA = new Date('2026-10-05T12:00:00Z');
+
+const ATO: Movimentacao = {
+  data: DATA,
+  titulo: 'Despacho',
+  idExterno: 'djen:900',
+  conteudo: TEXTO_DO_ATO,
+};
+
+function processo(movs: Movimentacao[], segredo = false): Processo {
+  return new Processo({
+    numero: NumeroCNJ.criar(NUMERO_TJSP_A),
+    tribunal: 'TJGO',
+    classe: 'Procedimento Comum Cível',
+    segredoJustica: segredo,
+    partes: [{ nome: NOME_DA_PARTE, polo: 'ATIVO', tipoPessoa: 'FISICA', advogados: [] }],
+    movimentacoes: movs,
+    procedencia: { provider: 'djen', consultadoEm: DATA, deCache: false },
+  });
+}
+
+describe('ServicoAnaliseDoAto', () => {
+  let db: DatabaseSync;
+  let repo: RepositorioAcompanhamentosSqlite;
+  let analisador: AnalisadorFalso;
+  let log: LoggerColetor;
+  let planoIa: Set<string>;
+  let relogio: ClockFalso;
+
+  function servico(
+    opcoes: { porHora?: number; global?: number } = {},
+  ): ServicoAnaliseDoAto {
+    return new ServicoAnaliseDoAto({
+      repositorio: repo,
+      analises: new RepositorioAnalisesSqlite(db),
+      assinaturas: { temRecursoSemExcecao: async (ws) => planoIa.has(ws) },
+      analisador,
+      limite: new LimiteDeAnalises({
+        porHora: opcoes.porHora ?? 100,
+        simultaneasNoTotal: opcoes.global ?? 10,
+        clock: relogio,
+      }),
+      clock: relogio,
+      logger: log,
+      novoId: (() => {
+        let n = 0;
+        return () => `analise-${++n}`;
+      })(),
+    });
+  }
+
+  async function semear(
+    ws: string,
+    movs: Movimentacao[],
+    segredo = false,
+  ): Promise<void> {
+    await repo.acompanhar(ws, NUMERO);
+    await repo.registrarSincronizacao(ws, NUMERO, processo(movs, segredo), []);
+  }
+
+  const pedido = (ws = WS_A, chave = chaveDaMovimentacao(ATO)) => ({
+    workspace: ws,
+    numero: NUMERO_TJSP_A,
+    chaveDoAto: chave,
+  });
+
+  beforeEach(() => {
+    db = abrirBanco(':memory:');
+    repo = new RepositorioAcompanhamentosSqlite(db);
+    analisador = new AnalisadorFalso();
+    log = new LoggerColetor();
+    planoIa = new Set([WS_A, WS_B]);
+    relogio = new ClockFalso();
+  });
+
+  describe('o que NÃO chama o modelo', () => {
+    it('conta sem o plano IA: frase fixa e zero chamadas ao adaptador', async () => {
+      await semear(WS_A, [ATO]);
+      planoIa.clear();
+      const erro = await servico()
+        .analisar(pedido())
+        .catch((e: unknown) => e);
+      expect(erro).toBeInstanceOf(EntradaNaoAnalisavelError);
+      expect((erro as EntradaNaoAnalisavelError).motivo).toBe('sem_plano');
+      expect((erro as Error).message).toBe(
+        'A análise por IA faz parte do plano IA. Faça upgrade do plano para usar.',
+      );
+      expect(analisador.chamadas).toBe(0);
+    });
+
+    it('processo em segredo de justiça: zero chamadas, qualquer que seja o texto', async () => {
+      await semear(WS_A, [ATO], true);
+      const erro = await servico()
+        .analisar(pedido())
+        .catch((e: unknown) => e);
+      expect((erro as EntradaNaoAnalisavelError).motivo).toBe('segredo_de_justica');
+      expect(analisador.chamadas).toBe(0);
+    });
+
+    it('ato só com rótulo: texto insuficiente, zero chamadas', async () => {
+      const curto: Movimentacao = {
+        data: DATA,
+        titulo: 'Conclusos',
+        conteudo: 'Ciência.',
+      };
+      await semear(WS_A, [curto]);
+      const erro = await servico()
+        .analisar(pedido(WS_A, chaveDaMovimentacao(curto)))
+        .catch((e: unknown) => e);
+      expect((erro as EntradaNaoAnalisavelError).motivo).toBe('texto_insuficiente');
+      expect(analisador.chamadas).toBe(0);
+    });
+
+    it('aviso de teor não público do tribunal: texto INDISPONÍVEL (mensagem diferente de insuficiente), zero chamadas', async () => {
+      const indisponivel: Movimentacao = {
+        data: DATA,
+        titulo: 'Intimação',
+        idExterno: 'djen:901',
+        teorIndisponivel: true,
+      };
+      await semear(WS_A, [indisponivel]);
+      const erro = await servico()
+        .analisar(pedido(WS_A, chaveDaMovimentacao(indisponivel)))
+        .catch((e: unknown) => e);
+      expect((erro as EntradaNaoAnalisavelError).motivo).toBe('texto_indisponivel');
+      expect(analisador.chamadas).toBe(0);
+      const insuficiente = await servico()
+        .analisar(pedido(WS_A, 'inexistente'))
+        .catch((e: unknown) => e);
+      expect((insuficiente as Error).message).not.toBe((erro as Error).message);
+    });
+
+    it('chave que não está no retrato da conta: ato não encontrado, zero chamadas', async () => {
+      await semear(WS_A, [ATO]);
+      const erro = await servico()
+        .analisar(pedido(WS_A, 'ato-que-nao-existe'))
+        .catch((e: unknown) => e);
+      expect((erro as EntradaNaoAnalisavelError).motivo).toBe('ato_nao_encontrado');
+      expect(analisador.chamadas).toBe(0);
+    });
+
+    it('processo de OUTRA conta é "não acompanhado": o texto de outro workspace nunca é lido', async () => {
+      await semear(WS_A, [ATO]);
+      await expect(servico().analisar(pedido(WS_B))).rejects.toBeInstanceOf(
+        AcompanhamentoNaoEncontradoError,
+      );
+      expect(analisador.chamadas).toBe(0);
+    });
+  });
+
+  describe('análise feita', () => {
+    it('envia só texto redigido, devolve com os marcadores trocados e grava SÓ com marcadores', async () => {
+      await semear(WS_A, [ATO]);
+      const r = await servico().analisar(pedido());
+      expect(r.estado).toBe('verificada');
+
+      const enviado = analisador.pedidos[0]!;
+      const tudo = `${enviado.sistema}\n${enviado.usuario}`;
+      expect(tudo).not.toContain(NOME_DA_PARTE);
+      expect(tudo).not.toContain('98765-4321');
+      expect(tudo).toContain('[PARTE A]');
+
+      if (r.estado !== 'verificada') throw new Error('esperava verificada');
+      // Para a tela, o marcador volta a ser o valor da própria conta.
+      expect(r.resumo).toBe(
+        `${NOME_DA_PARTE} deve se manifestar sobre o laudo pericial.`,
+      );
+      expect(r.modelo).toBe('modelo/teste');
+      expect(r.provedor).toBe('provedor-teste');
+      expect(r.versaoPrompt).toBe('ato-1.0.0');
+
+      const linha = db.prepare('SELECT * FROM analises_ia').get() as Record<
+        string,
+        unknown
+      >;
+      const gravado = JSON.stringify(linha);
+      expect(gravado).toContain('[PARTE A]');
+      expect(gravado).not.toContain(NOME_DA_PARTE);
+      expect(gravado).not.toContain(TEXTO_DO_ATO);
+      expect(linha['workspace']).toBe(WS_A);
+      expect(linha['latencia_ms']).toBeTypeOf('number');
+    });
+
+    it('citação que não existe no texto enviado vira "não verificada" (e é gravada, sem entrar na tela)', async () => {
+      await semear(WS_A, [ATO]);
+      analisador.resposta = async () => ({
+        resposta: respostaValida({
+          trecho_chave: 'trecho inventado que não consta do ato',
+          acoes_possiveis: [],
+        }),
+        modelo: 'modelo/teste',
+        provedor: 'provedor-teste',
+      });
+      const r = await servico().analisar(pedido());
+      expect(r.estado).toBe('nao_verificada');
+      expect(db.prepare('SELECT count(*) AS n FROM analises_ia').get()).toMatchObject({
+        n: 1,
+      });
+    });
+
+    it('falha do modelo vira estado "erro": nada é gravado e nenhum texto de ato chega ao log', async () => {
+      await semear(WS_A, [ATO]);
+      analisador.resposta = async () => {
+        throw new ProviderIndisponivelError(
+          'openrouter',
+          `eco do pedido: ${TEXTO_DO_ATO}`,
+        );
+      };
+      const r = await servico().analisar(pedido());
+      expect(r).toEqual({ estado: 'erro' });
+      expect(db.prepare('SELECT count(*) AS n FROM analises_ia').get()).toMatchObject({
+        n: 0,
+      });
+      const log_ = log.linhas.join('\n');
+      expect(log_).not.toContain('laudo pericial');
+      expect(log_).not.toContain(NOME_DA_PARTE);
+    });
+
+    it('o clique repetido analisa de novo (sem cache): duas chamadas, duas linhas', async () => {
+      await semear(WS_A, [ATO]);
+      const s = servico();
+      await s.analisar(pedido());
+      await s.analisar(pedido());
+      expect(analisador.chamadas).toBe(2);
+      expect(db.prepare('SELECT count(*) AS n FROM analises_ia').get()).toMatchObject({
+        n: 2,
+      });
+    });
+
+    it('repassa o sinal de cancelamento ao adaptador', async () => {
+      await semear(WS_A, [ATO]);
+      const controle = new AbortController();
+      await servico().analisar({ ...pedido(), sinal: controle.signal });
+      expect(analisador.pedidos[0]?.sinal).toBe(controle.signal);
+    });
+  });
+
+  describe('limite de uso', () => {
+    it('acima do limite por hora da conta: recusa antes de chamar; outra conta não é afetada; passada a hora, libera', async () => {
+      await semear(WS_A, [ATO]);
+      await semear(WS_B, [ATO]);
+      const s = servico({ porHora: 1 });
+      await s.analisar(pedido(WS_A));
+      const erro = await s.analisar(pedido(WS_A)).catch((e: unknown) => e);
+      expect((erro as EntradaNaoAnalisavelError).motivo).toBe('limite_de_uso');
+      expect((erro as Error).message).toBe(
+        'Há muitas análises em andamento. Tente novamente em instantes.',
+      );
+      expect(analisador.chamadas).toBe(1);
+      await s.analisar(pedido(WS_B));
+      expect(analisador.chamadas).toBe(2);
+      relogio.avancar(3_600_001);
+      await s.analisar(pedido(WS_A));
+      expect(analisador.chamadas).toBe(3);
+    });
+
+    it('uma análise em andamento por conta e teto global baixo', async () => {
+      await semear(WS_A, [ATO]);
+      await semear(WS_B, [ATO]);
+      let liberar: () => void = () => {};
+      const travado = new Promise<void>((r) => (liberar = r));
+      analisador.resposta = async () => {
+        await travado;
+        return { resposta: respostaValida(), modelo: 'm', provedor: 'p' };
+      };
+      const s = servico({ global: 1 });
+      const primeira = s.analisar(pedido(WS_A));
+      // mesma conta
+      const mesmaConta = await s.analisar(pedido(WS_A)).catch((e: unknown) => e);
+      expect((mesmaConta as EntradaNaoAnalisavelError).motivo).toBe('limite_de_uso');
+      // outra conta, mas o teto global (1) está cheio
+      const outraConta = await s.analisar(pedido(WS_B)).catch((e: unknown) => e);
+      expect((outraConta as EntradaNaoAnalisavelError).motivo).toBe('limite_de_uso');
+      expect(analisador.chamadas).toBe(1);
+      liberar();
+      await primeira;
+      // vaga liberada no fim
+      analisador.resposta = async () => ({
+        resposta: respostaValida(),
+        modelo: 'm',
+        provedor: 'p',
+      });
+      await s.analisar(pedido(WS_B));
+      expect(analisador.chamadas).toBe(2);
+    });
+
+    it('a vaga é liberada mesmo quando o modelo falha', async () => {
+      await semear(WS_A, [ATO]);
+      analisador.resposta = async () => {
+        throw new ProviderIndisponivelError('openrouter', 'fora');
+      };
+      const s = servico({ global: 1 });
+      expect(await s.analisar(pedido())).toEqual({ estado: 'erro' });
+      expect(await s.analisar(pedido())).toEqual({ estado: 'erro' });
+      expect(analisador.chamadas).toBe(2);
+    });
+  });
+
+  describe('avaliação', () => {
+    it('só o dono avalia, pode corrigir, e a de outra conta é 404 idêntico a "não existe"', async () => {
+      await semear(WS_A, [ATO]);
+      const s = servico();
+      const r = await s.analisar(pedido());
+      if (r.estado === 'erro') throw new Error('esperava análise');
+      await s.avaliar(WS_A, r.id, 'util');
+      await s.avaliar(WS_A, r.id, 'perigoso');
+      expect(db.prepare('SELECT avaliacao FROM analises_ia').get()).toMatchObject({
+        avaliacao: 'perigoso',
+      });
+      const deOutro = await s.avaliar(WS_B, r.id, 'util').catch((e: unknown) => e);
+      const inexistente = await s
+        .avaliar(WS_A, 'nao-existe', 'util')
+        .catch((e: unknown) => e);
+      expect(deOutro).toBeInstanceOf(AnaliseNaoEncontradaError);
+      expect((deOutro as Error).message).toBe((inexistente as Error).message);
+      expect(db.prepare('SELECT avaliacao FROM analises_ia').get()).toMatchObject({
+        avaliacao: 'perigoso',
+      });
+    });
+  });
+});

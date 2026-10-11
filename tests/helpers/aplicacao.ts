@@ -33,6 +33,10 @@ import { abrirBanco } from '../../src/infrastructure/persistencia/sqlite/banco.j
 import { RepositorioAcompanhamentosSqlite } from '../../src/infrastructure/persistencia/sqlite/RepositorioAcompanhamentosSqlite.js';
 import { RepositorioNotificacaoSqlite } from '../../src/infrastructure/persistencia/sqlite/RepositorioNotificacaoSqlite.js';
 import { RepositorioVigilanciasSqlite } from '../../src/infrastructure/persistencia/sqlite/RepositorioVigilanciasSqlite.js';
+import { ServicoAnaliseDoAto } from '../../src/application/services/ServicoAnaliseDoAto.js';
+import { LimiteDeAnalises } from '../../src/application/politicas/limiteDeAnalises.js';
+import type { AnalisadorDeAto } from '../../src/domain/ports/AnalisadorDeAto.js';
+import { RepositorioAnalisesSqlite } from '../../src/infrastructure/persistencia/sqlite/RepositorioAnalisesSqlite.js';
 import type { Aplicacao } from '../../src/main/factories/makeProcessoSearchService.js';
 import { ServicoContas } from '../../src/application/services/ServicoContas.js';
 import { ServicoAssinaturas } from '../../src/application/services/ServicoAssinaturas.js';
@@ -146,6 +150,16 @@ export interface OpcoesAplicacaoDeTeste {
    * navegador); o padrão, 0, é instantâneo.
    */
   readonly pasta?: { readonly debounceMs?: number };
+  /**
+   * Liga a análise por IA com um analisador DUBLÊ (nenhum teste toca a rede). Ausente = IA
+   * desligada, o padrão de produção.
+   */
+  readonly analiseIa?: {
+    readonly analisador: AnalisadorDeAto;
+    readonly porHora?: number;
+    readonly simultaneasNoTotal?: number;
+    readonly clock?: Clock;
+  };
   /** Liga a área administrativa. Ausente por padrão — mesma regra de `comAssinaturas`. */
   readonly admin?: { readonly usuario: string; readonly senha: string };
 }
@@ -328,6 +342,28 @@ export function aplicacaoDeTeste(
     vigilancia,
     notificacao,
     pecas,
+    analiseIa: opcoes.analiseIa
+      ? new ServicoAnaliseDoAto({
+          repositorio: repositorioCru,
+          analises: new RepositorioAnalisesSqlite(db),
+          assinaturas,
+          analisador: opcoes.analiseIa.analisador,
+          limite: new LimiteDeAnalises({
+            porHora: opcoes.analiseIa.porHora ?? 100,
+            simultaneasNoTotal: opcoes.analiseIa.simultaneasNoTotal ?? 10,
+            clock: opcoes.analiseIa.clock ?? {
+              agora: () => (opcoes.agora ? opcoes.agora() : new Date()),
+              monotonico: () => 0,
+            },
+          }),
+          clock: opcoes.analiseIa.clock ?? {
+            agora: () => (opcoes.agora ? opcoes.agora() : new Date()),
+            monotonico: () => 0,
+          },
+          logger: loggerSilencioso,
+          novoId: () => randomUUID(),
+        })
+      : undefined,
     leitor,
     pasta,
     agendadorLeitor: undefined,

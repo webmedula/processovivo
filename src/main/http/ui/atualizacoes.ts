@@ -34,6 +34,7 @@ import { trechoDeTexto } from './trechoDeTexto.js';
 import {
   SITUACAO_PADRAO,
   atoExibido,
+  chaveDoAtoDaLinha,
   detectadoDistanteDoAto,
   diaMesBrasilia,
   contarSaidasDaProvidencia,
@@ -69,6 +70,7 @@ var textoDePartes=${textoDePartes.toString()};
 var textoDeProvidencia=${textoDeProvidencia.toString()};
 var contarSemLeitura=${contarSemLeitura.toString()};
 var atoExibido=${atoExibido.toString()};
+var chaveDoAtoDaLinha=${chaveDoAtoDaLinha.toString()};
 var detectadoDistanteDoAto=${detectadoDistanteDoAto.toString()};
 var diaMesBrasilia=${diaMesBrasilia.toString()};
 var contarSaidasDaProvidencia=${contarSaidasDaProvidencia.toString()};
@@ -94,6 +96,7 @@ var ICO_ULTIMA=svg('<path d="m6 17 5-5-5-5"/><path d="m13 17 5-5-5-5"/>');
 
 function esc(s){return pv().esc(s)}
 function prov(){return window.__pvProvidencia}
+function ia(){return window.__pvAnaliseIA}
 function digitos(n){return String(n||'').replace(/\D/g,'')}
 
 /* O "há N dias" desta lista conta desde a DETECÇÃO, nunca desde a data do ato. A
@@ -215,7 +218,7 @@ function celulaAcoes(g){
   return '<td class="c-acoes" data-rotulo="Ações"><div class="nvt-acoes">'+
     '<button type="button" class="nvt-ic" data-acao="abrir" data-num="'+esc(g.numero)+'" data-foco="abrir-'+esc(g.numero)+'" aria-label="Abrir o processo '+esc(m)+'" title="Abrir o processo">'+ICO_ABRIR+'</button>'+
     '<button type="button" class="nvt-ic" data-acao="pasta" data-num="'+esc(g.numero)+'" data-foco="pasta-'+esc(g.numero)+'" aria-label="Abrir a pasta digital do processo '+esc(m)+'" title="Abrir a pasta digital">'+ICO_PASTA+'</button>'+
-    '</div></td>';
+    '</div>'+ia().botao(g.numero,chaveDoAtoDaLinha(g))+'</td>';
 }
 
 /* A classe é montada AQUI e só aqui: a coluna Classe e a linha sob o Tribunal (1024–1279 px)
@@ -260,7 +263,7 @@ function linha(g){
     '<td class="c-trib" data-rotulo="Tribunal">'+esc(g.processo&&g.processo.tribunal?g.processo.tribunal:'—')+classe.mini+'</td>'+
     '<td class="c-classe" data-rotulo="Classe">'+classe.cheia+'</td>'+
     celulaData(g)+celulaDetectado(g)+
-    celulaSituacao(g)+celulaAcoes(g)+'</tr>';
+    celulaSituacao(g)+celulaAcoes(g)+'</tr>'+ia().painel(g.numero);
   return h;
 }
 
@@ -589,6 +592,7 @@ function aoClicar(ev){
   var el=ev.target.closest?ev.target.closest('[data-acao]'):null;
   if(!el||!corpo.contains(el))return;
   var acao=el.getAttribute('data-acao'),num=el.getAttribute('data-num');
+  if(acao==='ia'||acao.indexOf('ia-')===0){ia().clicar(acao,el);return}
   if(acao==='abrir'){ev.preventDefault();pv().abrir(num);return}
   if(acao==='pasta'){
     /* A Pasta abre depois que a tela do processo desenha o cartão das peças. */
@@ -643,6 +647,9 @@ function montar(alvo,r,opc){
   corpo.addEventListener('click',aoClicar);
   corpo.addEventListener('change',aoMudar);
   corpo.addEventListener('keydown',aoTeclar);
+  /* IA (v0.38.0): desligada, não há botão. Ligada, a primeira pergunta ao servidor redesenha UMA vez. */
+  ia().ligar({redesenhar:function(f){S.foco=f||'';desenhar(false)},anunciar:anunciar});
+  if(!ia().habilitada())ia().carregar().then(function(h){if(h&&corpo&&corpo.isConnected)desenhar(false)});
   desenhar(false);
 }
 

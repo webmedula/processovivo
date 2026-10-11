@@ -9,6 +9,57 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.38.0] — 2026-10-11
+
+**Analisar com IA** (beta fechado). Um botão na tabela de Atualizações manda **um ato** a um modelo
+de linguagem e devolve um resumo curto, o que ele parece pedir e as citações do próprio texto do
+ato. É apoio à leitura: **não altera** "pede providência", "não lida", ordem, contagens, painel nem
+calendário, e **não calcula prazo**. Nasce **desligada** (`PROCESSOVIVO_IA_HABILITADA=false`); sem a
+variável nada muda para ninguém. Etapa 2 enxuta: o desenho original (cota mensal, cache, escolha de
+modelo) foi cortado — ver o Errata v1.1.0 da especificação.
+
+### Adicionado
+
+- **Análise de um ato por IA**, só com o **texto que o sistema já tem** (nada de peça nem de PDF), **redigido** antes de sair
+  (nomes, documentos, contatos, OAB e número de processo viram marcadores) e **verificado** depois (a citação precisa existir no
+  texto enviado; número inventado ou expressão proibida descarta o resultado). O ato é resolvido **no servidor**, no retrato da conta,
+  pela chave dele: o pedido carrega só a chave e texto vindo do cliente nunca é aceito. Processo em segredo de justiça, ato sem texto
+  suficiente e teor que o tribunal avisou não ser público **não chamam o modelo** (testado: zero chamadas).
+- **Retenção zero de dados (ZDR) falhando fechado, sem chave de desligar**: toda chamada leva `zdr: true`, `data_collection: deny`,
+  `allow_fallbacks: false` e `provider.only` com os provedores ZDR do modelo, segundo a lista do OpenRouter (guardada 24 h em memória).
+  Lista inalcançável/vazia = nenhuma chamada; resposta de provedor fora do conjunto permitido é descartada e o log leva só nomes.
+  `PROCESSOVIVO_IA_PROVEDORES_PERMITIDOS` (opcional) só restringe (interseção com a lista ZDR).
+- **Plano IA obrigatório, sem exceção** — inclusive para chave de API/conta sem assinatura, que nas demais funções passam livre. Sem
+  o plano: nenhuma chamada e a frase fixa "A análise por IA faz parte do plano IA. Faça upgrade do plano para usar." A venda do plano IA
+  **continua travada** (`analiseIa` segue `implementado: false`); contas entram por liberação manual (`/admin` → Liberar / renovar, ou
+  `assinatura liberar <e-mail> ia <meses>`).
+- **Rotas** `GET /v1/analises/disponibilidade`, `POST /v1/acompanhamentos/:numero/analise` e `POST /v1/analises/:id/avaliacao`
+  (Útil / Errado / Perigoso, sem texto livre, só o dono, pode corrigir). Cancelar a requisição aborta a chamada ao modelo.
+- **Tela** (`ui/analiseIA.ts`; `script.ts` não cresceu): botão "Analisar com IA" na coluna Ações, painel abaixo da linha com foco, Esc,
+  `aria-expanded`, estados (analisando com Cancelar, resultado com citações destacadas, não verificado, erro, texto insuficiente, texto
+  indisponível, segredo de justiça, sem plano, limite de uso), selo "IA" com a procedência e o aviso fixo. Com a IA desligada não há botão.
+- **Tabela `analises_ia`** (aditiva): resultado **com marcadores**, modelo, versão do prompt, provedor, tokens, custo, latência e avaliação.
+  Nunca o texto do ato nem os valores originais.
+- **Freio de uso em memória**: limite por hora por conta, uma análise em andamento por conta e teto global baixo. Reiniciar zera.
+- **`scripts/ia-avaliacoes.mjs` v1.0.0** (somente leitura, sem texto): por modelo e versão do prompt, análises, avaliações, taxa de "não
+  verificado", latência p50/p95 e custo médio.
+- **Configuração** validada no arranque: `PROCESSOVIVO_IA_HABILITADA`, `PROCESSOVIVO_IA_MODELO` (padrão `deepseek/deepseek-v4-flash`),
+  `PROCESSOVIVO_IA_RACIOCINIO` (padrão `desligado`), `PROCESSOVIVO_IA_MAX_TOKENS`, `PROCESSOVIVO_IA_TIMEOUT_MS`,
+  `PROCESSOVIVO_IA_PROVEDORES_PERMITIDOS`, `PROCESSOVIVO_IA_MAX_POR_HORA`, `PROCESSOVIVO_IA_MAX_SIMULTANEAS` e `OPENROUTER_API_KEY`
+  (exigida só com a IA ligada; barrada se parecer valor de exemplo; nunca em log, resposta ou erro).
+- Campos **aditivos** em `GET /v1/novidades`: `chaveDoAto` nas atualizações e na última movimentação das linhas sem novidade.
+
+### Alterado
+
+- A política de redação/verificação/preparo da entrada vive em `application/politicas/` e a sonda importa de lá (sem duplicação).
+- O transporte do OpenRouter aceita um sinal de cancelamento (aborta a chamada e não repete).
+- Rótulo do recurso "Análise com IA" no painel `/admin`: "em teste fechado: libere à mão; ainda não pode ir à venda".
+
+### Corrigido
+
+- Teste de navegador de "Peças baixadas" (`pasta-baixadas-navegador.spec.ts`): esperava só a classe `.pbx-vazio`, que também marca o
+  "Carregando o histórico…", e lia o texto do carregamento quando vencia a corrida. Era do teste; a tela estava certa.
+
 ## [0.37.6] — 2026-10-09
 
 Conferência com o Projudi. O dono pôs a aba Atualizações ao lado da tela de

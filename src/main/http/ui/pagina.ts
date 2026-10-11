@@ -8,6 +8,7 @@ import { SCRIPT_PASTA_BAIXADAS } from './scriptPastaBaixadas.js';
 import { ESTILOS_CALENDARIO, SCRIPT_CALENDARIO } from './calendario.js';
 import { ESTILOS_ATUALIZACOES, SCRIPT_ATUALIZACOES } from './atualizacoes.js';
 import { ESTILOS_PROVIDENCIA, SCRIPT_PROVIDENCIA } from './providencia.js';
+import { ESTILOS_ANALISE_IA, SCRIPT_ANALISE_IA } from './analiseIA.js';
 
 /**
  * Ícones da navegação: traço, sem preenchimento, na cor do texto
@@ -73,7 +74,7 @@ export function paginaConsole(versao: string): string {
 <link rel="icon" type="image/svg+xml" href="${FAVICON_DATA_URI}">
 <meta name="theme-color" content="#0b192c">
 <script>${SCRIPT_TEMA}</script>
-<style>${ESTILOS}${ESTILOS_PASTA}${ESTILOS_CALENDARIO}${ESTILOS_ATUALIZACOES}${ESTILOS_PROVIDENCIA}</style>
+<style>${ESTILOS}${ESTILOS_PASTA}${ESTILOS_CALENDARIO}${ESTILOS_ATUALIZACOES}${ESTILOS_PROVIDENCIA}${ESTILOS_ANALISE_IA}</style>
 </head>
 <body>
 
@@ -115,6 +116,7 @@ export function paginaConsole(versao: string): string {
 <script>${SCRIPT_PASTA}</script>
 <script>${SCRIPT_CALENDARIO}</script>
 <script>${SCRIPT_PROVIDENCIA}</script>
+<script>${SCRIPT_ANALISE_IA}</script>
 <script>${SCRIPT_ATUALIZACOES}</script>
 </body>
 </html>`;

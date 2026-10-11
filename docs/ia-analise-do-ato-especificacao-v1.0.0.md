@@ -207,3 +207,79 @@ Esta errata corrige o **transporte** e registra uma decisão do dono. O resto da
    que o texto já tenha sido enviado; a conferência pós-resposta é sempre pelo **par** (`model` e `provider`
    devolvidos pela resposta), nunca pelo id pedido; apelidos (`~…`) e variantes (`:…`) de modelo não são
    aceitos. O Autran e o dono nada precisam mudar; vale para o adapter da Etapa 2.
+
+## Errata v1.1.0 (11/10/2026) — Etapa 2 enxuta (produto 0.38.0)
+
+Esta errata substitui o desenho da Etapa 2 (seções 5 a 9 e 12) pelo que foi **de fato construído**, depois das decisões do dono
+sobre a sonda. O resto da especificação segue valendo como contexto. Onde houver conflito, vale esta errata.
+
+### Decisões do dono
+
+1. **Modelo:** `deepseek/deepseek-v4-flash`, pelo OpenRouter, **configurável por variável** (`PROCESSOVIVO_IA_MODELO`), nunca constante no código.
+   A tela tolera latência alta (p50 29 s / p95 52 s medidos com o raciocínio ligado); o **raciocínio é configuração**
+   (`PROCESSOVIVO_IA_RACIOCINIO`, padrão `desligado`).
+2. **Plano IA obrigatório, sem exceção** — inclusive para o workspace sem assinatura (chave de API). É a **única exceção à regra "workspace
+   sem assinatura passa livre"** (CLAUDE.md §8), e vale **somente** para o recurso `analiseIa`: `ServicoAssinaturas.temRecursoSemExcecao`
+   devolve `false` sem assinatura, com assinatura vencida além da carência ou com plano sem o recurso. Os demais recursos seguem com `exigir()`.
+3. **Qualidade medida em uso real**, pelo Autran, nos botões **Útil / Errado / Perigoso** da própria tela (beta fechado). Sem CSV, sem planilha,
+   sem comparação de modelos.
+4. **A IA nasce DESLIGADA** (`PROCESSOVIVO_IA_HABILITADA=false`).
+
+### O que foi CORTADO (não existe)
+
+Cota mensal por workspace e a tabela `uso_ia`; cache e tabela de cache; "Analisar de novo" com cota; a variante com títulos dos andamentos
+anteriores; escolha de modelo na tela; transporte direto/Vercel; tudo da Fase B (peças/PDF), resumo do processo inteiro, prazo, mérito, tese,
+jurisprudência. **Clique repetido simplesmente analisa de novo.**
+
+### O que existe
+
+- **Domínio:** porta `AnalisadorDeAto`, entidade imutável `AnaliseDoAto` (com a procedência: modelo que a resposta diz ter servido, versão do
+  prompt, provedor que atendeu, data), `EntradaNaoAnalisavelError` (motivos: `sem_plano`, `segredo_de_justica`, `texto_insuficiente`,
+  `texto_indisponivel`, `limite_de_uso`, `ato_nao_encontrado`) e `AnaliseNaoEncontradaError`.
+- **Aplicação:** `ServicoAnaliseDoAto`. O ato é **resolvido no servidor**, no retrato da conta, pela chave dele; o corpo do pedido carrega só a
+  chave e **texto vindo do cliente nunca é aceito**. Sem plano, segredo de justiça, texto insuficiente e teor indisponível encerram **antes de
+  qualquer chamada ao adaptador** (testado: zero chamadas). Redige, chama, verifica, grava e devolve com os marcadores trocados pelos valores
+  da própria conta. Falha do modelo vira `{ estado: 'erro' }`, não exceção. A lógica de redação, verificação e preparo da entrada vive em
+  `application/politicas/` (a sonda importa de lá, sem duplicação).
+- **Texto indisponível × insuficiente:** "indisponível" é `Movimentacao.teorIndisponivel === true` — o mesmo sinal que o mapper do DJEN grava
+  quando o texto é o aviso de arquivos não públicos (`ehTeorNaoPublico`). Regra conservadora: só esse sinal; na dúvida, "insuficiente"
+  (corpo com menos de 80 caracteres). Mensagens diferentes.
+- **Infraestrutura:** `OpenRouterAnalisadorDeAto` sobre o `TransporteOpenRouter` (transporte injetável). Em **toda** chamada: `zdr: true`,
+  `data_collection: deny`, `allow_fallbacks: false`, `provider.only` = provedores ZDR do modelo. A lista ZDR é buscada no OpenRouter e
+  guardada **24 h em memória**; lista inalcançável, vazia ou vencida-e-inalcançável = **nenhuma chamada**. Resposta de provedor fora do
+  conjunto permitido (ou par modelo/provedor fora da lista) é **descartada** e o log leva só nomes, nunca texto. `404`/"sem provedor" não gera
+  segunda chamada. **Não existe variável para desligar a ZDR.** `PROCESSOVIVO_IA_PROVEDORES_PERMITIDOS` (opcional) só **restringe**: vale a
+  interseção com a lista ZDR.
+- **Persistência:** tabela aditiva `analises_ia` (workspace, processo, chave do ato, resultado **com marcadores**, modelo, versão do prompt,
+  provedor, tokens, custo, latência, data, avaliação). Nunca o texto do ato nem os valores originais. Leitura sempre confere o workspace
+  (404 igual para "não existe" e "é de outra conta"). Migração aditiva (`CREATE TABLE IF NOT EXISTS`), sem retrocarga.
+- **Freio de uso, sem tabela:** limite por hora por workspace (`PROCESSOVIVO_IA_MAX_POR_HORA`, padrão 20), **uma análise em andamento por
+  workspace** e teto global baixo (`PROCESSOVIVO_IA_MAX_SIMULTANEAS`, padrão 3). **Em memória: reiniciar zera.** O teto real de gasto é o
+  limite da chave no OpenRouter.
+- **Rotas** (sem try/catch; o `errorHandler` traduz): `GET /v1/analises/disponibilidade`, `POST /v1/acompanhamentos/:numero/analise`
+  (corpo: `{ chaveDoAto }`), `POST /v1/analises/:id/avaliacao` (`util` | `errado` | `perigoso`; sem texto livre; só o dono; pode corrigir).
+  Cancelar a requisição (ou estourar o tempo) **aborta a chamada ao modelo**.
+- **Medição:** `scripts/ia-avaliacoes.mjs` v1.0.0, somente leitura e sem texto: por modelo e versão do prompt — análises, avaliações,
+  taxa de "não verificado", latência p50/p95, custo médio.
+- **Tela:** `ui/analiseIA.ts` (`script.ts` não cresce). Botão "Analisar com IA" na coluna **Ações** da tabela de Atualizações, na linha cujo
+  ato principal é analisado (nas que pedem providência, o ato que a gera). Painel logo abaixo da linha. Com a IA desligada **não há botão**;
+  sem o plano, o botão aparece e mostra a frase fixa de upgrade. Aviso fixo: "Apoio à leitura, não substitui a leitura do ato nem a contagem
+  de prazo." **A IA não altera** "pede providência", "não lida", ordem, contagens, `/v1/painel` nem calendário.
+- **Campos aditivos em `GET /v1/novidades`:** `grupos[].maisRecente.chaveDoAto` e `novidades[].chaveDoAto` (chave do ato achada no retrato por
+  data e rótulo; `null` se ambígua) e `semNovidade[].ultimaMovimentacao.chaveDoAto`.
+
+### Divergências assumidas (código × spec original)
+
+1. **Plano sem exceção** × CLAUDE.md ("workspace sem assinatura passa livre"): implementada a exceção só para `analiseIa`; registrada no
+   CLAUDE.md §8.
+2. **`analiseIa` segue `implementado: false`** (a venda continua travada em `validarPlano` e nos testes). A função existe para contas liberadas à
+   mão no plano IA (`/admin` → Liberar / renovar, ou `assinatura liberar <e-mail> ia <meses>`). Alguns textos de erro de venda ainda dizem
+   "ainda não existe no sistema" (os testes de trava dependem da frase); o rótulo do painel admin foi ajustado.
+3. O botão fica na coluna **Ações**; "Marcar como cumprido" mora na coluna **Situação**. Eles ficam na mesma linha, não na mesma célula.
+4. As seções 5 (cota), 6 (cache), 7.3 (variante com títulos anteriores) e 13.1/13.2 ficam sem objeto.
+
+### O que NÃO foi verificado aqui
+
+A rede do ambiente de desenvolvimento não alcança o OpenRouter. Portanto **não foi lido** qual é a lista de provedores ZDR de
+`deepseek/deepseek-v4-flash` hoje, nem a forma exata de resposta de um provedor real: isso se lê com
+`node scripts/sonda-ia-ato.mjs --listar-modelos-zdr=deepseek` no Console do serviço, antes de ligar a IA.

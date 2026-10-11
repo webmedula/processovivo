@@ -889,7 +889,10 @@ function mostrarRastro(
   );
 }
 
-function transporteDeControle(chave: string, amb: AmbienteDaSonda) {
+function transporteDeControle(
+  chave: string,
+  amb: AmbienteDaSonda,
+): { detalhes: DetalheDeErro[]; transporte: ReturnType<AmbienteDaSonda['criarTransporte']> } {
   const detalhes: DetalheDeErro[] = [];
   return {
     detalhes,

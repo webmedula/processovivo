@@ -18,6 +18,8 @@ export interface GrupoDaTabela {
   readonly maisRecente: {
     /** `null` só em processo sem nenhuma movimentação conhecida. */
     readonly data: string | null;
+    /** (v0.38.0) Chave opaca do ato mostrado; `null`/ausente = não identificável (sem botão de IA). */
+    readonly chaveDoAto?: string | null;
     /** `null` em processo sem novidade registrada: o acompanhamento não detectou nada. */
     readonly detectadaEm: string | null;
   };
@@ -64,6 +66,7 @@ export interface ProcessoSemNovidade {
     readonly data: string;
     readonly titulo: string;
     readonly conteudo: string | null;
+    readonly chaveDoAto?: string | null;
   } | null;
 }
 
@@ -299,6 +302,26 @@ export function atoExibido(g: {
 }
 
 /**
+ * A chave opaca do ato que a linha mostra e que o botão "Analisar com IA" analisa
+ * (v0.38.0): o ato que gera a providência quando o processo pede; senão, o da
+ * atualização/última movimentação da linha. Vazio = não identificável: sem botão.
+ * Pura e autocontida (vai ao navegador por `toString()`).
+ */
+export function chaveDoAtoDaLinha(g: {
+  readonly maisRecente: { readonly chaveDoAto?: string | null };
+  readonly processo: {
+    readonly providencia?: {
+      readonly situacao: string;
+      readonly motivo: { readonly chave: string };
+    } | null;
+  } | null;
+}): string {
+  const p = g.processo && g.processo.providencia ? g.processo.providencia : null;
+  if (p && p.situacao === 'pede' && p.motivo.chave) return p.motivo.chave;
+  return g.maisRecente.chaveDoAto || '';
+}
+
+/**
  * "Detectado" e data do ato estão longe um do outro? (v0.37.6) Mais de 7 dias de
  * diferença: o "há 2 dias" sozinho sugere ato novo, quando a data do ato é de semanas
  * atrás. Só decide qual TEXTO a coluna mostra; não toca a ordenação nem `detectadaEm`.
@@ -518,6 +541,7 @@ export function montarLinhas<G extends GrupoDaTabela>(
         segredoJustica: p.segredoJustica,
         maisRecente: {
           data: u ? u.data : null,
+          chaveDoAto: u && u.chaveDoAto ? u.chaveDoAto : null,
           detectadaEm: null,
           titulo: u ? u.titulo : '',
           conteudo: u ? u.conteudo : null,

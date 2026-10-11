@@ -29,6 +29,8 @@ export interface PedidoAoModelo {
    * impede o texto de chegar a quem não tem ZDR; conferir depois da resposta não impede.
    */
   readonly provedoresPermitidos: readonly string[];
+  /** Cancelamento (a pessoa fechou a tela): aborta a chamada em curso e impede nova tentativa. */
+  readonly sinal?: AbortSignal;
 }
 
 /** O que a chamada deixou de rastro, SEM texto e SEM chave (ver `diagnosticoDeChamada.ts`). */
@@ -140,6 +142,7 @@ export interface ChamadaAoSdk {
   readonly saida: ModoDeSaida;
   readonly raciocinio?: Record<string, unknown>;
   readonly maxTokens?: number;
+  readonly sinal?: AbortSignal;
 }
 
 export interface ResultadoBrutoDoSdk {
@@ -257,6 +260,7 @@ function executorPadrao(chave: string, fetchImpl?: typeof fetch): ExecutorDoSdk 
       // por `montarChamada`, sempre com a ZDR.
       maxRetries: chamada.tentativasAutomaticas,
       timeout: chamada.timeoutMs,
+      ...(chamada.sinal ? { abortSignal: chamada.sinal } : {}),
       // O padrão do SDK descarta o corpo enviado e o recebido; o diagnóstico precisa dos dois.
       include: { requestBody: true, responseBody: true },
     });
@@ -451,6 +455,7 @@ export class TransporteOpenRouter implements TransporteDeModelo {
         });
         const traduzido = traduzirErro(erro, pedido.modelo);
         const podeRepetir =
+          pedido.sinal?.aborted !== true &&
           ehTransitorio(erro) &&
           !(traduzido instanceof ZdrIndisponivelError) &&
           !(traduzido instanceof SemProvedorQueAtendaError) &&
@@ -487,6 +492,7 @@ export class TransporteOpenRouter implements TransporteDeModelo {
       ...(this.ajustes.maxTokens !== undefined
         ? { maxTokens: this.ajustes.maxTokens }
         : {}),
+      ...(pedido.sinal ? { sinal: pedido.sinal } : {}),
     };
   }
 }

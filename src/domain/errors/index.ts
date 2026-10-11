@@ -780,3 +780,45 @@ export class AtoDaProvidenciaInvalidoError extends DomainError {
     super(motivo);
   }
 }
+
+/**
+ * O ato NÃO pode ser analisado por IA, e a razão é do ato ou da conta, não de
+ * falha: a tela mostra a frase própria de cada `motivo`. Nenhum desses casos
+ * chama o modelo — a checagem acontece antes de qualquer saída de dados.
+ *
+ * - `sem_plano`: a conta não tem o plano IA (sem exceção, nem para quem não tem
+ *   assinatura: chave de API e conta sem assinatura também não passam);
+ * - `segredo_de_justica`: o texto de processo sigiloso nunca sai do sistema;
+ * - `texto_insuficiente`: o ato só tem rótulo (ou quase), não há o que ler;
+ * - `texto_indisponivel`: o tribunal avisou que o teor não é público — outro
+ *   problema, outra frase: o advogado precisa abrir o processo no tribunal;
+ * - `limite_de_uso`: limite por hora da conta, ou análises demais em curso;
+ * - `ato_nao_encontrado`: o ato saiu do retrato (a tela estava desatualizada).
+ */
+export type MotivoDeEntradaNaoAnalisavel =
+  | 'sem_plano'
+  | 'segredo_de_justica'
+  | 'texto_insuficiente'
+  | 'texto_indisponivel'
+  | 'limite_de_uso'
+  | 'ato_nao_encontrado';
+
+export class EntradaNaoAnalisavelError extends DomainError {
+  readonly codigo = 'ENTRADA_NAO_ANALISAVEL';
+
+  constructor(
+    readonly motivo: MotivoDeEntradaNaoAnalisavel,
+    mensagem: string,
+  ) {
+    super(mensagem);
+  }
+}
+
+/** A análise pedida não existe PARA ESTE workspace (ou é de outro): 404, mesma resposta. */
+export class AnaliseNaoEncontradaError extends DomainError {
+  readonly codigo = 'ANALISE_NAO_ENCONTRADA';
+
+  constructor() {
+    super('Essa análise não foi encontrada.');
+  }
+}

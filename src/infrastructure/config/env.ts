@@ -1,5 +1,8 @@
 import { z } from 'zod';
 import type { NivelLog } from '../../domain/ports/Logger.js';
+import type { NivelDeRaciocinio } from '../adapters/modelo/TransporteOpenRouter.js';
+import { ehApelidoOuVariante } from '../adapters/modelo/endpointsZdr.js';
+import { pareceValorDeExemplo } from './placeholder.js';
 
 /**
  * Configuração validada no arranque.
@@ -207,6 +210,27 @@ const schema = z.object({
   // configuração — ver `validarConfiguracaoAdmin`.
   PROCESSOVIVO_ADMIN_USUARIO: z.string().default(''),
   PROCESSOVIVO_ADMIN_SENHA: z.string().default(''),
+
+  // --- Análise de ato por IA (v0.38.0) ----------------------------------------
+  // Nasce DESLIGADA. Não existe variável para desligar a retenção zero (ZDR): ela é
+  // exigida em toda chamada, e sem ela a chamada não sai.
+  PROCESSOVIVO_IA_HABILITADA: booleano.default('false'),
+  // Um modelo REAL do OpenRouter (sem `~` nem `:`). É configuração, nunca constante no código.
+  PROCESSOVIVO_IA_MODELO: z.string().default('deepseek/deepseek-v4-flash'),
+  // Raciocínio do modelo: desligado por padrão (latência medida p50 29 s / p95 52 s com ele ligado).
+  PROCESSOVIVO_IA_RACIOCINIO: z
+    .enum(['padrao', 'desligado', 'nenhum', 'minimo', 'baixo'])
+    .default('desligado'),
+  PROCESSOVIVO_IA_MAX_TOKENS: inteiroPositivo(1200),
+  PROCESSOVIVO_IA_TIMEOUT_MS: inteiroPositivo(90_000),
+  // Lista (separada por vírgula) de provedores autorizados. Vazia = todos os provedores
+  // ZDR do modelo. Com valor, vale a INTERSEÇÃO com a lista ZDR: só restringe.
+  PROCESSOVIVO_IA_PROVEDORES_PERMITIDOS: z.string().default(''),
+  // Freio por conta, em memória (reiniciar zera). O teto real de gasto é o limite da chave.
+  PROCESSOVIVO_IA_MAX_POR_HORA: inteiroPositivo(20),
+  PROCESSOVIVO_IA_MAX_SIMULTANEAS: inteiroPositivo(3),
+  // Exigida SÓ com a IA habilitada. Nunca vai para log, resposta ou mensagem de erro.
+  OPENROUTER_API_KEY: z.string().default(''),
 });
 
 export interface Config {
@@ -302,6 +326,18 @@ export interface Config {
     readonly novidadesJanelaDias: number;
     readonly pendenciaJanelaDias: number;
   };
+  readonly ia: {
+    readonly habilitada: boolean;
+    readonly modelo: string;
+    readonly raciocinio: NivelDeRaciocinio;
+    readonly maxTokens: number;
+    readonly timeoutMs: number;
+    readonly provedoresPermitidos: readonly string[];
+    readonly maxPorHora: number;
+    readonly maxSimultaneas: number;
+    /** Vazia quando a IA está desligada. */
+    readonly chave: string;
+  };
   readonly admin: {
     /** Vazio quando a área administrativa está desligada (as duas variáveis vazias). */
     readonly usuario: string;
@@ -391,6 +427,7 @@ export function carregarConfig(fonte: NodeJS.ProcessEnv = process.env): Config {
   }
 
   const env = resultado.data;
+  validarConfiguracaoDaIa(env);
   return {
     cadeiaDeProviders: env.PROCESSOVIVO_PROVIDER_CHAIN.split(',')
       .map((s) => s.trim())
@@ -486,11 +523,50 @@ export function carregarConfig(fonte: NodeJS.ProcessEnv = process.env): Config {
       novidadesJanelaDias: env.NOVIDADES_JANELA_DIAS,
       pendenciaJanelaDias: env.PENDENCIA_JANELA_DIAS,
     },
+    ia: {
+      habilitada: env.PROCESSOVIVO_IA_HABILITADA,
+      modelo: env.PROCESSOVIVO_IA_MODELO.trim(),
+      raciocinio: env.PROCESSOVIVO_IA_RACIOCINIO,
+      maxTokens: env.PROCESSOVIVO_IA_MAX_TOKENS,
+      timeoutMs: env.PROCESSOVIVO_IA_TIMEOUT_MS,
+      provedoresPermitidos: listaSeparadaPorVirgula(
+        env.PROCESSOVIVO_IA_PROVEDORES_PERMITIDOS,
+      ).map((s) => s.toLowerCase()),
+      maxPorHora: env.PROCESSOVIVO_IA_MAX_POR_HORA,
+      maxSimultaneas: env.PROCESSOVIVO_IA_MAX_SIMULTANEAS,
+      chave: env.PROCESSOVIVO_IA_HABILITADA ? env.OPENROUTER_API_KEY.trim() : '',
+    },
     admin: {
       usuario: env.PROCESSOVIVO_ADMIN_USUARIO.trim(),
       senha: env.PROCESSOVIVO_ADMIN_SENHA,
     },
   };
+}
+
+/**
+ * Com a IA habilitada, o arranque exige chave real e modelo real. Falha cedo e alto: IA ligada
+ * sem chave só mostraria erro na primeira análise de um assinante, e valor de exemplo colado
+ * no painel passa por qualquer checagem de presença. A mensagem NUNCA traz o valor da chave.
+ */
+function validarConfiguracaoDaIa(env: z.infer<typeof schema>): void {
+  if (!env.PROCESSOVIVO_IA_HABILITADA) return;
+  const chave = env.OPENROUTER_API_KEY.trim();
+  if (chave === '') {
+    throw new Error(
+      'Configuração inválida:\n  - OPENROUTER_API_KEY: obrigatória com PROCESSOVIVO_IA_HABILITADA=true',
+    );
+  }
+  if (pareceValorDeExemplo(chave)) {
+    throw new Error(
+      'Configuração inválida:\n  - OPENROUTER_API_KEY: parece um valor de exemplo; coloque a chave real',
+    );
+  }
+  const modelo = env.PROCESSOVIVO_IA_MODELO.trim();
+  if (modelo === '' || ehApelidoOuVariante(modelo)) {
+    throw new Error(
+      'Configuração inválida:\n  - PROCESSOVIVO_IA_MODELO: use o id de um modelo real (sem "~" nem ":")',
+    );
+  }
 }
 
 function listaSeparadaPorVirgula(valor: string): string[] {

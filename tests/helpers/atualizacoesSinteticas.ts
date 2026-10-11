@@ -28,6 +28,8 @@ export interface NovidadeSintetica {
   detectadaEm: string;
   exigeAcao: boolean;
   vista: boolean;
+  /** (v0.38.0) Chave opaca do ato, como a API a manda (botão "Analisar com IA"). */
+  chaveDoAto: string | null;
 }
 
 export interface AtoSintetico {
@@ -72,7 +74,12 @@ export interface SemNovidadeSintetico {
   numero: string;
   processo: GrupoSintetico['processo'];
   segredoJustica: boolean;
-  ultimaMovimentacao: { data: string; titulo: string; conteudo: string | null } | null;
+  ultimaMovimentacao: {
+    data: string;
+    titulo: string;
+    conteudo: string | null;
+    chaveDoAto?: string | null;
+  } | null;
 }
 
 export function semNovidade(
@@ -97,6 +104,7 @@ export function semNovidade(
             data: new Date(agora - (opcoes.diasAto ?? 30) * DIA).toISOString(),
             titulo,
             conteudo: opcoes.conteudo ?? null,
+            chaveDoAto: `chave-ato-${numero}-${titulo}`,
           },
   };
 }
@@ -112,6 +120,7 @@ export function novidade(
     conteudo?: string | null;
     vista?: boolean;
     exigeAcao?: boolean;
+    chaveDoAto?: string | null;
   } = {},
   agora: number = Date.now(),
 ): NovidadeSintetica {
@@ -128,6 +137,10 @@ export function novidade(
     detectadaEm: detectada,
     exigeAcao: opcoes.exigeAcao ?? false,
     vista: opcoes.vista ?? false,
+    chaveDoAto:
+      opcoes.chaveDoAto !== undefined
+        ? opcoes.chaveDoAto
+        : `chave-ato-${numero}-${titulo}`,
   };
 }
 
