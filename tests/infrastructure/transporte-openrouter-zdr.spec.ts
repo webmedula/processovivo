@@ -756,3 +756,62 @@ describe('TransporteOpenRouter — no fio (SDK real, HTTP dublado)', () => {
     });
   });
 });
+
+describe('TransporteOpenRouter — roteamento da falha (v0.38.2)', () => {
+  it('429 esgotado: o erro leva o status HTTP e nenhum texto do corpo nem da mensagem', async () => {
+    const { t } = transporte([
+      falha(erroHttp(429, '{"error":{"message":"TEXTO-SECRETO-DO-ATO"}}')),
+    ]);
+    const erro = (await t
+      .gerar(PEDIDO)
+      .catch((e: unknown) => e)) as ProviderIndisponivelError;
+
+    expect(erro).toBeInstanceOf(ProviderIndisponivelError);
+    expect(erro.roteamento).toEqual({ status: 429 });
+    expect(JSON.stringify(erro.roteamento)).not.toContain('TEXTO-SECRETO-DO-ATO');
+    expect(erro.message).not.toContain('TEXTO-SECRETO-DO-ATO');
+  });
+
+  it('404 com passo e funil: status, passo e funil saneados vão no erro, na subclasse certa', async () => {
+    const corpo = JSON.stringify({
+      error: {
+        message: 'No endpoints found',
+        metadata: {
+          failed_routing_step: 'require_parameters',
+          routing_funnel: { inicial: 5, depois_do_only: 2, depois_dos_parametros: 0 },
+        },
+      },
+    });
+    const { t } = transporte([falha(erroHttp(404, corpo))]);
+    const erro = (await t
+      .gerar(PEDIDO)
+      .catch((e: unknown) => e)) as SemProvedorQueAtendaError;
+
+    expect(erro).toBeInstanceOf(SemProvedorQueAtendaError);
+    expect(erro.roteamento).toEqual({
+      status: 404,
+      passo: 'require_parameters',
+      funil: { inicial: 5, depois_do_only: 2, depois_dos_parametros: 0 },
+    });
+  });
+
+  it('o funil sai saneado: string longa vira marcador e campo com nome de segredo vira "[omitido]"', async () => {
+    const corpo = JSON.stringify({
+      error: {
+        metadata: {
+          failed_routing_step: 'only',
+          routing_funnel: { nota: 'x'.repeat(300), api_key: 'sk-or-segredo' },
+        },
+      },
+    });
+    const { t } = transporte([falha(erroHttp(404, corpo))]);
+    const erro = (await t
+      .gerar(PEDIDO)
+      .catch((e: unknown) => e)) as ProviderIndisponivelError;
+
+    const texto = JSON.stringify(erro.roteamento);
+    expect(texto).not.toContain('sk-or-segredo');
+    expect(texto).not.toContain('x'.repeat(300));
+    expect(texto).toContain('[omitido');
+  });
+});

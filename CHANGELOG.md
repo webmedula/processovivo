@@ -9,6 +9,35 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.38.2] — 2026-10-11
+
+**O log da análise por IA passa a dizer ONDE a chamada parou.** A linha "análise do ato não concluída"
+só trazia a classe do erro; uma indisponibilidade (`PROVIDER_INDISPONIVEL`) não distinguia 429 de 5xx,
+400, 401 ou 402, nem dizia qual filtro do roteamento esvaziou os provedores.
+
+### Adicionado
+
+- `ProviderIndisponivelError.roteamento` (opcional): `status` HTTP, `passo` (`failed_routing_step`) e
+  `funil` (`routing_funnel`) devolvidos pelo OpenRouter, já saneados. Preenchido em `traduzirErro`
+  (`TransporteOpenRouter`) para todo erro HTTP, inclusive `ZdrIndisponivelError` e
+  `SemProvedorQueAtendaError`.
+- Na linha "análise do ato não concluída": `statusHttp`, `passoDoRoteamento` e `funilDoRoteamento`
+  (texto JSON truncado em 600 caracteres). Campos ausentes não aparecem.
+
+### Não muda
+
+- **Nunca** vão ao log texto do ato, chave, corpo cru do erro, mensagem do SDK nem dado do processo
+  (o funil passa por `sanearCorpoEnviado`: string longa vira marcador, campo com nome de segredo vira
+  `[omitido]`). A lista de provedores, `provider.only`, `require_parameters` e a ZDR ficam como estavam;
+  nenhuma repetição nova.
+
+### Testes
+
+- 429 esgotado leva só o status; 404 com passo e funil leva os três; funil saneado; o log traz os três
+  campos, truncado, sem texto, parte nem número do processo; erro sem roteamento não ganha campos vazios.
+
+---
+
 ## [0.38.1] — 2026-10-11
 
 **Exceção de teste fechado da análise por IA, ligada por variável — a remover antes de abrir ao
