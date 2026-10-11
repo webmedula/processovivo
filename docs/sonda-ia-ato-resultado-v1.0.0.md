@@ -126,6 +126,11 @@ confirmação**. Páginas consultadas (via busca):
   **Decisão:** a sonda envia `allow_fallbacks: false` (sem reserva) e, ainda assim, confere depois
   quem serviu (2.3 e 2.4). Se o teste mostrar que a reserva respeita a ZDR, a restrição pode ser
   relaxada — é uma constante (`PREFERENCIAS_DE_PROVEDOR`).
+  **Atualização (v0.38.3, decisão do dono):** `allow_fallbacks` **continua `false`** — nada foi
+  relaxado. Um 429/5xx de um provedor (visto em produção: DeepInfra, ~285 ms, três vezes) agora leva
+  a uma nova tentativa com `provider.only` restrito a UM provedor da lista permitida, em ordem; a
+  1ª tentativa segue com todos. Não depende de o corpo do erro dizer quem limitou. A sonda herda
+  o comportamento (usa o mesmo transporte; só o degrau D, sem `only`, não roda a lista).
 - `provider.require_parameters: true` também vai em toda chamada: só admite endpoint que cumpra
   `response_format` (saída estruturada). Sem isso o esquema fechado poderia ser ignorado em
   silêncio por um endpoint que não o suporta.

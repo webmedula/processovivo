@@ -775,6 +775,16 @@ Não são detalhes — moldam o código.
   com assinatura vencida além da carência ou com plano sem o recurso, e é
   usada SÓ por `ServicoAnaliseDoAto`. Os outros recursos continuam com `exigir()`
   e a regra acima. Não generalize a exceção.
+- **Depois de 429/5xx a análise por IA muda de provedor, sem soltar a lista** (v0.38.3).
+  `allow_fallbacks` continua `false`: o OpenRouter não escolhe reserva. Quem roda a lista é o
+  `TransporteOpenRouter`: 1ª tentativa com `only` = TODOS os permitidos; após 429/5xx, cada nova
+  tentativa leva `only` = UM provedor, em ordem, sem repetir (não depende do corpo do erro dizer
+  quem limitou — por isso a 1ª pode cair no mesmo que limitou). Esgotada a lista (1 + N), falha
+  com o roteamento da 0.38.2. Esperas 1 s, 3 s e, depois, 3 s. Só 429/5xx rodam; rede repete com
+  os mesmos permitidos; um provedor só repete como antes; o degrau D (sem `only`) não roda.
+  `zdr`, `data_collection`, `require_parameters`, `only` ⊆ permitidos e a conferência do par
+  modelo + provedor da resposta valem em TODA tentativa. Quem pensar em `allow_fallbacks: true`
+  deve ler a nota da sonda (2.1): conferir DEPOIS não impede o texto de sair.
 - **O log da análise por IA diz onde a chamada parou, sem texto** (v0.38.2).
   `ProviderIndisponivelError.roteamento` (`status`, `passo`, `funil`) é preenchido só em
   `traduzirErro` (`TransporteOpenRouter`), com o que o OpenRouter devolveu JÁ SANEADO
@@ -1191,7 +1201,7 @@ Não são detalhes — moldam o código.
   tribunal, a outra manda ler o ato. (5) **ZDR falha fechada e não tem chave de
   desligar** (nenhuma variável, nenhum degrau): toda chamada leva `zdr: true`,
   `data_collection: deny`, `allow_fallbacks: false` e `provider.only` com os provedores
-  ZDR do modelo; lista inalcançável, vazia ou sem provedor = nenhuma chamada;
+  ZDR do modelo (após 429/5xx, um provedor por tentativa — v0.38.3); lista inalcançável, vazia ou sem provedor = nenhuma chamada;
   resposta de provedor fora do conjunto é descartada e o log leva só nomes; 4xx e
   "sem provedor" nunca geram segunda chamada sem ZDR; modelo é id real (sem `~`/`:`).
   `PROCESSOVIVO_IA_PROVEDORES_PERMITIDOS` só restringe (interseção). (6) **Desligada
@@ -1542,8 +1552,8 @@ teste e carência** (v0.28.0), **visual novo a partir do logo** (v0.29.0),
 **calendário: detecção, agenda, tela e feed ICS** (v0.32.0),
 **ajustes dos advogados: Atualizações por processo, peças no topo, providência em 10 dias** (v0.32.1),
 **Pasta digital: backend (v0.33.0) e tela (v0.33.1) — peça aberta ao clique, guarda por peça, montar pasta completa, baixar marcadas**,
-**ato (movimentação) de cada peça na lista da Pasta, com descrição** (v0.33.2) **e o número da movimentação calculado pela posição do ato, com aviso de atos bloqueados** (v0.34.0; a 0.33.3 havia removido o número errado da 0.33.2), **calibração do número com o Projudi feita pelo advogado: exato quando provado, faixa ou estimado quando não** (v0.35.0), **página inicial: Últimas atualizações mostra só o trecho do texto e o trilho de peças baixadas não estoura a largura** (v0.35.1), **Pasta: número da movimentação no lugar do índice; página inicial: "detectado há N dias" e cartão "pede providência"** (v0.35.2), **Pasta: lista em altura total com avisos compactados** (v0.35.3), **Pasta: todas as movimentações na lista, inclusive as sem peça, com lacuna de numeração provada e lista mais larga** (v0.36.0), **página inicial: tabela de últimas atualizações, uma linha por processo, com filtros que contam no lugar dos cartões; histórico de peças baixadas dentro da Pasta** (v0.37.0), **tabela sem "+N anteriores", "Detectado" enxuto e descrição do ato sem repetição na exibição** (v0.37.1), **classe legível e agrupada no filtro, última movimentação sem repetição e carteira sem rodapé redundante** (v0.37.2), **Atualizações lista todos os processos acompanhados, período como filtro opcional e verificação por conta** (v0.37.3), **Atualizações abre em "Pedem providência", com a lista completa a um clique** (v0.37.4), **intimação do Diário pede providência por 30 dias ou até "cumprido", marca por ato, correção da avalanche de novidades e reparo só com dry-run** (v0.37.5), **conferência com o Projudi: sonda de diagnóstico só de leitura, linha do ato da providência, "Detectado" legível e intimação a outro destinatário** (v0.37.6), **"Analisar com IA": por botão, texto redigido, citação verificada, ZDR falhando fechado, desligada por padrão e só no plano IA** (v0.38.0; sonda de IA v1.2.0 e `ia-avaliacoes.mjs` v1.0.0), **exceção de teste fechado da IA por variável (`PROCESSOVIVO_IA_WORKSPACES_LIBERADOS`), a remover antes de abrir ao público** (v0.38.1), **log da análise por IA com status HTTP, passo e funil do roteamento** (v0.38.2),
-Dockerfile multi-stage, CI, 2034 testes.
+**ato (movimentação) de cada peça na lista da Pasta, com descrição** (v0.33.2) **e o número da movimentação calculado pela posição do ato, com aviso de atos bloqueados** (v0.34.0; a 0.33.3 havia removido o número errado da 0.33.2), **calibração do número com o Projudi feita pelo advogado: exato quando provado, faixa ou estimado quando não** (v0.35.0), **página inicial: Últimas atualizações mostra só o trecho do texto e o trilho de peças baixadas não estoura a largura** (v0.35.1), **Pasta: número da movimentação no lugar do índice; página inicial: "detectado há N dias" e cartão "pede providência"** (v0.35.2), **Pasta: lista em altura total com avisos compactados** (v0.35.3), **Pasta: todas as movimentações na lista, inclusive as sem peça, com lacuna de numeração provada e lista mais larga** (v0.36.0), **página inicial: tabela de últimas atualizações, uma linha por processo, com filtros que contam no lugar dos cartões; histórico de peças baixadas dentro da Pasta** (v0.37.0), **tabela sem "+N anteriores", "Detectado" enxuto e descrição do ato sem repetição na exibição** (v0.37.1), **classe legível e agrupada no filtro, última movimentação sem repetição e carteira sem rodapé redundante** (v0.37.2), **Atualizações lista todos os processos acompanhados, período como filtro opcional e verificação por conta** (v0.37.3), **Atualizações abre em "Pedem providência", com a lista completa a um clique** (v0.37.4), **intimação do Diário pede providência por 30 dias ou até "cumprido", marca por ato, correção da avalanche de novidades e reparo só com dry-run** (v0.37.5), **conferência com o Projudi: sonda de diagnóstico só de leitura, linha do ato da providência, "Detectado" legível e intimação a outro destinatário** (v0.37.6), **"Analisar com IA": por botão, texto redigido, citação verificada, ZDR falhando fechado, desligada por padrão e só no plano IA** (v0.38.0; sonda de IA v1.2.0 e `ia-avaliacoes.mjs` v1.0.0), **exceção de teste fechado da IA por variável (`PROCESSOVIVO_IA_WORKSPACES_LIBERADOS`), a remover antes de abrir ao público** (v0.38.1), **log da análise por IA com status HTTP, passo e funil do roteamento** (v0.38.2), **análise por IA: rodízio por provedor depois de 429/5xx, sem `allow_fallbacks`** (v0.38.3),
+Dockerfile multi-stage, CI, 2040 testes.
 
 **Pasta digital (v0.33.0, backend):** `GET /v1/processos/:numero/pasta` (lista +
 estado de cada peça + intervalos de página + totais SEM filtro + procedência
