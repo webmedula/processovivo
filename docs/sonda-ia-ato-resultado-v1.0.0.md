@@ -131,13 +131,24 @@ confirmação**. Páginas consultadas (via busca):
   a uma nova tentativa com `provider.only` restrito a UM provedor da lista permitida, em ordem; a
   1ª tentativa segue com todos. Não depende de o corpo do erro dizer quem limitou. A sonda herda
   o comportamento (usa o mesmo transporte; só o degrau D, sem `only`, não roda a lista).
-- `provider.require_parameters: true` também vai em toda chamada: só admite endpoint que cumpra
-  `response_format` (saída estruturada). Sem isso o esquema fechado poderia ser ignorado em
-  silêncio por um endpoint que não o suporta.
+- ~~`provider.require_parameters: true` também vai em toda chamada: só admite endpoint que cumpra
+  `response_format` (saída estruturada).~~ **Atualização (v0.38.4, decisão do dono, opção direta):**
+  a chamada de produção NÃO leva mais `require_parameters` nem `response_format`. Em produção o
+  filtro "Filter by Parameters" deixou 0 dos 16 endpoints iniciais (1 após "Filter by Allowed
+  Providers"): o único endpoint ZDR do modelo não declara saída estruturada e a chamada falhava em
+  ~2,6 s com 404. Agora o formato é pedido por instrução no texto do sistema
+  (`INSTRUCAO_DE_FORMATO_EM_TEXTO`), o JSON é extraído por `jsonDoTexto` e validado pelo Zod
+  `.strict()` local — o mesmo formato do degrau C do diagnóstico. **Nada da proteção do texto
+  muda:** `zdr: true`, `data_collection: deny`, `allow_fallbacks: false`, `provider.only` com a lista
+  permitida, a conferência do par modelo + provedor da resposta e `verificarAnalise` valem como antes.
+  Perde-se só a garantia de forma no provedor: resposta fora do esquema falha de forma segura
+  (`RespostaInvalidaError`, sem repetir e sem gravar o texto da resposta). No diagnóstico em degraus,
+  o **A** passa a ser só o termo de comparação (a chamada de produção até a 0.38.3) e o **C** é a
+  chamada de produção.
 - **Verificado no fio** (SDK real, `fetch` dublado): o corpo enviado a `POST /api/v1/chat/completions`
-  leva `"provider": {"zdr": true, "data_collection": "deny", "allow_fallbacks": false,
-"require_parameters": true}`, `response_format` com `json_schema` estrito e a chave **só** no
-  cabeçalho `authorization`.
+  leva `"provider": {"zdr": true, "data_collection": "deny", "allow_fallbacks": false, "only": [...]}`
+  (até a 0.38.3 também `"require_parameters": true` e `response_format` com `json_schema` estrito;
+  desde a 0.38.4 nenhum dos dois) e a chave **só** no cabeçalho `authorization`.
 
 ### 2.2 O que o OpenRouter faz quando nenhum provedor ZDR atende — **AINDA NÃO CONFIRMADO** (ver 2.8)
 

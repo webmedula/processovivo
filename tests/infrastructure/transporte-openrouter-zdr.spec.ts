@@ -17,6 +17,7 @@ import {
   type DetalheDeErro,
   type ExecutorDoSdk,
 } from '../../src/infrastructure/adapters/modelo/TransporteOpenRouter.js';
+import { lerRespostaDoModelo } from '../../src/infrastructure/adapters/modelo/esquemaDaAnalise.js';
 
 const PEDIDO = {
   modelo: 'fab/modelo-falso',
@@ -87,8 +88,10 @@ describe('TransporteOpenRouter — ZDR falha fechada', () => {
       expect(c.provider).toMatchObject({
         zdr: true,
         data_collection: 'deny',
-        require_parameters: true,
+        allow_fallbacks: false,
       });
+      expect(c.provider.require_parameters).toBeUndefined();
+      expect(c.saida).toBe('texto');
       expect(c.temperatura).toBe(0);
       expect(c.tentativasAutomaticas).toBe(0);
     }
@@ -367,14 +370,17 @@ describe('TransporteOpenRouter — no fio (SDK real, HTTP dublado)', () => {
       zdr: true,
       data_collection: 'deny',
       allow_fallbacks: false,
-      require_parameters: true,
+      only: ['alfa', 'beta'],
     });
+    // 0.38.4: nem require_parameters nem response_format na chamada normal.
+    expect(
+      (corpo['provider'] as Record<string, unknown>)['require_parameters'],
+    ).toBeUndefined();
+    expect(corpo['response_format']).toBeUndefined();
+    expect(JSON.stringify(corpo['messages'])).toContain('FORMATO DA RESPOSTA');
     expect(corpo['model']).toBe('fab/modelo-falso');
     expect(corpo['temperature']).toBe(0);
     expect(corpo['tools']).toBeUndefined();
-    expect(JSON.stringify(corpo['response_format'])).toContain(
-      '"additionalProperties":false',
-    );
     expect(r).toMatchObject({
       provedor: 'Provedor Alfa',
       tokensEntrada: 10,
@@ -382,6 +388,66 @@ describe('TransporteOpenRouter — no fio (SDK real, HTTP dublado)', () => {
       custoUsd: 0.0003,
     });
     expect(r.objeto).toMatchObject({ parece_pedir: 'indeterminado' });
+  });
+
+  const comTexto = (content: string): unknown => ({
+    ...corpoOk,
+    choices: [
+      { index: 0, finish_reason: 'stop', message: { role: 'assistant', content } },
+    ],
+  });
+  const JSON_VALIDO =
+    '{"parece_pedir":"indeterminado","resumo":"r","trecho_chave":"","acoes_possiveis":[],"pontos_de_atencao":[]}';
+
+  it('o corpo da chamada normal SEMPRE leva only, zdr e data_collection — também na repetição, e nunca require_parameters nem response_format', async () => {
+    const w = fio([
+      () => json({ error: { message: 'limite', code: 429 } }, 429),
+      () => json(corpoOk),
+    ]);
+    await new TransporteOpenRouter({
+      chave: CHAVE,
+      fetch: w.f,
+      dormir: async () => undefined,
+    }).gerar(PEDIDO);
+    expect(w.corpos).toHaveLength(2);
+    for (const c of w.corpos) {
+      const prov = c['provider'] as Record<string, unknown>;
+      expect(prov['zdr']).toBe(true);
+      expect(prov['data_collection']).toBe('deny');
+      expect(prov['allow_fallbacks']).toBe(false);
+      expect(Array.isArray(prov['only']) && (prov['only'] as unknown[]).length > 0).toBe(
+        true,
+      );
+      expect(prov['require_parameters']).toBeUndefined();
+      expect(c['response_format']).toBeUndefined();
+    }
+  });
+
+  it('resposta com cerca de código é lida (e validada depois pelo Zod do analisador)', async () => {
+    const w = fio([() => json(comTexto('```json\n' + JSON_VALIDO + '\n```'))]);
+    const r = await new TransporteOpenRouter({ chave: CHAVE, fetch: w.f }).gerar(PEDIDO);
+    expect(r.objeto).toMatchObject({ parece_pedir: 'indeterminado' });
+    expect(lerRespostaDoModelo(r.objeto)).toBeDefined();
+  });
+
+  it('resposta com chaves antes do JSON falha de forma segura: sem repetir e sem texto no erro nem no que vai ao log', async () => {
+    const w = fio([
+      () => json(comTexto('Veja {TEXTO-SECRETO-DO-ATO} e então: ' + JSON_VALIDO)),
+    ]);
+    const vistos: DetalheDeErro[] = [];
+    const erro = await new TransporteOpenRouter({
+      chave: CHAVE,
+      fetch: w.f,
+      dormir: async () => undefined,
+      aoFalhar: (d) => void vistos.push(d),
+    })
+      .gerar(PEDIDO)
+      .catch((e: unknown) => e);
+    expect(erro).toBeInstanceOf(RespostaInvalidaError);
+    expect(w.corpos).toHaveLength(1);
+    expect(JSON.stringify([(erro as Error).message, erro, vistos])).not.toContain(
+      'TEXTO-SECRETO-DO-ATO',
+    );
   });
 
   it('a chave vai só no cabeçalho de autorização, nunca no corpo', async () => {
@@ -433,7 +499,7 @@ describe('TransporteOpenRouter — no fio (SDK real, HTTP dublado)', () => {
     expect(w.corpos).toHaveLength(1);
   });
 
-  it('resposta que não cumpre o esquema vira RespostaInvalidaError, sem repetir', async () => {
+  it('resposta fora do esquema chega como objeto e o Zod strict do analisador a recusa, sem repetir', async () => {
     const w = fio([
       () =>
         json({
@@ -450,11 +516,11 @@ describe('TransporteOpenRouter — no fio (SDK real, HTTP dublado)', () => {
           ],
         }),
     ]);
-    const erro = await new TransporteOpenRouter({ chave: CHAVE, fetch: w.f })
-      .gerar(PEDIDO)
-      .catch((e: unknown) => e);
-    expect(erro).toBeInstanceOf(RespostaInvalidaError);
+    // Desde a 0.38.4 o transporte não valida o esquema (não há response_format): quem recusa é
+    // o `lerRespostaDoModelo` do analisador, que vira RespostaInvalidaError lá.
+    const r = await new TransporteOpenRouter({ chave: CHAVE, fetch: w.f }).gerar(PEDIDO);
     expect(w.corpos).toHaveLength(1);
+    expect(lerRespostaDoModelo(r.objeto)).toBeUndefined();
   });
 
   it('resposta sem o campo provider chega com provedor ausente (a sonda trata como NÃO confirmado)', async () => {
@@ -886,8 +952,9 @@ describe('TransporteOpenRouter — rodízio por provedor depois de 429/5xx (v0.3
         zdr: true,
         data_collection: 'deny',
         allow_fallbacks: false,
-        require_parameters: true,
       });
+      expect(c.provider.require_parameters).toBeUndefined();
+      expect(c.saida).toBe('texto');
     }
   });
 

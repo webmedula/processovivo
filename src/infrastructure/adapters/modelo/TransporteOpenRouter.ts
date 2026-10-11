@@ -193,9 +193,9 @@ export const DEGRAUS = ['A', 'B', 'C', 'D'] as const;
 export type Degrau = (typeof DEGRAUS)[number];
 
 export const DESCRICAO_DOS_DEGRAUS: Readonly<Record<Degrau, string>> = Object.freeze({
-  A: 'como na rodada (require_parameters, json_schema estrito, provider.only)',
+  A: 'esquema estrito (require_parameters, json_schema estrito, provider.only): a chamada de produção até a 0.38.3, hoje só termo de comparação',
   B: 'sem require_parameters',
-  C: 'sem json_schema estrito (instrução no texto; validado por nós)',
+  C: 'sem json_schema estrito (instrução no texto; validado por nós): a chamada de produção desde a 0.38.4',
   D: 'sem provider.only (zdr continua true)',
 });
 
@@ -399,9 +399,15 @@ export class TransporteOpenRouter implements TransporteDeModelo {
     this.aoFalhar = opcoes.aoFalhar;
   }
 
-  /** A chamada da rodada: ZDR, `only`, `require_parameters` e esquema estrito, sempre. */
+  /**
+   * A chamada de produção (e da rodada da sonda): ZDR, `data_collection: deny`, `allow_fallbacks:
+   * false` e `only` SEMPRE; formato em texto (degrau C), sem `require_parameters` e sem
+   * `response_format`. Desde a 0.38.4: com o filtro "Filter by Parameters" ligado, o único endpoint
+   * ZDR do modelo caía (404) por não declarar saída estruturada. O JSON é extraído por
+   * `jsonDoTexto` e validado pelo Zod `.strict()` do nosso lado; nada disso afrouxa a ZDR.
+   */
   async gerar(pedido: PedidoAoModelo): Promise<RespostaDoTransporte> {
-    return this.executarComTentativas(pedido, 'A');
+    return this.executarComTentativas(pedido, 'C');
   }
 
   /**
