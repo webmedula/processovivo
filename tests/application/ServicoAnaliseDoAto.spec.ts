@@ -246,6 +246,55 @@ describe('ServicoAnaliseDoAto', () => {
       expect(log_).not.toContain(NOME_DA_PARTE);
     });
 
+    it('o log da falha traz status HTTP, passo e funil (truncado), e nenhum texto, chave ou dado do processo', async () => {
+      await semear(WS_A, [ATO]);
+      analisador.resposta = async () => {
+        throw new ProviderIndisponivelError(
+          'openrouter',
+          `eco do pedido: ${TEXTO_DO_ATO}`,
+          {
+            roteamento: {
+              status: 404,
+              passo: 'require_parameters',
+              funil: { inicial: 5, restantes: 0, nota: 'a'.repeat(900) },
+            },
+          },
+        );
+      };
+      const r = await servico().analisar(pedido());
+      expect(r).toEqual({ estado: 'erro' });
+
+      const linha =
+        log.linhas.find((l) => l.includes('análise do ato não concluída')) ?? '';
+      const contexto = JSON.parse(linha.slice(linha.indexOf('{'))) as Record<
+        string,
+        unknown
+      >;
+      expect(contexto['statusHttp']).toBe(404);
+      expect(contexto['passoDoRoteamento']).toBe('require_parameters');
+      const funil = String(contexto['funilDoRoteamento']);
+      expect(funil.startsWith('{"inicial":5,"restantes":0')).toBe(true);
+      expect(funil.length).toBeLessThanOrEqual(601);
+      expect(funil.endsWith('…')).toBe(true);
+      const tudo = log.linhas.join('\n');
+      expect(tudo).not.toContain('laudo pericial');
+      expect(tudo).not.toContain(NOME_DA_PARTE);
+      expect(tudo).not.toContain(NUMERO);
+    });
+
+    it('erro sem roteamento: a linha mantém só causa e tipo (sem campos vazios)', async () => {
+      await semear(WS_A, [ATO]);
+      analisador.resposta = async () => {
+        throw new ProviderIndisponivelError('openrouter', 'fora');
+      };
+      await servico().analisar(pedido());
+      const linha =
+        log.linhas.find((l) => l.includes('análise do ato não concluída')) ?? '';
+      expect(linha).not.toContain('statusHttp');
+      expect(linha).not.toContain('passoDoRoteamento');
+      expect(linha).not.toContain('funilDoRoteamento');
+    });
+
     it('o clique repetido analisa de novo (sem cache): duas chamadas, duas linhas', async () => {
       await semear(WS_A, [ATO]);
       const s = servico();

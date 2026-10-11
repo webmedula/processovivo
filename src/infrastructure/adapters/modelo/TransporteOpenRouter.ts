@@ -3,6 +3,7 @@ import { APICallError, generateText, NoObjectGeneratedError, Output } from 'ai';
 import {
   ProviderIndisponivelError,
   RespostaInvalidaError,
+  roteamentoDaFalha,
   SemProvedorQueAtendaError,
   ZdrIndisponivelError,
 } from '../../../domain/errors/index.js';
@@ -350,17 +351,22 @@ function traduzirErro(erro: unknown, modelo: string): Error {
   }
   const status = statusDe(erro);
   const corpo = corpoDe(erro);
+  // Só status, passo e funil SANEADOS vão para o erro (e dele para o log): o corpo cru e a
+  // mensagem do SDK não são copiados em lugar nenhum.
+  const { passo, funil } = extrairRoteamento(corpo);
+  const roteamento = roteamentoDaFalha(status, passo, funil);
   if (indicaSemProvedor(status, corpo)) {
-    const { passo, funil } = extrairRoteamento(corpo);
     return ehFiltroDePoliticaDeDados(passo)
-      ? new ZdrIndisponivelError(NOME_DO_OPENROUTER, modelo, passo, funil)
-      : new SemProvedorQueAtendaError(NOME_DO_OPENROUTER, modelo, passo, funil);
+      ? new ZdrIndisponivelError(NOME_DO_OPENROUTER, modelo, passo, funil, status)
+      : new SemProvedorQueAtendaError(NOME_DO_OPENROUTER, modelo, passo, funil, status);
   }
   if (
     erro instanceof Error &&
     (erro.name === 'TimeoutError' || erro.name === 'AbortError')
   ) {
-    return new ProviderIndisponivelError(NOME_DO_OPENROUTER, 'tempo esgotado');
+    return new ProviderIndisponivelError(NOME_DO_OPENROUTER, 'tempo esgotado', {
+      roteamento,
+    });
   }
   const motivo =
     status === 401 || status === 403
@@ -372,7 +378,7 @@ function traduzirErro(erro: unknown, modelo: string): Error {
           : status !== undefined
             ? `o OpenRouter respondeu HTTP ${status}`
             : 'falha de rede ao chamar o OpenRouter';
-  return new ProviderIndisponivelError(NOME_DO_OPENROUTER, motivo);
+  return new ProviderIndisponivelError(NOME_DO_OPENROUTER, motivo, { roteamento });
 }
 
 export class TransporteOpenRouter implements TransporteDeModelo {

@@ -80,17 +80,48 @@ export class OperacaoNaoSuportadaError extends DomainError {
  * O provider falhou: rede, timeout, 5xx, HTML inesperado, captcha, tribunal fora do ar.
  * É o erro que dispara o fallback para o próximo provider da cadeia.
  */
+/**
+ * O que a fonte disse sobre ONDE a chamada parou (v0.38.2), para o log dizer a causa de
+ * uma indisponibilidade sem precisar adivinhar. Só dado já SANEADO pelo adapter que o
+ * preenche: status HTTP, o passo do roteamento (um token curto) e o funil (contagens). Nunca
+ * corpo cru, mensagem da fonte nem texto do pedido — a mensagem de um roteador pode ecoá-lo.
+ */
+export interface RoteamentoDaFalha {
+  readonly status?: number;
+  readonly passo?: string;
+  readonly funil?: unknown;
+}
+
+/** Monta o roteamento sem campo `undefined` (`exactOptionalPropertyTypes`). */
+export function roteamentoDaFalha(
+  status?: number,
+  passo?: string,
+  funil?: unknown,
+): RoteamentoDaFalha {
+  return {
+    ...(status !== undefined ? { status } : {}),
+    ...(passo !== undefined ? { passo } : {}),
+    ...(funil !== undefined ? { funil } : {}),
+  };
+}
+
 export class ProviderIndisponivelError extends DomainError {
   // `string` e não o literal: `MniBloqueadoError` especializa este erro com
   // código próprio, e o literal impediria a subclasse de redefini-lo.
   readonly codigo: string = 'PROVIDER_INDISPONIVEL';
+  /** Onde a chamada parou, quando a fonte informou (v0.38.2). Ver `RoteamentoDaFalha`. */
+  readonly roteamento?: RoteamentoDaFalha;
 
   constructor(
     readonly provider: string,
     motivo: string,
-    options?: { cause?: unknown },
+    options?: { cause?: unknown; roteamento?: RoteamentoDaFalha },
   ) {
-    super(`Provider "${provider}" indisponível: ${motivo}`, options);
+    super(
+      `Provider "${provider}" indisponível: ${motivo}`,
+      options?.cause !== undefined ? { cause: options.cause } : undefined,
+    );
+    if (options?.roteamento !== undefined) this.roteamento = options.roteamento;
   }
 }
 
@@ -425,12 +456,14 @@ export class ZdrIndisponivelError extends ProviderIndisponivelError {
     readonly modelo: string,
     readonly passo?: string,
     readonly funil?: unknown,
+    status?: number,
   ) {
     super(
       provider,
       `o roteamento parou no filtro de política de dados (ZDR) para o modelo "${modelo}"` +
         (passo ? ` (passo: ${passo})` : '') +
         '; a chamada NÃO é repetida sem ZDR',
+      { roteamento: roteamentoDaFalha(status, passo, funil) },
     );
   }
 }
@@ -449,6 +482,7 @@ export class SemProvedorQueAtendaError extends ProviderIndisponivelError {
     readonly modelo: string,
     readonly passo?: string,
     readonly funil?: unknown,
+    status?: number,
   ) {
     super(
       provider,
@@ -456,6 +490,7 @@ export class SemProvedorQueAtendaError extends ProviderIndisponivelError {
         (passo
           ? `o roteamento parou no passo "${passo}"`
           : 'o erro não informou o passo do roteamento'),
+      { roteamento: roteamentoDaFalha(status, passo, funil) },
     );
   }
 }

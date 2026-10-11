@@ -16,6 +16,7 @@ import {
   AcompanhamentoNaoEncontradoError,
   AnaliseNaoEncontradaError,
   DomainError,
+  ProviderIndisponivelError,
   EntradaNaoAnalisavelError,
 } from '../../domain/errors/index.js';
 import type { AnalisadorDeAto } from '../../domain/ports/AnalisadorDeAto.js';
@@ -199,10 +200,15 @@ export class ServicoAnaliseDoAto {
         ...(pedido.sinal ? { sinal: pedido.sinal } : {}),
       });
     } catch (erro) {
-      // Só a CLASSE do erro vai ao log: a mensagem de um roteador pode ecoar o pedido.
+      // Só a CLASSE do erro e o roteamento SANEADO vão ao log: a mensagem de um roteador pode
+      // ecoar o pedido (que leva texto de ato), então ela nunca é copiada.
+      const r = erro instanceof ProviderIndisponivelError ? erro.roteamento : undefined;
       this.log.warn('análise do ato não concluída', {
         causa: erro instanceof DomainError ? erro.codigo : 'erro_inesperado',
         tipo: erro instanceof Error ? erro.name : typeof erro,
+        ...(r?.status !== undefined ? { statusHttp: r.status } : {}),
+        ...(r?.passo !== undefined ? { passoDoRoteamento: r.passo } : {}),
+        ...(r?.funil !== undefined ? { funilDoRoteamento: funilEmTexto(r.funil) } : {}),
       });
       return { estado: 'erro' };
     }
@@ -304,4 +310,13 @@ function pessoasDoProcesso(processo: Processo): PessoasParaRedigir {
       advogados: p.advogados.map((a) => ({ nome: a.nome })),
     })),
   };
+}
+
+/** O funil do roteamento em texto, truncado: vai ao log, que não pode crescer com o corpo do erro. */
+const LIMITE_DO_FUNIL_NO_LOG = 600;
+function funilEmTexto(funil: unknown): string {
+  const texto = JSON.stringify(funil) ?? '';
+  return texto.length > LIMITE_DO_FUNIL_NO_LOG
+    ? `${texto.slice(0, LIMITE_DO_FUNIL_NO_LOG)}…`
+    : texto;
 }
