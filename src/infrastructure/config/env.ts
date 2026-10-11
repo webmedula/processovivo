@@ -3,6 +3,7 @@ import type { NivelLog } from '../../domain/ports/Logger.js';
 import type { NivelDeRaciocinio } from '../adapters/modelo/TransporteOpenRouter.js';
 import { ehApelidoOuVariante } from '../adapters/modelo/endpointsZdr.js';
 import { pareceValorDeExemplo } from './placeholder.js';
+import { FORMATO_DE_WORKSPACE } from '../../domain/entities/workspaceLiberado.js';
 
 /**
  * Configuração validada no arranque.
@@ -215,6 +216,11 @@ const schema = z.object({
   // Nasce DESLIGADA. Não existe variável para desligar a retenção zero (ZDR): ela é
   // exigida em toda chamada, e sem ela a chamada não sai.
   PROCESSOVIVO_IA_HABILITADA: booleano.default('false'),
+  // EXCEÇÃO DE TESTE FECHADO (v0.38.1) — REMOVER ANTES DE ABRIR AO PÚBLICO. Ids de workspace
+  // (16 hex) separados por vírgula que passam na checagem do plano IA SEM assinatura, só para
+  // `analiseIa`. Não cria linha em `assinaturas`, não muda nenhum outro recurso e não dispensa
+  // PROCESSOVIVO_IA_HABILITADA nem as demais travas. Vazia = comportamento de sempre.
+  PROCESSOVIVO_IA_WORKSPACES_LIBERADOS: z.string().default(''),
   // Um modelo REAL do OpenRouter (sem `~` nem `:`). É configuração, nunca constante no código.
   PROCESSOVIVO_IA_MODELO: z.string().default('deepseek/deepseek-v4-flash'),
   // Raciocínio do modelo: desligado por padrão (latência medida p50 29 s / p95 52 s com ele ligado).
@@ -335,6 +341,8 @@ export interface Config {
     readonly provedoresPermitidos: readonly string[];
     readonly maxPorHora: number;
     readonly maxSimultaneas: number;
+    /** Exceção de teste fechado (v0.38.1): ids já validados, minúsculos e sem repetição. */
+    readonly workspacesLiberados: readonly string[];
     /** Vazia quando a IA está desligada. */
     readonly chave: string;
   };
@@ -428,6 +436,8 @@ export function carregarConfig(fonte: NodeJS.ProcessEnv = process.env): Config {
 
   const env = resultado.data;
   validarConfiguracaoDaIa(env);
+  // Validada mesmo com a IA desligada: erro de digitação aparece no deploy, não no dia de ligar.
+  lerWorkspacesLiberados(env.PROCESSOVIVO_IA_WORKSPACES_LIBERADOS);
   return {
     cadeiaDeProviders: env.PROCESSOVIVO_PROVIDER_CHAIN.split(',')
       .map((s) => s.trim())
@@ -534,6 +544,7 @@ export function carregarConfig(fonte: NodeJS.ProcessEnv = process.env): Config {
       ).map((s) => s.toLowerCase()),
       maxPorHora: env.PROCESSOVIVO_IA_MAX_POR_HORA,
       maxSimultaneas: env.PROCESSOVIVO_IA_MAX_SIMULTANEAS,
+      workspacesLiberados: lerWorkspacesLiberados(env.PROCESSOVIVO_IA_WORKSPACES_LIBERADOS),
       chave: env.PROCESSOVIVO_IA_HABILITADA ? env.OPENROUTER_API_KEY.trim() : '',
     },
     admin: {
@@ -567,6 +578,25 @@ function validarConfiguracaoDaIa(env: z.infer<typeof schema>): void {
       'Configuração inválida:\n  - PROCESSOVIVO_IA_MODELO: use o id de um modelo real (sem "~" nem ":")',
     );
   }
+}
+
+/**
+ * Lê PROCESSOVIVO_IA_WORKSPACES_LIBERADOS: 16 hex por item, minúsculas, sem repetição.
+ * Item fora do formato derruba o arranque dizendo QUAL (pela posição) — o valor NUNCA é
+ * ecoado, porque quem cola a chave de API inteira no lugar do id deixaria o segredo
+ * no log do contêiner.
+ */
+function lerWorkspacesLiberados(valor: string): string[] {
+  const itens = listaSeparadaPorVirgula(valor).map((s) => s.toLowerCase());
+  const ruins = itens.flatMap((id, i) => (FORMATO_DE_WORKSPACE.test(id) ? [] : [i + 1]));
+  if (ruins.length > 0) {
+    throw new Error(
+      'Configuração inválida:\n  - PROCESSOVIVO_IA_WORKSPACES_LIBERADOS: ' +
+        `item ${ruins.join(', ')} fora do formato (use ids de workspace com 16 caracteres ` +
+        'hexadecimais, separados por vírgula; não cole a chave de API)',
+    );
+  }
+  return [...new Set(itens)];
 }
 
 function listaSeparadaPorVirgula(valor: string): string[] {

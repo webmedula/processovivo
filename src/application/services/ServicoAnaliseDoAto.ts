@@ -4,6 +4,7 @@ import type {
   AvaliacaoDaAnalise,
   ResultadoDaAnalise,
 } from '../../domain/entities/AnaliseDoAto.js';
+import { mascararWorkspace } from '../../domain/entities/workspaceLiberado.js';
 import { NumeroCNJ } from '../../domain/entities/NumeroCNJ.js';
 import type { Processo } from '../../domain/entities/Processo.js';
 import type {
@@ -75,6 +76,12 @@ export interface OpcoesServicoAnaliseDoAto {
   readonly clock: Clock;
   readonly logger: Logger;
   readonly novoId: () => string;
+  /**
+   * EXCEÇÃO DE TESTE FECHADO (v0.38.1) — REMOVER ANTES DE ABRIR AO PÚBLICO.
+   * Workspaces que passam na checagem do plano SEM assinatura, só aqui. Vazio/ausente
+   * = só quem tem o plano IA vigente.
+   */
+  readonly workspacesLiberados?: ReadonlySet<string>;
 }
 
 export interface PedidoDeAnaliseDoAto {
@@ -96,7 +103,14 @@ export class ServicoAnaliseDoAto {
     const numero = NumeroCNJ.criar(pedido.numero).digitos;
 
     // 1. Plano: sem ele, nada além da frase fixa. Antes de ler o retrato.
-    if (!(await this.o.assinaturas.temRecursoSemExcecao(workspace, 'analiseIa'))) {
+    // O workspace liberado por variável passa SEM assinatura (nada é gravado em
+    // `assinaturas`); quem não está na lista continua dependendo do plano.
+    const liberado = this.o.workspacesLiberados?.has(workspace) === true;
+    if (liberado) {
+      this.log.info('análise liberada por exceção de teste fechado', {
+        workspace: mascararWorkspace(workspace),
+      });
+    } else if (!(await this.o.assinaturas.temRecursoSemExcecao(workspace, 'analiseIa'))) {
       throw new EntradaNaoAnalisavelError(
         'sem_plano',
         'A análise por IA faz parte do plano IA. Faça upgrade do plano para usar.',

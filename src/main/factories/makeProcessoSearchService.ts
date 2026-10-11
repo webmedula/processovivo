@@ -32,6 +32,7 @@ import { RepositorioNotificacaoSqlite } from '../../infrastructure/persistencia/
 import { RepositorioVigilanciasSqlite } from '../../infrastructure/persistencia/sqlite/RepositorioVigilanciasSqlite.js';
 import type { Logger } from '../../domain/ports/Logger.js';
 import type { RepositorioAcompanhamentos } from '../../domain/ports/RepositorioAcompanhamentos.js';
+import { mascararWorkspace } from '../../domain/entities/workspaceLiberado.js';
 import { ServicoAnaliseDoAto } from '../../application/services/ServicoAnaliseDoAto.js';
 import { LimiteDeAnalises } from '../../application/politicas/limiteDeAnalises.js';
 import { clockDoSistema } from '../../domain/ports/Clock.js';
@@ -576,6 +577,12 @@ function montarAnaliseIa(
     raciocinio: ia.raciocinio,
     provedoresDoOperador: ia.provedoresPermitidos.length,
   });
+  if (ia.workspacesLiberados.length > 0) {
+    // Só ids MASCARADOS: o workspace identifica de quem é a carteira.
+    logger.warn('análise por IA: exceção de teste fechado ligada (remover antes de abrir ao público)', {
+      workspaces: ia.workspacesLiberados.map(mascararWorkspace),
+    });
+  }
   return new ServicoAnaliseDoAto({
     repositorio,
     analises: new RepositorioAnalisesSqlite(db),
@@ -589,6 +596,7 @@ function montarAnaliseIa(
     clock: clockDoSistema,
     logger,
     novoId: () => randomUUID(),
+    workspacesLiberados: new Set(ia.workspacesLiberados),
   });
 }
 
