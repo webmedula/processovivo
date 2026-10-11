@@ -144,7 +144,7 @@ describe('IA habilitada — plano', () => {
       estado: 'verificada',
       parecePedir: 'manifestar',
       modelo: 'modelo/teste',
-      versaoPrompt: 'ato-1.0.0',
+      versaoPrompt: 'ato-1.1.0',
       avaliacao: null,
     });
     expect(String(corpo['resumo'])).toContain(NOME_DA_PARTE);

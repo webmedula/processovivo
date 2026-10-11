@@ -1,7 +1,10 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { DatabaseSync } from 'node:sqlite';
 import { LimiteDeAnalises } from '../../src/application/politicas/limiteDeAnalises.js';
-import { ServicoAnaliseDoAto } from '../../src/application/services/ServicoAnaliseDoAto.js';
+import {
+  paraATela,
+  ServicoAnaliseDoAto,
+} from '../../src/application/services/ServicoAnaliseDoAto.js';
 import { chaveDaMovimentacao } from '../../src/domain/entities/Acompanhamento.js';
 import type { Movimentacao } from '../../src/domain/entities/Movimentacao.js';
 import { NumeroCNJ } from '../../src/domain/entities/NumeroCNJ.js';
@@ -197,7 +200,7 @@ describe('ServicoAnaliseDoAto', () => {
       );
       expect(r.modelo).toBe('modelo/teste');
       expect(r.provedor).toBe('provedor-teste');
-      expect(r.versaoPrompt).toBe('ato-1.0.0');
+      expect(r.versaoPrompt).toBe('ato-1.1.0');
 
       const linha = db.prepare('SELECT * FROM analises_ia').get() as Record<
         string,
@@ -226,6 +229,59 @@ describe('ServicoAnaliseDoAto', () => {
       expect(db.prepare('SELECT count(*) AS n FROM analises_ia').get()).toMatchObject({
         n: 1,
       });
+    });
+
+    it('ação que copia o trecho-chave vira "não verificada", sem texto na tela nem no log', async () => {
+      await semear(WS_A, [ATO]);
+      analisador.resposta = async () => ({
+        resposta: respostaValida({
+          acoes_possiveis: [{ acao: 'que se manifeste sobre o laudo pericial' }],
+        }),
+        modelo: 'modelo/teste',
+        provedor: 'provedor-teste',
+      });
+      const r = await servico().analisar(pedido());
+      expect(r.estado).toBe('nao_verificada');
+      expect(JSON.stringify(r)).not.toContain('laudo');
+      const log_ = log.linhas.join('\n');
+      expect(log_).not.toContain('laudo pericial');
+      expect(log_).not.toContain(NOME_DA_PARTE);
+    });
+
+    it('ação válida chega à tela só com a providência (sem trecho), e a análise gravada antiga com trecho não o expõe', async () => {
+      await semear(WS_A, [ATO]);
+      const r = await servico().analisar(pedido());
+      expect(r.estado).toBe('verificada');
+      if (r.estado !== 'verificada') return;
+      expect(r.acoesPossiveis).toEqual([
+        { acao: 'Parte autora: apresentar manifestação sobre o laudo' },
+      ]);
+      // Linha gravada antes da 0.38.5: a ação trazia `trecho`, e ele não sai da API.
+      const velha = paraATela(
+        {
+          id: 'x',
+          workspace: WS_A,
+          numero: NUMERO,
+          chaveDoAto: 'k',
+          resultado: {
+            estado: 'verificada',
+            parecePedir: 'manifestar',
+            acoesPossiveis: [
+              { acao: 'Manifestar-se', trecho: 'se manifeste sobre o laudo' },
+            ] as never,
+            pontosDeAtencao: [],
+          },
+          procedencia: {
+            modelo: 'm',
+            versaoPrompt: 'ato-1.0.0',
+            provedor: 'p',
+            criadaEm: DATA,
+          },
+          medidas: { latenciaMs: 1 },
+        },
+        (t) => t,
+      );
+      expect(velha.acoesPossiveis).toEqual([{ acao: 'Manifestar-se' }]);
     });
 
     it('falha do modelo vira estado "erro": nada é gravado e nenhum texto de ato chega ao log', async () => {

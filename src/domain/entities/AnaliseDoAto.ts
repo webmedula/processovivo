@@ -34,7 +34,8 @@ export type ResultadoDaAnalise =
     }
   | {
       readonly estado: 'nao_verificada';
-      readonly motivo: 'sem_citacao_valida' | 'expressao_proibida';
+      readonly motivo:
+        'sem_citacao_valida' | 'expressao_proibida' | 'acao_copiada_do_trecho';
     };
 
 /** De onde veio e como foi gerada: tudo que a tela e a medição precisam, sem texto. */

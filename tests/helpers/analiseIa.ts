@@ -19,9 +19,7 @@ export function respostaValida(
     parece_pedir: 'manifestar',
     resumo: '[PARTE A] deve se manifestar sobre o laudo pericial.',
     trecho_chave: TRECHO_NO_ATO,
-    acoes_possiveis: [
-      { acao: 'Manifestar-se sobre o laudo pericial', trecho: TRECHO_NO_ATO },
-    ],
+    acoes_possiveis: [{ acao: 'Parte autora: apresentar manifestação sobre o laudo' }],
     pontos_de_atencao: ['conferir_prazo_no_processo'],
     ...sobrescrever,
   };

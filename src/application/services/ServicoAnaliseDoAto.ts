@@ -294,10 +294,8 @@ export function paraATela(
     parecePedir: r.parecePedir,
     ...(r.resumo !== undefined ? { resumo: restaurar(r.resumo) } : {}),
     ...(r.trechoChave !== undefined ? { trechoChave: restaurar(r.trechoChave) } : {}),
-    acoesPossiveis: r.acoesPossiveis.map((a) => ({
-      acao: restaurar(a.acao),
-      trecho: restaurar(a.trecho),
-    })),
+    // Só a ação: análises gravadas antes da 0.38.5 trazem `trecho` na linha, e ele não sai.
+    acoesPossiveis: r.acoesPossiveis.map((a) => ({ acao: restaurar(a.acao) })),
     pontosDeAtencao: r.pontosDeAtencao,
   };
 }
