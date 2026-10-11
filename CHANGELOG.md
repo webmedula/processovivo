@@ -9,6 +9,37 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.38.3] — 2026-10-11
+
+**A análise por IA sobrevive ao limite de taxa de UM provedor.** Em produção a chamada recebia 429 do
+DeepInfra em ~285 ms, três vezes seguidas, e falhava: as três tentativas levavam o mesmo `only`, e
+com `allow_fallbacks: false` o OpenRouter não troca de provedor.
+
+### Alterado
+
+- Depois de um **429 ou 5xx**, cada nova tentativa usa `provider.only` com **UM** provedor da lista
+  permitida, **em ordem**, sem repetir; a 1ª tentativa continua com **todos** os permitidos. Não
+  depende de o corpo do erro informar quem limitou. Esgotada a lista (1 + N tentativas), a chamada
+  falha com o log de roteamento da 0.38.2 (status, passo, funil — sem texto).
+- Esperas: as atuais (1 s e 3 s); da 3ª repetição em diante repete-se a última (3 s).
+- Outros erros não rodam a lista: 401/402/403/400/404 não repetem; falha de rede repete com os mesmos
+  permitidos; com um provedor só, repete como antes.
+
+### Não muda
+
+- `allow_fallbacks` continua **false**; `zdr: true`, `data_collection: deny`, `require_parameters` e
+  a lista `only` (nunca um provedor fora dela) em TODA tentativa; a conferência do par modelo +
+  provedor da resposta contra a lista ZDR e o conjunto permitido; a lista ZDR; nenhuma chamada sem ZDR.
+
+### Testes
+
+- 429 leva a 2ª chamada com um provedor da lista; ordem sem repetição; nenhuma chamada fora da lista;
+  esgotar a lista falha (1 + 4 chamadas) sem texto no erro nem no roteamento; `zdr`, `data_collection`
+  e `allow_fallbacks: false` em toda tentativa; 401 não roda a lista; rede repete com os mesmos
+  permitidos; um provedor só repete como antes.
+
+---
+
 ## [0.38.2] — 2026-10-11
 
 **O log da análise por IA passa a dizer ONDE a chamada parou.** A linha "análise do ato não concluída"

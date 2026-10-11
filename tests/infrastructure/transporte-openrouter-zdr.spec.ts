@@ -464,7 +464,7 @@ describe('TransporteOpenRouter — no fio (SDK real, HTTP dublado)', () => {
     expect(r.provedor === undefined || r.provedor === '').toBe(true);
   });
 
-  it('o corpo enviado leva provider.only (a restrição aos provedores ZDR do modelo) e a repetição por 429 também', async () => {
+  it('o corpo enviado leva provider.only (a restrição aos provedores ZDR do modelo); a repetição por 429 restringe a UM provedor da lista (v0.38.3)', async () => {
     const w = fio([
       () => json({ error: { message: 'limite', code: 429 } }, 429),
       () => json(corpoOk),
@@ -475,8 +475,16 @@ describe('TransporteOpenRouter — no fio (SDK real, HTTP dublado)', () => {
       dormir: async () => undefined,
     }).gerar(PEDIDO);
     expect(w.corpos).toHaveLength(2);
+    const only = (c: Record<string, unknown>): string[] | undefined =>
+      (c['provider'] as { only?: string[] }).only;
+    expect(only(w.corpos[0] as Record<string, unknown>)).toEqual(['alfa', 'beta']);
+    expect(only(w.corpos[1] as Record<string, unknown>)).toEqual(['alfa']);
     for (const c of w.corpos)
-      expect((c['provider'] as { only?: string[] }).only).toEqual(['alfa', 'beta']);
+      expect(c['provider']).toMatchObject({
+        zdr: true,
+        data_collection: 'deny',
+        allow_fallbacks: false,
+      });
   });
 
   it('devolve os campos model e provider DA RESPOSTA e o corpo enviado SEM texto e SEM chave', async () => {
@@ -813,5 +821,90 @@ describe('TransporteOpenRouter — roteamento da falha (v0.38.2)', () => {
     expect(texto).not.toContain('sk-or-segredo');
     expect(texto).not.toContain('x'.repeat(300));
     expect(texto).toContain('[omitido');
+  });
+});
+
+describe('TransporteOpenRouter — rodízio por provedor depois de 429/5xx (v0.38.3)', () => {
+  const PERMITIDOS = ['alfa', 'beta', 'gama', 'delta'];
+  const PEDIDO_4 = { ...PEDIDO, provedoresPermitidos: PERMITIDOS };
+  const limite = (status = 429) =>
+    falha(erroHttp(status, '{"error":{"message":"TEXTO-SECRETO-DO-ATO"}}'));
+  const onlyDe = (c: ChamadaAoSdk): readonly string[] | undefined => c.provider.only;
+
+  it('1ª tentativa leva TODOS os permitidos; o 429 leva a uma 2ª chamada com UM provedor da lista', async () => {
+    const { t, chamadas } = transporte([limite(), ok]);
+    await t.gerar(PEDIDO_4);
+
+    expect(chamadas).toHaveLength(2);
+    expect(onlyDe(chamadas[0] as ChamadaAoSdk)).toEqual(PERMITIDOS);
+    const segunda = onlyDe(chamadas[1] as ChamadaAoSdk) ?? [];
+    expect(segunda).toHaveLength(1);
+    expect(PERMITIDOS).toContain(segunda[0]);
+    // diferente do conjunto anterior: deixou de ser "todos"
+    expect(segunda).not.toEqual(PERMITIDOS);
+  });
+
+  it('percorre a lista EM ORDEM, um provedor por tentativa, sem repetir nenhum', async () => {
+    const { t, chamadas } = transporte([limite(), limite(503), limite(), ok]);
+    await t.gerar(PEDIDO_4);
+
+    expect(chamadas.map(onlyDe)).toEqual([PERMITIDOS, ['alfa'], ['beta'], ['gama']]);
+  });
+
+  it('esgotada a lista, falha: 1 + 4 chamadas, nenhuma fora da lista, sem texto no erro nem no roteamento', async () => {
+    const { t, chamadas, esperas } = transporte([limite()]);
+    const erro = (await t
+      .gerar(PEDIDO_4)
+      .catch((e: unknown) => e)) as ProviderIndisponivelError;
+
+    expect(erro).toBeInstanceOf(ProviderIndisponivelError);
+    expect(chamadas).toHaveLength(5);
+    expect(chamadas.map(onlyDe)).toEqual([
+      PERMITIDOS,
+      ['alfa'],
+      ['beta'],
+      ['gama'],
+      ['delta'],
+    ]);
+    for (const c of chamadas)
+      for (const p of onlyDe(c) ?? []) expect(PERMITIDOS).toContain(p);
+    // O log da 0.38.2 recebe o status, sem texto.
+    expect(erro.roteamento).toEqual({ status: 429 });
+    expect(erro.message).not.toContain('TEXTO-SECRETO-DO-ATO');
+    expect(JSON.stringify(erro.roteamento)).not.toContain('TEXTO-SECRETO-DO-ATO');
+    // As esperas atuais (1 s, 3 s) valem; as seguintes repetem a última.
+    expect(esperas).toEqual([1_000, 3_000, 3_000, 3_000]);
+  });
+
+  it('zdr, data_collection e allow_fallbacks: false estão em TODA tentativa', async () => {
+    const { t, chamadas } = transporte([limite()]);
+    await t.gerar(PEDIDO_4).catch(() => undefined);
+
+    expect(chamadas.length).toBeGreaterThan(1);
+    for (const c of chamadas) {
+      expect(c.provider).toMatchObject({
+        zdr: true,
+        data_collection: 'deny',
+        allow_fallbacks: false,
+        require_parameters: true,
+      });
+    }
+  });
+
+  it('erro que não é 429/5xx não roda a lista: 401 não repete, e falha de rede repete com os mesmos permitidos', async () => {
+    const um = transporte([limite(401), ok]);
+    await um.t.gerar(PEDIDO_4).catch(() => undefined);
+    expect(um.chamadas).toHaveLength(1);
+
+    const rede = transporte([falha(new Error('fetch failed')), ok]);
+    await rede.t.gerar(PEDIDO_4);
+    expect(rede.chamadas.map(onlyDe)).toEqual([PERMITIDOS, PERMITIDOS]);
+  });
+
+  it('com um provedor só não há para onde rodar: repete como antes, sempre com ele', async () => {
+    const { t, chamadas } = transporte([limite()]);
+    await t.gerar({ ...PEDIDO, provedoresPermitidos: ['alfa'] }).catch(() => undefined);
+
+    expect(chamadas.map(onlyDe)).toEqual([['alfa'], ['alfa'], ['alfa']]);
   });
 });

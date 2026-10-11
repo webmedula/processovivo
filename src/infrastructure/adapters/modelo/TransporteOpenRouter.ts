@@ -421,9 +421,21 @@ export class TransporteOpenRouter implements TransporteDeModelo {
     degrau: Degrau,
   ): Promise<RespostaDoTransporte> {
     let ultimo: unknown;
-    // 1 tentativa + no máximo 2 repetições, todas com a MESMA chamada, portanto com a ZDR.
-    for (let tentativa = 0; tentativa <= this.esperas.length; tentativa++) {
-      const chamada = this.montarChamada(pedido, degrau);
+    const todos = pedido.provedoresPermitidos;
+    // Rodízio por provedor (v0.38.3): a 1ª tentativa leva TODOS os permitidos em `only`. Depois de
+    // um 429/5xx, cada nova tentativa restringe `only` a UM provedor da lista, em ordem — sem
+    // depender de o corpo do erro dizer quem limitou e SEM `allow_fallbacks` (continua false):
+    // o texto só pode chegar a quem está na lista, e a lista inteira esgotada falha.
+    // Com um único provedor não há para onde rodar: repete como antes. O degrau D (diagnóstico,
+    // sem `only`) também.
+    const rodizio = degrau !== 'D' && todos.length > 1;
+    const repeticoes = rodizio
+      ? Math.max(this.esperas.length, todos.length)
+      : this.esperas.length;
+    let only: readonly string[] = todos;
+    let proximo = 0;
+    for (let tentativa = 0; tentativa <= repeticoes; tentativa++) {
+      const chamada = this.montarChamada(pedido, degrau, only);
       exigirZdr(chamada, { admiteSemRestricao: degrau === 'D' });
       try {
         const bruto = await this.executar(chamada);
@@ -460,20 +472,35 @@ export class TransporteOpenRouter implements TransporteDeModelo {
           ...(roteamento.funil !== undefined ? { funil: roteamento.funil } : {}),
         });
         const traduzido = traduzirErro(erro, pedido.modelo);
+        // Limite de taxa ou falha do provedor: a próxima tentativa muda de provedor.
+        const trocaProvedor =
+          rodizio && status !== undefined && (status === 429 || status >= 500);
+        const listaEsgotada = trocaProvedor && proximo >= todos.length;
         const podeRepetir =
           pedido.sinal?.aborted !== true &&
           ehTransitorio(erro) &&
           !(traduzido instanceof ZdrIndisponivelError) &&
           !(traduzido instanceof SemProvedorQueAtendaError) &&
-          tentativa < this.esperas.length;
+          !listaEsgotada &&
+          tentativa < repeticoes;
         if (!podeRepetir) throw traduzido;
-        await this.dormir(this.esperas[tentativa] ?? 0);
+        if (trocaProvedor) {
+          const proximoProvedor = todos[proximo++];
+          if (proximoProvedor !== undefined) only = [proximoProvedor];
+        }
+        await this.dormir(
+          this.esperas[Math.min(tentativa, this.esperas.length - 1)] ?? 0,
+        );
       }
     }
     throw traduzirErro(ultimo, pedido.modelo);
   }
 
-  private montarChamada(pedido: PedidoAoModelo, degrau: Degrau): ChamadaAoSdk {
+  private montarChamada(
+    pedido: PedidoAoModelo,
+    degrau: Degrau,
+    only: readonly string[] = pedido.provedoresPermitidos,
+  ): ChamadaAoSdk {
     const raciocinio = corpoDoRaciocinio(this.ajustes.raciocinio ?? 'padrao');
     return {
       modelo: pedido.modelo,
@@ -491,7 +518,7 @@ export class TransporteOpenRouter implements TransporteDeModelo {
         data_collection: PREFERENCIAS_BASE_DE_PROVEDOR.data_collection,
         allow_fallbacks: PREFERENCIAS_BASE_DE_PROVEDOR.allow_fallbacks,
         ...(degrau === 'A' ? { require_parameters: true as const } : {}),
-        ...(degrau !== 'D' ? { only: [...pedido.provedoresPermitidos] } : {}),
+        ...(degrau !== 'D' ? { only: [...only] } : {}),
       },
       saida: degrau === 'A' || degrau === 'B' ? 'esquema' : 'texto',
       ...(raciocinio ? { raciocinio } : {}),
