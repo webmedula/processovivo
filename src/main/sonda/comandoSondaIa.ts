@@ -122,7 +122,7 @@ Precisa de OPENROUTER_API_KEY no ambiente (nunca é impressa).
   node scripts/sonda-ia-ato.mjs --controle-negativo[=<modelo SEM ZDR>]   # deve ser recusado; se responder, é BLOQUEANTE
 Nomes com "~" (apelidos) e com ":" (variantes) são recusados em todos os comandos.
 5. Diagnóstico de um modelo que falha (UM caso sintético; zdr: true em TODOS os degraus):
-  node scripts/sonda-ia-ato.mjs --diagnosticar-modelo=<modelo>    # A como na rodada · B sem require_parameters · C sem json_schema estrito · D sem provider.only
+  node scripts/sonda-ia-ato.mjs --diagnosticar-modelo=<modelo>    # A esquema estrito (produção até a 0.38.3) · B sem require_parameters · C sem json_schema estrito · D sem provider.only
 6. Latência (caso sintético, raciocínio e max_tokens variando; mede e compara):
   node scripts/sonda-ia-ato.mjs --medir-latencia=<modelo> [--repeticoes=2]
 
@@ -657,7 +657,7 @@ async function prepararMedida(
 }
 
 const CAUSA_POR_DEGRAU: Readonly<Record<Degrau, string>> = {
-  A: 'A funcionou: com as restrições da rodada o modelo responde. A falha anterior, se houve, era outra (limite, rede, provedor momentaneamente fora).',
+  A: 'A funcionou: com o esquema estrito (a chamada de produção até a 0.38.3) o modelo responde. A produção atual usa o formato em texto (degrau C). A falha anterior, se houve, era outra (limite, rede, provedor momentaneamente fora).',
   B: 'Causa provável: require_parameters — algum parâmetro do pedido não é suportado por todos os provedores restritos.',
   C: 'Causa provável: o json_schema ESTRITO não é suportado pelos provedores ZDR deste modelo (a saída em texto, validada aqui, funciona).',
   D: 'Causa provável: provider.only — os slugs derivados da tag da lista ZDR não são os que o OpenRouter espera.',
@@ -665,7 +665,7 @@ const CAUSA_POR_DEGRAU: Readonly<Record<Degrau, string>> = {
 
 /**
  * Diagnóstico em degraus. UM caso sintético; `zdr: true` e `data_collection: deny` em TODOS os
- * degraus. Cada degrau tira UMA coisa a mais (A como na rodada → B sem require_parameters → C sem
+ * degraus. Cada degrau tira UMA coisa a mais (A esquema estrito, produção até a 0.38.3 → B sem require_parameters → C sem
  * json_schema estrito → D sem provider.only) e para no primeiro que responde. Toda resposta tem o
  * par (modelo, provedor) conferido na lista ZDR; no degrau D, que não restringe provedor, um par
  * fora da lista DESCARTA a resposta. Códigos: 0 respondeu e o par consta; 5 nenhum degrau
@@ -738,7 +738,7 @@ async function diagnosticarModelo(
 
 /**
  * Mede o efeito de raciocínio e de `max_tokens` na latência. UM caso sintético, mesma chamada da
- * rodada (zdr, only, require_parameters, esquema estrito), repetida; o que varia é só o
+ * rodada (zdr, only, formato em texto, sem require_parameters — a de produção desde a 0.38.4), repetida; o que varia é só o
  * `reasoning` (padrão, desligado, nenhum, mínimo, baixo) e o teto de tokens. A latência do
  * modelo é o que a rodada real vai pagar por análise.
  */
@@ -892,7 +892,10 @@ function mostrarRastro(
 function transporteDeControle(
   chave: string,
   amb: AmbienteDaSonda,
-): { detalhes: DetalheDeErro[]; transporte: ReturnType<AmbienteDaSonda['criarTransporte']> } {
+): {
+  detalhes: DetalheDeErro[];
+  transporte: ReturnType<AmbienteDaSonda['criarTransporte']>;
+} {
   const detalhes: DetalheDeErro[] = [];
   return {
     detalhes,

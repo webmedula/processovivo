@@ -9,6 +9,32 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.38.4] — 2026-10-11
+
+**A análise por IA deixa de depender de saída estruturada do provedor.** Em produção a 0.38.3 falhava em
+~2,6 s com `SemProvedorQueAtendaError` (404, passo "Filter by Parameters"; funil: 16 endpoints iniciais,
+1 após "Filter by Allowed Providers", 0 depois): o único endpoint ZDR do modelo não declara suporte ao
+`response_format` `json_schema` estrito que a chamada exigia com `require_parameters`.
+
+### Alterado
+
+- A chamada normal (`TransporteOpenRouter.gerar`) usa o formato do degrau C: **sem `require_parameters` e
+  sem `response_format`**; a instrução de formato vai no texto do sistema, o JSON é extraído por
+  `jsonDoTexto` (cerca de código é tolerada) e validado pelo Zod `.strict()` do analisador.
+- Resposta fora do formato (inclusive com chaves antes do JSON) falha de forma segura:
+  `RespostaInvalidaError`, sem repetir, sem texto da resposta no erro nem no log.
+- Diagnóstico em degraus da sonda: o A (esquema estrito) passa a ser só termo de comparação; o C é a
+  chamada de produção. Descrições na sonda e na nota 2.1 atualizadas.
+
+### Não muda
+
+- `zdr: true`, `data_collection: deny`, `allow_fallbacks: false` e `provider.only` com a lista permitida
+  em TODA chamada; a conferência do par modelo + provedor da resposta; `verificarAnalise` (citação,
+  número inventado, expressões proibidas); o rodízio por provedor da 0.38.3 (que se desliga sozinho com
+  um provedor só). Sem "escada" de tentativa com esquema estrito.
+
+---
+
 ## [0.38.3] — 2026-10-11
 
 **A análise por IA sobrevive ao limite de taxa de UM provedor.** Em produção a chamada recebia 429 do
