@@ -83,19 +83,24 @@ src/
 │   ├── entities/                # Processo, Movimentacao, Parte, NumeroCNJ, Oab,
 │   │                            #   posicaoDoAto + numeracaoDoProjudi (Pasta digital),
 │   │                            #   tipoDaComunicacao + estadoDaPasta/lerProvidencia (cumprido),
-│   │                            #   destinatarioDaComunicacao (paraOUsuario)
+│   │                            #   destinatarioDaComunicacao (paraOUsuario),
+│   │                            #   AnaliseDoAto + vocabularioDaAnalise (IA)
 │   ├── errors/                  # hierarquia de DomainError
 │   ├── ports/                   # ProcessoProvider, RepositorioAcompanhamentos, Cache…
 │   └── usecases/                # BuscarProcessoPorNumero, BuscarProcessosPorOab
 ├── application/
+│   ├── politicas/               # redigirParaIA, verificarAnalise, entradaDoModelo,
+│   │                            #   limiteDeAnalises (política PURA da análise por IA)
 │   └── services/                # ProcessoSearchService, ServicoAcompanhamento,
 │                                #   ServicoVigilanciaOab, ServicoNotificacao,
 │                                #   ServicoPecas, ServicoContas,
 │                                #   ServicoAssinaturas, ServicoLeitor,
 │                                #   ServicoPasta + GuardaDePecas (Pasta digital),
-│                                #   ServicoCalendario (+ ingestaoDoCalendario)
+│                                #   ServicoCalendario (+ ingestaoDoCalendario),
+│                                #   ServicoAnaliseDoAto (IA, por botão)
 ├── infrastructure/
 │   ├── adapters/
+│   │   ├── modelo/              # OpenRouter: transporte (ZDR), lista ZDR 24 h, analisador
 │   │   ├── datajud/             # adapter + mapper + schemas + aliases
 │   │   ├── djen/                # adapter + mapper + limpeza de HTML
 │   │   ├── mni/                 # adapter + envelope SOAP + mapper + MTOM
@@ -218,6 +223,9 @@ interface ProcessoProvider {
 | `CalibracaoDeNumeracaoInvalidaError` | número do Projudi informado não serve como âncora (fora dos atos, abaixo da posição, incompatível com os outros, acima de 50) | 400; a mensagem diz qual — conferir o que foi digitado |
 | `FeedDoCalendarioNaoEncontradoError` | token do feed inválido, revogado, assinatura bloqueada ou plano sem o recurso | 404 com o MESMO corpo seco nos quatro casos |
 | `AcompanhamentoNaoEncontradoError` | pediu algo sobre processo que ESTE workspace não acompanha | 404; mesma resposta para "não existe" e "é de outra conta" |
+| `EntradaNaoAnalisavelError` | a análise por IA não se aplica: `sem_plano` (403), `segredo_de_justica` (403), `texto_insuficiente` / `texto_indisponivel` (422), `limite_de_uso` (429), `ato_nao_encontrado` (409) | corpo com `detalhes.motivo`; NENHUM chamou o modelo |
+| `AnaliseNaoEncontradaError` | avaliar análise que não existe PARA ESTE workspace | 404; mesma resposta para "não existe" e "é de outra conta" |
+| `ZdrIndisponivelError` / `SemProvedorQueAtendaError` | o OpenRouter não achou provedor ZDR (passo da política de dados) / não achou por outro passo | são `ProviderIndisponivelError`; NUNCA repetir a chamada sem ZDR |
 | `AtoDaProvidenciaInvalidoError` | "marcar como cumprido" apontou para ato que saiu do retrato ou que não pede providência | 409; a tela recarrega e a pessoa decide de novo |
 
 **A distinção que sustenta o produto:** "esse processo não existe" ≠ "não
@@ -295,6 +303,8 @@ npm run cli -- assinatura liberar ana@escritorio.com.br pecas 12 --obs "Pix 22/0
 npm run cli -- assinatura cancelar ana@escritorio.com.br
 npm run cli -- assinatura avisar            # o mesmo que o agendador roda
 
+npm run build && node scripts/ia-avaliacoes.mjs                         # avaliações da análise por IA (v0.38.0), só leitura
+node scripts/sonda-ia-ato.mjs --listar-modelos-zdr=deepseek               # provedores ZDR do modelo (lê a lista do OpenRouter)
 npm run build && node scripts/diagnostico-providencia.mjs --lista-filtro   # sonda (v0.37.6), só leitura
 node scripts/diagnostico-providencia.mjs --numeros=<n1,n2> --mostrar        # por que cada um aparece ou não
 
@@ -758,7 +768,13 @@ Não são detalhes — moldam o código.
   retrocarga no arranque e o teste criado junto com a conta, nunca uma negativa
   por omissão. E **cobrança que entra sem retrocarga é bloqueio em massa**: o
   advogado que usou o sistema ontem abre hoje e vê "sua assinatura venceu"
-  sobre a carteira que ele montou à mão.
+  sobre a carteira que ele montou à mão. **Uma única exceção, a análise por IA
+  (v0.38.0, decisão do dono):** o recurso `analiseIa` NÃO passa sem assinatura —
+  manda texto a um terceiro e custa dinheiro por chamada. Quem decide é
+  `ServicoAssinaturas.temRecursoSemExcecao`, que devolve `false` sem assinatura,
+  com assinatura vencida além da carência ou com plano sem o recurso, e é
+  usada SÓ por `ServicoAnaliseDoAto`. Os outros recursos continuam com `exigir()`
+  e a regra acima. Não generalize a exceção.
 - **Status de assinatura é DERIVADO das datas, nunca gravado.** Status em
   coluna precisa de alguém que o atualize, e esse alguém é sempre uma tarefa
   agendada que pode não ter rodado — uma assinatura que venceu às 3h e só é
@@ -772,7 +788,10 @@ Não são detalhes — moldam o código.
   `validarRegras` aplica a mesma trava ao plano do teste. Há teste que falha
   se alguém virar `implementado` antes de a análise existir. Cobrar assinatura
   de funcionalidade ausente, com advogado, não volta como pedido de reembolso —
-  volta como reclamação formal.
+  volta como reclamação formal. **v0.38.0:** a análise por IA existe, em teste
+  fechado, para a conta que o operador liberou à mão no plano IA; `analiseIa`
+  segue `implementado: false` porque o que a trava impede é a VENDA, não o uso.
+  Virar `true` é decisão do dono, depois da avaliação com uso real.
 - **Planos são dado; recursos são código.** Nome, descrição, preço, combinação
   de recursos, ordem e "à venda" moram na tabela `planos` e mudam pelo painel
   sem deploy. O que cada RECURSO faz (e se existe) continua em código, porque
@@ -1124,6 +1143,45 @@ Não são detalhes — moldam o código.
   comunicação que a próxima sincronização trouxer; resposta sem inscrições não apaga o que
   já se sabia. Nada aqui é prazo: o Projudi mostra "Possível Data Limite" e o sistema
   continua sem informá-la.
+- **Análise por IA: por botão, só o texto que o sistema já tem, redigida, com
+  citação verificada, ZDR falhando fechado, desligada por padrão, plano IA sem
+  exceção** (v0.38.0; especificação `docs/ia-analise-do-ato-especificacao-v1.0.0.md`,
+  Errata v1.1.0). (1) **Só por clique**, um ato por vez, nunca em lote nem
+  automática: nada é enviado a um terceiro sem a pessoa pedir aquele ato. (2) **O
+  texto vem do servidor**: o pedido carrega só a `chaveDoAto`; `ServicoAnaliseDoAto`
+  lê o ato do retrato da PRÓPRIA conta, e texto vindo do cliente nunca é aceito. Só o
+  que já está guardado — nada de peça, PDF ou consulta ao tribunal. (3) **Redigida
+  antes de sair** (`application/politicas/redigirParaIA.ts`: nomes de parte e
+  advogado, CPF/CNPJ, e-mail, telefone, OAB e número de processo viram marcadores) e
+  **verificada ao voltar** (`verificarAnalise.ts`: citação tem de existir no texto
+  enviado; número inventado ou expressão proibida descarta o resultado). O banco
+  guarda o resultado COM marcadores, nunca o texto do ato nem os valores originais;
+  os valores voltam só na resposta, da própria conta. (4) **Segredo de justiça, texto
+  insuficiente (< 80 caracteres), teor indisponível (`teorIndisponivel`) e conta sem o
+  plano IA não chamam o modelo** — e há teste de ZERO chamadas ao adaptador.
+  "Indisponível" e "insuficiente" têm frases diferentes: uma manda abrir o processo no
+  tribunal, a outra manda ler o ato. (5) **ZDR falha fechada e não tem chave de
+  desligar** (nenhuma variável, nenhum degrau): toda chamada leva `zdr: true`,
+  `data_collection: deny`, `allow_fallbacks: false` e `provider.only` com os provedores
+  ZDR do modelo; lista inalcançável, vazia ou sem provedor = nenhuma chamada;
+  resposta de provedor fora do conjunto é descartada e o log leva só nomes; 4xx e
+  "sem provedor" nunca geram segunda chamada sem ZDR; modelo é id real (sem `~`/`:`).
+  `PROCESSOVIVO_IA_PROVEDORES_PERMITIDOS` só restringe (interseção). (6) **Desligada
+  por padrão** (`PROCESSOVIVO_IA_HABILITADA=false`); ligada, o arranque exige
+  `OPENROUTER_API_KEY` real (barrada por `pareceValorDeExemplo`), que nunca vai a log,
+  resposta ou erro; a mensagem de erro do SDK nunca é copiada (pode ecoar o pedido). (7)
+  **Apoio à leitura, não decisão**: a IA não altera "pede providência", "não lida",
+  ordem, contagens, painel nem calendário; nenhuma ação depende do resultado; a tela
+  traz o aviso fixo e a palavra "prazo" só nele e no ponto de atenção "conferir o
+  prazo no processo". (8) **Freio de uso em memória** (limite por hora por conta, uma em
+  andamento por conta, teto global baixo): reiniciar zera — o teto real de gasto é o
+  limite da chave no OpenRouter. Sem cota mensal, sem cache, sem tabela de uso: clique
+  repetido analisa de novo. (9) **A qualidade se mede em uso real** pelos botões Útil /
+  Errado / Perigoso (sem texto livre) e se lê com `scripts/ia-avaliacoes.mjs`. A sonda
+  (`scripts/sonda-ia-ato.mjs`) segue só com casos SINTÉTICOS: caso real nunca entra no
+  repositório nem em log. (10) A lista ZDR e o transporte moram em
+  `infrastructure/adapters/modelo/`; a sonda e o serviço compartilham a MESMA política
+  (`application/politicas/`), sem duplicação.
 - **Encerramento se decide pelo ato MAIS RECENTE, nunca pelo histórico.**
   Processo arquivado e depois desarquivado tem os dois atos nos autos; procurar
   "existe arquivamento" marcaria como encerrada a pasta que voltou a correr — e
@@ -1456,8 +1514,8 @@ teste e carência** (v0.28.0), **visual novo a partir do logo** (v0.29.0),
 **calendário: detecção, agenda, tela e feed ICS** (v0.32.0),
 **ajustes dos advogados: Atualizações por processo, peças no topo, providência em 10 dias** (v0.32.1),
 **Pasta digital: backend (v0.33.0) e tela (v0.33.1) — peça aberta ao clique, guarda por peça, montar pasta completa, baixar marcadas**,
-**ato (movimentação) de cada peça na lista da Pasta, com descrição** (v0.33.2) **e o número da movimentação calculado pela posição do ato, com aviso de atos bloqueados** (v0.34.0; a 0.33.3 havia removido o número errado da 0.33.2), **calibração do número com o Projudi feita pelo advogado: exato quando provado, faixa ou estimado quando não** (v0.35.0), **página inicial: Últimas atualizações mostra só o trecho do texto e o trilho de peças baixadas não estoura a largura** (v0.35.1), **Pasta: número da movimentação no lugar do índice; página inicial: "detectado há N dias" e cartão "pede providência"** (v0.35.2), **Pasta: lista em altura total com avisos compactados** (v0.35.3), **Pasta: todas as movimentações na lista, inclusive as sem peça, com lacuna de numeração provada e lista mais larga** (v0.36.0), **página inicial: tabela de últimas atualizações, uma linha por processo, com filtros que contam no lugar dos cartões; histórico de peças baixadas dentro da Pasta** (v0.37.0), **tabela sem "+N anteriores", "Detectado" enxuto e descrição do ato sem repetição na exibição** (v0.37.1), **classe legível e agrupada no filtro, última movimentação sem repetição e carteira sem rodapé redundante** (v0.37.2), **Atualizações lista todos os processos acompanhados, período como filtro opcional e verificação por conta** (v0.37.3), **Atualizações abre em "Pedem providência", com a lista completa a um clique** (v0.37.4), **intimação do Diário pede providência por 30 dias ou até "cumprido", marca por ato, correção da avalanche de novidades e reparo só com dry-run** (v0.37.5), **conferência com o Projudi: sonda de diagnóstico só de leitura, linha do ato da providência, "Detectado" legível e intimação a outro destinatário** (v0.37.6),
-Dockerfile multi-stage, CI, 1662 testes.
+**ato (movimentação) de cada peça na lista da Pasta, com descrição** (v0.33.2) **e o número da movimentação calculado pela posição do ato, com aviso de atos bloqueados** (v0.34.0; a 0.33.3 havia removido o número errado da 0.33.2), **calibração do número com o Projudi feita pelo advogado: exato quando provado, faixa ou estimado quando não** (v0.35.0), **página inicial: Últimas atualizações mostra só o trecho do texto e o trilho de peças baixadas não estoura a largura** (v0.35.1), **Pasta: número da movimentação no lugar do índice; página inicial: "detectado há N dias" e cartão "pede providência"** (v0.35.2), **Pasta: lista em altura total com avisos compactados** (v0.35.3), **Pasta: todas as movimentações na lista, inclusive as sem peça, com lacuna de numeração provada e lista mais larga** (v0.36.0), **página inicial: tabela de últimas atualizações, uma linha por processo, com filtros que contam no lugar dos cartões; histórico de peças baixadas dentro da Pasta** (v0.37.0), **tabela sem "+N anteriores", "Detectado" enxuto e descrição do ato sem repetição na exibição** (v0.37.1), **classe legível e agrupada no filtro, última movimentação sem repetição e carteira sem rodapé redundante** (v0.37.2), **Atualizações lista todos os processos acompanhados, período como filtro opcional e verificação por conta** (v0.37.3), **Atualizações abre em "Pedem providência", com a lista completa a um clique** (v0.37.4), **intimação do Diário pede providência por 30 dias ou até "cumprido", marca por ato, correção da avalanche de novidades e reparo só com dry-run** (v0.37.5), **conferência com o Projudi: sonda de diagnóstico só de leitura, linha do ato da providência, "Detectado" legível e intimação a outro destinatário** (v0.37.6), **"Analisar com IA": por botão, texto redigido, citação verificada, ZDR falhando fechado, desligada por padrão e só no plano IA** (v0.38.0; sonda de IA v1.2.0 e `ia-avaliacoes.mjs` v1.0.0),
+Dockerfile multi-stage, CI, 2013 testes.
 
 **Pasta digital (v0.33.0, backend):** `GET /v1/processos/:numero/pasta` (lista +
 estado de cada peça + intervalos de página + totais SEM filtro + procedência

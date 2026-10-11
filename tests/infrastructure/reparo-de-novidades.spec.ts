@@ -105,11 +105,21 @@ describe('reparo das novidades da avalanche', () => {
         `INSERT INTO novidades (workspace, numero, data, titulo, detectada_em) VALUES ('w', ?, ?, ?, ?)`,
       );
       for (let i = 0; i < 6; i++) {
-        ins.run('recente', new Date(Date.parse(DETECTADA) - i * 3_600_000).toISOString(), `Ato ${i}`, DETECTADA);
+        ins.run(
+          'recente',
+          new Date(Date.parse(DETECTADA) - i * 3_600_000).toISOString(),
+          `Ato ${i}`,
+          DETECTADA,
+        );
       }
       // 7 antigos + 1 recente: não é 100% antigo, então o complemento não o toca.
       inserir('w', 'misto', 7);
-      ins.run('misto', new Date(Date.parse(DETECTADA) - 3_600_000).toISOString(), 'Ato novo', DETECTADA);
+      ins.run(
+        'misto',
+        new Date(Date.parse(DETECTADA) - 3_600_000).toISOString(),
+        'Ato novo',
+        DETECTADA,
+      );
       expect(diagnosticarAvalanche(db, PROPOSTO).totalNaoLidas).toBe(0);
     });
 
@@ -118,12 +128,18 @@ describe('reparo das novidades da avalanche', () => {
         `INSERT INTO novidades (workspace, numero, data, titulo, detectada_em) VALUES ('w', 'p', ?, ?, ?)`,
       );
       for (let i = 0; i < 25; i++) {
-        ins.run(new Date(Date.parse(DETECTADA) - (16 + i * 0.01) * 86_400_000).toISOString(), `Ato ${i}`, DETECTADA);
+        ins.run(
+          new Date(Date.parse(DETECTADA) - (16 + i * 0.01) * 86_400_000).toISOString(),
+          `Ato ${i}`,
+          DETECTADA,
+        );
       }
       expect(diagnosticarAvalanche(db).totalNaoLidas).toBe(0);
       expect(diagnosticarAvalanche(db, PROPOSTO).totalNaoLidas).toBe(0);
       // Só baixar o piso o pegaria — e ele passaria a pegar também o atraso legítimo do DataJud.
-      expect(diagnosticarAvalanche(db, { ...PROPOSTO, diasDeAtraso: 14 }).totalNaoLidas).toBe(25);
+      expect(
+        diagnosticarAvalanche(db, { ...PROPOSTO, diasDeAtraso: 14 }).totalNaoLidas,
+      ).toBe(25);
     });
   });
 

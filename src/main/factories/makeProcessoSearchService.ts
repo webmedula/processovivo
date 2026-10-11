@@ -31,6 +31,15 @@ import { RepositorioAcompanhamentosSqlite } from '../../infrastructure/persisten
 import { RepositorioNotificacaoSqlite } from '../../infrastructure/persistencia/sqlite/RepositorioNotificacaoSqlite.js';
 import { RepositorioVigilanciasSqlite } from '../../infrastructure/persistencia/sqlite/RepositorioVigilanciasSqlite.js';
 import type { Logger } from '../../domain/ports/Logger.js';
+import type { RepositorioAcompanhamentos } from '../../domain/ports/RepositorioAcompanhamentos.js';
+import { ServicoAnaliseDoAto } from '../../application/services/ServicoAnaliseDoAto.js';
+import { LimiteDeAnalises } from '../../application/politicas/limiteDeAnalises.js';
+import { clockDoSistema } from '../../domain/ports/Clock.js';
+import { OpenRouterAnalisadorDeAto } from '../../infrastructure/adapters/modelo/OpenRouterAnalisadorDeAto.js';
+import { TransporteOpenRouter } from '../../infrastructure/adapters/modelo/TransporteOpenRouter.js';
+import { buscarEndpointsZdr } from '../../infrastructure/adapters/modelo/endpointsZdr.js';
+import { HttpClient } from '../../infrastructure/http/HttpClient.js';
+import { RepositorioAnalisesSqlite } from '../../infrastructure/persistencia/sqlite/RepositorioAnalisesSqlite.js';
 import type { ProcessoProvider } from '../../domain/ports/ProcessoProvider.js';
 import { BuscarProcessoPorNumero } from '../../domain/usecases/BuscarProcessoPorNumero.js';
 import { BuscarProcessosPorOab } from '../../domain/usecases/BuscarProcessosPorOab.js';
@@ -90,6 +99,11 @@ export interface Aplicacao {
   readonly acompanhamento: ServicoAcompanhamento;
   readonly vigilancia: ServicoVigilanciaOab | undefined;
   readonly notificacao: ServicoNotificacao;
+  /**
+   * Análise de ato por IA (v0.38.0). `undefined` com `PROCESSOVIVO_IA_HABILITADA=false`
+   * (o padrão): as rotas não oferecem nada e a tela não mostra o botão.
+   */
+  readonly analiseIa: ServicoAnaliseDoAto | undefined;
   /**
    * `undefined` quando não há chave de cofre configurada. As rotas respondem
    * 501 com a instrução, em vez de existirem e falharem na primeira consulta.
@@ -492,6 +506,7 @@ export function montarAplicacao(config: Config): Aplicacao {
     vigilancia,
     notificacao,
     pecas,
+    analiseIa: montarAnaliseIa(config, db, logger, repositorio, assinaturas),
     leitor,
     pasta,
     agendadorLeitor,
@@ -527,6 +542,54 @@ export function montarAplicacao(config: Config): Aplicacao {
       db.close();
     },
   };
+}
+
+/**
+ * Monta a análise de ato por IA — ou não monta (desligada por padrão). A configuração
+ * já foi validada no arranque (`carregarConfig`): com a IA ligada há chave real e modelo real.
+ * O transporte, o limite e a lista ZDR são UMA instância cada, para o processo inteiro.
+ */
+function montarAnaliseIa(
+  config: Config,
+  db: ReturnType<typeof abrirBanco>,
+  logger: Logger,
+  repositorio: RepositorioAcompanhamentos,
+  assinaturas: ServicoAssinaturas,
+): ServicoAnaliseDoAto | undefined {
+  const ia = config.ia;
+  if (!ia.habilitada) return undefined;
+  const http = new HttpClient({ timeoutMs: 20_000, tentativas: 2 });
+  const analisador = new OpenRouterAnalisadorDeAto({
+    transporte: new TransporteOpenRouter({
+      chave: ia.chave,
+      timeoutMs: ia.timeoutMs,
+      ajustes: { raciocinio: ia.raciocinio, maxTokens: ia.maxTokens },
+    }),
+    modelo: ia.modelo,
+    buscarListaZdr: async () => (await buscarEndpointsZdr(http, ia.chave)).endpoints,
+    provedoresDoOperador: ia.provedoresPermitidos,
+    clock: clockDoSistema,
+    logger,
+  });
+  logger.info('análise de ato por IA habilitada', {
+    modelo: ia.modelo,
+    raciocinio: ia.raciocinio,
+    provedoresDoOperador: ia.provedoresPermitidos.length,
+  });
+  return new ServicoAnaliseDoAto({
+    repositorio,
+    analises: new RepositorioAnalisesSqlite(db),
+    assinaturas,
+    analisador,
+    limite: new LimiteDeAnalises({
+      porHora: ia.maxPorHora,
+      simultaneasNoTotal: ia.maxSimultaneas,
+      clock: clockDoSistema,
+    }),
+    clock: clockDoSistema,
+    logger,
+    novoId: () => randomUUID(),
+  });
 }
 
 /**

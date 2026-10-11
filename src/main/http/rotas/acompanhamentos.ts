@@ -5,6 +5,7 @@ import type {
   EstadoDaVerificacao,
   ServicoAcompanhamento,
 } from '../../../application/services/ServicoAcompanhamento.js';
+import { chaveDaMovimentacao } from '../../../domain/entities/Acompanhamento.js';
 import type {
   Acompanhamento,
   Novidade,
@@ -130,9 +131,31 @@ function detalheJson(a: Acompanhamento): Record<string, unknown> {
   };
 }
 
-function novidadeJson(n: Novidade): Record<string, unknown> {
+/**
+ * A chave (`chaveDaMovimentacao`) do ato que a linha mostra, achada no retrato da própria
+ * conta (v0.38.0, para o botão "Analisar com IA"). A novidade não guarda o identificador
+ * da fonte, então casa por data e rótulo: se mais de um ato do retrato casa com chaves
+ * diferentes, é ambíguo e vai `null` (sem botão) — nunca se escolhe um por palpite.
+ */
+function chaveDoAtoNoRetrato(
+  a: Acompanhamento | undefined,
+  data: Date,
+  titulo: string,
+): string | null {
+  const chaves = new Set(
+    (a?.processo?.movimentacoes ?? [])
+      .filter((m) => m.data.getTime() === data.getTime() && m.titulo === titulo)
+      .map(chaveDaMovimentacao),
+  );
+  const [unica] = [...chaves];
+  return chaves.size === 1 && unica !== undefined ? unica : null;
+}
+
+function novidadeJson(n: Novidade, chaveDoAto: string | null): Record<string, unknown> {
   return {
     id: n.id,
+    // (v0.38.0) Aditivo. Só uma chave opaca; nenhum texto.
+    chaveDoAto,
     numero: n.numero,
     data: n.data.toISOString(),
     titulo: n.titulo,
@@ -257,11 +280,15 @@ function providenciaJson(
 function grupoJson(
   g: GrupoDeNovidades,
   processo: Record<string, unknown> | undefined,
+  retrato: Acompanhamento | undefined,
 ): Record<string, unknown> {
   return {
     numero: g.numero,
     processo: processo ?? null,
-    maisRecente: novidadeJson(g.maisRecente),
+    maisRecente: novidadeJson(
+      g.maisRecente,
+      chaveDoAtoNoRetrato(retrato, g.maisRecente.data, g.maisRecente.titulo),
+    ),
     // Só QUANTAS: a tela mostra a mais recente e manda para o processo ver as
     // anteriores. Um processo com 300 atualizações não trafega 300 itens (v0.37.1).
     quantidade: 1 + g.anteriores.length,
@@ -297,6 +324,8 @@ function linhaSemNovidade(
       ? {
           data: ultima.data.toISOString(),
           titulo: ultima.titulo,
+          // (v0.38.0) Aditivo: a chave opaca do ato, para o botão "Analisar com IA".
+          chaveDoAto: chaveDaMovimentacao(ultima),
           conteudo:
             !segredo && ultima.conteudo
               ? ultima.conteudo.slice(0, MAX_CONTEUDO_SEM_NOVIDADE)
@@ -503,7 +532,9 @@ export function rotasDeAcompanhamento(
       // Sempre do workspace de quem pediu: a carteira de outro nunca entra aqui.
       const infoPorNumero = new Map<string, Record<string, unknown>>();
       const carteira = await servico.listar(ws);
+      const retratoPorNumero = new Map<string, Acompanhamento>();
       for (const a of carteira) {
+        retratoPorNumero.set(a.numero, a);
         infoPorNumero.set(
           a.numero,
           infoDoProcesso(a, janelas.pendenciaJanelaDias, instante),
@@ -560,10 +591,21 @@ export function rotasDeAcompanhamento(
           janelaDias === undefined || verdadeiro(q.naoVistas)
             ? 0
             : daBusca.filter((a) => !noGrupo.has(a.numero)).length,
-        grupos: agrupadas.grupos.map((g) => grupoJson(g, infoPorNumero.get(g.numero))),
+        grupos: agrupadas.grupos.map((g) =>
+          grupoJson(g, infoPorNumero.get(g.numero), retratoPorNumero.get(g.numero)),
+        ),
         // Só a mais recente de cada processo, como em `grupos`. `total` continua
         // contando as atualizações do período.
-        novidades: agrupadas.grupos.map((g) => novidadeJson(g.maisRecente)),
+        novidades: agrupadas.grupos.map((g) =>
+          novidadeJson(
+            g.maisRecente,
+            chaveDoAtoNoRetrato(
+              retratoPorNumero.get(g.numero),
+              g.maisRecente.data,
+              g.maisRecente.titulo,
+            ),
+          ),
+        ),
       };
     });
 

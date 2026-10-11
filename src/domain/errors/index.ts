@@ -407,6 +407,60 @@ export class ChaveApiNaoEncontradaError extends DomainError {
 }
 
 /**
+ * O OpenRouter não tem NENHUM provedor com retenção zero (ZDR) para o modelo pedido
+ * (ou nenhum que cumpra também os demais requisitos do pedido). É indisponibilidade,
+ * não defeito: quem chama NÃO repete, porque a única repetição possível seria sem ZDR,
+ * e isso está proibido. Especializa `ProviderIndisponivelError` para quem já trata
+ * indisponibilidade continuar tratando.
+ */
+export class ZdrIndisponivelError extends ProviderIndisponivelError {
+  override readonly codigo: string = 'ZDR_INDISPONIVEL';
+
+  /**
+   * @param passo  o `failed_routing_step` que o OpenRouter informou — aqui, o filtro de política de dados
+   * @param funil  o `routing_funnel` do erro (estrutura de contagens, sem texto)
+   */
+  constructor(
+    provider: string,
+    readonly modelo: string,
+    readonly passo?: string,
+    readonly funil?: unknown,
+  ) {
+    super(
+      provider,
+      `o roteamento parou no filtro de política de dados (ZDR) para o modelo "${modelo}"` +
+        (passo ? ` (passo: ${passo})` : '') +
+        '; a chamada NÃO é repetida sem ZDR',
+    );
+  }
+}
+
+/**
+ * Nenhum provedor atendeu, mas o passo do roteamento que falhou NÃO é o filtro de política de
+ * dados (é, por exemplo, o de parâmetros suportados ou o de `provider.only`). Não é "sem ZDR":
+ * chamar assim um 404 que veio de outro filtro esconderia a causa. Carrega o passo e o funil
+ * exatamente como o OpenRouter os informou. Também NÃO se repete.
+ */
+export class SemProvedorQueAtendaError extends ProviderIndisponivelError {
+  override readonly codigo: string = 'SEM_PROVEDOR_QUE_ATENDA';
+
+  constructor(
+    provider: string,
+    readonly modelo: string,
+    readonly passo?: string,
+    readonly funil?: unknown,
+  ) {
+    super(
+      provider,
+      `nenhum provedor atendeu "${modelo}": ` +
+        (passo
+          ? `o roteamento parou no passo "${passo}"`
+          : 'o erro não informou o passo do roteamento'),
+    );
+  }
+}
+
+/**
  * O MNI está em pausa porque o tribunal devolveu HTTP 403.
  *
  * É um `ProviderIndisponivelError` — quem já tratava indisponibilidade continua
@@ -724,5 +778,47 @@ export class AtoDaProvidenciaInvalidoError extends DomainError {
 
   constructor(motivo: string) {
     super(motivo);
+  }
+}
+
+/**
+ * O ato NÃO pode ser analisado por IA, e a razão é do ato ou da conta, não de
+ * falha: a tela mostra a frase própria de cada `motivo`. Nenhum desses casos
+ * chama o modelo — a checagem acontece antes de qualquer saída de dados.
+ *
+ * - `sem_plano`: a conta não tem o plano IA (sem exceção, nem para quem não tem
+ *   assinatura: chave de API e conta sem assinatura também não passam);
+ * - `segredo_de_justica`: o texto de processo sigiloso nunca sai do sistema;
+ * - `texto_insuficiente`: o ato só tem rótulo (ou quase), não há o que ler;
+ * - `texto_indisponivel`: o tribunal avisou que o teor não é público — outro
+ *   problema, outra frase: o advogado precisa abrir o processo no tribunal;
+ * - `limite_de_uso`: limite por hora da conta, ou análises demais em curso;
+ * - `ato_nao_encontrado`: o ato saiu do retrato (a tela estava desatualizada).
+ */
+export type MotivoDeEntradaNaoAnalisavel =
+  | 'sem_plano'
+  | 'segredo_de_justica'
+  | 'texto_insuficiente'
+  | 'texto_indisponivel'
+  | 'limite_de_uso'
+  | 'ato_nao_encontrado';
+
+export class EntradaNaoAnalisavelError extends DomainError {
+  readonly codigo = 'ENTRADA_NAO_ANALISAVEL';
+
+  constructor(
+    readonly motivo: MotivoDeEntradaNaoAnalisavel,
+    mensagem: string,
+  ) {
+    super(mensagem);
+  }
+}
+
+/** A análise pedida não existe PARA ESTE workspace (ou é de outro): 404, mesma resposta. */
+export class AnaliseNaoEncontradaError extends DomainError {
+  readonly codigo = 'ANALISE_NAO_ENCONTRADA';
+
+  constructor() {
+    super('Essa análise não foi encontrada.');
   }
 }

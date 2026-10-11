@@ -1,22 +1,26 @@
 import { describe, expect, it } from 'vitest';
-import {
-  DataJudAdapter,
-} from '../../src/infrastructure/adapters/datajud/DataJudAdapter.js';
+import { DataJudAdapter } from '../../src/infrastructure/adapters/datajud/DataJudAdapter.js';
 import {
   OperacaoNaoSuportadaError,
   ProcessoNaoEncontradoError,
   ProviderIndisponivelError,
   RespostaInvalidaError,
 } from '../../src/domain/errors/index.js';
-import { HttpClient, HttpTimeoutError } from '../../src/infrastructure/http/HttpClient.js';
+import {
+  HttpClient,
+  HttpTimeoutError,
+} from '../../src/infrastructure/http/HttpClient.js';
 import type { RespostaHttp } from '../../src/infrastructure/http/HttpClient.js';
 import type { RateLimiter } from '../../src/infrastructure/ratelimit/TokenBucketRateLimiter.js';
 import { NUMERO_TJSP_A } from '../helpers/fabricas.js';
 
 /** Dublê do HttpClient: nenhum teste desta suíte toca a rede. */
 class HttpClientFalso extends HttpClient {
-  readonly requisicoes: Array<{ url: string; corpo: unknown; headers: Record<string, string> }> =
-    [];
+  readonly requisicoes: Array<{
+    url: string;
+    corpo: unknown;
+    headers: Record<string, string>;
+  }> = [];
 
   constructor(
     private readonly responder: (url: string) => Promise<RespostaHttp> | RespostaHttp,
@@ -76,9 +80,10 @@ const RESPOSTA_COM_UM_PROCESSO = {
   },
 };
 
-function adapter(
-  responder: (url: string) => Promise<RespostaHttp> | RespostaHttp,
-): { instancia: DataJudAdapter; http: HttpClientFalso } {
+function adapter(responder: (url: string) => Promise<RespostaHttp> | RespostaHttp): {
+  instancia: DataJudAdapter;
+  http: HttpClientFalso;
+} {
   const http = new HttpClientFalso(responder);
   const instancia = new DataJudAdapter({
     apiKey: 'chave-de-teste',
@@ -270,7 +275,13 @@ describe('DataJudAdapter', () => {
      * de montar um endereço chutado e receber 404 — sem precisar de conserto no
      * dia em que a cobertura crescer de novo.
      */
-    const numeroDeSegmentoInexistente = comDigitoValido('0001234', '2023', '9', '99', '0001');
+    const numeroDeSegmentoInexistente = comDigitoValido(
+      '0001234',
+      '2023',
+      '9',
+      '99',
+      '0001',
+    );
 
     await expect(
       instancia.buscarPorNumero(numeroDeSegmentoInexistente),

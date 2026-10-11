@@ -160,7 +160,11 @@ describe.skipIf(sem)(
     it('processo sem download: mensagem clara, sem lista vazia', async () => {
       await abrirPasta({ antes: () => baixarAvulsa(OUTRO_PROCESSO, 'p01') });
       await page.click('#pasta-baixadas-bt');
-      await page.waitForSelector('#pasta-baixadas .pbx-vazio');
+      // `.pbx-vazio` também é a classe do "Carregando o histórico…": esperar só pelo seletor
+      // lia o texto do carregamento (corrida). Espera-se o TEXTO do estado vazio.
+      await page.waitForSelector(
+        '#pasta-baixadas .pbx-vazio:has-text("Nenhuma peça baixada deste processo ainda.")',
+      );
       expect(await page.locator('#pasta-baixadas').innerText()).toContain(
         'Nenhuma peça baixada deste processo ainda.',
       );
