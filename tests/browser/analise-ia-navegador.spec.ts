@@ -685,15 +685,46 @@ describe.skipIf(sem)('Analisar com IA, no navegador', { timeout: 120_000 }, () =
       expect(await p.innerText()).toContain('o ato não diz se são úteis ou corridos');
       await criar().click();
       await p.getByText('O ato não diz se os dias são úteis ou corridos.').waitFor();
+      // v0.40.1: nenhuma opção vem pré-marcada e "Calcular" só ativa depois da escolha.
+      expect(await p.locator('input[type="radio"]').count()).toBe(2);
       expect(await p.locator('input[type="radio"]:checked').count()).toBe(0);
+      expect(await p.getByLabel('Dias úteis').isChecked()).toBe(false);
+      expect(await p.getByLabel('Dias corridos').isChecked()).toBe(false);
+      expect(await p.getByRole('button', { name: 'Calcular' }).isDisabled()).toBe(true);
       expect(previas).toEqual([]); // nada foi pedido ainda
-      await p.getByRole('button', { name: 'Calcular' }).click();
-      await p.getByText('Escolha dias úteis ou corridos.').first().waitFor();
-      expect(previas).toEqual([]); // sem escolha, não calcula
       await p.getByLabel('Dias corridos').check();
+      expect(await p.getByRole('button', { name: 'Calcular' }).isEnabled()).toBe(true);
+      expect(previas).toEqual([]); // escolher não calcula: só o clique em Calcular
       await p.getByRole('button', { name: 'Calcular' }).click();
       await p.getByText('Prévia do aviso — nada foi criado ainda').waitFor();
       expect(previas).toEqual([{ tipo: 'corridos' }]);
+    });
+
+    it('a escolha é da pessoa: o foco vai ao primeiro rádio, o teclado escolhe e Cancelar/reabrir volta sem nada marcado', async () => {
+      await abrirAnalise(COM_PRAZO({ dias: 10, tipo: null, calculavel: true }));
+      const p = painel(NA);
+      await criar().click();
+      await p.getByText('O ato não diz se os dias são úteis ou corridos.').waitFor();
+      expect(
+        await page.evaluate(() => document.activeElement?.getAttribute('data-foco')),
+      ).toBe(`iaavtipo-${NA.replace(/\D/g, '')}`);
+      await page.keyboard.press('Space'); // marca "Dias úteis" no rádio focado
+      expect(await p.getByLabel('Dias úteis').isChecked()).toBe(true);
+      expect(await p.getByRole('button', { name: 'Calcular' }).isEnabled()).toBe(true);
+      await p.getByRole('button', { name: 'Cancelar' }).click();
+      await criar().click();
+      await p.getByText('O ato não diz se os dias são úteis ou corridos.').waitFor();
+      expect(await p.locator('input[type="radio"]:checked').count()).toBe(0);
+      expect(await p.getByRole('button', { name: 'Calcular' }).isDisabled()).toBe(true);
+      expect(previas).toEqual([]);
+    });
+
+    it('ato que já diz o tipo: não pergunta e calcula direto, sem opção a marcar', async () => {
+      await abrirAnalise(COM_PRAZO({ dias: 15, tipo: 'uteis', calculavel: true }));
+      const p = painel(NA);
+      await criar().click();
+      await p.getByText('Prévia do aviso — nada foi criado ainda').waitFor();
+      expect(await p.locator('input[type="radio"]').count()).toBe(0);
     });
 
     for (const escuro of [false, true]) {

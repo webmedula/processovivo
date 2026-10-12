@@ -1274,6 +1274,44 @@ Não são detalhes — moldam o código.
   (`PROCESSOVIVO_IA_RESUMO_MAX_POR_HORA`, 6); avaliação Útil / Errado / Perigoso em `POST
   /v1/resumos/:id/avaliacao`; `ia-avaliacoes` lê `analises_ia` e `resumos_ia` em seções
   separadas.
+- **Tela do resumo do processo: botão na capa, estado só na página, sem reabrir, sem criar nada**
+  (v0.40.1; arquivo `ui/resumoIA.ts`, `window.__pvResumoIA`). (1) **O botão "Resumir este processo
+  com IA" só existe para processo ACOMPANHADO** (nasce ao lado de `#parar`; a consulta avulsa não
+  o tem) **e só com a IA disponível** — a MESMA pergunta única a `GET /v1/analises/disponibilidade`
+  da análise de ato (`__pvAnaliseIA.carregar`); IA desligada = nenhum botão na página. (2) **Gancho
+  mínimo em `script.ts`, que não cresceu**: `ligarBotoesDetalhe` chama `aposDesenhar(numero,
+  acompanhado)` e `render()` chama `sair()` quando a tela deixa de ser a de um processo. (3) **O
+  estado vive na página, enquanto a pessoa fica NESTE processo, e é apagado ao sair** (voltar, trocar
+  de aba, abrir outro processo): não há "reabrir resumo anterior" — vale a regra do servidor, e o
+  nada-em-`localStorage` da tela de Atualizações. O redesenho da tela do processo (a régua do
+  tribunal chegando) NÃO apaga o painel nem repete o pedido: `aposDesenhar` devolve o painel e o
+  botão a partir do estado em memória. (4) **O pedido não tem corpo nem `content-type`** (o Fastify
+  recusa JSON vazio); a avaliação usa `POST /v1/resumos/:id/avaliacao`. (5) **Estados**: resumindo
+  (aviso de "até 2 minutos" e Cancelar, que aborta a requisição e, no servidor, a chamada ao modelo),
+  resultado, "Não foi possível resumir com segurança. Leia os atos." (não verificado), erro genérico,
+  sem plano, limite de uso, segredo de justiça, sem texto utilizável e "não acompanha" — **toda frase
+  de recusa é fixa na tela, nunca texto do servidor ou do modelo**. (6) **O resultado separa o que é
+  da IA do que é do sistema**: "Situação do processo" e "Pendências segundo a IA" são blocos do
+  resumo, cada item com o ato de origem (rótulo, data e tipo da comunicação vêm do RETRATO, não do
+  modelo) e o trecho citado; o bloco "Pede providência" do sistema não é tocado (há teste que
+  compara o HTML antes e depois). A tela diz quantos atos o sistema marca como pedem providência e a
+  IA não citou, quantos atos ficaram de fora do resumo (e quantos entraram só pelo título) e quantos
+  itens foram descartados na verificação — **só a contagem, nunca o texto descartado**. (7) **Link do
+  ato**: leva ao andamento da linha do tempo com a mesma data e o mesmo rótulo (`.ev[data-quando]`,
+  como o calendário); se ele está recolhido ou filtrado, a tela DIZ isso em vez de rolar para lugar
+  nenhum. (8) **Rodapé "Gerado por IA em DATA E HORA. Confira nos atos." sem o nome do modelo**; aviso
+  fixo "Apoio à leitura, não substitui a leitura dos atos nem a contagem de prazo." — a palavra
+  "prazo" só aparece nele e no ponto de atenção "conferir o prazo no processo". (9) **Nada é criado**:
+  nenhum aviso, evento ou marca (há teste que confere que os únicos POST são o resumo e a avaliação).
+  (10) **Acessibilidade** fixada por teste de navegador: axe nos temas claro e escuro (sobre a capa e
+  o painel), foco no painel ao abrir e no botão ao fechar, Esc, região `aria-live` no `<body>` (nunca
+  trocada), `aria-busy` enquanto resume, sem rolagem horizontal de 390 a 1920 px.
+- **Prazo do aviso: nenhuma opção de "úteis ou corridos" vem pré-marcada, e "Calcular" só ativa depois
+  da escolha** (v0.40.1, fecha o pendente da 0.39.0). Quando o ato não diz o tipo, **não há tipo
+  padrão**: os dois rádios nascem desmarcados e o botão "Calcular" nasce `disabled`; escolher ativa o
+  botão no lugar (sem redesenhar, o foco fica no rádio) e só o clique em "Calcular" pede a prévia. A
+  escolha DA PESSOA volta marcada se o painel for redesenhado; Cancelar e reabrir voltam ao estado
+  limpo. Ato que já diz o tipo calcula direto, sem rádio. O servidor continua recusando `tipo_necessario`.
 - **Encerramento se decide pelo ato MAIS RECENTE, nunca pelo histórico.**
   Processo arquivado e depois desarquivado tem os dois atos nos autos; procurar
   "existe arquivamento" marcaria como encerrada a pasta que voltou a correr — e
@@ -1634,8 +1672,8 @@ teste e carência** (v0.28.0), **visual novo a partir do logo** (v0.29.0),
 **calendário: detecção, agenda, tela e feed ICS** (v0.32.0),
 **ajustes dos advogados: Atualizações por processo, peças no topo, providência em 10 dias** (v0.32.1),
 **Pasta digital: backend (v0.33.0) e tela (v0.33.1) — peça aberta ao clique, guarda por peça, montar pasta completa, baixar marcadas**,
-**ato (movimentação) de cada peça na lista da Pasta, com descrição** (v0.33.2) **e o número da movimentação calculado pela posição do ato, com aviso de atos bloqueados** (v0.34.0; a 0.33.3 havia removido o número errado da 0.33.2), **calibração do número com o Projudi feita pelo advogado: exato quando provado, faixa ou estimado quando não** (v0.35.0), **página inicial: Últimas atualizações mostra só o trecho do texto e o trilho de peças baixadas não estoura a largura** (v0.35.1), **Pasta: número da movimentação no lugar do índice; página inicial: "detectado há N dias" e cartão "pede providência"** (v0.35.2), **Pasta: lista em altura total com avisos compactados** (v0.35.3), **Pasta: todas as movimentações na lista, inclusive as sem peça, com lacuna de numeração provada e lista mais larga** (v0.36.0), **página inicial: tabela de últimas atualizações, uma linha por processo, com filtros que contam no lugar dos cartões; histórico de peças baixadas dentro da Pasta** (v0.37.0), **tabela sem "+N anteriores", "Detectado" enxuto e descrição do ato sem repetição na exibição** (v0.37.1), **classe legível e agrupada no filtro, última movimentação sem repetição e carteira sem rodapé redundante** (v0.37.2), **Atualizações lista todos os processos acompanhados, período como filtro opcional e verificação por conta** (v0.37.3), **Atualizações abre em "Pedem providência", com a lista completa a um clique** (v0.37.4), **intimação do Diário pede providência por 30 dias ou até "cumprido", marca por ato, correção da avalanche de novidades e reparo só com dry-run** (v0.37.5), **conferência com o Projudi: sonda de diagnóstico só de leitura, linha do ato da providência, "Detectado" legível e intimação a outro destinatário** (v0.37.6), **"Analisar com IA": por botão, texto redigido, citação verificada, ZDR falhando fechado, desligada por padrão e só no plano IA** (v0.38.0; sonda de IA v1.2.0 e `ia-avaliacoes.mjs` v1.0.0), **exceção de teste fechado da IA por variável (`PROCESSOVIVO_IA_WORKSPACES_LIBERADOS`), a remover antes de abrir ao público** (v0.38.1), **log da análise por IA com status HTTP, passo e funil do roteamento** (v0.38.2), **análise por IA: rodízio por provedor depois de 429/5xx, sem `allow_fallbacks`** (v0.38.3), **análise por IA: formato da resposta em texto, sem `require_parameters` nem `response_format`, ZDR e lista intactas** (v0.38.4), **análise por IA: ações possíveis como providência sem citação, rejeição de ação que copia o trecho-chave e rodapé sem o nome do modelo** (v0.38.5), **IA como secretária, Etapa 1: prazo escrito no ato, calculadora de prazo (exceção registrada) e "Criar aviso no calendário" com prévia e confirmação** (v0.39.0), **IA como secretária, Etapa 2 (só o servidor): resumo do processo por IA, por clique, com verificação item a item e a contagem das providências do sistema que a IA não citou** (v0.40.0),
-Dockerfile multi-stage, CI, 2184 testes.
+**ato (movimentação) de cada peça na lista da Pasta, com descrição** (v0.33.2) **e o número da movimentação calculado pela posição do ato, com aviso de atos bloqueados** (v0.34.0; a 0.33.3 havia removido o número errado da 0.33.2), **calibração do número com o Projudi feita pelo advogado: exato quando provado, faixa ou estimado quando não** (v0.35.0), **página inicial: Últimas atualizações mostra só o trecho do texto e o trilho de peças baixadas não estoura a largura** (v0.35.1), **Pasta: número da movimentação no lugar do índice; página inicial: "detectado há N dias" e cartão "pede providência"** (v0.35.2), **Pasta: lista em altura total com avisos compactados** (v0.35.3), **Pasta: todas as movimentações na lista, inclusive as sem peça, com lacuna de numeração provada e lista mais larga** (v0.36.0), **página inicial: tabela de últimas atualizações, uma linha por processo, com filtros que contam no lugar dos cartões; histórico de peças baixadas dentro da Pasta** (v0.37.0), **tabela sem "+N anteriores", "Detectado" enxuto e descrição do ato sem repetição na exibição** (v0.37.1), **classe legível e agrupada no filtro, última movimentação sem repetição e carteira sem rodapé redundante** (v0.37.2), **Atualizações lista todos os processos acompanhados, período como filtro opcional e verificação por conta** (v0.37.3), **Atualizações abre em "Pedem providência", com a lista completa a um clique** (v0.37.4), **intimação do Diário pede providência por 30 dias ou até "cumprido", marca por ato, correção da avalanche de novidades e reparo só com dry-run** (v0.37.5), **conferência com o Projudi: sonda de diagnóstico só de leitura, linha do ato da providência, "Detectado" legível e intimação a outro destinatário** (v0.37.6), **"Analisar com IA": por botão, texto redigido, citação verificada, ZDR falhando fechado, desligada por padrão e só no plano IA** (v0.38.0; sonda de IA v1.2.0 e `ia-avaliacoes.mjs` v1.0.0), **exceção de teste fechado da IA por variável (`PROCESSOVIVO_IA_WORKSPACES_LIBERADOS`), a remover antes de abrir ao público** (v0.38.1), **log da análise por IA com status HTTP, passo e funil do roteamento** (v0.38.2), **análise por IA: rodízio por provedor depois de 429/5xx, sem `allow_fallbacks`** (v0.38.3), **análise por IA: formato da resposta em texto, sem `require_parameters` nem `response_format`, ZDR e lista intactas** (v0.38.4), **análise por IA: ações possíveis como providência sem citação, rejeição de ação que copia o trecho-chave e rodapé sem o nome do modelo** (v0.38.5), **IA como secretária, Etapa 1: prazo escrito no ato, calculadora de prazo (exceção registrada) e "Criar aviso no calendário" com prévia e confirmação** (v0.39.0), **IA como secretária, Etapa 2 (só o servidor): resumo do processo por IA, por clique, com verificação item a item e a contagem das providências do sistema que a IA não citou** (v0.40.0), **tela do resumo do processo: botão na capa, painel com estados, link do ato à linha do tempo e correção do prazo sem opção pré-marcada** (v0.40.1),
+Dockerfile multi-stage, CI, 2226 testes.
 
 **Pasta digital (v0.33.0, backend):** `GET /v1/processos/:numero/pasta` (lista +
 estado de cada peça + intervalos de página + totais SEM filtro + procedência

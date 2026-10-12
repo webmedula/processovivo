@@ -141,12 +141,16 @@ function tipoTxt(t){return t==='uteis'?'dias úteis':(t==='corridos'?'dias corri
 function corpoAviso(n,e){
   var a=e.aviso,h='<div class="pvia-aviso-cal">';
   if(a.fase==='escolha'){
+    /* Nenhuma opção vem pré-marcada e "Calcular" só ativa depois da escolha (v0.40.1): sem tipo
+       padrão, quem decide úteis ou corridos é a pessoa. Só a escolha DELA volta marcada ao redesenhar. */
+    var esc_=a.escolha||'';
     h+='<p>O ato não diz se os dias são úteis ou corridos. Escolha uma opção para calcular a data.</p>'+
       '<div role="radiogroup" aria-label="Tipo de dias" class="pvia-tipos">'+
-      '<label><input type="radio" name="pvia-tipo-'+esc(n)+'" value="uteis"> Dias úteis</label> '+
-      '<label><input type="radio" name="pvia-tipo-'+esc(n)+'" value="corridos"> Dias corridos</label></div>'+
+      '<label><input type="radio" name="pvia-tipo-'+esc(n)+'" value="uteis" data-foco="iaavtipo-'+esc(n)+'"'+(esc_==='uteis'?' checked':'')+'> Dias úteis</label> '+
+      '<label><input type="radio" name="pvia-tipo-'+esc(n)+'" value="corridos"'+(esc_==='corridos'?' checked':'')+'> Dias corridos</label></div>'+
       (a.msg?'<p class="pvia-erro" role="alert">'+esc(a.msg)+'</p>':'')+
-      '<p><button type="button" class="nov-btn" data-acao="ia-aviso-calcular" data-num="'+esc(n)+'" data-foco="iaavcalc-'+esc(n)+'">Calcular</button> '+
+      '<p><button type="button" class="nov-btn" data-acao="ia-aviso-calcular" data-num="'+esc(n)+'" data-foco="iaavcalc-'+esc(n)+'"'+
+      (esc_?'':' disabled')+'>Calcular</button> '+
       '<button type="button" class="nov-btn" data-acao="ia-aviso-cancelar" data-num="'+esc(n)+'" data-foco="iaavcanc-'+esc(n)+'">Cancelar</button></p>';
   }else if(a.fase==='calculando'||a.fase==='criando'){
     h+='<p class="pvia-estado"><span class="gira" aria-hidden="true"></span>'+(a.fase==='criando'?'Criando o aviso…':'Calculando a data…')+'</p>';
@@ -279,7 +283,7 @@ function avisoPrevia(n){
       if(E[n]!==e||e.aviso!==a)return;
       if(x.ok){a.fase='previa';a.previa=x.b;a.data=x.b.dataFinal;refrescar(n,'Prévia do aviso pronta. Confira a data.','iaavconf-'+n);return}
       var m=avisoMotivo(x);
-      if(m==='tipo_necessario'){a.fase='escolha';refrescar(n,'Escolha dias úteis ou corridos.','iaavcalc-'+n);return}
+      if(m==='tipo_necessario'){a.fase='escolha';refrescar(n,'Escolha dias úteis ou corridos.','iaavtipo-'+n);return}
       a.fase='erro';a.msg=MSG_AVISO[m]||ERRO_AVISO;refrescar(n,a.msg,'iaavtent-'+n);
     })
     .catch(function(){
@@ -371,14 +375,14 @@ function clicar(acao,el){
     if(!e||!e.dados||!e.dados.prazo||!e.dados.prazo.calculavel)return;
     e.aviso={fase:e.dados.prazo.tipo?'calculando':'escolha',tipo:'',msg:'',previa:null,data:''};
     if(e.aviso.fase==='calculando'){refrescar(n,'Calculando a data…');avisoPrevia(n)}
-    else refrescar(n,'Escolha dias úteis ou corridos.','iaavcalc-'+n);
+    else refrescar(n,'Escolha dias úteis ou corridos.','iaavtipo-'+n);
     return;
   }
   if(acao==='ia-aviso-calcular'){
     var ev=E[n];
     if(!ev||!ev.aviso)return;
     var marcado=document.querySelector('input[name="pvia-tipo-'+n+'"]:checked');
-    if(!marcado){ev.aviso.msg='Escolha dias úteis ou corridos.';refrescar(n,ev.aviso.msg,'iaavcalc-'+n);return}
+    if(!marcado)return;
     ev.aviso.tipo=marcado.value;
     refrescar(n,'Calculando a data…');
     avisoPrevia(n);
@@ -390,6 +394,18 @@ function clicar(acao,el){
     if(ec){ec.aviso=null;refrescar(n,'Aviso cancelado. Nada foi criado.','iaaviso-'+n)}
   }
 }
+
+/* Escolher úteis ou corridos ativa o "Calcular" (v0.40.1). Atualiza o botão no lugar, sem redesenhar o
+   painel: o foco fica no rádio e o leitor de tela não perde a posição. */
+document.addEventListener('change',function(ev){
+  var r=ev.target;
+  if(!r||r.type!=='radio'||String(r.name||'').indexOf('pvia-tipo-')!==0)return;
+  var n=r.name.slice(10),e=E[n];
+  if(!e||!e.aviso)return;
+  e.aviso.escolha=r.value;
+  var b=document.querySelector('#pvia-'+n+' [data-acao="ia-aviso-calcular"]');
+  if(b)b.disabled=false;
+});
 
 /* Esc fecha o painel em que o foco está e devolve o foco ao botão da linha. */
 document.addEventListener('keydown',function(ev){
