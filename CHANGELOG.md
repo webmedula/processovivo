@@ -9,6 +9,40 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.40.1] — 2026-10-12
+
+**IA como secretária, Etapa 2 (tela): "Resumir este processo com IA" na capa do processo.** Só a interface,
+sobre as rotas da 0.40.0; nada mudou no servidor, na ZDR, na lista de provedores nem na conferência do par.
+
+### Adicionado
+
+- Botão "Resumir este processo com IA" ao lado de "Deixar de acompanhar", só para processo acompanhado e só
+  com a IA disponível para a página (a rota de disponibilidade da análise de ato). Arquivo novo
+  `ui/resumoIA.ts`; `script.ts` ganhou só dois ganchos e não cresceu.
+- Painel sob a capa com os estados: resumindo (com Cancelar e o aviso de até 2 minutos), resultado, não
+  verificado ("Não foi possível resumir com segurança. Leia os atos."), erro genérico, sem plano, limite de
+  uso, segredo de justiça, sem texto utilizável e processo não acompanhado.
+- Resultado: situação e pendências segundo a IA (blocos do resumo, separados do "Pede providência" do
+  sistema, que não muda), cada item com o ato de origem (data, rótulo e tipo do retrato), o trecho citado e
+  um link que leva ao andamento na linha do tempo; a contagem de atos que o sistema marca como pedem
+  providência e a IA não citou; os atos que ficaram de fora; os itens descartados na verificação (só a
+  contagem); pontos de atenção; rodapé "Gerado por IA em DATA E HORA. Confira nos atos." sem o nome do
+  modelo; aviso fixo de apoio à leitura; avaliação Útil, Errado e Perigoso.
+- Testes de navegador (`tests/browser/resumo-ia-navegador.spec.ts`) com dados sintéticos para cada estado,
+  o redesenho da tela com o resumo em curso, teclado, foco, larguras de 390 a 1920 px e axe nos dois temas.
+
+### Corrigido
+
+- Painel de prazo da análise (pendente da 0.39.0): nenhuma opção de dias úteis ou corridos vem
+  pré-marcada e o botão "Calcular" só ativa depois da escolha.
+
+### Não faz
+
+- Não reabre resumo anterior (o estado vive só na página, enquanto a pessoa fica no processo), não cria
+  aviso nem evento e não altera providências, "não lida", ordem, contagens ou calendário.
+
+---
+
 ## [0.40.0] — 2026-10-12
 
 **IA como secretária, Etapa 2 (só o servidor): resumo do processo por IA.** Rota

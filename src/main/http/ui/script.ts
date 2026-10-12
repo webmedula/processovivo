@@ -1069,7 +1069,7 @@ function ligarBotoesDetalhe(numero,acompanhado){
     api('/v1/acompanhamentos/'+encodeURIComponent(numero),{method:'DELETE'})
       .then(function(){carregarFacetas();atualizarBolha();ir('processos')})
       .catch(function(e){alert(explicar(e))})});
-  void acompanhado;
+  if(window.__pvResumoIA)window.__pvResumoIA.aposDesenhar(numero,acompanhado);// ui/resumoIA.ts
 }
 
 function agrupar(movs){
@@ -2266,6 +2266,7 @@ function salvarNotificacao(ativa){
 }
 
 function render(){
+  if(!estado.detalhe&&window.__pvResumoIA)window.__pvResumoIA.sair();// ui/resumoIA.ts
   if(estado.detalhe)return;
   $('conteudo').classList.toggle('env-larga',estado.aba==='novidades');
   if(estado.aba==='novidades')return verNovidades();
