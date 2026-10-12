@@ -620,9 +620,7 @@ function textoDoResultado(r: RegistroDaChamada): string {
   const linhas = [`Parece pedir: ${v.parecePedir}`];
   if (v.resumo) linhas.push(`Resumo: ${v.resumo}`);
   if (v.trechoChave) linhas.push(`Trecho: "${v.trechoChave}"`);
-  v.acoesPossiveis.forEach((a, i) =>
-    linhas.push(`Ação ${i + 1}: ${a.acao} — "${a.trecho}"`),
-  );
+  v.acoesPossiveis.forEach((a, i) => linhas.push(`Ação ${i + 1}: ${a.acao}`));
   if (v.pontosDeAtencao.length > 0)
     linhas.push(`Atenção: ${v.pontosDeAtencao.join(', ')}`);
   return linhas.join('\n');

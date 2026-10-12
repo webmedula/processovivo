@@ -45,15 +45,10 @@ const RESULTADO = {
   parecePedir: 'manifestar',
   resumo: 'A parte deve se manifestar sobre o laudo pericial juntado aos autos.',
   trechoChave: 'se manifeste sobre o laudo pericial',
-  acoesPossiveis: [
-    {
-      acao: 'Manifestar-se sobre o laudo pericial',
-      trecho: 'se manifeste sobre o laudo pericial',
-    },
-  ],
+  acoesPossiveis: [{ acao: 'Parte autora: apresentar manifestação sobre o laudo' }],
   pontosDeAtencao: ['conferir_prazo_no_processo', 'texto_incompleto'],
   modelo: 'modelo/teste',
-  versaoPrompt: 'ato-1.0.0',
+  versaoPrompt: 'ato-1.1.0',
   provedor: 'provedor-teste',
   criadaEm: '2026-10-05T12:00:00.000Z',
   avaliacao: null,
@@ -293,20 +288,34 @@ describe.skipIf(sem)('Analisar com IA, no navegador', { timeout: 120_000 }, () =
       'Apoio à leitura, não substitui a leitura do ato nem a contagem de prazo.',
     );
     const marcas = await p.locator('mark').allTextContents();
-    expect(marcas).toEqual([
-      'se manifeste sobre o laudo pericial',
-      'se manifeste sobre o laudo pericial',
-    ]);
+    // O trecho do ato aparece UMA vez, no próprio campo; a ação não tem bloco de citação.
+    expect(marcas).toEqual(['se manifeste sobre o laudo pericial']);
+    expect(await p.locator('.pvia-lista blockquote').count()).toBe(0);
+    expect(texto).toContain('Parte autora: apresentar manifestação sobre o laudo');
     const selo = p.locator('.pvia-selo');
     expect(await selo.textContent()).toBe('IA');
     expect(await selo.getAttribute('title')).toMatch(
-      /^Gerado por IA \(modelo\/teste\) em .+\. Confira no ato\.$/,
+      /^Gerado por IA em .+\. Confira no ato\.$/,
     );
+    // A tela não mostra o modelo (continua gravado em analises_ia).
+    expect(texto).not.toContain('modelo/teste');
+    expect(texto).toMatch(/Gerado por IA em .+\. Confira no ato\./);
+    expect(await selo.getAttribute('aria-label')).not.toContain('modelo/teste');
     // Nenhuma outra menção a prazo no texto novo.
     const semFixos = texto
       .replace('Conferir o prazo no processo.', '')
       .replace('nem a contagem de prazo', '');
     expect(semFixos).not.toMatch(/prazo/i);
+  });
+
+  it('sem ação indicada pelo ato, mostra a frase fixa e nenhum item de lista', async () => {
+    await abrir();
+    responder = (rota) => json(rota, 200, { ...RESULTADO, acoesPossiveis: [] });
+    await botao(NA).click();
+    const p = painel(NA);
+    await p.getByText('Parece pedir:').waitFor();
+    expect(await p.innerText()).toContain('Sem providência indicada no ato.');
+    expect(await p.locator('.pvia-lista li').count()).toBe(2); // só os dois pontos de atenção
   });
 
   it('avaliação: três botões, confirmação visível, e dá para corrigir; sem texto livre', async () => {

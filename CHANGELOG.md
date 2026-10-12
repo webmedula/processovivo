@@ -9,6 +9,31 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.38.5] — 2026-10-11
+
+**Ações possíveis da análise por IA deixam de repetir o ato, e a tela deixa de mostrar o modelo.** Em duas
+análises reais o campo veio com defeito: ação mal escrita (dizia "pela parte passada" em vez de quem cumpre)
+com segunda ação copiada do ato, e ação que repetia o trecho-chave quase literalmente.
+
+### Alterado
+
+- `acoes_possiveis` vira `{ acao }` (sem `trecho`): providência em linguagem de advogado, infinitivo ou
+  imperativo curto, dizendo quem faz o quê; nunca cópia ou paráfrase do `trecho_chave`; lista vazia se o ato não
+  indicar providência clara. Prompt `ato-1.1.0` e instrução de formato em texto atualizados.
+- `verificarAnalise` (regras 1.1.0): ação com mais de 60% das palavras de conteúdo em comum com o
+  `trecho_chave` torna o resultado "não verificado" (`acao_copiada_do_trecho`), sem texto no log. A ação não é
+  mais citação (só o `trecho_chave`); número fora do texto e expressão proibida seguem como antes.
+- Tela: a ação aparece sem bloco de citação; o `trecho_chave` aparece uma só vez; lista vazia mostra
+  "Sem providência indicada no ato."; o rodapé e o selo dizem "Gerado por IA em DATA E HORA. Confira no ato." sem o
+  nome do modelo (que segue em `analises_ia`, na API e em `ia-avaliacoes.mjs`).
+
+### Não muda
+
+- ZDR, `data_collection`, `allow_fallbacks`, `only`, conferência do par modelo + provedor, rodízio da 0.38.3 e
+  formato em texto da 0.38.4. Análises já gravadas continuam legíveis (o `trecho` antigo da ação não sai na API).
+
+---
+
 ## [0.38.4] — 2026-10-11
 
 **A análise por IA deixa de depender de saída estruturada do provedor.** Em produção a 0.38.3 falhava em

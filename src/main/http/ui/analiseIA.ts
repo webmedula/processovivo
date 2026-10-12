@@ -55,6 +55,7 @@ var RECUSAS={
 };
 var NAO_VERIFICADO='Não foi possível analisar com segurança. Leia o ato.';
 var ERRO='Não foi possível analisar agora. Tente de novo em alguns minutos.';
+var SEM_ACAO='Sem providência indicada no ato.';
 var AVISO_FIXO='Apoio à leitura, não substitui a leitura do ato nem a contagem de prazo.';
 var AVALIACOES=[['util','Útil'],['errado','Errado'],['perigoso','Perigoso']];
 
@@ -87,7 +88,7 @@ function botao(num,chave){
 }
 
 function seloIA(d){
-  var tip='Gerado por IA ('+(d.modelo||'modelo não informado')+') em '+pv().dth(d.criadaEm)+'. Confira no ato.';
+  var tip='Gerado por IA em '+pv().dth(d.criadaEm)+'. Confira no ato.';
   return '<span class="pvia-selo" tabindex="0" role="note" aria-label="'+esc(tip)+'" title="'+esc(tip)+'">IA</span>';
 }
 
@@ -100,15 +101,17 @@ function blocoResultado(n,e){
   h+='<p class="pvia-parece">Parece pedir: <strong>'+esc(PARECE[d.parecePedir]||PARECE.indeterminado)+'</strong></p>';
   if(d.resumo)h+='<p class="pvia-resumo">'+esc(d.resumo)+'</p>';
   if(d.trechoChave)h+='<div class="pvia-sec"><span class="pvia-rot">Trecho do ato em que se baseia</span>'+citacao(d.trechoChave)+'</div>';
+  /* Ação é só providência, sem bloco de citação: o trecho do ato aparece UMA vez, acima. */
+  h+='<div class="pvia-sec"><span class="pvia-rot">Ações possíveis</span>';
   if(d.acoesPossiveis&&d.acoesPossiveis.length){
-    h+='<div class="pvia-sec"><span class="pvia-rot">Ações possíveis</span><ul class="pvia-lista">'+
-      d.acoesPossiveis.map(function(a){return '<li>'+esc(a.acao)+citacao(a.trecho)+'</li>'}).join('')+'</ul></div>';
-  }
+    h+='<ul class="pvia-lista">'+d.acoesPossiveis.map(function(a){return '<li>'+esc(a.acao)+'</li>'}).join('')+'</ul>';
+  }else h+='<p class="pvia-vazio">'+SEM_ACAO+'</p>';
+  h+='</div>';
   if(d.pontosDeAtencao&&d.pontosDeAtencao.length){
     h+='<div class="pvia-sec"><span class="pvia-rot">Pontos de atenção</span><ul class="pvia-lista">'+
       d.pontosDeAtencao.map(function(p){return '<li>'+esc(ATENCAO[p]||'')+'</li>'}).join('')+'</ul></div>';
   }
-  h+='<div class="pvia-proc">'+seloIA(d)+'<span>Gerado por IA ('+esc(d.modelo||'modelo não informado')+') em '+esc(pv().dth(d.criadaEm))+'. Confira no ato.</span></div>';
+  h+='<div class="pvia-proc">'+seloIA(d)+'<span>Gerado por IA em '+esc(pv().dth(d.criadaEm))+'. Confira no ato.</span></div>';
   h+='<div class="pvia-aval" role="group" aria-label="Como foi esta análise?"><span class="pvia-rot">Como foi esta análise?</span>'+
     AVALIACOES.map(function(a){
       var on=e.aval===a[0];
@@ -277,6 +280,7 @@ export const ESTILOS_ANALISE_IA = `
 .pvia-sec{margin:10px 0}
 .pvia-rot{display:block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--tinta2);margin-bottom:3px}
 .pvia-lista{margin:0;padding-left:18px}
+.pvia-vazio{margin:0;color:var(--tinta2)}
 .pvia-lista li{margin:0 0 6px}
 .pvia-cit{margin:4px 0 0;padding:6px 10px;border-left:3px solid var(--linha);background:var(--papel);color:var(--tinta2);font-style:italic}
 .pvia-cit mark{background:var(--atencao-bg);color:var(--tinta);padding:0 2px;border-radius:3px;font-style:normal}

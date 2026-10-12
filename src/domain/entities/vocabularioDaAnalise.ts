@@ -33,9 +33,12 @@ export const LIMITES_DA_ANALISE = Object.freeze({
   pontosDeAtencao: 2,
 });
 
+/**
+ * Uma providência, sem citação: desde a v0.38.5 a ação não carrega trecho do ato (o único
+ * trecho da análise é o `trecho_chave`, que aparece uma vez, no próprio campo).
+ */
 export interface AcaoPossivel {
   readonly acao: string;
-  readonly trecho: string;
 }
 
 /**

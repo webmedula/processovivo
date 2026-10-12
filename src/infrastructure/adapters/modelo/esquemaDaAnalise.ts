@@ -24,7 +24,7 @@ export const esquemaDaResposta = z
     parece_pedir: z.enum(PARECE_PEDIR),
     resumo: z.string(),
     trecho_chave: z.string(),
-    acoes_possiveis: z.array(z.object({ acao: z.string(), trecho: z.string() }).strict()),
+    acoes_possiveis: z.array(z.object({ acao: z.string() }).strict()),
     pontos_de_atencao: z.array(z.enum(PONTOS_DE_ATENCAO)),
   })
   .strict();

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { RespostaDoModelo } from '../../src/domain/entities/vocabularioDaAnalise.js';
 import {
+  acaoRepeteOTrecho,
   expressaoProibidaEm,
   numerosForaDoTexto,
   verificarAnalise,
@@ -17,10 +18,7 @@ function resposta(parcial: Partial<RespostaDoModelo> = {}): RespostaDoModelo {
     resumo: 'O ato pede manifestação sobre a contestação.',
     trecho_chave: 'para se manifestar sobre a contestação, no prazo de 15 (quinze) dias',
     acoes_possiveis: [
-      {
-        acao: 'O ato menciona manifestação sobre a contestação.',
-        trecho: 'se manifestar sobre a contestação',
-      },
+      { acao: 'Parte autora: apresentar manifestação sobre a contestação.' },
     ],
     pontos_de_atencao: ['conferir_prazo_no_processo'],
     ...parcial,
@@ -58,24 +56,24 @@ describe('verificarAnalise — citações', () => {
     );
   });
 
-  it('descarta só a ação cuja citação não existe', () => {
+  it('ação válida passa, e só o trecho-chave conta como citação', () => {
     const r = verificarAnalise(
       resposta({
         acoes_possiveis: [
-          {
-            acao: 'O ato menciona manifestação.',
-            trecho: 'se manifestar sobre a contestação',
-          },
-          { acao: 'O ato menciona depósito.', trecho: 'depositar o valor da condenação' },
+          { acao: 'Parte autora: apresentar manifestação sobre a contestação.' },
+          { acao: 'Advogado: conferir o prazo no processo.' },
         ],
       }),
       TEXTO,
     );
     expect(r.estado).toBe('verificada');
     if (r.estado === 'verificada') {
-      expect(r.acoesPossiveis).toHaveLength(1);
-      expect(r.descartes.citacao).toBe(1);
-      expect(r.citacoes).toEqual({ emitidas: 3, validas: 2 });
+      expect(r.acoesPossiveis).toEqual([
+        { acao: 'Parte autora: apresentar manifestação sobre a contestação.' },
+        { acao: 'Advogado: conferir o prazo no processo.' },
+      ]);
+      expect(r.descartes.citacao).toBe(0);
+      expect(r.citacoes).toEqual({ emitidas: 1, validas: 1 });
     }
   });
 
@@ -142,12 +140,7 @@ describe('verificarAnalise — números inventados', () => {
   it('número inventado na ação descarta a ação', () => {
     const r = verificarAnalise(
       resposta({
-        acoes_possiveis: [
-          {
-            acao: 'O ato menciona 40 dias para manifestar.',
-            trecho: 'se manifestar sobre a contestação',
-          },
-        ],
+        acoes_possiveis: [{ acao: 'O ato menciona 40 dias para manifestar.' }],
       }),
       TEXTO,
     );
@@ -174,9 +167,7 @@ describe('verificarAnalise — expressões proibidas e forma', () => {
   it('descarta o resultado inteiro com expressão proibida numa ação', () => {
     const r = verificarAnalise(
       resposta({
-        acoes_possiveis: [
-          { acao: 'Sugiro recorrer.', trecho: 'se manifestar sobre a contestação' },
-        ],
+        acoes_possiveis: [{ acao: 'Sugiro recorrer.' }],
       }),
       TEXTO,
     );
@@ -196,7 +187,6 @@ describe('verificarAnalise — expressões proibidas e forma', () => {
         pontos_de_atencao: ['texto_incompleto', 'invencao' as never],
         acoes_possiveis: ['a', 'b', 'c', 'd'].map((i) => ({
           acao: `O ato menciona a manifestação ${i}.`,
-          trecho: 'se manifestar sobre a contestação',
         })),
       }),
       TEXTO,
@@ -207,6 +197,67 @@ describe('verificarAnalise — expressões proibidas e forma', () => {
       expect(r.pontosDeAtencao).toEqual(['texto_incompleto']);
       expect(r.descartes.forma).toBe(3);
     }
+  });
+});
+
+describe('verificarAnalise — ação que repete o trecho-chave (v0.38.5)', () => {
+  const CHAVE = 'para se manifestar sobre a contestação, no prazo de 15 (quinze) dias';
+
+  it.each([
+    ['cópia literal', CHAVE],
+    [
+      'cópia com caixa e acento diferentes',
+      'PARA SE MANIFESTAR sobre a CONTESTACAO, no prazo de 15 (quinze) dias',
+    ],
+    [
+      'quase literal, uma palavra trocada',
+      'para manifestar sobre a contestação, no prazo de 15 (quinze) dias',
+    ],
+  ])('%s → o resultado inteiro vira não verificado, sem texto', (_nome, acao) => {
+    const r = verificarAnalise(
+      resposta({ trecho_chave: CHAVE, acoes_possiveis: [{ acao }] }),
+      TEXTO,
+    );
+    expect(r.estado).toBe('nao_verificada');
+    if (r.estado === 'nao_verificada') {
+      expect(r.motivo).toBe('acao_copiada_do_trecho');
+      expect(r.descartes.acaoCopiada).toBe(1);
+      expect(JSON.stringify(r)).not.toContain('contestação');
+      expect(JSON.stringify(r)).not.toContain('contestacao');
+    }
+  });
+
+  it('uma ação copiada entre várias invalida o resultado todo', () => {
+    const r = verificarAnalise(
+      resposta({
+        trecho_chave: CHAVE,
+        acoes_possiveis: [{ acao: 'Cartório: expedir ofício à parte.' }, { acao: CHAVE }],
+      }),
+      TEXTO,
+    );
+    expect(r.estado).toBe('nao_verificada');
+  });
+
+  it('ação curta que só usa palavras do trecho longo, dizendo quem faz o quê, passa', () => {
+    const r = verificarAnalise(
+      resposta({
+        trecho_chave: CHAVE,
+        acoes_possiveis: [{ acao: 'Parte autora: manifestar-se sobre a contestação.' }],
+      }),
+      TEXTO,
+    );
+    expect(r.estado).toBe('verificada');
+  });
+
+  it('lista vazia é resposta válida: sem providência indicada', () => {
+    const r = verificarAnalise(resposta({ acoes_possiveis: [] }), TEXTO);
+    expect(r.estado).toBe('verificada');
+    if (r.estado === 'verificada') expect(r.acoesPossiveis).toEqual([]);
+  });
+
+  it('acaoRepeteOTrecho: sem trecho ou sem palavra de conteúdo, não há o que comparar', () => {
+    expect(acaoRepeteOTrecho('Cartório: expedir ofício.', '')).toBe(false);
+    expect(acaoRepeteOTrecho('a de', CHAVE)).toBe(false);
   });
 });
 

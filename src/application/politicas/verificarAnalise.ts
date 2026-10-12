@@ -15,15 +15,19 @@ import { normalizarParaComparar } from './normalizacaoDeTexto.js';
  *
  * O que se descarta e em que nível:
  *   - `trecho_chave` sem citação válida → resultado "não verificado", sem resumo;
- *   - ação sem citação válida, ou com número que o texto não tem → só a ação;
+ *   - ação com número que o texto não tem → só a ação (desde a v0.38.5 a ação não leva
+ *     citação: o único trecho do ato é o `trecho_chave`);
  *   - resumo com número que o texto não tem → só o resumo;
  *   - expressão proibida em resumo ou ação → o resultado inteiro.
+ *
+ *   - ação parecida demais com o `trecho_chave` (v0.38.5) → o resultado inteiro vira "não
+ *     verificado": ação que só repete o trecho não é providência, é eco do ato.
  *
  * Versão da lista de proibições: mude `VERSAO_DAS_REGRAS_DE_VERIFICACAO` junto
  * com qualquer alteração aqui, para a avaliação do Autran saber a que regras
  * cada resposta foi submetida.
  */
-export const VERSAO_DAS_REGRAS_DE_VERIFICACAO = '1.0.0';
+export const VERSAO_DAS_REGRAS_DE_VERIFICACAO = '1.1.0';
 
 /**
  * Expressões que transformam apoio à leitura em orientação jurídica. Lista
@@ -65,6 +69,8 @@ export interface DescartesDaVerificacao {
   readonly expressaoProibida: number;
   /** Itens fora do vocabulário, do tamanho ou do limite de quantidade. */
   readonly forma: number;
+  /** Resultado descartado por ação parecida demais com o trecho-chave (0 ou 1). */
+  readonly acaoCopiada: number;
 }
 
 /**
@@ -91,7 +97,7 @@ export interface AnaliseVerificada {
 
 export interface AnaliseNaoVerificada {
   readonly estado: 'nao_verificada';
-  readonly motivo: 'sem_citacao_valida' | 'expressao_proibida';
+  readonly motivo: 'sem_citacao_valida' | 'expressao_proibida' | 'acao_copiada_do_trecho';
   readonly descartes: DescartesDaVerificacao;
   readonly citacoes: ContagemDeCitacoes;
 }
@@ -220,6 +226,39 @@ export function expressaoProibidaEm(texto: string): string | undefined {
   );
 }
 
+// --- ação que repete o trecho-chave -------------------------------------------
+
+/** Acima disto (palavras em comum / palavras do maior dos dois textos) a ação é eco do trecho. */
+export const LIMITE_DE_SEMELHANCA_ACAO_TRECHO = 0.6;
+
+/**
+ * Palavras de conteúdo (sem acento, só letras e dígitos, 4+ caracteres): artigos e
+ * preposições não contam, senão qualquer frase "se parece" com qualquer outra.
+ */
+function palavrasDeConteudo(texto: string): Set<string> {
+  return new Set(
+    normalizarParaComparar(texto)
+      .split(/[^a-z0-9]+/)
+      .filter((p) => p.length >= 4),
+  );
+}
+
+/**
+ * A ação é igual ou muito parecida com o trecho-chave? Regra simples e determinística: mais
+ * de 60% das palavras de conteúdo em comum, medidas contra o MAIOR dos dois conjuntos — o
+ * denominador maior evita acusar a ação curta que apenas usa palavras do trecho longo, e
+ * ainda pega a cópia (razão 1) e a cópia com uma ou duas palavras trocadas. Sem trecho ou sem
+ * palavra de conteúdo, não há o que comparar.
+ */
+export function acaoRepeteOTrecho(acao: string, trechoChave: string): boolean {
+  const a = palavrasDeConteudo(acao);
+  const t = palavrasDeConteudo(trechoChave);
+  if (a.size === 0 || t.size === 0) return false;
+  let comuns = 0;
+  for (const p of a) if (t.has(p)) comuns += 1;
+  return comuns / Math.max(a.size, t.size) > LIMITE_DE_SEMELHANCA_ACAO_TRECHO;
+}
+
 // --- a verificação -----------------------------------------------------------
 
 /**
@@ -231,18 +270,16 @@ export function verificarAnalise(
   textoEnviado: string,
 ): ResultadoDaVerificacao {
   const texto = normalizarParaComparar(textoEnviado);
-  let citacao = 0;
+  const citacao = 0;
   let numeroInventado = 0;
   let forma = 0;
 
   const trechoChaveValido = citacaoExisteNoTexto(resposta.trecho_chave, texto);
-  const acoesComCitacao = resposta.acoes_possiveis.map((a) =>
-    citacaoExisteNoTexto(a.trecho, texto),
-  );
+  // Desde a v0.38.5 só o trecho-chave é citação: a ação não leva trecho.
   const chaveEmitida = resposta.trecho_chave.trim() !== '';
   const citacoes: ContagemDeCitacoes = {
-    emitidas: (chaveEmitida ? 1 : 0) + acoesComCitacao.length,
-    validas: (trechoChaveValido ? 1 : 0) + acoesComCitacao.filter(Boolean).length,
+    emitidas: chaveEmitida ? 1 : 0,
+    validas: trechoChaveValido ? 1 : 0,
   };
 
   const proibidaNoResumo = expressaoProibidaEm(resposta.resumo);
@@ -253,7 +290,33 @@ export function verificarAnalise(
     return {
       estado: 'nao_verificada',
       motivo: 'expressao_proibida',
-      descartes: { citacao, numeroInventado, forma, expressaoProibida: 1 },
+      descartes: {
+        citacao,
+        numeroInventado,
+        forma,
+        expressaoProibida: 1,
+        acaoCopiada: 0,
+      },
+      citacoes,
+    };
+  }
+
+  // Ação que só repete o trecho-chave: o resultado inteiro deixa de valer (sem texto em lugar
+  // nenhum — o descarte é só uma contagem).
+  if (
+    chaveEmitida &&
+    resposta.acoes_possiveis.some((a) => acaoRepeteOTrecho(a.acao, resposta.trecho_chave))
+  ) {
+    return {
+      estado: 'nao_verificada',
+      motivo: 'acao_copiada_do_trecho',
+      descartes: {
+        citacao,
+        numeroInventado,
+        forma,
+        expressaoProibida: 0,
+        acaoCopiada: 1,
+      },
       citacoes,
     };
   }
@@ -267,7 +330,13 @@ export function verificarAnalise(
     return {
       estado: 'nao_verificada',
       motivo: 'sem_citacao_valida',
-      descartes: { citacao: citacao + 1, numeroInventado, forma, expressaoProibida: 0 },
+      descartes: {
+        citacao: citacao + 1,
+        numeroInventado,
+        forma,
+        expressaoProibida: 0,
+        acaoCopiada: 0,
+      },
       citacoes,
     };
   }
@@ -291,12 +360,10 @@ export function verificarAnalise(
     }
     if (a.acao.length > LIMITES_DA_ANALISE.acao || a.acao.trim() === '') {
       forma += 1;
-    } else if (!acoesComCitacao[i]) {
-      citacao += 1;
     } else if (numerosForaDoTexto(a.acao, texto).length > 0) {
       numeroInventado += 1;
     } else {
-      acoes.push({ acao: a.acao.trim(), trecho: a.trecho.trim() });
+      acoes.push({ acao: a.acao.trim() });
     }
   });
 
@@ -317,7 +384,7 @@ export function verificarAnalise(
     ...(trechoChaveValido ? { trechoChave: resposta.trecho_chave.trim() } : {}),
     acoesPossiveis: acoes,
     pontosDeAtencao: pontos,
-    descartes: { citacao, numeroInventado, forma, expressaoProibida: 0 },
+    descartes: { citacao, numeroInventado, forma, expressaoProibida: 0, acaoCopiada: 0 },
     citacoes,
   };
 }

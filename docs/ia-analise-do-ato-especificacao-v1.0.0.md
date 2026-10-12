@@ -283,3 +283,20 @@ jurisprudência. **Clique repetido simplesmente analisa de novo.**
 A rede do ambiente de desenvolvimento não alcança o OpenRouter. Portanto **não foi lido** qual é a lista de provedores ZDR de
 `deepseek/deepseek-v4-flash` hoje, nem a forma exata de resposta de um provedor real: isso se lê com
 `node scripts/sonda-ia-ato.mjs --listar-modelos-zdr=deepseek` no Console do serviço, antes de ligar a IA.
+
+## Errata v1.2.0 (11/10/2026) — Ações possíveis sem citação e rodapé sem modelo (produto 0.38.5)
+
+Esta errata substitui o item `acoes_possiveis` da seção 6 e a verificação 1. Onde houver conflito, vale esta errata.
+
+- **Esquema:** `acoes_possiveis` = até 3 itens `{ acao }` (até 160 caracteres), **sem `trecho`** (Zod `.strict()`: campo a mais é resposta
+  inválida). Cada `acao` é uma providência em linguagem de advogado, no infinitivo ou no imperativo curto, dizendo **quem faz o quê**;
+  nunca cópia nem paráfrase do `trecho_chave` nem trecho do ato. Se o ato não indicar providência clara, a lista é **vazia**, e a tela diz
+  "Sem providência indicada no ato." O `trecho_chave` aparece **uma única vez**, no próprio campo.
+- **Verificação (`VERSAO_DAS_REGRAS_DE_VERIFICACAO` 1.1.0):** só o `trecho_chave` é citação e precisa existir no texto enviado. Número ou data
+  fora do texto continua descartando a ação; expressão proibida continua descartando o resultado. **Nova regra:** ação com mais de 60% das
+  palavras de conteúdo (4+ letras, sem acento) em comum com o `trecho_chave`, medido contra o maior dos dois conjuntos, torna o resultado
+  inteiro **"não verificado"** (`acao_copiada_do_trecho`), sem texto em tela, banco ou log.
+- **Prompt:** `VERSAO_PROMPT` = `ato-1.1.0`. A regra 3 pede citação só para o `trecho_chave`; a regra 5 troca "tom neutro" por "só a
+  providência que o próprio ato determina".
+- **Tela:** o rodapé diz "Gerado por IA em DATA E HORA. Confira no ato." — **sem o nome do modelo**, que continua gravado em `analises_ia`
+  (e na API) e em `ia-avaliacoes.mjs`. Linhas gravadas antes da 0.38.5 com `trecho` na ação continuam legíveis; o `trecho` não sai na API.
