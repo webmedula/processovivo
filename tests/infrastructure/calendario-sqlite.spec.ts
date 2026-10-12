@@ -82,6 +82,34 @@ describe('RepositorioDeEventosSqlite', () => {
     expect((await repo.buscar('A', 's1'))?.props()).toEqual(s.props());
   });
 
+  it('o marcador de prazo calculado (v0.39.0) vai e volta do banco, e some ao editar a data', async () => {
+    const calculado = EventoDeCalendario.manual({
+      id: 'c1',
+      workspace: 'A',
+      numeroProcesso: NUMERO,
+      tribunal: 'TJSP',
+      segredoJustica: false,
+      tipo: 'prazo',
+      titulo: 'Prazo de 15 dias úteis (a conferir)',
+      dataLocal: '2026-10-28',
+      calculado: true,
+      agora: AGORA,
+    });
+    await repo.salvar(calculado);
+    expect((await repo.buscar('A', 'c1'))?.calculado).toBe(true);
+    expect((await repo.buscar('A', 'c1'))?.props()).toEqual(calculado.props());
+    // Um evento comum continua sem o marcador.
+    await repo.salvar(manual('A', 'e1'));
+    expect((await repo.buscar('A', 'e1'))?.calculado).toBe(false);
+    // Mexer na data apaga o marcador, e o banco acompanha.
+    const editado = calculado.editar({ dataLocal: '2026-10-30' }, AGORA);
+    await repo.salvar(editado);
+    expect((await repo.buscar('A', 'c1'))?.calculado).toBe(false);
+    // Mexer só no título não apaga: a data continua a calculada.
+    const soTitulo = calculado.editar({ titulo: 'Outro título' }, AGORA);
+    expect(soTitulo.calculado).toBe(true);
+  });
+
   it('a mesma sugestão não entra duas vezes — e a descartada não volta', async () => {
     expect(await repo.inserirSeNovo(sugerido('A', 's1'))).toBe(true);
     expect(await repo.inserirSeNovo(sugerido('A', 's2'))).toBe(false);

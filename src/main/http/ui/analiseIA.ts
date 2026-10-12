@@ -14,6 +14,9 @@
  *   diz isso e oferece Cancelar, que aborta a requisição (e, no servidor, a chamada ao modelo);
  * - toda frase de recusa é FIXA aqui — nunca texto do modelo; o resultado verificado traz
  *   citações que existem no texto do ato, mostradas destacadas;
+ * - aviso no calendário (v0.39.0): quando a análise traz prazo em dias e o ato é do Diário, o botão
+ *   abre a PRÉVIA (data calculada no servidor, premissas e o aviso "a conferir") e só o clique em
+ *   Confirmar cria o evento; sem clique, nada grava. Ato fora do Diário não calcula;
  * - avaliação sem texto livre: Útil / Errado / Perigoso, com confirmação visível e dá para
  *   corrigir.
  *
@@ -57,6 +60,14 @@ var NAO_VERIFICADO='Não foi possível analisar com segurança. Leia o ato.';
 var ERRO='Não foi possível analisar agora. Tente de novo em alguns minutos.';
 var SEM_ACAO='Sem providência indicada no ato.';
 var AVISO_FIXO='Apoio à leitura, não substitui a leitura do ato nem a contagem de prazo.';
+var SEM_CALCULO='Este ato não é do Diário, então o prazo não é calculado. Crie o aviso manualmente no calendário.';
+var ERRO_AVISO='Não foi possível montar o aviso agora. Tente de novo em alguns minutos.';
+var MSG_AVISO={
+  ato_fora_do_diario:SEM_CALCULO,
+  sem_prazo_na_analise:'Esta análise não traz um prazo em dias escrito no ato. Crie o aviso manualmente no calendário.',
+  ato_nao_encontrado:RECUSAS.ato_nao_encontrado,
+  sem_plano:RECUSAS.sem_plano
+};
 var AVALIACOES=[['util','Útil'],['errado','Errado'],['perigoso','Perigoso']];
 
 /* Pergunta uma vez por página se a IA está ligada. Falha de rede = desligada (sem botão). */
@@ -107,6 +118,7 @@ function blocoResultado(n,e){
     h+='<ul class="pvia-lista">'+d.acoesPossiveis.map(function(a){return '<li>'+esc(a.acao)+'</li>'}).join('')+'</ul>';
   }else h+='<p class="pvia-vazio">'+SEM_ACAO+'</p>';
   h+='</div>';
+  h+=blocoPrazo(n,e);
   if(d.pontosDeAtencao&&d.pontosDeAtencao.length){
     h+='<div class="pvia-sec"><span class="pvia-rot">Pontos de atenção</span><ul class="pvia-lista">'+
       d.pontosDeAtencao.map(function(p){return '<li>'+esc(ATENCAO[p]||'')+'</li>'}).join('')+'</ul></div>';
@@ -120,6 +132,59 @@ function blocoResultado(n,e){
     }).join('')+
     '<span class="pvia-ok" role="status">'+(e.aval?'✓ Avaliação registrada.':'')+(e.avalErro?esc(e.avalErro):'')+'</span></div>';
   return h;
+}
+
+/* Data AAAA-MM-DD → DD/MM/AAAA, sem passar por Date (nenhum fuso no meio). */
+function br(s){var m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(String(s||''));return m?m[3]+'/'+m[2]+'/'+m[1]:String(s||'')}
+function tipoTxt(t){return t==='uteis'?'dias úteis':(t==='corridos'?'dias corridos':'dias')}
+
+function corpoAviso(n,e){
+  var a=e.aviso,h='<div class="pvia-aviso-cal">';
+  if(a.fase==='escolha'){
+    h+='<p>O ato não diz se os dias são úteis ou corridos. Escolha uma opção para calcular a data.</p>'+
+      '<div role="radiogroup" aria-label="Tipo de dias" class="pvia-tipos">'+
+      '<label><input type="radio" name="pvia-tipo-'+esc(n)+'" value="uteis"> Dias úteis</label> '+
+      '<label><input type="radio" name="pvia-tipo-'+esc(n)+'" value="corridos"> Dias corridos</label></div>'+
+      (a.msg?'<p class="pvia-erro" role="alert">'+esc(a.msg)+'</p>':'')+
+      '<p><button type="button" class="nov-btn" data-acao="ia-aviso-calcular" data-num="'+esc(n)+'" data-foco="iaavcalc-'+esc(n)+'">Calcular</button> '+
+      '<button type="button" class="nov-btn" data-acao="ia-aviso-cancelar" data-num="'+esc(n)+'" data-foco="iaavcanc-'+esc(n)+'">Cancelar</button></p>';
+  }else if(a.fase==='calculando'||a.fase==='criando'){
+    h+='<p class="pvia-estado"><span class="gira" aria-hidden="true"></span>'+(a.fase==='criando'?'Criando o aviso…':'Calculando a data…')+'</p>';
+  }else if(a.fase==='previa'){
+    var p=a.previa;
+    h+='<p class="pvia-rot">Prévia do aviso — nada foi criado ainda</p>'+
+      '<p><strong>'+esc(p.titulo)+'</strong></p>'+
+      '<p>Data calculada: <strong>'+esc(br(p.dataFinal))+'</strong> <span class="pvia-conferir">(a conferir)</span></p>'+
+      (p.tipoDoAto?'':'<p class="pvia-vazio">Tipo escolhido por você: '+esc(tipoTxt(p.tipo))+'.</p>')+
+      '<p><label for="pvia-data-'+esc(n)+'">Data do aviso (você pode editar)</label> '+
+      '<input type="date" id="pvia-data-'+esc(n)+'" value="'+esc(a.data||p.dataFinal)+'"></p>'+
+      '<ul class="pvia-lista">'+(p.premissas||[]).map(function(x){return '<li>'+esc(x)+'</li>'}).join('')+'</ul>'+
+      '<p class="pvia-alerta">'+esc(p.aviso)+'</p>'+
+      (a.msg?'<p class="pvia-erro" role="alert">'+esc(a.msg)+'</p>':'')+
+      '<p><button type="button" class="nov-btn" data-acao="ia-aviso-confirmar" data-num="'+esc(n)+'" data-foco="iaavconf-'+esc(n)+'">Confirmar aviso</button> '+
+      '<button type="button" class="nov-btn" data-acao="ia-aviso-cancelar" data-num="'+esc(n)+'" data-foco="iaavcanc-'+esc(n)+'">Cancelar</button></p>';
+  }else if(a.fase==='criado'){
+    h+='<p class="pvia-ok" role="status">'+esc(a.msg)+'</p>';
+  }else{
+    h+='<p class="pvia-erro" role="alert">'+esc(a.msg||ERRO_AVISO)+'</p>'+
+      '<p><button type="button" class="nov-btn" data-acao="ia-aviso" data-num="'+esc(n)+'" data-foco="iaavtent-'+esc(n)+'">Tentar de novo</button> '+
+      '<button type="button" class="nov-btn" data-acao="ia-aviso-cancelar" data-num="'+esc(n)+'" data-foco="iaavcanc-'+esc(n)+'">Cancelar</button></p>';
+  }
+  return h+'</div>';
+}
+
+/* Prazo em dias escrito no ato. A data NUNCA vem da IA: o servidor a calcula na prévia. */
+function blocoPrazo(n,e){
+  var p=e.dados.prazo;
+  if(!p)return '';
+  var h='<div class="pvia-sec"><span class="pvia-rot">Prazo escrito no ato</span>'+
+    '<p class="pvia-prazo">'+esc(p.dias)+' '+esc(tipoTxt(p.tipo))+(p.tipo?'':' (o ato não diz se são úteis ou corridos)')+'</p>';
+  if(!p.calculavel)return h+'<p class="pvia-vazio">'+SEM_CALCULO+'</p></div>';
+  if(!e.aviso){
+    h+='<p><button type="button" class="nov-btn" data-acao="ia-aviso" data-num="'+esc(n)+'" data-foco="iaaviso-'+esc(n)+
+      '" title="Mostra a data calculada e as premissas. Nada é criado até você confirmar.">Criar aviso no calendário</button></p>';
+  }else h+=corpoAviso(n,e);
+  return h+'</div>';
 }
 
 function corpo(n){
@@ -198,6 +263,60 @@ function iniciar(n){
     });
 }
 
+function avisoRespostaDe(r){return r.json().catch(function(){return {}}).then(function(b){return {ok:r.ok,status:r.status,b:b}})}
+function avisoMotivo(x){return x.b&&x.b.detalhes?x.b.detalhes.motivo:''}
+
+/* Prévia: não grava nada. Se o ato não diz o tipo e a pessoa ainda não escolheu, o servidor pede. */
+function avisoPrevia(n){
+  var e=E[n],a=e&&e.aviso;
+  if(!a)return;
+  a.fase='calculando';a.msg='';
+  var corpoPedido={};
+  if(a.tipo)corpoPedido.tipo=a.tipo;
+  fetch('/v1/analises/'+encodeURIComponent(e.dados.id)+'/aviso/previa',{method:'POST',headers:cabecalhos(),body:JSON.stringify(corpoPedido)})
+    .then(avisoRespostaDe)
+    .then(function(x){
+      if(E[n]!==e||e.aviso!==a)return;
+      if(x.ok){a.fase='previa';a.previa=x.b;a.data=x.b.dataFinal;refrescar(n,'Prévia do aviso pronta. Confira a data.','iaavconf-'+n);return}
+      var m=avisoMotivo(x);
+      if(m==='tipo_necessario'){a.fase='escolha';refrescar(n,'Escolha dias úteis ou corridos.','iaavcalc-'+n);return}
+      a.fase='erro';a.msg=MSG_AVISO[m]||ERRO_AVISO;refrescar(n,a.msg,'iaavtent-'+n);
+    })
+    .catch(function(){
+      if(E[n]!==e||e.aviso!==a)return;
+      a.fase='erro';a.msg=ERRO_AVISO;refrescar(n,a.msg,'iaavtent-'+n);
+    });
+}
+
+/* Confirmação: o servidor recalcula e cria o evento. Sem este clique, nada foi gravado. */
+function avisoConfirmar(n){
+  var e=E[n],a=e&&e.aviso;
+  if(!a||a.fase!=='previa')return;
+  var campo=document.getElementById('pvia-data-'+n);
+  var data=campo?campo.value:'';
+  var corpoPedido={dataLocal:data};
+  if(a.tipo)corpoPedido.tipo=a.tipo;
+  a.fase='criando';a.msg='';
+  refrescar(n,'Criando o aviso…');
+  fetch('/v1/analises/'+encodeURIComponent(e.dados.id)+'/aviso',{method:'POST',headers:cabecalhos(),body:JSON.stringify(corpoPedido)})
+    .then(avisoRespostaDe)
+    .then(function(x){
+      if(E[n]!==e||e.aviso!==a)return;
+      if(x.ok){
+        a.fase='criado';
+        a.msg='Aviso criado no calendário para '+br(x.b.dataLocal)+(x.b.calculado?'. A data é calculada: confira no processo.':'. A data foi editada por você.');
+        refrescar(n,a.msg);return;
+      }
+      if(x.status===400){a.fase='previa';a.msg='Data inválida. Escolha uma data no seletor.';a.data=data;refrescar(n,a.msg,'iaavconf-'+n);return}
+      var m=avisoMotivo(x);
+      a.fase='erro';a.msg=MSG_AVISO[m]||ERRO_AVISO;refrescar(n,a.msg,'iaavtent-'+n);
+    })
+    .catch(function(){
+      if(E[n]!==e||e.aviso!==a)return;
+      a.fase='erro';a.msg=ERRO_AVISO;refrescar(n,a.msg,'iaavtent-'+n);
+    });
+}
+
 function fechar(n,anuncio){
   var e=E[n];
   if(!e)return;
@@ -246,7 +365,30 @@ function clicar(acao,el){
     var b=document.getElementById('pvia-'+n);if(b)b.focus();
     return;
   }
-  if(acao==='ia-aval'){avaliar(n,el.getAttribute('data-aval'))}
+  if(acao==='ia-aval'){avaliar(n,el.getAttribute('data-aval'));return}
+  if(acao==='ia-aviso'){
+    var e=E[n];
+    if(!e||!e.dados||!e.dados.prazo||!e.dados.prazo.calculavel)return;
+    e.aviso={fase:e.dados.prazo.tipo?'calculando':'escolha',tipo:'',msg:'',previa:null,data:''};
+    if(e.aviso.fase==='calculando'){refrescar(n,'Calculando a data…');avisoPrevia(n)}
+    else refrescar(n,'Escolha dias úteis ou corridos.','iaavcalc-'+n);
+    return;
+  }
+  if(acao==='ia-aviso-calcular'){
+    var ev=E[n];
+    if(!ev||!ev.aviso)return;
+    var marcado=document.querySelector('input[name="pvia-tipo-'+n+'"]:checked');
+    if(!marcado){ev.aviso.msg='Escolha dias úteis ou corridos.';refrescar(n,ev.aviso.msg,'iaavcalc-'+n);return}
+    ev.aviso.tipo=marcado.value;
+    refrescar(n,'Calculando a data…');
+    avisoPrevia(n);
+    return;
+  }
+  if(acao==='ia-aviso-confirmar'){avisoConfirmar(n);return}
+  if(acao==='ia-aviso-cancelar'){
+    var ec=E[n];
+    if(ec){ec.aviso=null;refrescar(n,'Aviso cancelado. Nada foi criado.','iaaviso-'+n)}
+  }
 }
 
 /* Esc fecha o painel em que o foco está e devolve o foco ao botão da linha. */
@@ -280,6 +422,12 @@ export const ESTILOS_ANALISE_IA = `
 .pvia-sec{margin:10px 0}
 .pvia-rot{display:block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--tinta2);margin-bottom:3px}
 .pvia-lista{margin:0;padding-left:18px}
+.pvia-prazo{margin:0 0 6px;font-weight:700}
+.pvia-aviso-cal{margin:6px 0;padding:10px 12px;border:1px solid var(--linha);border-radius:var(--r);background:var(--papel)}
+.pvia-conferir{color:var(--tinta2);font-weight:700}
+.pvia-alerta{margin:8px 0;font-weight:700;color:var(--tinta)}
+.pvia-erro{margin:6px 0;color:var(--erro,#b3261e);font-weight:700}
+.pvia-tipos label{margin-right:12px}
 .pvia-vazio{margin:0;color:var(--tinta2)}
 .pvia-lista li{margin:0 0 6px}
 .pvia-cit{margin:4px 0 0;padding:6px 10px;border-left:3px solid var(--linha);background:var(--papel);color:var(--tinta2);font-style:italic}

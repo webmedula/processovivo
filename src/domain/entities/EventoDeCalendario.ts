@@ -98,6 +98,12 @@ export interface EventoDeCalendarioProps {
   readonly revisaoAte?: Date;
   /** Cópia do `segredoJustica` do processo: decide o que o feed pode mostrar. */
   readonly segredoJustica: boolean;
+  /**
+   * A data foi CALCULADA pelo Processo Vivo (v0.39.0, aviso criado a partir da análise por IA)
+   * e é a calculada mesmo — a edição da data pelo advogado, no aviso ou depois, apaga o marcador.
+   * O feed diz "data calculada pelo Processo Vivo: confira no processo". Ausente = false.
+   */
+  readonly calculado?: boolean;
   /** Sobe a cada alteração que o calendário do advogado precisa ver (`SEQUENCE`). */
   readonly sequencia: number;
   readonly criadoEm: Date;
@@ -145,6 +151,7 @@ export class EventoDeCalendario {
   readonly revisar: boolean;
   readonly revisaoAte: Date | undefined;
   readonly segredoJustica: boolean;
+  readonly calculado: boolean;
   readonly sequencia: number;
   readonly criadoEm: Date;
   readonly atualizadoEm: Date;
@@ -173,6 +180,7 @@ export class EventoDeCalendario {
     this.revisar = props.revisar;
     this.revisaoAte = props.revisaoAte;
     this.segredoJustica = props.segredoJustica;
+    this.calculado = props.calculado === true;
     this.sequencia = props.sequencia;
     this.criadoEm = props.criadoEm;
     this.atualizadoEm = props.atualizadoEm;
@@ -194,6 +202,8 @@ export class EventoDeCalendario {
     readonly dataLocal: string;
     readonly horaLocal?: string;
     readonly duracaoMin?: number;
+    /** Prazo calculado pelo sistema (v0.39.0). */
+    readonly calculado?: boolean;
     readonly agora: Date;
   }): EventoDeCalendario {
     const { agora, ...resto } = dados;
@@ -293,6 +303,10 @@ export class EventoDeCalendario {
       sequencia: this.sequencia + 1,
       atualizadoEm: agora,
     };
+    // A data que o advogado mexeu deixou de ser a calculada: o feed não pode mais dizer isso.
+    if (mudancas.dataLocal !== undefined && mudancas.dataLocal !== this.dataLocal) {
+      delete (props as { calculado?: boolean }).calculado;
+    }
     return new EventoDeCalendario(
       aplicarOpcional(
         aplicarOpcional(
@@ -352,6 +366,7 @@ export class EventoDeCalendario {
       revisar: this.revisar,
       ...(this.revisaoAte ? { revisaoAte: this.revisaoAte } : {}),
       segredoJustica: this.segredoJustica,
+      ...(this.calculado ? { calculado: true } : {}),
       sequencia: this.sequencia,
       criadoEm: this.criadoEm,
       atualizadoEm: this.atualizadoEm,

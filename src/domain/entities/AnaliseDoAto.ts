@@ -2,6 +2,7 @@ import type {
   AcaoPossivel,
   ParecePedir,
   PontoDeAtencao,
+  PrazoDoAto,
 } from './vocabularioDaAnalise.js';
 
 /**
@@ -31,6 +32,8 @@ export type ResultadoDaAnalise =
       readonly trechoChave?: string;
       readonly acoesPossiveis: readonly AcaoPossivel[];
       readonly pontosDeAtencao: readonly PontoDeAtencao[];
+      /** v0.39.0: prazo em dias escrito no ato (número conferido contra o texto enviado). */
+      readonly prazo?: PrazoDoAto;
     }
   | {
       readonly estado: 'nao_verificada';

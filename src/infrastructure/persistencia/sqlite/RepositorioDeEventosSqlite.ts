@@ -45,7 +45,7 @@ export class RepositorioDeEventosSqlite implements RepositorioDeEventos {
            hora_local = excluded.hora_local, duracao_min = excluded.duracao_min,
            estado = excluded.estado, revisar = excluded.revisar,
            revisao_ate = excluded.revisao_ate,
-           segredo_justica = excluded.segredo_justica,
+           segredo_justica = excluded.segredo_justica, calculado = excluded.calculado,
            sequencia = excluded.sequencia, atualizado_em = excluded.atualizado_em,
            confirmado_em = excluded.confirmado_em,
            descartado_em = excluded.descartado_em`,
@@ -210,8 +210,8 @@ const INSERIR = `INSERT INTO eventos_calendario
   (workspace, id, numero, tribunal, tipo, titulo, observacao, data_local, hora_local,
    duracao_min, origem, estado, mov_id, mov_data, trecho, chave_deteccao, revisar,
    revisao_ate, segredo_justica, sequencia, criado_em, atualizado_em, confirmado_em,
-   descartado_em)
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+   descartado_em, calculado)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
 function valores(e: EventoDeCalendario): Array<string | number | null> {
   return [
@@ -239,6 +239,7 @@ function valores(e: EventoDeCalendario): Array<string | number | null> {
     e.atualizadoEm.toISOString(),
     iso(e.confirmadoEm),
     iso(e.descartadoEm),
+    e.calculado ? 1 : 0,
   ];
 }
 
@@ -280,6 +281,7 @@ function paraEvento(l: Linha): EventoDeCalendario {
     revisar: Number(l['revisar']) === 1,
     ...(revisaoAte ? { revisaoAte } : {}),
     segredoJustica: Number(l['segredo_justica']) === 1,
+    ...(Number(l['calculado']) === 1 ? { calculado: true } : {}),
     sequencia: Number(l['sequencia']),
     criadoEm: new Date(String(l['criado_em'])),
     atualizadoEm: new Date(String(l['atualizado_em'])),

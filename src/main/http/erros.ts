@@ -5,6 +5,7 @@ import {
   AnaliseNaoEncontradaError,
   AtoDaProvidenciaInvalidoError,
   EntradaNaoAnalisavelError,
+  PrazoNaoCalculavelError,
   ChaveApiNaoEncontradaError,
   PlanoJaExisteError,
   CredenciaisInvalidasError,
@@ -141,6 +142,18 @@ export function mapearErro(erro: unknown): RespostaDeErro {
             : 422;
     return {
       status,
+      corpo: {
+        erro: erro.codigo,
+        mensagem: erro.message,
+        detalhes: { motivo: erro.motivo },
+      },
+    };
+  }
+
+  // Aviso de prazo a partir da análise (v0.39.0): o corpo traz `motivo` para a tela escolher a frase.
+  if (erro instanceof PrazoNaoCalculavelError) {
+    return {
+      status: erro.motivo === 'ato_nao_encontrado' ? 409 : 422,
       corpo: {
         erro: erro.codigo,
         mensagem: erro.message,

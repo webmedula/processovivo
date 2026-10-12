@@ -292,6 +292,7 @@ function paraJson(e: EventoDeCalendario): Record<string, unknown> {
         }
       : null,
     segredoJustica: e.segredoJustica,
+    calculado: e.calculado,
     sequencia: e.sequencia,
     criadoEm: e.criadoEm.toISOString(),
     atualizadoEm: e.atualizadoEm.toISOString(),

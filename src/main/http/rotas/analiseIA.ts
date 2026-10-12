@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { ServicoAnaliseDoAto } from '../../../application/services/ServicoAnaliseDoAto.js';
+import type { ServicoAvisoDoPrazo } from '../../../application/services/ServicoAvisoDoPrazo.js';
 import { WorkspaceNaoResolvidoError } from '../../../domain/errors/index.js';
 
 function workspaceDe(requisicao: FastifyRequest): string {
@@ -15,6 +16,13 @@ function workspaceDe(requisicao: FastifyRequest): string {
  */
 const corpoDaAnalise = z.object({ chaveDoAto: z.string().min(1).max(600) });
 
+/** Aviso de prazo (v0.39.0): só o tipo, quando o ato não disse, e a data, se o advogado a editou. */
+const corpoDaPrevia = z.object({ tipo: z.enum(['uteis', 'corridos']).optional() });
+const corpoDoAviso = z.object({
+  tipo: z.enum(['uteis', 'corridos']).optional(),
+  dataLocal: z.string().min(1).max(10).optional(),
+});
+
 /** Sem texto livre: três valores, e só. */
 const corpoDaAvaliacao = z.object({ avaliacao: z.enum(['util', 'errado', 'perigoso']) });
 
@@ -27,6 +35,7 @@ const corpoDaAvaliacao = z.object({ avaliacao: z.enum(['util', 'errado', 'perigo
  */
 export function rotasDaAnaliseIA(
   servico: ServicoAnaliseDoAto | undefined,
+  aviso?: ServicoAvisoDoPrazo,
 ): FastifyPluginAsync {
   return async (servidor) => {
     servidor.get('/v1/analises/disponibilidade', async () => ({
@@ -54,6 +63,39 @@ export function rotasDaAnaliseIA(
         return { ...resto, criadaEm: criadaEm.toISOString() };
       },
     );
+
+    if (aviso) {
+      // Prévia: recalcula no servidor e NÃO GRAVA NADA. Sem chamada ao modelo (o serviço nem
+      // tem analisador). Exige o plano IA e o recurso calendário.
+      servidor.post<{ Params: { id: string } }>(
+        '/v1/analises/:id/aviso/previa',
+        async (req) => {
+          const c = corpoDaPrevia.parse(req.body ?? {});
+          return aviso.previa(workspaceDe(req), req.params.id, {
+            ...(c.tipo ? { tipo: c.tipo } : {}),
+          });
+        },
+      );
+
+      // Confirmação: recalcula de novo e só então cria o evento (tipo prazo, dia inteiro).
+      servidor.post<{ Params: { id: string } }>(
+        '/v1/analises/:id/aviso',
+        async (req, reply) => {
+          const c = corpoDoAviso.parse(req.body ?? {});
+          const evento = await aviso.confirmar(workspaceDe(req), req.params.id, {
+            ...(c.tipo ? { tipo: c.tipo } : {}),
+            ...(c.dataLocal !== undefined ? { dataLocal: c.dataLocal } : {}),
+          });
+          return reply.code(201).send({
+            id: evento.id,
+            tipo: evento.tipo,
+            titulo: evento.titulo,
+            dataLocal: evento.dataLocal,
+            calculado: evento.calculado,
+          });
+        },
+      );
+    }
 
     servidor.post<{ Params: { id: string } }>(
       '/v1/analises/:id/avaliacao',

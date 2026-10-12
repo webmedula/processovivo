@@ -200,7 +200,7 @@ describe('ServicoAnaliseDoAto', () => {
       );
       expect(r.modelo).toBe('modelo/teste');
       expect(r.provedor).toBe('provedor-teste');
-      expect(r.versaoPrompt).toBe('ato-1.1.0');
+      expect(r.versaoPrompt).toBe('ato-1.2.0');
 
       const linha = db.prepare('SELECT * FROM analises_ia').get() as Record<
         string,

@@ -849,6 +849,29 @@ export class EntradaNaoAnalisavelError extends DomainError {
   }
 }
 
+/** Por que o aviso de prazo não pôde ser montado (v0.39.0). */
+export type MotivoDePrazoNaoCalculavel =
+  | 'sem_prazo_na_analise'
+  | 'ato_fora_do_diario'
+  | 'ato_nao_encontrado'
+  | 'tipo_necessario';
+
+/**
+ * Prazo calculado a partir de uma análise: a análise não tem prazo, o ato não é do Diário
+ * (sem data de disponibilização não há termo inicial), o ato saiu do retrato, ou o ato não diz
+ * se os dias são úteis ou corridos e o advogado ainda não escolheu. NENHUM chamou o modelo.
+ */
+export class PrazoNaoCalculavelError extends DomainError {
+  readonly codigo = 'PRAZO_NAO_CALCULAVEL';
+
+  constructor(
+    readonly motivo: MotivoDePrazoNaoCalculavel,
+    mensagem: string,
+  ) {
+    super(mensagem);
+  }
+}
+
 /** A análise pedida não existe PARA ESTE workspace (ou é de outro): 404, mesma resposta. */
 export class AnaliseNaoEncontradaError extends DomainError {
   readonly codigo = 'ANALISE_NAO_ENCONTRADA';
