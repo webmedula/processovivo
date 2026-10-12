@@ -80,7 +80,7 @@ export const INSTRUCAO_DO_SISTEMA = [
 ].join('\n');
 
 /** `<` e `>` viram aspas angulares: nenhum texto de ato consegue fechar o campo delimitado. */
-function neutralizarMarcacao(texto: string): string {
+export function neutralizarMarcacao(texto: string): string {
   return texto.replace(/</g, '‹').replace(/>/g, '›');
 }
 
@@ -101,7 +101,7 @@ export function truncarTexto(
   return { texto: `${cabeca}${OMISSAO}${cauda}`, truncado: true };
 }
 
-function dataParaTexto(data: Date): string {
+export function dataParaTexto(data: Date): string {
   // Fuso fixo de Brasília (-03:00, sem horário de verão): a data do ato não passa por UTC.
   const local = new Date(data.getTime() - 3 * 3_600_000);
   const dd = String(local.getUTCDate()).padStart(2, '0');

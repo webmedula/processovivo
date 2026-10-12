@@ -32,6 +32,15 @@ export interface PedidoAoModelo {
   readonly provedoresPermitidos: readonly string[];
   /** Cancelamento (a pessoa fechou a tela): aborta a chamada em curso e impede nova tentativa. */
   readonly sinal?: AbortSignal;
+  /**
+   * Instrução do formato da saída em texto (v0.40.0). Ausente = a do ato
+   * (`INSTRUCAO_DE_FORMATO_EM_TEXTO`). O resumo de processo manda a dele.
+   */
+  readonly instrucaoDeFormato?: string;
+  /** Teto de tokens de saída deste pedido; ausente = o dos ajustes. Nada aqui toca a ZDR. */
+  readonly maxTokens?: number;
+  /** Tempo limite deste pedido; ausente = o do transporte. */
+  readonly timeoutMs?: number;
 }
 
 /** O que a chamada deixou de rastro, SEM texto e SEM chave (ver `diagnosticoDeChamada.ts`). */
@@ -513,12 +522,12 @@ export class TransporteOpenRouter implements TransporteDeModelo {
       // No modo "texto" o formato vai por instrução; o resto do sistema não muda.
       sistema:
         degrau === 'C' || degrau === 'D'
-          ? `${pedido.sistema}\n\n${INSTRUCAO_DE_FORMATO_EM_TEXTO}`
+          ? `${pedido.sistema}\n\n${pedido.instrucaoDeFormato ?? INSTRUCAO_DE_FORMATO_EM_TEXTO}`
           : pedido.sistema,
       usuario: pedido.usuario,
       temperatura: 0,
       tentativasAutomaticas: 0,
-      timeoutMs: this.timeoutMs,
+      timeoutMs: pedido.timeoutMs ?? this.timeoutMs,
       provider: {
         zdr: PREFERENCIAS_BASE_DE_PROVEDOR.zdr,
         data_collection: PREFERENCIAS_BASE_DE_PROVEDOR.data_collection,
@@ -528,8 +537,8 @@ export class TransporteOpenRouter implements TransporteDeModelo {
       },
       saida: degrau === 'A' || degrau === 'B' ? 'esquema' : 'texto',
       ...(raciocinio ? { raciocinio } : {}),
-      ...(this.ajustes.maxTokens !== undefined
-        ? { maxTokens: this.ajustes.maxTokens }
+      ...((pedido.maxTokens ?? this.ajustes.maxTokens) !== undefined
+        ? { maxTokens: (pedido.maxTokens ?? this.ajustes.maxTokens) as number }
         : {}),
       ...(pedido.sinal ? { sinal: pedido.sinal } : {}),
     };

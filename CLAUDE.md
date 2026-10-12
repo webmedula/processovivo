@@ -99,7 +99,8 @@ src/
 │                                #   ServicoPasta + GuardaDePecas (Pasta digital),
 │                                #   ServicoCalendario (+ ingestaoDoCalendario),
 │                                #   ServicoAnaliseDoAto (IA, por botão),
-│                                #   ServicoAvisoDoPrazo (aviso no calendário, v0.39.0)
+│                                #   ServicoAvisoDoPrazo (aviso no calendário, v0.39.0),
+│                                #   ServicoResumoDoProcesso (resumo por IA, por botão, v0.40.0)
 ├── infrastructure/
 │   ├── adapters/
 │   │   ├── modelo/              # OpenRouter: transporte (ZDR), lista ZDR 24 h, analisador
@@ -1247,6 +1248,32 @@ Não são detalhes — moldam o código.
   repositório nem em log. (10) A lista ZDR e o transporte moram em
   `infrastructure/adapters/modelo/`; a sonda e o serviço compartilham a MESMA política
   (`application/politicas/`), sem duplicação.
+- **Resumo do processo por IA: por clique, só o retrato da conta, UM redator, verificação
+  item a item, separado do "Pede providência"** (v0.40.0, Etapa 2 da "IA como secretária"; só o
+  servidor, a tela é a 0.40.1; errata v1.4.0 da especificação). (1) `POST
+  /v1/acompanhamentos/:numero/resumo`, sem corpo: `ServicoResumoDoProcesso` lê os atos do retrato
+  da PRÓPRIA conta (nada de peça, PDF ou consulta ao tribunal) e as MESMAS travas da análise de
+  ato valem: plano IA sem exceção (`exigirPlanoIa` reaproveita `ServicoAnaliseDoAto.exigirPlano`,
+  com a lista do teste fechado), segredo de justiça e processo sem ato com texto utilizável
+  encerram ANTES de qualquer chamada ao modelo (há teste de zero chamadas). (2) **Seleção**
+  (`selecionarAtosParaResumo`): providências em aberto (`atosQuePedemProvidencia`, a mesma regra e
+  janela de `lerProvidencia`), os atos recentes com texto, uma linha do tempo só de títulos e a
+  contagem do que ficou de fora; os números de `ORCAMENTO_DO_RESUMO` são ESTIMATIVA até se medir
+  preço e contexto reais na lista ZDR. (3) **UM redator para o pedido inteiro**: o mesmo nome
+  vira o mesmo marcador em todos os atos; o banco (`resumos_ia`) guarda COM marcadores, nunca o
+  texto dos atos. **Não há "reabrir o último resumo"**: os marcadores dependem da ordem de
+  aparição do pedido. (4) **`verificarResumo` (regras 1.0.0), item a item**: identificador de ato
+  enviado, trecho no texto DAQUELE ato, número ou data presentes nele, texto que não copia o
+  trecho; o item que falha é descartado e contado, expressão proibida derruba o resultado, e sem
+  item de situação sobrevivente o resultado é "não verificado". (5) **Resumo e providência são
+  coisas separadas**: a resposta traz `contagens.providenciasDoSistema` e `providenciasNaoCitadas`
+  (atos que o sistema marca como pedem providência e a IA não citou); a IA não altera selo,
+  ordem, contagem nem calendário. (6) A peça comum `ModeloComZdr` serve aos dois adaptadores:
+  ZDR, lista de provedores e conferência do par modelo + provedor são UM código só — não se
+  afrouxa um sem o outro. Limite de uso em memória, instância própria
+  (`PROCESSOVIVO_IA_RESUMO_MAX_POR_HORA`, 6); avaliação Útil / Errado / Perigoso em `POST
+  /v1/resumos/:id/avaliacao`; `ia-avaliacoes` lê `analises_ia` e `resumos_ia` em seções
+  separadas.
 - **Encerramento se decide pelo ato MAIS RECENTE, nunca pelo histórico.**
   Processo arquivado e depois desarquivado tem os dois atos nos autos; procurar
   "existe arquivamento" marcaria como encerrada a pasta que voltou a correr — e
@@ -1607,8 +1634,8 @@ teste e carência** (v0.28.0), **visual novo a partir do logo** (v0.29.0),
 **calendário: detecção, agenda, tela e feed ICS** (v0.32.0),
 **ajustes dos advogados: Atualizações por processo, peças no topo, providência em 10 dias** (v0.32.1),
 **Pasta digital: backend (v0.33.0) e tela (v0.33.1) — peça aberta ao clique, guarda por peça, montar pasta completa, baixar marcadas**,
-**ato (movimentação) de cada peça na lista da Pasta, com descrição** (v0.33.2) **e o número da movimentação calculado pela posição do ato, com aviso de atos bloqueados** (v0.34.0; a 0.33.3 havia removido o número errado da 0.33.2), **calibração do número com o Projudi feita pelo advogado: exato quando provado, faixa ou estimado quando não** (v0.35.0), **página inicial: Últimas atualizações mostra só o trecho do texto e o trilho de peças baixadas não estoura a largura** (v0.35.1), **Pasta: número da movimentação no lugar do índice; página inicial: "detectado há N dias" e cartão "pede providência"** (v0.35.2), **Pasta: lista em altura total com avisos compactados** (v0.35.3), **Pasta: todas as movimentações na lista, inclusive as sem peça, com lacuna de numeração provada e lista mais larga** (v0.36.0), **página inicial: tabela de últimas atualizações, uma linha por processo, com filtros que contam no lugar dos cartões; histórico de peças baixadas dentro da Pasta** (v0.37.0), **tabela sem "+N anteriores", "Detectado" enxuto e descrição do ato sem repetição na exibição** (v0.37.1), **classe legível e agrupada no filtro, última movimentação sem repetição e carteira sem rodapé redundante** (v0.37.2), **Atualizações lista todos os processos acompanhados, período como filtro opcional e verificação por conta** (v0.37.3), **Atualizações abre em "Pedem providência", com a lista completa a um clique** (v0.37.4), **intimação do Diário pede providência por 30 dias ou até "cumprido", marca por ato, correção da avalanche de novidades e reparo só com dry-run** (v0.37.5), **conferência com o Projudi: sonda de diagnóstico só de leitura, linha do ato da providência, "Detectado" legível e intimação a outro destinatário** (v0.37.6), **"Analisar com IA": por botão, texto redigido, citação verificada, ZDR falhando fechado, desligada por padrão e só no plano IA** (v0.38.0; sonda de IA v1.2.0 e `ia-avaliacoes.mjs` v1.0.0), **exceção de teste fechado da IA por variável (`PROCESSOVIVO_IA_WORKSPACES_LIBERADOS`), a remover antes de abrir ao público** (v0.38.1), **log da análise por IA com status HTTP, passo e funil do roteamento** (v0.38.2), **análise por IA: rodízio por provedor depois de 429/5xx, sem `allow_fallbacks`** (v0.38.3), **análise por IA: formato da resposta em texto, sem `require_parameters` nem `response_format`, ZDR e lista intactas** (v0.38.4), **análise por IA: ações possíveis como providência sem citação, rejeição de ação que copia o trecho-chave e rodapé sem o nome do modelo** (v0.38.5), **IA como secretária, Etapa 1: prazo escrito no ato, calculadora de prazo (exceção registrada) e "Criar aviso no calendário" com prévia e confirmação** (v0.39.0),
-Dockerfile multi-stage, CI, 2121 testes.
+**ato (movimentação) de cada peça na lista da Pasta, com descrição** (v0.33.2) **e o número da movimentação calculado pela posição do ato, com aviso de atos bloqueados** (v0.34.0; a 0.33.3 havia removido o número errado da 0.33.2), **calibração do número com o Projudi feita pelo advogado: exato quando provado, faixa ou estimado quando não** (v0.35.0), **página inicial: Últimas atualizações mostra só o trecho do texto e o trilho de peças baixadas não estoura a largura** (v0.35.1), **Pasta: número da movimentação no lugar do índice; página inicial: "detectado há N dias" e cartão "pede providência"** (v0.35.2), **Pasta: lista em altura total com avisos compactados** (v0.35.3), **Pasta: todas as movimentações na lista, inclusive as sem peça, com lacuna de numeração provada e lista mais larga** (v0.36.0), **página inicial: tabela de últimas atualizações, uma linha por processo, com filtros que contam no lugar dos cartões; histórico de peças baixadas dentro da Pasta** (v0.37.0), **tabela sem "+N anteriores", "Detectado" enxuto e descrição do ato sem repetição na exibição** (v0.37.1), **classe legível e agrupada no filtro, última movimentação sem repetição e carteira sem rodapé redundante** (v0.37.2), **Atualizações lista todos os processos acompanhados, período como filtro opcional e verificação por conta** (v0.37.3), **Atualizações abre em "Pedem providência", com a lista completa a um clique** (v0.37.4), **intimação do Diário pede providência por 30 dias ou até "cumprido", marca por ato, correção da avalanche de novidades e reparo só com dry-run** (v0.37.5), **conferência com o Projudi: sonda de diagnóstico só de leitura, linha do ato da providência, "Detectado" legível e intimação a outro destinatário** (v0.37.6), **"Analisar com IA": por botão, texto redigido, citação verificada, ZDR falhando fechado, desligada por padrão e só no plano IA** (v0.38.0; sonda de IA v1.2.0 e `ia-avaliacoes.mjs` v1.0.0), **exceção de teste fechado da IA por variável (`PROCESSOVIVO_IA_WORKSPACES_LIBERADOS`), a remover antes de abrir ao público** (v0.38.1), **log da análise por IA com status HTTP, passo e funil do roteamento** (v0.38.2), **análise por IA: rodízio por provedor depois de 429/5xx, sem `allow_fallbacks`** (v0.38.3), **análise por IA: formato da resposta em texto, sem `require_parameters` nem `response_format`, ZDR e lista intactas** (v0.38.4), **análise por IA: ações possíveis como providência sem citação, rejeição de ação que copia o trecho-chave e rodapé sem o nome do modelo** (v0.38.5), **IA como secretária, Etapa 1: prazo escrito no ato, calculadora de prazo (exceção registrada) e "Criar aviso no calendário" com prévia e confirmação** (v0.39.0), **IA como secretária, Etapa 2 (só o servidor): resumo do processo por IA, por clique, com verificação item a item e a contagem das providências do sistema que a IA não citou** (v0.40.0),
+Dockerfile multi-stage, CI, 2184 testes.
 
 **Pasta digital (v0.33.0, backend):** `GET /v1/processos/:numero/pasta` (lista +
 estado de cada peça + intervalos de página + totais SEM filtro + procedência

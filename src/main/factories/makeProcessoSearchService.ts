@@ -34,13 +34,17 @@ import type { Logger } from '../../domain/ports/Logger.js';
 import type { RepositorioAcompanhamentos } from '../../domain/ports/RepositorioAcompanhamentos.js';
 import { mascararWorkspace } from '../../domain/entities/workspaceLiberado.js';
 import { ServicoAnaliseDoAto } from '../../application/services/ServicoAnaliseDoAto.js';
+import { ServicoResumoDoProcesso } from '../../application/services/ServicoResumoDoProcesso.js';
 import { ServicoAvisoDoPrazo } from '../../application/services/ServicoAvisoDoPrazo.js';
 import { LimiteDeAnalises } from '../../application/politicas/limiteDeAnalises.js';
 import { clockDoSistema } from '../../domain/ports/Clock.js';
+import { ModeloComZdr } from '../../infrastructure/adapters/modelo/ModeloComZdr.js';
+import { OpenRouterResumidorDeProcesso } from '../../infrastructure/adapters/modelo/OpenRouterResumidorDeProcesso.js';
 import { OpenRouterAnalisadorDeAto } from '../../infrastructure/adapters/modelo/OpenRouterAnalisadorDeAto.js';
 import { TransporteOpenRouter } from '../../infrastructure/adapters/modelo/TransporteOpenRouter.js';
 import { buscarEndpointsZdr } from '../../infrastructure/adapters/modelo/endpointsZdr.js';
 import { HttpClient } from '../../infrastructure/http/HttpClient.js';
+import { RepositorioResumosSqlite } from '../../infrastructure/persistencia/sqlite/RepositorioResumosSqlite.js';
 import { RepositorioAnalisesSqlite } from '../../infrastructure/persistencia/sqlite/RepositorioAnalisesSqlite.js';
 import type { ProcessoProvider } from '../../domain/ports/ProcessoProvider.js';
 import { BuscarProcessoPorNumero } from '../../domain/usecases/BuscarProcessoPorNumero.js';
@@ -106,6 +110,8 @@ export interface Aplicacao {
    * (o padrão): as rotas não oferecem nada e a tela não mostra o botão.
    */
   readonly analiseIa: ServicoAnaliseDoAto | undefined;
+  /** Resumo de processo por IA (v0.40.0). Só existe com a IA ligada. */
+  readonly resumoDoProcesso: ServicoResumoDoProcesso | undefined;
   /** "Criar aviso no calendário" a partir da análise (v0.39.0). Só existe com a IA ligada. */
   readonly avisoDoPrazo: ServicoAvisoDoPrazo | undefined;
   /**
@@ -501,7 +507,13 @@ export function montarAplicacao(config: Config): Aplicacao {
         })
       : undefined;
 
-  const analiseIa = montarAnaliseIa(config, db, logger, repositorio, assinaturas);
+  const { analiseIa, resumoDoProcesso } = montarAnaliseIa(
+    config,
+    db,
+    logger,
+    repositorio,
+    assinaturas,
+  );
 
   return {
     buscarProcessoPorNumero,
@@ -513,6 +525,7 @@ export function montarAplicacao(config: Config): Aplicacao {
     notificacao,
     pecas,
     analiseIa,
+    resumoDoProcesso,
     avisoDoPrazo:
       analiseIa === undefined
         ? undefined
@@ -571,11 +584,16 @@ function montarAnaliseIa(
   logger: Logger,
   repositorio: RepositorioAcompanhamentos,
   assinaturas: ServicoAssinaturas,
-): ServicoAnaliseDoAto | undefined {
+): {
+  analiseIa: ServicoAnaliseDoAto | undefined;
+  resumoDoProcesso: ServicoResumoDoProcesso | undefined;
+} {
   const ia = config.ia;
-  if (!ia.habilitada) return undefined;
+  if (!ia.habilitada) return { analiseIa: undefined, resumoDoProcesso: undefined };
   const http = new HttpClient({ timeoutMs: 20_000, tentativas: 2 });
-  const analisador = new OpenRouterAnalisadorDeAto({
+  // UMA peça comum para a análise de ato e o resumo de processo: uma lista ZDR e as mesmas
+  // travas (modelo real, `provider.only`, conferência do par) para os dois.
+  const modeloZdr = new ModeloComZdr({
     transporte: new TransporteOpenRouter({
       chave: ia.chave,
       timeoutMs: ia.timeoutMs,
@@ -587,6 +605,7 @@ function montarAnaliseIa(
     clock: clockDoSistema,
     logger,
   });
+  const analisador = new OpenRouterAnalisadorDeAto({ modeloZdr });
   logger.info('análise de ato por IA habilitada', {
     modelo: ia.modelo,
     raciocinio: ia.raciocinio,
@@ -601,7 +620,7 @@ function montarAnaliseIa(
       },
     );
   }
-  return new ServicoAnaliseDoAto({
+  const analiseIa = new ServicoAnaliseDoAto({
     repositorio,
     analises: new RepositorioAnalisesSqlite(db),
     assinaturas,
@@ -616,6 +635,28 @@ function montarAnaliseIa(
     novoId: () => randomUUID(),
     workspacesLiberados: new Set(ia.workspacesLiberados),
   });
+  const resumoDoProcesso = new ServicoResumoDoProcesso({
+    repositorio,
+    resumos: new RepositorioResumosSqlite(db),
+    resumidor: new OpenRouterResumidorDeProcesso({
+      modeloZdr,
+      maxTokens: ia.resumoMaxTokens,
+      timeoutMs: ia.resumoTimeoutMs,
+    }),
+    // A MESMA regra do plano IA da análise de ato, inclusive a exceção de teste fechado.
+    exigirPlanoIa: (ws) => analiseIa.exigirPlano(ws),
+    // Freio próprio do resumo: mais caro que a análise de um ato.
+    limite: new LimiteDeAnalises({
+      porHora: ia.resumoMaxPorHora,
+      simultaneasNoTotal: ia.maxSimultaneas,
+      clock: clockDoSistema,
+    }),
+    clock: clockDoSistema,
+    logger,
+    novoId: () => randomUUID(),
+    janelaDePendenciaDias: config.telas.pendenciaJanelaDias,
+  });
+  return { analiseIa, resumoDoProcesso };
 }
 
 /**

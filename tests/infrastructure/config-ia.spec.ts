@@ -169,4 +169,23 @@ describe('tabela analises_ia', () => {
       expect(c.ia.chave).toBe('');
     });
   });
+
+  it('resumo de processo: padrões de 6 por hora, 1500 tokens e 120 s, todos configuráveis', () => {
+    const c = carregarConfig(BASE).ia;
+    expect(c.resumoMaxPorHora).toBe(6);
+    expect(c.resumoMaxTokens).toBe(1500);
+    expect(c.resumoTimeoutMs).toBe(120_000);
+    const outro = carregarConfig({
+      ...BASE,
+      PROCESSOVIVO_IA_RESUMO_MAX_POR_HORA: '3',
+      PROCESSOVIVO_IA_RESUMO_MAX_TOKENS: '900',
+      PROCESSOVIVO_IA_RESUMO_TIMEOUT_MS: '60000',
+    }).ia;
+    expect([outro.resumoMaxPorHora, outro.resumoMaxTokens, outro.resumoTimeoutMs]).toEqual([
+      3, 900, 60_000,
+    ]);
+    expect(() =>
+      carregarConfig({ ...BASE, PROCESSOVIVO_IA_RESUMO_MAX_POR_HORA: '0' }),
+    ).toThrow();
+  });
 });

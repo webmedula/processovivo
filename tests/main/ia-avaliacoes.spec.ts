@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { AnaliseDoAto } from '../../src/domain/entities/AnaliseDoAto.js';
 import { abrirBanco } from '../../src/infrastructure/persistencia/sqlite/banco.js';
+import { RepositorioResumosSqlite } from '../../src/infrastructure/persistencia/sqlite/RepositorioResumosSqlite.js';
 import { RepositorioAnalisesSqlite } from '../../src/infrastructure/persistencia/sqlite/RepositorioAnalisesSqlite.js';
 import { executarAvaliacoesDeIa } from '../../src/main/sonda/avaliacoesDeIa.js';
 
@@ -120,5 +121,58 @@ describe('ia-avaliacoes — somente leitura e sem texto', () => {
     const r = rodar();
     expect(r.codigo).toBe(0);
     expect(r.saida).toContain('Nenhuma análise registrada ainda.');
+  });
+  it('lê os resumos de processo em seção separada, sem misturar com as análises de ato', async () => {
+    const db = abrirBanco(caminho);
+    await new RepositorioAnalisesSqlite(db).salvar(analise(1));
+    const repo = new RepositorioResumosSqlite(db);
+    const base = {
+      workspace: 'ws-segredo',
+      numero: '12345674720238260100',
+      atosEnviados: [],
+      contagens: {
+        atosNoProcesso: 1,
+        atosComTexto: 1,
+        atosSoTitulo: 0,
+        foraDoResumo: 0,
+        itensDescartados: 0,
+        providenciasDoSistema: 0,
+        providenciasNaoCitadas: 0,
+      },
+      procedencia: {
+        modelo: 'fab/modelo-r',
+        versaoPrompt: 'resumo-1.0.0',
+        provedor: 'p',
+        criadaEm: new Date('2026-10-05T12:00:00Z'),
+      },
+      medidas: { latenciaMs: 2000 },
+    };
+    await repo.salvar({
+      ...base,
+      id: 'r-1',
+      resultado: {
+        estado: 'verificado',
+        situacao: [{ texto: 'RESUMO-SECRETO', chaveDoAto: 'k', trecho: 't' }],
+        pendencias: [],
+        pontosDeAtencao: [],
+      },
+    });
+    await repo.salvar({
+      ...base,
+      id: 'r-2',
+      resultado: { estado: 'nao_verificado', motivo: 'sem_item_verificado' },
+    });
+    await repo.avaliar('ws-segredo', 'r-1', 'util');
+    db.close();
+
+    const { codigo, saida } = rodar();
+    expect(codigo).toBe(0);
+    const [antes, depois] = saida.split('Resumos de processo');
+    expect(antes).toContain('Modelo fab/modelo-a · prompt ato-1.0.0');
+    expect(antes).not.toContain('resumo-1.0.0');
+    expect(depois).toContain('Modelo fab/modelo-r · prompt resumo-1.0.0');
+    expect(depois).toContain('Não verificadas: 1 (50%)');
+    expect(saida).not.toContain('RESUMO-SECRETO');
+    expect(saida).not.toContain('ws-segredo');
   });
 });
