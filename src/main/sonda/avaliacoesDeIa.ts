@@ -13,7 +13,7 @@ import { media, percentil } from './sondaIaAto.js';
 export const VERSAO_DE_AVALIACOES_DE_IA = '1.0.0';
 
 export const USO_DE_AVALIACOES_DE_IA = `Uso: node scripts/ia-avaliacoes.mjs
-Mostra, por modelo e versão do prompt, as análises e as avaliações das contas (útil / errado / perigoso).`;
+Mostra, por modelo e versão do prompt, as análises de ato e os resumos de processo, e as avaliações das contas (útil / errado / perigoso). As duas tabelas ficam em seções separadas.`;
 
 export interface LinhaDeAvaliacoes {
   readonly modelo: string;
@@ -130,29 +130,53 @@ export function executarAvaliacoesDeIa(
     return 1;
   }
   try {
-    const existe = db
-      .prepare(
-        "SELECT 1 AS x FROM sqlite_master WHERE type = 'table' AND name = 'analises_ia'",
-      )
-      .get();
+    const existe = tabelaExiste(db, 'analises_ia');
+    const existeResumo = tabelaExiste(db, 'resumos_ia');
     deps.saida(
       `Avaliações da análise por IA v${VERSAO_DE_AVALIACOES_DE_IA} — somente leitura; só contagens e medidas, nenhum texto.`,
     );
-    if (!existe) {
+    if (!existe && !existeResumo) {
       deps.saida('Nenhuma análise registrada ainda.');
       return 0;
     }
-    const linhas = db
-      .prepare(
-        `SELECT modelo, versao_prompt, avaliacao, latencia_ms, custo_usd,
-                CASE WHEN json_extract(resultado, '$.estado') = 'nao_verificada' THEN 1 ELSE 0 END AS nao_verificada
-           FROM analises_ia`,
-      )
-      .all() as unknown as Linha[];
-    deps.saida('');
-    for (const l of linhasDeAvaliacoes(agruparAvaliacoes(linhas))) deps.saida(l);
+    if (existe) {
+      const linhas = db
+        .prepare(
+          `SELECT modelo, versao_prompt, avaliacao, latencia_ms, custo_usd,
+                  CASE WHEN json_extract(resultado, '$.estado') = 'nao_verificada' THEN 1 ELSE 0 END AS nao_verificada
+             FROM analises_ia`,
+        )
+        .all() as unknown as Linha[];
+      deps.saida('');
+      for (const l of linhasDeAvaliacoes(agruparAvaliacoes(linhas))) deps.saida(l);
+    }
+    // Resumos de processo (v0.40.0): outra tabela, outra seção — as métricas nunca se misturam
+    // com as da análise de ato.
+    if (existeResumo) {
+      const linhas = db
+        .prepare(
+          `SELECT modelo, versao_prompt, avaliacao, latencia_ms, custo_usd,
+                  CASE WHEN json_extract(resultado, '$.estado') = 'nao_verificado' THEN 1 ELSE 0 END AS nao_verificada
+             FROM resumos_ia`,
+        )
+        .all() as unknown as Linha[];
+      deps.saida('');
+      deps.saida('Resumos de processo');
+      deps.saida('');
+      const grupos = agruparAvaliacoes(linhas);
+      if (grupos.length === 0) deps.saida('Nenhum resumo registrado ainda.');
+      else for (const l of linhasDeAvaliacoes(grupos)) deps.saida(l);
+    }
     return 0;
   } finally {
     db.close();
   }
+}
+
+function tabelaExiste(db: ReturnType<typeof abrirSomenteLeitura>, nome: string): boolean {
+  return (
+    db
+      .prepare("SELECT 1 AS x FROM sqlite_master WHERE type = 'table' AND name = ?")
+      .get(nome) !== undefined
+  );
 }

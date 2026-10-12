@@ -9,6 +9,37 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.40.0] — 2026-10-12
+
+**IA como secretária, Etapa 2 (só o servidor): resumo do processo por IA.** Rota
+`POST /v1/acompanhamentos/:numero/resumo`, por clique, sobre os atos do retrato da própria conta. A tela e o
+botão ficam para a 0.40.1.
+
+### Adicionado
+
+- `ServicoResumoDoProcesso` e a porta `ResumidorDeProcesso`. Plano IA sem exceção (a mesma regra da análise),
+  segredo de justiça e processo sem texto utilizável recusados antes de qualquer chamada ao modelo.
+- `selecionarAtosParaResumo`: providências em aberto, atos recentes com texto, linha do tempo de títulos e a
+  contagem do que ficou de fora. Orçamento estimado (teto de 28.000 caracteres), ainda sem os números reais de
+  preço e contexto do modelo.
+- Prompt `resumo-1.0.0`, UM redator para o pedido inteiro e esquema Zod fechado.
+- `verificarResumo` (regras 1.0.0), item a item: identificador, trecho no ato citado, números e datas,
+  cópia do trecho e expressão proibida.
+- `contagens.providenciasDoSistema` e `providenciasNaoCitadas`: o resumo da IA e o "Pede providência" do
+  sistema ficam separados, e a resposta diz quantas providências do sistema a IA não citou.
+- `atosQuePedemProvidencia` (lista completa, mesma regra de `lerProvidencia`).
+- Tabela `resumos_ia` (aditiva) e `POST /v1/resumos/:id/avaliacao` (Útil, Errado, Perigoso).
+- Variáveis `PROCESSOVIVO_IA_RESUMO_MAX_POR_HORA` (6), `PROCESSOVIVO_IA_RESUMO_MAX_TOKENS` (1500) e
+  `PROCESSOVIVO_IA_RESUMO_TIMEOUT_MS` (120000).
+- `ia-avaliacoes` lê `analises_ia` e `resumos_ia` em seções separadas.
+
+### Alterado
+
+- Peça comum `ModeloComZdr` extraída do adaptador do analisador, sem mudar comportamento: ZDR, lista de
+  provedores e conferência do par modelo + provedor são as mesmas para os dois usos.
+
+---
+
 ## [0.39.0] — 2026-10-12
 
 **IA como secretária, Etapa 1: do prazo escrito no ato ao aviso no calendário.** Na análise de um ato do

@@ -175,6 +175,32 @@ const ESQUEMA = [
   `CREATE INDEX IF NOT EXISTS idx_analises_ws
      ON analises_ia (workspace, numero)`,
 
+  // Resumo de processo por IA (v0.40.0). Tabela NOVA e aditiva, irmã de `analises_ia`: não há
+  // coluna a acrescentar em tabela existente nem retrocarga. `resultado` é o JSON COM
+  // MARCADORES — nunca o texto dos atos nem os valores originais; `atos_enviados` guarda só
+  // chave e data de cada ato enviado, e `contagens` só números. Não existe "reabrir o último
+  // resumo": os marcadores estruturais dependem da ordem de aparição do pedido, e restaurá-los
+  // depois, com o retrato mudado, poderia trocar o valor errado. Toda leitura confere o workspace.
+  `CREATE TABLE IF NOT EXISTS resumos_ia (
+     id            TEXT PRIMARY KEY,
+     workspace     TEXT NOT NULL,
+     numero        TEXT NOT NULL,
+     resultado     TEXT NOT NULL,
+     atos_enviados TEXT NOT NULL,
+     contagens     TEXT NOT NULL,
+     modelo        TEXT NOT NULL,
+     versao_prompt TEXT NOT NULL,
+     provedor      TEXT NOT NULL,
+     tokens_entrada INTEGER,
+     tokens_saida   INTEGER,
+     custo_usd      REAL,
+     latencia_ms    INTEGER NOT NULL,
+     criada_em      TEXT NOT NULL,
+     avaliacao      TEXT
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_resumos_ws
+     ON resumos_ia (workspace, numero)`,
+
   `CREATE TABLE IF NOT EXISTS estado (
      chave TEXT PRIMARY KEY,
      valor TEXT NOT NULL

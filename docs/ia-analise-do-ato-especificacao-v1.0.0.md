@@ -321,3 +321,32 @@ Esta errata acrescenta o campo `prazo` à seção 6 e a Etapa 1 da "IA como secr
   chamam o modelo**. Data editada pelo advogado é aceita se for AAAA-MM-DD válida; nesse caso o marcador `calculado` não é gravado.
 - **Feed:** evento calculado leva "Data calculada pelo Processo Vivo: confira no processo." na descrição. Título, observação e trecho
   continuam fora do feed; o título do evento vem só de campos estruturados.
+
+## Errata v1.4.0 (12/10/2026) — Resumo do processo, só o servidor (produto 0.40.0)
+
+Esta errata acrescenta a Etapa 2 da "IA como secretária" (backend; a tela fica para a 0.40.1). Onde houver conflito, vale esta errata.
+
+- **O que é:** `POST /v1/acompanhamentos/:numero/resumo`, sem corpo, por clique. Resume UM processo a partir dos atos do retrato da própria
+  conta: nada de peça, PDF ou consulta ao tribunal. O texto vem do servidor; texto vindo do cliente nunca é aceito.
+- **Seleção (`selecionarAtosParaResumo`):** providências em aberto segundo o sistema (até 5, 2.500 caracteres cada), os 10 atos mais
+  recentes com texto utilizável (1.500 cada), uma linha do tempo só de títulos (até 40) e a contagem do que ficou de fora. Teto total de
+  28.000 caracteres; o corte começa pelos recentes mais antigos, nunca pelas providências. **Os números são ESTIMATIVA**: a consulta ao
+  preço e à janela de contexto do modelo na lista ZDR não foi possível no ambiente de desenvolvimento.
+- **Redação:** UM redator para o pedido inteiro; o mesmo nome ou número vira o mesmo marcador em todos os atos. O banco guarda o resultado
+  COM marcadores; os valores voltam só na resposta da própria conta. Não há "reabrir o último resumo": os marcadores dependem da ordem de
+  aparição daquele pedido.
+- **Verificação (`verificarResumo`, regras 1.0.0), item a item:** o identificador precisa ser de um ato enviado; o trecho precisa existir
+  no texto DAQUELE ato; número ou data precisa estar no ato citado; o texto não pode repetir o trecho (mais de 60% das palavras de conteúdo
+  em comum); expressão proibida em qualquer item descarta o resultado inteiro; sem nenhum item de situação sobrevivente, "não verificado".
+  O que não passa é descartado e contado (`itensDescartados`), nunca mostrado.
+- **Resumo e providência são separados.** A resposta traz `contagens.providenciasDoSistema` (atos que o sistema marca como pedem
+  providência, pela mesma regra e janela do selo) e `contagens.providenciasNaoCitadas` (os que a IA não citou). A IA não altera nada do
+  retrato nem do selo.
+- **Prompt `resumo-1.0.0`.** Esquema Zod fechado (`situacao`, `pendencias`, `pontos_de_atencao`); formato em texto, como a análise.
+- **Regras iguais às da análise de ato, sem tocar nelas:** plano IA sem exceção (incluindo a lista do teste fechado), segredo de justiça e
+  texto insuficiente recusados antes de qualquer chamada ao modelo, ZDR falhando fechado, lista de provedores e conferência do par modelo +
+  provedor. A peça comum (`ModeloComZdr`) foi extraída do adaptador do analisador sem mudar comportamento.
+- **Uso:** limite de 6 resumos por hora por conta (`PROCESSOVIVO_IA_RESUMO_MAX_POR_HORA`), 1.500 tokens de saída
+  (`PROCESSOVIVO_IA_RESUMO_MAX_TOKENS`) e 120 s de espera (`PROCESSOVIVO_IA_RESUMO_TIMEOUT_MS`).
+- **Avaliação:** `POST /v1/resumos/:id/avaliacao` com `util`, `errado` ou `perigoso`. Tabela própria `resumos_ia`; `ia-avaliacoes` lê as
+  duas tabelas em seções separadas.

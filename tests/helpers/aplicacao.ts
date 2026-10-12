@@ -53,7 +53,13 @@ import { RepositorioChavesApiSqlite } from '../../src/infrastructure/persistenci
 import { tokensDeSessao } from '../../src/infrastructure/seguranca/sessao.js';
 import { chavesDeApi } from '../../src/infrastructure/seguranca/chavesDeApi.js';
 import type { HashDeSenha } from '../../src/domain/ports/Criptografia.js';
-import { SenhaFracaError } from '../../src/domain/errors/index.js';
+import {
+  EntradaNaoAnalisavelError,
+  SenhaFracaError,
+} from '../../src/domain/errors/index.js';
+import { ServicoResumoDoProcesso } from '../../src/application/services/ServicoResumoDoProcesso.js';
+import type { ResumidorDeProcesso } from '../../src/domain/ports/ResumidorDeProcesso.js';
+import { RepositorioResumosSqlite } from '../../src/infrastructure/persistencia/sqlite/RepositorioResumosSqlite.js';
 
 /**
  * Hash de senha BARATO, só para teste.
@@ -159,6 +165,15 @@ export interface OpcoesAplicacaoDeTeste {
     readonly analisador: AnalisadorDeAto;
     readonly porHora?: number;
     readonly simultaneasNoTotal?: number;
+    readonly clock?: Clock;
+  };
+  /**
+   * Liga o resumo de processo por IA (v0.40.0) com um resumidor DUBLÊ (nenhum teste toca a
+   * rede). Ausente = desligado. A regra do plano é a da análise de ato.
+   */
+  readonly resumoIa?: {
+    readonly resumidor: ResumidorDeProcesso;
+    readonly porHora?: number;
     readonly clock?: Clock;
   };
   /** Liga a área administrativa. Ausente por padrão — mesma regra de `comAssinaturas`. */
@@ -356,6 +371,34 @@ export function aplicacaoDeTeste(
         novoId: () => randomUUID(),
       })
     : undefined;
+  const clockDoResumo: Clock = opcoes.resumoIa?.clock ?? {
+    agora: () => (opcoes.agora ? opcoes.agora() : new Date()),
+    monotonico: () => 0,
+  };
+  const resumoDoProcesso = opcoes.resumoIa
+    ? new ServicoResumoDoProcesso({
+        repositorio: repositorioCru,
+        resumos: new RepositorioResumosSqlite(db),
+        resumidor: opcoes.resumoIa.resumidor,
+        exigirPlanoIa: async (ws) => {
+          if (!(await assinaturas.temRecursoSemExcecao(ws, 'analiseIa'))) {
+            throw new EntradaNaoAnalisavelError(
+              'sem_plano',
+              'A análise por IA faz parte do plano IA. Faça upgrade do plano para usar.',
+            );
+          }
+        },
+        limite: new LimiteDeAnalises({
+          porHora: opcoes.resumoIa.porHora ?? 100,
+          simultaneasNoTotal: 10,
+          clock: clockDoResumo,
+        }),
+        clock: clockDoResumo,
+        logger: loggerSilencioso,
+        novoId: () => randomUUID(),
+        janelaDePendenciaDias: 10,
+      })
+    : undefined;
   const analisesRepo = new RepositorioAnalisesSqlite(db);
   const avisoDoPrazo = analiseIa
     ? new ServicoAvisoDoPrazo({
@@ -377,6 +420,7 @@ export function aplicacaoDeTeste(
     notificacao,
     pecas,
     analiseIa,
+    resumoDoProcesso,
     avisoDoPrazo,
     leitor,
     pasta,

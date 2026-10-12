@@ -235,6 +235,11 @@ const schema = z.object({
   // Freio por conta, em memória (reiniciar zera). O teto real de gasto é o limite da chave.
   PROCESSOVIVO_IA_MAX_POR_HORA: inteiroPositivo(20),
   PROCESSOVIVO_IA_MAX_SIMULTANEAS: inteiroPositivo(3),
+  // Resumo de processo (v0.40.0): mais caro que a análise de um ato (5 a 6 vezes a entrada).
+  // Freio próprio por conta, em memória; a saída maior e a espera maior têm teto próprio.
+  PROCESSOVIVO_IA_RESUMO_MAX_POR_HORA: inteiroPositivo(6),
+  PROCESSOVIVO_IA_RESUMO_MAX_TOKENS: inteiroPositivo(1500),
+  PROCESSOVIVO_IA_RESUMO_TIMEOUT_MS: inteiroPositivo(120_000),
   // Exigida SÓ com a IA habilitada. Nunca vai para log, resposta ou mensagem de erro.
   OPENROUTER_API_KEY: z.string().default(''),
 });
@@ -341,6 +346,10 @@ export interface Config {
     readonly provedoresPermitidos: readonly string[];
     readonly maxPorHora: number;
     readonly maxSimultaneas: number;
+    /** Resumo de processo (v0.40.0). */
+    readonly resumoMaxPorHora: number;
+    readonly resumoMaxTokens: number;
+    readonly resumoTimeoutMs: number;
     /** Exceção de teste fechado (v0.38.1): ids já validados, minúsculos e sem repetição. */
     readonly workspacesLiberados: readonly string[];
     /** Vazia quando a IA está desligada. */
@@ -544,6 +553,9 @@ export function carregarConfig(fonte: NodeJS.ProcessEnv = process.env): Config {
       ).map((s) => s.toLowerCase()),
       maxPorHora: env.PROCESSOVIVO_IA_MAX_POR_HORA,
       maxSimultaneas: env.PROCESSOVIVO_IA_MAX_SIMULTANEAS,
+      resumoMaxPorHora: env.PROCESSOVIVO_IA_RESUMO_MAX_POR_HORA,
+      resumoMaxTokens: env.PROCESSOVIVO_IA_RESUMO_MAX_TOKENS,
+      resumoTimeoutMs: env.PROCESSOVIVO_IA_RESUMO_TIMEOUT_MS,
       workspacesLiberados: lerWorkspacesLiberados(env.PROCESSOVIVO_IA_WORKSPACES_LIBERADOS),
       chave: env.PROCESSOVIVO_IA_HABILITADA ? env.OPENROUTER_API_KEY.trim() : '',
     },
