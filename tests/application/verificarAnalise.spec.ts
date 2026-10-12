@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { RespostaDoModelo } from '../../src/domain/entities/vocabularioDaAnalise.js';
 import {
   acaoRepeteOTrecho,
+  diasEscritosNoTexto,
   expressaoProibidaEm,
   numerosForaDoTexto,
   verificarAnalise,
@@ -279,5 +280,78 @@ describe('verificarAnalise — instrução injetada', () => {
       TEXTO,
     );
     expect(r.estado).toBe('nao_verificada');
+  });
+});
+
+describe('verificarAnalise — prazo em dias (v0.39.0)', () => {
+  it('prazo cujo número está escrito no texto é mantido, sem tipo quando o ato não diz', () => {
+    const r = verificarAnalise(resposta({ prazo: { dias: 15, tipo: null } }), TEXTO);
+    expect(r.estado).toBe('verificada');
+    if (r.estado === 'verificada') {
+      expect(r.prazo).toEqual({ dias: 15, tipo: null });
+      expect(r.descartes.prazoDescartado).toBe(0);
+    }
+  });
+
+  it('mantém o tipo úteis ou corridos quando o modelo o informa', () => {
+    for (const tipo of ['uteis', 'corridos'] as const) {
+      const r = verificarAnalise(resposta({ prazo: { dias: 15, tipo } }), TEXTO);
+      if (r.estado === 'verificada') expect(r.prazo).toEqual({ dias: 15, tipo });
+    }
+  });
+
+  it('prazo cujo número NÃO está no texto é descartado, sem derrubar a análise', () => {
+    const r = verificarAnalise(resposta({ prazo: { dias: 40, tipo: 'uteis' } }), TEXTO);
+    expect(r.estado).toBe('verificada');
+    if (r.estado === 'verificada') {
+      expect(r.prazo).toBeUndefined();
+      expect(r.resumo).toBeDefined();
+      expect(r.acoesPossiveis).toHaveLength(1);
+      expect(r.descartes.prazoDescartado).toBe(1);
+    }
+  });
+
+  it.each([0, -3, 366, 1.5, Number.NaN])(
+    'dias fora de 1–365 (%s) é descartado',
+    (dias) => {
+      const r = verificarAnalise(resposta({ prazo: { dias, tipo: null } }), TEXTO);
+      expect(r.estado).toBe('verificada');
+      if (r.estado === 'verificada') expect(r.prazo).toBeUndefined();
+    },
+  );
+
+  it('tipo desconhecido não vira palpite: o prazo é descartado', () => {
+    const r = verificarAnalise(
+      resposta({ prazo: { dias: 15, tipo: 'comerciais' } }),
+      TEXTO,
+    );
+    expect(r.estado).toBe('verificada');
+    if (r.estado === 'verificada') expect(r.prazo).toBeUndefined();
+  });
+
+  it('prazo ausente ou null segue sem prazo, sem descarte', () => {
+    for (const prazo of [undefined, null]) {
+      const r = verificarAnalise(resposta({ prazo }), TEXTO);
+      if (r.estado === 'verificada') {
+        expect(r.prazo).toBeUndefined();
+        expect(r.descartes.prazoDescartado).toBe(0);
+      }
+    }
+  });
+
+  it('o número precisa estar colado a "dia(s)": uma data ou um número solto não valem', () => {
+    const t = normalizarParaComparar(
+      'Audiência em 15/10/2026, na sala 15. Manifeste-se em quinze (15) dias úteis; ou vinte e cinco dias.',
+    );
+    expect(diasEscritosNoTexto(15, t)).toBe(true); // "quinze (15) dias"
+    expect(diasEscritosNoTexto(25, t)).toBe(true); // "vinte e cinco dias"
+    expect(diasEscritosNoTexto(10, t)).toBe(false);
+    const soData = normalizarParaComparar('Audiência em 15/10/2026 na sala 15.');
+    expect(diasEscritosNoTexto(15, soData)).toBe(false);
+    expect(diasEscritosNoTexto(5, normalizarParaComparar('em 05 dias'))).toBe(false);
+    expect(diasEscritosNoTexto(5, normalizarParaComparar('em 5 dias'))).toBe(true);
+    expect(diasEscritosNoTexto(1, normalizarParaComparar('no prazo de um dia'))).toBe(
+      true,
+    );
   });
 });

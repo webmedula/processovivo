@@ -48,11 +48,29 @@ const RESULTADO = {
   acoesPossiveis: [{ acao: 'Parte autora: apresentar manifestação sobre o laudo' }],
   pontosDeAtencao: ['conferir_prazo_no_processo', 'texto_incompleto'],
   modelo: 'modelo/teste',
-  versaoPrompt: 'ato-1.1.0',
+  versaoPrompt: 'ato-1.2.0',
   provedor: 'provedor-teste',
   criadaEm: '2026-10-05T12:00:00.000Z',
   avaliacao: null,
 };
+
+const PREVIA = {
+  analiseId: 'analise-1',
+  dias: 15,
+  tipo: 'uteis',
+  tipoDoAto: true,
+  titulo: 'Prazo de 15 dias úteis (a conferir)',
+  dataDaPublicacao: '2026-10-06',
+  inicioDaContagem: '2026-10-07',
+  dataFinal: '2026-10-28',
+  premissas: [
+    'Disponibilização no Diário em 05/10/2026.',
+    'Publicação no primeiro dia útil seguinte: 06/10/2026.',
+  ],
+  aviso:
+    'Feriado local e suspensões não considerados. Data calculada pelo Processo Vivo: confira no processo.',
+};
+const COM_PRAZO = (prazo: object) => ({ ...RESULTADO, prazo });
 
 describe.skipIf(sem)('Analisar com IA, no navegador', { timeout: 120_000 }, () => {
   let browser: Browser;
@@ -65,6 +83,10 @@ describe.skipIf(sem)('Analisar com IA, no navegador', { timeout: 120_000 }, () =
   /** Como a rota de análise responde: o teste troca e, se quiser, segura a resposta. */
   let responder: (rota: Route) => Promise<void>;
   let avaliacaoFalha = false;
+  /** Pedidos ao aviso de prazo (v0.39.0): a prévia não grava; só a confirmação cria. */
+  let previas: unknown[];
+  let avisos: unknown[];
+  let respostaDaPrevia: (rota: Route) => Promise<void>;
 
   const json = (rota: Route, status: number, corpo: unknown): Promise<void> =>
     rota.fulfill({ status, json: corpo });
@@ -91,6 +113,9 @@ describe.skipIf(sem)('Analisar com IA, no navegador', { timeout: 120_000 }, () =
     avaliacoes = [];
     falhas = [];
     avaliacaoFalha = false;
+    previas = [];
+    avisos = [];
+    respostaDaPrevia = (rota) => json(rota, 200, PREVIA);
     responder = (rota) => json(rota, 200, RESULTADO);
     ctx = await browser.newContext({
       viewport: { width: opcoes.largura ?? 1280, height: 900 },
@@ -177,6 +202,21 @@ describe.skipIf(sem)('Analisar com IA, no navegador', { timeout: 120_000 }, () =
       if (avaliacaoFalha) return json(rota, 500, { erro: 'x', mensagem: 'x' });
       const c = rota.request().postDataJSON() as { avaliacao: string };
       return json(rota, 200, { id, avaliacao: c.avaliacao });
+    });
+    await ctx.route('**/v1/analises/*/aviso/previa', async (rota) => {
+      previas.push(rota.request().postDataJSON() as unknown);
+      await respostaDaPrevia(rota);
+    });
+    await ctx.route('**/v1/analises/*/aviso', async (rota) => {
+      const c = rota.request().postDataJSON() as { dataLocal?: string };
+      avisos.push(c);
+      return json(rota, 201, {
+        id: 'ev-1',
+        tipo: 'prazo',
+        titulo: PREVIA.titulo,
+        dataLocal: c.dataLocal,
+        calculado: c.dataLocal === PREVIA.dataFinal,
+      });
     });
     page = await ctx.newPage();
     page.setDefaultTimeout(15_000);
@@ -574,4 +614,150 @@ describe.skipIf(sem)('Analisar com IA, no navegador', { timeout: 120_000 }, () =
       expect(await rodar(), 'recusa').toBe('');
     });
   }
+
+  describe('aviso no calendário (v0.39.0)', () => {
+    async function abrirAnalise(resultado: object): Promise<void> {
+      await abrir();
+      responder = (rota) => json(rota, 200, resultado);
+      await botao(NA).click();
+      await painel(NA).getByText('Parece pedir:').waitFor();
+    }
+    const criar = () =>
+      painel(NA).getByRole('button', { name: 'Criar aviso no calendário' });
+
+    it('sem prazo na análise: nenhum botão de aviso', async () => {
+      await abrirAnalise(RESULTADO);
+      expect(await criar().count()).toBe(0);
+      expect(await painel(NA).innerText()).not.toContain('Prazo escrito no ato');
+    });
+
+    it('prazo em ato do Diário: o botão abre a prévia; sem clique de confirmar, nada é criado', async () => {
+      await abrirAnalise(COM_PRAZO({ dias: 15, tipo: 'uteis', calculavel: true }));
+      const p = painel(NA);
+      expect(await p.innerText()).toContain('15 dias úteis');
+      expect(await criar().count()).toBe(1);
+      await criar().click();
+      await p.getByText('Prévia do aviso — nada foi criado ainda').waitFor();
+      const texto = await p.innerText();
+      expect(texto).toContain('Prazo de 15 dias úteis (a conferir)');
+      expect(texto).toContain('28/10/2026');
+      expect(texto).toContain('(a conferir)');
+      expect(texto).toContain('Disponibilização no Diário em 05/10/2026.');
+      expect(texto).toContain('Feriado local e suspensões não considerados');
+      expect(await p.locator('input[type="date"]').inputValue()).toBe('2026-10-28');
+      expect(previas).toEqual([{}]);
+      expect(avisos).toEqual([]); // prévia não cria
+      // Cancelar não cria nada e volta ao botão.
+      await p.getByRole('button', { name: 'Cancelar' }).click();
+      await criar().waitFor();
+      expect(avisos).toEqual([]);
+    });
+
+    it('confirmar cria o aviso com a data calculada; editar a data manda a editada', async () => {
+      await abrirAnalise(COM_PRAZO({ dias: 15, tipo: 'uteis', calculavel: true }));
+      const p = painel(NA);
+      await criar().click();
+      await p.getByRole('button', { name: 'Confirmar aviso' }).click();
+      await p.getByText(/Aviso criado no calendário para 28\/10\/2026/).waitFor();
+      expect(await p.innerText()).toContain('A data é calculada: confira no processo.');
+      expect(avisos).toEqual([{ dataLocal: '2026-10-28' }]);
+
+      // Outra rodada, com a data editada.
+      await fecharEAbrir();
+      await criar().click();
+      await p.locator('input[type="date"]').fill('2026-10-30');
+      await p.getByRole('button', { name: 'Confirmar aviso' }).click();
+      await p.getByText(/Aviso criado no calendário para 30\/10\/2026/).waitFor();
+      expect(avisos.at(-1)).toEqual({ dataLocal: '2026-10-30' });
+      expect(await p.innerText()).toContain('A data foi editada por você.');
+    });
+
+    async function fecharEAbrir(): Promise<void> {
+      await botao(NA).click(); // fecha
+      await page.waitForFunction(() => document.querySelectorAll('.pvia').length === 0);
+      await botao(NA).click(); // abre de novo (nova análise, mesmo dublê)
+      await painel(NA).getByText('Parece pedir:').waitFor();
+    }
+
+    it('ato sem tipo: sem tipo padrão, pede a escolha antes de calcular', async () => {
+      await abrirAnalise(COM_PRAZO({ dias: 10, tipo: null, calculavel: true }));
+      const p = painel(NA);
+      expect(await p.innerText()).toContain('o ato não diz se são úteis ou corridos');
+      await criar().click();
+      await p.getByText('O ato não diz se os dias são úteis ou corridos.').waitFor();
+      expect(await p.locator('input[type="radio"]:checked').count()).toBe(0);
+      expect(previas).toEqual([]); // nada foi pedido ainda
+      await p.getByRole('button', { name: 'Calcular' }).click();
+      await p.getByText('Escolha dias úteis ou corridos.').first().waitFor();
+      expect(previas).toEqual([]); // sem escolha, não calcula
+      await p.getByLabel('Dias corridos').check();
+      await p.getByRole('button', { name: 'Calcular' }).click();
+      await p.getByText('Prévia do aviso — nada foi criado ainda').waitFor();
+      expect(previas).toEqual([{ tipo: 'corridos' }]);
+    });
+
+    for (const escuro of [false, true]) {
+      it(`axe sem violações no aviso (tema ${escuro ? 'escuro' : 'claro'}): botão, escolha e prévia`, async () => {
+        await abrir({ escuro });
+        await page.addScriptTag({
+          content: (AxeBuilder as unknown as { source: string }).source,
+        });
+        const rodar = async (): Promise<string> => {
+          const r = await page.evaluate(() =>
+            (window as unknown as AxeNaPagina).axe.run(
+              document.querySelector('#conteudo')!,
+              {
+                rules: { 'color-contrast': { enabled: true } },
+              },
+            ),
+          );
+          return r.violations
+            .map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(' | ')}`)
+            .join('\n');
+        };
+        responder = (rota) =>
+          json(rota, 200, COM_PRAZO({ dias: 10, tipo: null, calculavel: true }));
+        await botao(NA).click();
+        await painel(NA).getByText('Parece pedir:').waitFor();
+        expect(await rodar(), 'botão do aviso').toBe('');
+        await criar().click();
+        await painel(NA)
+          .getByText('O ato não diz se os dias são úteis ou corridos.')
+          .waitFor();
+        expect(await rodar(), 'escolha').toBe('');
+        await painel(NA).getByLabel('Dias úteis').check();
+        await painel(NA).getByRole('button', { name: 'Calcular' }).click();
+        await painel(NA).getByText('Prévia do aviso — nada foi criado ainda').waitFor();
+        expect(await rodar(), 'prévia').toBe('');
+      });
+    }
+
+    it('ato fora do Diário: não calcula e manda criar o aviso manualmente', async () => {
+      await abrirAnalise(COM_PRAZO({ dias: 15, tipo: 'uteis', calculavel: false }));
+      expect(await criar().count()).toBe(0);
+      expect(await painel(NA).innerText()).toContain(
+        'Este ato não é do Diário, então o prazo não é calculado. Crie o aviso manualmente no calendário.',
+      );
+      expect(previas).toEqual([]);
+    });
+
+    it('erro da prévia vira frase fixa com "Tentar de novo"; nada é criado', async () => {
+      await abrirAnalise(COM_PRAZO({ dias: 15, tipo: 'uteis', calculavel: true }));
+      respostaDaPrevia = (rota) =>
+        json(rota, 422, {
+          erro: 'PRAZO_NAO_CALCULAVEL',
+          mensagem: 'texto do servidor que não deve aparecer',
+          detalhes: { motivo: 'ato_fora_do_diario' },
+        });
+      await criar().click();
+      const p = painel(NA);
+      await p
+        .getByText('Este ato não é do Diário, então o prazo não é calculado.')
+        .first()
+        .waitFor();
+      expect(await p.innerText()).not.toContain('texto do servidor');
+      await p.getByRole('button', { name: 'Tentar de novo' }).waitFor();
+      expect(avisos).toEqual([]);
+    });
+  });
 });

@@ -33,6 +33,7 @@ import { abrirBanco } from '../../src/infrastructure/persistencia/sqlite/banco.j
 import { RepositorioAcompanhamentosSqlite } from '../../src/infrastructure/persistencia/sqlite/RepositorioAcompanhamentosSqlite.js';
 import { RepositorioNotificacaoSqlite } from '../../src/infrastructure/persistencia/sqlite/RepositorioNotificacaoSqlite.js';
 import { RepositorioVigilanciasSqlite } from '../../src/infrastructure/persistencia/sqlite/RepositorioVigilanciasSqlite.js';
+import { ServicoAvisoDoPrazo } from '../../src/application/services/ServicoAvisoDoPrazo.js';
 import { ServicoAnaliseDoAto } from '../../src/application/services/ServicoAnaliseDoAto.js';
 import { LimiteDeAnalises } from '../../src/application/politicas/limiteDeAnalises.js';
 import type { AnalisadorDeAto } from '../../src/domain/ports/AnalisadorDeAto.js';
@@ -333,6 +334,39 @@ export function aplicacaoDeTeste(
       tarefa: async () => {},
     });
 
+  const analiseIa = opcoes.analiseIa
+    ? new ServicoAnaliseDoAto({
+        repositorio: repositorioCru,
+        analises: new RepositorioAnalisesSqlite(db),
+        assinaturas,
+        analisador: opcoes.analiseIa.analisador,
+        limite: new LimiteDeAnalises({
+          porHora: opcoes.analiseIa.porHora ?? 100,
+          simultaneasNoTotal: opcoes.analiseIa.simultaneasNoTotal ?? 10,
+          clock: opcoes.analiseIa.clock ?? {
+            agora: () => (opcoes.agora ? opcoes.agora() : new Date()),
+            monotonico: () => 0,
+          },
+        }),
+        clock: opcoes.analiseIa.clock ?? {
+          agora: () => (opcoes.agora ? opcoes.agora() : new Date()),
+          monotonico: () => 0,
+        },
+        logger: loggerSilencioso,
+        novoId: () => randomUUID(),
+      })
+    : undefined;
+  const analisesRepo = new RepositorioAnalisesSqlite(db);
+  const avisoDoPrazo = analiseIa
+    ? new ServicoAvisoDoPrazo({
+        analises: analisesRepo,
+        repositorio: repositorioCru,
+        calendario,
+        exigirPlanoIa: (ws) => analiseIa.exigirPlano(ws),
+        exigirCalendario: (ws) => assinaturas.exigir(ws, 'calendario'),
+      })
+    : undefined;
+
   return {
     buscarProcessoPorNumero: new BuscarProcessoPorNumero(orquestrador),
     buscarProcessosPorOab: new BuscarProcessosPorOab(orquestrador),
@@ -342,28 +376,8 @@ export function aplicacaoDeTeste(
     vigilancia,
     notificacao,
     pecas,
-    analiseIa: opcoes.analiseIa
-      ? new ServicoAnaliseDoAto({
-          repositorio: repositorioCru,
-          analises: new RepositorioAnalisesSqlite(db),
-          assinaturas,
-          analisador: opcoes.analiseIa.analisador,
-          limite: new LimiteDeAnalises({
-            porHora: opcoes.analiseIa.porHora ?? 100,
-            simultaneasNoTotal: opcoes.analiseIa.simultaneasNoTotal ?? 10,
-            clock: opcoes.analiseIa.clock ?? {
-              agora: () => (opcoes.agora ? opcoes.agora() : new Date()),
-              monotonico: () => 0,
-            },
-          }),
-          clock: opcoes.analiseIa.clock ?? {
-            agora: () => (opcoes.agora ? opcoes.agora() : new Date()),
-            monotonico: () => 0,
-          },
-          logger: loggerSilencioso,
-          novoId: () => randomUUID(),
-        })
-      : undefined,
+    analiseIa,
+    avisoDoPrazo,
     leitor,
     pasta,
     agendadorLeitor: undefined,

@@ -676,6 +676,8 @@ const COLUNAS_ACRESCENTADAS: ReadonlyArray<{
    * e deixar de acompanhar leva a marca junto.
    */
   { tabela: 'acompanhamentos', coluna: 'cumprido_chave', tipo: 'TEXT' },
+  // v0.39.0: prazo calculado pelo sistema (0/1). Sem retrocarga: nenhum evento antigo foi calculado.
+  { tabela: 'eventos_calendario', coluna: 'calculado', tipo: 'INTEGER NOT NULL DEFAULT 0' },
   { tabela: 'acompanhamentos', coluna: 'cumprido_ate', tipo: 'TEXT' },
   { tabela: 'acompanhamentos', coluna: 'cumprido_em', tipo: 'TEXT' },
   { tabela: 'acompanhamentos', coluna: 'cumprido_por', tipo: 'TEXT' },

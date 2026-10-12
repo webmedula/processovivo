@@ -201,7 +201,7 @@ export const DESCRICAO_DOS_DEGRAUS: Readonly<Record<Degrau, string>> = Object.fr
 
 /** Acrescentada ao sistema quando a saída é pedida "no texto" (degrau C em diante). */
 export const INSTRUCAO_DE_FORMATO_EM_TEXTO =
-  'FORMATO DA RESPOSTA: responda SOMENTE com um objeto JSON, sem texto antes ou depois e sem cercas de código, com exatamente as chaves parece_pedir, resumo, trecho_chave, acoes_possiveis (lista de objetos {acao}, sem citação) e pontos_de_atencao (lista de códigos).';
+  'FORMATO DA RESPOSTA: responda SOMENTE com um objeto JSON, sem texto antes ou depois e sem cercas de código, com exatamente as chaves parece_pedir, resumo, trecho_chave, acoes_possiveis (lista de objetos {acao}, sem citação) e pontos_de_atencao (lista de códigos) e, opcionalmente, prazo ({dias, tipo} ou null).';
 
 const TIMEOUT_PADRAO_MS = 60_000;
 const ESPERAS_PADRAO_MS = [1_000, 3_000] as const;

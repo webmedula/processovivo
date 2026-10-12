@@ -42,6 +42,23 @@ export interface AcaoPossivel {
 }
 
 /**
+ * Prazo em dias que o ATO escreve (v0.39.0). O modelo só copia o número e, se o ato disser,
+ * se são dias úteis ou corridos; ele NUNCA escreve data. A data final é calculada pelo nosso
+ * código (`prazoEmDias.ts`), depois do clique do advogado.
+ */
+export interface PrazoDoAto {
+  readonly dias: number;
+  /** `null`: o ato não diz — a tela pede a escolha ao advogado, não há tipo padrão. */
+  readonly tipo: 'uteis' | 'corridos' | null;
+}
+
+/** O prazo como o modelo o entrega, ainda sem validar (dias e tipo livres). */
+export interface PrazoBruto {
+  readonly dias: number;
+  readonly tipo: string | null;
+}
+
+/**
  * O que o modelo devolve, já dentro do esquema e ANTES da verificação. É dado
  * de fonte externa: nada daqui chega à tela sem passar por `verificarAnalise`.
  */
@@ -51,4 +68,6 @@ export interface RespostaDoModelo {
   readonly trecho_chave: string;
   readonly acoes_possiveis: readonly AcaoPossivel[];
   readonly pontos_de_atencao: readonly PontoDeAtencao[];
+  /** Opcional (v0.39.0): ausente ou `null` = o ato não escreve prazo em dias. */
+  readonly prazo?: PrazoBruto | null | undefined;
 }

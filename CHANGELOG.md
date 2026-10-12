@@ -9,6 +9,45 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.39.0] — 2026-10-12
+
+**IA como secretária, Etapa 1: do prazo escrito no ato ao aviso no calendário.** Na análise de um ato do
+Diário que escreve um prazo em dias, o advogado clica em "Criar aviso no calendário", confere a data
+calculada e as premissas, e só o clique em "Confirmar aviso" cria o evento. **Exceção registrada** à regra
+"o calendário não calcula prazo" (decisão do dono): a calculadora só roda depois do clique, só para ato do
+Diário, e a data sai sempre como "a conferir".
+
+### Adicionado
+
+- Campo opcional `prazo` na análise: `{ dias (1–365), tipo (uteis | corridos | null) }`, extraído do ato.
+  Prompt `ato-1.2.0` e instrução de formato em texto. A IA nunca escreve data. `verificarAnalise` (regras
+  1.2.0) descarta só o prazo cujo número não está escrito no texto enviado (dígitos ou por extenso, colado a
+  "dia(s)"), fora de 1–365 ou com tipo desconhecido; a análise segue.
+- `prazoEmDias.ts`: sábado e domingo, feriados nacionais fixos, Sexta-feira Santa (Páscoa calculada), recesso
+  de 20/12 a 20/01; publicação no primeiro dia útil depois da disponibilização e contagem a partir do
+  primeiro dia útil depois da publicação. Devolve as premissas em frases curtas e o aviso "Feriado local e
+  suspensões não considerados".
+- Rotas `POST /v1/analises/:id/aviso/previa` (não grava nada) e `POST /v1/analises/:id/aviso` (recalcula e
+  cria o evento `prazo`, dia inteiro, `origem: manual`). Ambas exigem `analiseIa` e `calendario` e não
+  chamam o modelo. Ato fora do Diário não calcula (`PrazoNaoCalculavelError`, 422); ato que não diz úteis
+  ou corridos pede a escolha, sem tipo padrão.
+- Evento com marcador `calculado` (coluna aditiva `eventos_calendario.calculado`): o feed passa a dizer
+  "Data calculada pelo Processo Vivo: confira no processo." Editar a data apaga o marcador.
+- Tela: bloco "Prazo escrito no ato" na análise, com a prévia (data, premissas, aviso, data editável) e a
+  confirmação.
+
+### Privacidade
+
+O título do evento sai só de campos estruturados ("Prazo de 15 dias úteis (a conferir)"): sem texto da IA e
+sem nome de parte. O feed continua levando só tipo e número do processo (ou "sigiloso").
+
+### Não muda
+
+ZDR, lista de provedores, conferência do par modelo + provedor e redação. Nada é criado sem confirmação.
+Fora do escopo: feriado estadual, municipal e do tribunal, suspensões, prazo em dobro, juizados.
+
+---
+
 ## [0.38.5] — 2026-10-11
 
 **Ações possíveis da análise por IA deixam de repetir o ato, e a tela deixa de mostrar o modelo.** Em duas

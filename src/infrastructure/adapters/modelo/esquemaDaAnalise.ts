@@ -13,6 +13,7 @@ import {
  * - `.strict()`: campo a mais é resposta fora do esquema, não "ignorável". Um
  *   texto de ato com instrução injetada que convença o modelo a acrescentar
  *   campo (ou a mudar um valor para fora do vocabulário) falha aqui.
+ * - o `prazo` é opcional e frouxo de propósito (ver o campo);
  * - SEM limites de tamanho no esquema enviado ao provedor: alguns provedores
  *   recusam `maxLength` em saída estruturada, e recusa por isso derrubaria o
  *   modelo inteiro da comparação. Os limites (280/160 caracteres, 3 ações, 2
@@ -26,6 +27,13 @@ export const esquemaDaResposta = z
     trecho_chave: z.string(),
     acoes_possiveis: z.array(z.object({ acao: z.string() }).strict()),
     pontos_de_atencao: z.array(z.enum(PONTOS_DE_ATENCAO)),
+    // v0.39.0: dias e tipo entram LIVRES no esquema (número e texto): validar aqui derrubaria a
+    // análise inteira por causa de um prazo ruim. `verificarAnalise` descarta só o prazo.
+    prazo: z
+      .object({ dias: z.number(), tipo: z.string().nullable() })
+      .strict()
+      .nullable()
+      .optional(),
   })
   .strict();
 

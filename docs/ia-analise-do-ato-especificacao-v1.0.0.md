@@ -300,3 +300,24 @@ Esta errata substitui o item `acoes_possiveis` da seção 6 e a verificação 1.
   providência que o próprio ato determina".
 - **Tela:** o rodapé diz "Gerado por IA em DATA E HORA. Confira no ato." — **sem o nome do modelo**, que continua gravado em `analises_ia`
   (e na API) e em `ia-avaliacoes.mjs`. Linhas gravadas antes da 0.38.5 com `trecho` na ação continuam legíveis; o `trecho` não sai na API.
+
+## Errata v1.3.0 (12/10/2026) — Aviso no calendário a partir do prazo escrito no ato (produto 0.39.0)
+
+Esta errata acrescenta o campo `prazo` à seção 6 e a Etapa 1 da "IA como secretária". Onde houver conflito, vale esta errata.
+
+- **Esquema:** `prazo` opcional, `{ dias, tipo }` ou `null`. `dias` é o número escrito no ato (inteiro de 1 a 365); `tipo` é `uteis`
+  ou `corridos` só se o ato disser, senão `null` (a tela pede a escolha; **não há tipo padrão**). **A IA nunca escreve data.** Prompt
+  `ato-1.2.0`; regras de verificação 1.2.0.
+- **Verificação:** o número de dias precisa estar escrito no texto enviado, colado a "dia(s)" (dígitos ou por extenso); caso contrário,
+  fora de 1–365 ou com tipo desconhecido, **só o prazo é descartado** e a análise segue.
+- **Calculadora (`prazoEmDias.ts`) — exceção registrada à regra "não calcula prazo":** só depois do clique do advogado, só para ato do
+  Diário (que tem a data de disponibilização), sempre "a conferir". Premissas: sábado e domingo; feriados nacionais fixos (1/1, 21/4,
+  1/5, 7/9, 12/10, 2/11, 15/11, 20/11 desde 2024, 25/12); Sexta-feira Santa pela Páscoa; recesso de 20/12 a 20/01; publicação no primeiro
+  dia útil depois da disponibilização; contagem a partir do primeiro dia útil depois da publicação (dia 1); dias corridos que vencem em
+  dia sem expediente passam ao primeiro dia útil seguinte. Fora do escopo, e dito na tela: feriado estadual, municipal ou do tribunal,
+  ponto facultativo, suspensão por ato do tribunal, prazo em dobro, juizados.
+- **Rotas:** `POST /v1/analises/:id/aviso/previa` (não grava nada) e `POST /v1/analises/:id/aviso` (recalcula e cria o evento `prazo`, dia
+  inteiro, `origem: manual`, com marcador `calculado` e observação com as premissas). Ambas exigem `analiseIa` e `calendario` e **não
+  chamam o modelo**. Data editada pelo advogado é aceita se for AAAA-MM-DD válida; nesse caso o marcador `calculado` não é gravado.
+- **Feed:** evento calculado leva "Data calculada pelo Processo Vivo: confira no processo." na descrição. Título, observação e trecho
+  continuam fora do feed; o título do evento vem só de campos estruturados.

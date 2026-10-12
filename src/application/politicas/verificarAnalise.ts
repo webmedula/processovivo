@@ -1,9 +1,15 @@
 import {
+  DIAS_MAXIMOS_DO_PRAZO,
+  DIAS_MINIMOS_DO_PRAZO,
+} from '../../domain/entities/prazoEmDias.js';
+import {
   LIMITES_DA_ANALISE,
   PONTOS_DE_ATENCAO,
   type AcaoPossivel,
   type ParecePedir,
   type PontoDeAtencao,
+  type PrazoBruto,
+  type PrazoDoAto,
   type RespostaDoModelo,
 } from '../../domain/entities/vocabularioDaAnalise.js';
 import { normalizarParaComparar } from './normalizacaoDeTexto.js';
@@ -23,11 +29,14 @@ import { normalizarParaComparar } from './normalizacaoDeTexto.js';
  *   - ação parecida demais com o `trecho_chave` (v0.38.5) → o resultado inteiro vira "não
  *     verificado": ação que só repete o trecho não é providência, é eco do ato.
  *
+ *   - prazo (v0.39.0) cujo número de dias não esteja escrito no texto enviado, ou fora de 1–365
+ *     → só o prazo (a análise segue sem ele); o modelo nunca escreve data.
+ *
  * Versão da lista de proibições: mude `VERSAO_DAS_REGRAS_DE_VERIFICACAO` junto
  * com qualquer alteração aqui, para a avaliação do Autran saber a que regras
  * cada resposta foi submetida.
  */
-export const VERSAO_DAS_REGRAS_DE_VERIFICACAO = '1.1.0';
+export const VERSAO_DAS_REGRAS_DE_VERIFICACAO = '1.2.0';
 
 /**
  * Expressões que transformam apoio à leitura em orientação jurídica. Lista
@@ -71,6 +80,8 @@ export interface DescartesDaVerificacao {
   readonly forma: number;
   /** Resultado descartado por ação parecida demais com o trecho-chave (0 ou 1). */
   readonly acaoCopiada: number;
+  /** Prazo descartado: número fora do texto, fora de 1–365 ou tipo desconhecido (0 ou 1). */
+  readonly prazoDescartado: number;
 }
 
 /**
@@ -91,6 +102,8 @@ export interface AnaliseVerificada {
   readonly trechoChave?: string;
   readonly acoesPossiveis: readonly AcaoPossivel[];
   readonly pontosDeAtencao: readonly PontoDeAtencao[];
+  /** Só quando o número de dias está escrito no texto enviado. */
+  readonly prazo?: PrazoDoAto;
   readonly descartes: DescartesDaVerificacao;
   readonly citacoes: ContagemDeCitacoes;
 }
@@ -226,6 +239,89 @@ export function expressaoProibidaEm(texto: string): string | undefined {
   );
 }
 
+// --- prazo em dias (v0.39.0) -----------------------------------------------------
+
+const UNIDADES = [
+  '',
+  'um',
+  'dois',
+  'tres',
+  'quatro',
+  'cinco',
+  'seis',
+  'sete',
+  'oito',
+  'nove',
+  'dez',
+  'onze',
+  'doze',
+  'treze',
+  'quatorze',
+  'quinze',
+  'dezesseis',
+  'dezessete',
+  'dezoito',
+  'dezenove',
+];
+const DEZENAS = [
+  '',
+  '',
+  'vinte',
+  'trinta',
+  'quarenta',
+  'cinquenta',
+  'sessenta',
+  'setenta',
+  'oitenta',
+  'noventa',
+];
+
+/** Formas por extenso (sem acento) de 1 a 100 que o ato pode usar: "quinze", "vinte e cinco". */
+function porExtenso(n: number): string[] {
+  if (n === 100) return ['cem'];
+  if (n < 20)
+    return n === 1 ? ['um', 'uma'] : n === 2 ? ['dois', 'duas'] : [UNIDADES[n] ?? ''];
+  const dezena = DEZENAS[Math.floor(n / 10)] ?? '';
+  const unidade = n % 10;
+  if (unidade === 0) return [dezena];
+  return [`${dezena} e ${UNIDADES[unidade] ?? ''}`];
+}
+
+/** O número de dias está escrito no texto, colado a "dia(s)": "15 dias", "quinze (15) dias". */
+export function diasEscritosNoTexto(dias: number, textoNormalizado: string): boolean {
+  const formas = [String(dias), ...(dias <= 100 ? porExtenso(dias) : [])];
+  return formas.some((forma) =>
+    new RegExp(
+      `(?<![a-z0-9])${forma}(?![a-z0-9])\\s*(?:\\(\\s*[a-z0-9 ]{1,30}\\)\\s*)?dias?(?![a-z])`,
+    ).test(textoNormalizado),
+  );
+}
+
+function prazoVerificado(
+  bruto: PrazoBruto | null | undefined,
+  textoNormalizado: string,
+): PrazoDoAto | undefined {
+  if (!bruto) return undefined;
+  const { dias } = bruto;
+  if (
+    !Number.isInteger(dias) ||
+    dias < DIAS_MINIMOS_DO_PRAZO ||
+    dias > DIAS_MAXIMOS_DO_PRAZO
+  ) {
+    return undefined;
+  }
+  if (!diasEscritosNoTexto(dias, textoNormalizado)) return undefined;
+  const tipo =
+    bruto.tipo === null
+      ? null
+      : bruto.tipo === 'uteis' || bruto.tipo === 'corridos'
+        ? bruto.tipo
+        : undefined;
+  // Tipo desconhecido (texto livre do modelo) não vira palpite: o prazo é descartado.
+  if (tipo === undefined) return undefined;
+  return { dias, tipo };
+}
+
 // --- ação que repete o trecho-chave -------------------------------------------
 
 /** Acima disto (palavras em comum / palavras do maior dos dois textos) a ação é eco do trecho. */
@@ -296,6 +392,7 @@ export function verificarAnalise(
         forma,
         expressaoProibida: 1,
         acaoCopiada: 0,
+        prazoDescartado: 0,
       },
       citacoes,
     };
@@ -316,6 +413,7 @@ export function verificarAnalise(
         forma,
         expressaoProibida: 0,
         acaoCopiada: 1,
+        prazoDescartado: 0,
       },
       citacoes,
     };
@@ -336,6 +434,7 @@ export function verificarAnalise(
         forma,
         expressaoProibida: 0,
         acaoCopiada: 0,
+        prazoDescartado: 0,
       },
       citacoes,
     };
@@ -377,6 +476,11 @@ export function verificarAnalise(
     }
   }
 
+  const prazo =
+    trechoChaveValido || indeterminadoSemCitacao
+      ? prazoVerificado(resposta.prazo, texto)
+      : undefined;
+
   return {
     estado: 'verificada',
     parecePedir: resposta.parece_pedir,
@@ -384,7 +488,15 @@ export function verificarAnalise(
     ...(trechoChaveValido ? { trechoChave: resposta.trecho_chave.trim() } : {}),
     acoesPossiveis: acoes,
     pontosDeAtencao: pontos,
-    descartes: { citacao, numeroInventado, forma, expressaoProibida: 0, acaoCopiada: 0 },
+    ...(prazo !== undefined ? { prazo } : {}),
+    descartes: {
+      citacao,
+      numeroInventado,
+      forma,
+      expressaoProibida: 0,
+      acaoCopiada: 0,
+      prazoDescartado: prazo === undefined && resposta.prazo ? 1 : 0,
+    },
     citacoes,
   };
 }

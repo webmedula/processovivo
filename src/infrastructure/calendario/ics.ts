@@ -124,6 +124,10 @@ function descricao(e: EventoDeCalendario, opcoes: OpcoesDoFeed): string {
   } else {
     linhas.push('Criado por você.');
   }
+  // v0.39.0: prazo calculado pelo sistema. A data é uma estimativa e o feed tem de dizer.
+  if (e.calculado) {
+    linhas.push('Data calculada pelo Processo Vivo: confira no processo.');
+  }
   if (opcoes.urlBase) {
     // Sigiloso: o link não leva o número — vai para a entrada do sistema.
     linhas.push(

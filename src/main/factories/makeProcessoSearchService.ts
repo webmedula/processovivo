@@ -34,6 +34,7 @@ import type { Logger } from '../../domain/ports/Logger.js';
 import type { RepositorioAcompanhamentos } from '../../domain/ports/RepositorioAcompanhamentos.js';
 import { mascararWorkspace } from '../../domain/entities/workspaceLiberado.js';
 import { ServicoAnaliseDoAto } from '../../application/services/ServicoAnaliseDoAto.js';
+import { ServicoAvisoDoPrazo } from '../../application/services/ServicoAvisoDoPrazo.js';
 import { LimiteDeAnalises } from '../../application/politicas/limiteDeAnalises.js';
 import { clockDoSistema } from '../../domain/ports/Clock.js';
 import { OpenRouterAnalisadorDeAto } from '../../infrastructure/adapters/modelo/OpenRouterAnalisadorDeAto.js';
@@ -105,6 +106,8 @@ export interface Aplicacao {
    * (o padrão): as rotas não oferecem nada e a tela não mostra o botão.
    */
   readonly analiseIa: ServicoAnaliseDoAto | undefined;
+  /** "Criar aviso no calendário" a partir da análise (v0.39.0). Só existe com a IA ligada. */
+  readonly avisoDoPrazo: ServicoAvisoDoPrazo | undefined;
   /**
    * `undefined` quando não há chave de cofre configurada. As rotas respondem
    * 501 com a instrução, em vez de existirem e falharem na primeira consulta.
@@ -498,6 +501,8 @@ export function montarAplicacao(config: Config): Aplicacao {
         })
       : undefined;
 
+  const analiseIa = montarAnaliseIa(config, db, logger, repositorio, assinaturas);
+
   return {
     buscarProcessoPorNumero,
     buscarProcessosPorOab: new BuscarProcessosPorOab(provider),
@@ -507,7 +512,17 @@ export function montarAplicacao(config: Config): Aplicacao {
     vigilancia,
     notificacao,
     pecas,
-    analiseIa: montarAnaliseIa(config, db, logger, repositorio, assinaturas),
+    analiseIa,
+    avisoDoPrazo:
+      analiseIa === undefined
+        ? undefined
+        : new ServicoAvisoDoPrazo({
+            analises: new RepositorioAnalisesSqlite(db),
+            repositorio,
+            calendario,
+            exigirPlanoIa: (ws) => analiseIa.exigirPlano(ws),
+            exigirCalendario: (ws) => assinaturas.exigir(ws, 'calendario'),
+          }),
     leitor,
     pasta,
     agendadorLeitor,
@@ -579,9 +594,12 @@ function montarAnaliseIa(
   });
   if (ia.workspacesLiberados.length > 0) {
     // Só ids MASCARADOS: o workspace identifica de quem é a carteira.
-    logger.warn('análise por IA: exceção de teste fechado ligada (remover antes de abrir ao público)', {
-      workspaces: ia.workspacesLiberados.map(mascararWorkspace),
-    });
+    logger.warn(
+      'análise por IA: exceção de teste fechado ligada (remover antes de abrir ao público)',
+      {
+        workspaces: ia.workspacesLiberados.map(mascararWorkspace),
+      },
+    );
   }
   return new ServicoAnaliseDoAto({
     repositorio,

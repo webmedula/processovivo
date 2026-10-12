@@ -1,4 +1,5 @@
 import { chaveDaMovimentacao } from '../../domain/entities/Acompanhamento.js';
+import { atoDoDiario } from '../../domain/entities/atoDoDiario.js';
 import type {
   AnaliseDoAto,
   AvaliacaoDaAnalise,
@@ -59,6 +60,15 @@ export interface AnaliseParaATela {
   readonly trechoChave?: string;
   readonly acoesPossiveis: readonly AcaoPossivel[];
   readonly pontosDeAtencao: readonly PontoDeAtencao[];
+  /**
+   * Prazo em dias escrito no ato (v0.39.0). `calculavel` = o ato é do Diário e tem termo
+   * inicial; senão a tela manda criar o aviso manualmente. Nunca traz data.
+   */
+  readonly prazo?: {
+    readonly dias: number;
+    readonly tipo: 'uteis' | 'corridos' | null;
+    readonly calculavel: boolean;
+  };
   readonly modelo: string;
   readonly versaoPrompt: string;
   readonly provedor: string;
@@ -99,24 +109,32 @@ export class ServicoAnaliseDoAto {
     this.log = o.logger.child({ servico: 'analise-do-ato' });
   }
 
-  async analisar(pedido: PedidoDeAnaliseDoAto): Promise<RespostaDoServico> {
-    const { workspace } = pedido;
-    const numero = NumeroCNJ.criar(pedido.numero).digitos;
-
-    // 1. Plano: sem ele, nada além da frase fixa. Antes de ler o retrato.
-    // O workspace liberado por variável passa SEM assinatura (nada é gravado em
-    // `assinaturas`); quem não está na lista continua dependendo do plano.
-    const liberado = this.o.workspacesLiberados?.has(workspace) === true;
-    if (liberado) {
+  /**
+   * O plano IA, sem exceção para workspace sem assinatura. O workspace liberado por variável
+   * passa SEM assinatura (nada é gravado em `assinaturas`); quem não está na lista continua
+   * dependendo do plano. Público porque o aviso de prazo (v0.39.0) exige a MESMA regra.
+   */
+  async exigirPlano(workspace: string): Promise<void> {
+    if (this.o.workspacesLiberados?.has(workspace) === true) {
       this.log.info('análise liberada por exceção de teste fechado', {
         workspace: mascararWorkspace(workspace),
       });
-    } else if (!(await this.o.assinaturas.temRecursoSemExcecao(workspace, 'analiseIa'))) {
+      return;
+    }
+    if (!(await this.o.assinaturas.temRecursoSemExcecao(workspace, 'analiseIa'))) {
       throw new EntradaNaoAnalisavelError(
         'sem_plano',
         'A análise por IA faz parte do plano IA. Faça upgrade do plano para usar.',
       );
     }
+  }
+
+  async analisar(pedido: PedidoDeAnaliseDoAto): Promise<RespostaDoServico> {
+    const { workspace } = pedido;
+    const numero = NumeroCNJ.criar(pedido.numero).digitos;
+
+    // 1. Plano: sem ele, nada além da frase fixa. Antes de ler o retrato.
+    await this.exigirPlano(workspace);
 
     // 2. O ato vem do retrato DA CONTA, nunca do cliente.
     const acompanhamento = await this.o.repositorio.buscar(workspace, numero);
@@ -170,7 +188,13 @@ export class ServicoAnaliseDoAto {
       );
     }
     try {
-      return await this.chamarEGuardar(pedido, numero, processo, paraAnalisar);
+      return await this.chamarEGuardar(
+        pedido,
+        numero,
+        processo,
+        paraAnalisar,
+        atoDoDiario(ato),
+      );
     } finally {
       vaga.liberar();
     }
@@ -181,6 +205,7 @@ export class ServicoAnaliseDoAto {
     numero: string,
     processo: Processo,
     ato: AtoParaAnalisar,
+    doDiario: boolean,
   ): Promise<RespostaDoServico> {
     const entrada = prepararEntrada(
       ato,
@@ -226,6 +251,7 @@ export class ServicoAnaliseDoAto {
               : {}),
             acoesPossiveis: verificada.acoesPossiveis,
             pontosDeAtencao: verificada.pontosDeAtencao,
+            ...(verificada.prazo !== undefined ? { prazo: verificada.prazo } : {}),
           }
         : { estado: 'nao_verificada', motivo: verificada.motivo };
 
@@ -252,7 +278,7 @@ export class ServicoAnaliseDoAto {
     };
     await this.o.analises.salvar(analise);
 
-    return paraATela(analise, (t) => entrada.redacao.restaurar(t));
+    return paraATela(analise, (t) => entrada.redacao.restaurar(t), doDiario);
   }
 
   /** Só o dono da conta avalia; pode corrigir a avaliação anterior. 404 igual para "não existe" e "é de outra". */
@@ -270,6 +296,7 @@ export class ServicoAnaliseDoAto {
 export function paraATela(
   analise: AnaliseDoAto,
   restaurar: (texto: string) => string,
+  doDiario = false,
 ): AnaliseParaATela {
   const base = {
     id: analise.id,
@@ -297,6 +324,9 @@ export function paraATela(
     // Só a ação: análises gravadas antes da 0.38.5 trazem `trecho` na linha, e ele não sai.
     acoesPossiveis: r.acoesPossiveis.map((a) => ({ acao: restaurar(a.acao) })),
     pontosDeAtencao: r.pontosDeAtencao,
+    ...(r.prazo
+      ? { prazo: { dias: r.prazo.dias, tipo: r.prazo.tipo, calculavel: doDiario } }
+      : {}),
   };
 }
 
