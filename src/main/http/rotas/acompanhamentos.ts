@@ -248,7 +248,12 @@ function providenciaJson(
     ? { outroDestinatario: atoJson(leitura.outroDestinatario) }
     : {};
   if (leitura.pendente) {
-    return { situacao: 'pede', motivo: atoJson(leitura.pendente), cumpridoEm: null, ...outro };
+    return {
+      situacao: 'pede',
+      motivo: atoJson(leitura.pendente),
+      cumpridoEm: null,
+      ...outro,
+    };
   }
   if (leitura.coberto) {
     return {
@@ -555,6 +560,37 @@ export function rotasDeAcompanhamento(
         ? []
         : daBusca.filter((a) => !comNovidade.has(a.numero));
       const noGrupo = new Set(agrupadas.grupos.map((g) => g.numero));
+      // (v0.41.0) Só os NÚMEROS dos processos que o Período ou o Tribunal deixaram fora
+      // desta resposta, para a busca por número da tela contar o que casa fora dos
+      // filtros sem outra requisição. Sem texto, partes nem ato. Vazios quando nenhum
+      // filtro está ligado (o caso padrão) e quando a pergunta é outra (`naoVistas`,
+      // `numero`): "fora" só se afirma sobre a carteira inteira.
+      let numerosForaDaJanela: string[] = [];
+      let numerosEmOutroTribunal: string[] = [];
+      if (!verdadeiro(q.naoVistas) && !numeroPedido) {
+        if (q.tribunal) {
+          numerosEmOutroTribunal = carteira
+            .filter((a) => a.processo?.tribunal !== q.tribunal)
+            .map((a) => a.numero);
+        }
+        if (janelaDias !== undefined) {
+          // Com tribunal escolhido, `agrupadas` só enxerga esse tribunal: para dizer se o
+          // processo de OUTRO tribunal está dentro do período é preciso a leitura inteira.
+          const todos = q.tribunal
+            ? agruparNovidades(
+                await servico.novidades(ws, {
+                  limite: q.limite ? Number(q.limite) : LIMITE_DE_LEITURA_DAS_NOVIDADES,
+                }),
+                instante,
+                janelaDias,
+              )
+            : agrupadas;
+          const dentro = new Set(todos.grupos.map((g) => g.numero));
+          numerosForaDaJanela = carteira
+            .filter((a) => !dentro.has(a.numero))
+            .map((a) => a.numero);
+        }
+      }
       return {
         total: agrupadas.dentroDaJanela,
         // Contam ATUALIZAÇÕES não vistas, não linhas: o menu e o painel
@@ -587,6 +623,10 @@ export function rotasDeAcompanhamento(
         // Quantos PROCESSOS a janela deixou fora da lista (sem atualização no
         // período, inclusive os sem novidade nenhuma). 0 quando a janela está
         // desligada ("Todas") — nesse caso nenhum processo fica de fora.
+        // (v0.41.0) Aditivos e opcionais para quem lê: servidor antigo sem eles = a tela
+        // não conta o que está fora do período ou do tribunal, sem erro.
+        numerosForaDaJanela,
+        numerosEmOutroTribunal,
         processosForaDaJanela:
           janelaDias === undefined || verdadeiro(q.naoVistas)
             ? 0

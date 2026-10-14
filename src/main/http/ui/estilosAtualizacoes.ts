@@ -36,6 +36,16 @@ export const ESTILOS_TABELA_ATUALIZACOES = `
 .nvt .chip{min-height:38px}
 .nvt-bloco select{width:auto;min-width:190px;max-width:100%;min-height:38px;padding:0 10px;font-size:13.5px}
 .nvt-so-pequeno{display:none}
+.nvt-barra{display:contents}
+.nvt-busca{flex:0 1 280px}
+.nvt-busca-campo{display:flex;gap:8px;align-items:center;min-width:0}
+.nvt-busca input{flex:1 1 auto;width:auto;min-width:0;min-height:38px;padding:0 10px;font-size:13.5px}
+.nvt-busca input::-webkit-search-cancel-button{-webkit-appearance:none;appearance:none;display:none}
+.nvt-busca-limpar[hidden]{display:none}
+.nvt-busca-aviso{font-size:13.5px;color:var(--tinta2);line-height:2;padding:0 0 10px}
+.nvt-busca-aviso strong{color:var(--tinta)}
+.nvt-sem-prov.nvt-busca-aviso{padding:22px 20px;line-height:1.5;color:var(--tinta)}
+.nvt-busca-aviso:focus{outline:none}
 .nvt-aviso-prov{margin:0;font-size:12.5px;line-height:1.4;color:var(--tinta2);max-width:60ch}
 .nvt-sem-prov{background:var(--papel);border:1px solid var(--linha);border-radius:var(--r);padding:22px 20px;color:var(--tinta)}
 .nvt-sem-prov p{margin:6px 0 0;color:var(--tinta2);font-size:13.5px}
@@ -152,7 +162,8 @@ export const ESTILOS_TABELA_ATUALIZACOES = `
 /* ---------- abaixo de 1024: um bloco por processo ---------- */
 @media (max-width:1023px){
   .nvt-so-pequeno{display:flex}
-  .nvt .chip,.nvt-bloco select,.nov-btn,.nvt-por select{min-height:44px}
+  .nvt .chip,.nvt-bloco select,.nvt-busca input,.nov-btn,.nvt-por select{min-height:44px}
+  .nvt-busca{flex:1 1 100%}
   .nvt-ic{width:44px;height:44px}
   .nvt-wrap{border:0;background:transparent;box-shadow:none}
   .nvt-tabela,.nvt-tabela tbody,.nvt-tabela tr,.nvt-tabela td{display:block}

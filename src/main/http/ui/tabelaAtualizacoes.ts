@@ -75,7 +75,8 @@ export interface ProcessoSemNovidade {
  * a lista dos processos que o advogado marcou, com o "Desfazer". `outros` (v0.37.6) é o
  * "Ver" de "N com intimação a outro destinatário".
  */
-export type SituacaoFiltro = 'todas' | 'naoLidas' | 'providencia' | 'cumpridos' | 'outros';
+export type SituacaoFiltro =
+  'todas' | 'naoLidas' | 'providencia' | 'cumpridos' | 'outros';
 
 /**
  * O filtro de Situação com que a aba abre (v0.37.4, decisão do dono, opção A):
@@ -360,7 +361,9 @@ export function filtrarPorSituacao<T extends GrupoDaTabela>(
   if (situacao === 'cumpridos') {
     return grupos.filter(
       (g) =>
-        !!g.processo && !!g.processo.providencia && g.processo.providencia.situacao === 'cumprida',
+        !!g.processo &&
+        !!g.processo.providencia &&
+        g.processo.providencia.situacao === 'cumprida',
     );
   }
   if (situacao === 'outros') {
@@ -377,6 +380,90 @@ export function filtrarPorSituacao<T extends GrupoDaTabela>(
     return grupos.filter((g) => !!g.processo && g.processo.pedeProvidencia);
   }
   return grupos.slice();
+}
+
+/**
+ * Busca pelo NÚMERO do processo (v0.41.0): compara só dígitos, por trecho (o termo pode
+ * estar em qualquer posição do número). Termo sem dígito ou com menos de 4 dígitos não
+ * filtra: com 1 a 3 dígitos quase tudo casaria e a busca só confundiria. Genérica como
+ * `filtrarPorSituacao`: vale para linha com e sem novidade. Não olha parte, classe,
+ * tribunal nem texto do ato (decisão do dono).
+ */
+export function filtrarPorNumero<T extends { readonly numero: string }>(
+  linhas: readonly T[],
+  termo: string,
+): T[] {
+  const t = String(termo || '').replace(/\D/g, '');
+  if (t.length < 4) return linhas.slice();
+  return linhas.filter(
+    (l) =>
+      String(l.numero || '')
+        .replace(/\D/g, '')
+        .indexOf(t) !== -1,
+  );
+}
+
+export interface ForaDosFiltros {
+  /** O termo vale (4 dígitos ou mais)? Só então há busca e há o que contar. */
+  readonly valido: boolean;
+  /** Casam e estão na base (Período + Tribunal), mas o filtro de Situação os esconde. */
+  readonly situacao: number;
+  /** Casam e o Período deixou fora da resposta. */
+  readonly periodo: number;
+  /** Casam e são de outro tribunal. */
+  readonly tribunal: number;
+}
+
+/**
+ * O que a busca achou FORA dos filtros atuais (v0.41.0), uma contagem por motivo.
+ *
+ * Cada processo conta UMA vez, no primeiro motivo da ordem em que a tela mostra as frases
+ * (Situação, Período, Tribunal): é o "Ver" que a pessoa veria primeiro. `base` é o que o
+ * navegador tem (Período + Tribunal já aplicados); `filtradas` é a base depois da Situação.
+ * Situação só se afirma sobre quem está na base — dos processos que o servidor deixou fora
+ * a tela só tem o número, então eles contam pelo Período ou pelo Tribunal, e a Situação deles
+ * aparece depois que o "Ver" os traz. Um processo fora do Período e de outro tribunal conta
+ * em Período; depois do "Ver", a frase de Tribunal passa a contá-lo. Soma sem repetição.
+ */
+export function contarForaDosFiltros(
+  termo: string,
+  base: ReadonlyArray<{ readonly numero: string }>,
+  filtradas: ReadonlyArray<{ readonly numero: string }>,
+  numerosForaDaJanela: readonly string[] | null | undefined,
+  numerosEmOutroTribunal: readonly string[] | null | undefined,
+): ForaDosFiltros {
+  const t = String(termo || '').replace(/\D/g, '');
+  if (t.length < 4) return { valido: false, situacao: 0, periodo: 0, tribunal: 0 };
+  const casa = (n: string): boolean =>
+    String(n || '')
+      .replace(/\D/g, '')
+      .indexOf(t) !== -1;
+  const vistos = new Set<string>();
+  const visiveis = new Set<string>();
+  for (const l of filtradas)
+    if (casa(l.numero)) visiveis.add(l.numero.replace(/\D/g, ''));
+  let situacao = 0;
+  for (const l of base) {
+    const n = l.numero.replace(/\D/g, '');
+    if (!casa(n) || vistos.has(n)) continue;
+    vistos.add(n);
+    if (!visiveis.has(n)) situacao += 1;
+  }
+  let periodo = 0;
+  for (const raw of numerosForaDaJanela || []) {
+    const n = String(raw || '').replace(/\D/g, '');
+    if (!casa(n) || vistos.has(n)) continue;
+    vistos.add(n);
+    periodo += 1;
+  }
+  let tribunal = 0;
+  for (const raw of numerosEmOutroTribunal || []) {
+    const n = String(raw || '').replace(/\D/g, '');
+    if (!casa(n) || vistos.has(n)) continue;
+    vistos.add(n);
+    tribunal += 1;
+  }
+  return { valido: true, situacao, periodo, tribunal };
 }
 
 /**

@@ -21,6 +21,9 @@
  *   (`estadoDaPasta`, janela única);
  * - nada aqui afirma prazo. Partes e classe vêm do retrato do acompanhamento;
  *   vazio é "—", nunca dedução;
+ * - a busca pelo NÚMERO do processo (v0.41.0) respeita Período, Situação e Tribunal e diz quantos
+ *   casam FORA deles, um motivo por frase, cada um com o "Ver" (CLAUDE.md §8). O campo mora FORA da
+ *   área redesenhada (`#nvt-barra` e `#nvt-corpo`), então digitar nunca perde foco nem cursor;
  * - o estado dos filtros vive na página (variável do módulo), nunca em
  *   localStorage: recarregar a página volta ao padrão.
  *
@@ -44,6 +47,8 @@ import {
   contarSituacoes,
   montarLinhas,
   filtrarPorSituacao,
+  filtrarPorNumero,
+  contarForaDosFiltros,
   ordenarGrupos,
   paginar,
   proximaOrdem,
@@ -61,6 +66,8 @@ var trechoDeTexto=${trechoDeTexto.toString()};
 var contarSituacoes=${contarSituacoes.toString()};
 var montarLinhas=${montarLinhas.toString()};
 var filtrarPorSituacao=${filtrarPorSituacao.toString()};
+var filtrarPorNumero=${filtrarPorNumero.toString()};
+var contarForaDosFiltros=${contarForaDosFiltros.toString()};
 var proximaOrdem=${proximaOrdem.toString()};
 var ordenarGrupos=${ordenarGrupos.toString()};
 var paginar=${paginar.toString()};
@@ -79,8 +86,9 @@ var seloDoTipo=${seloDoTipo.toString()};
 
 /* Só a escolha da sessão: some quando a página recarrega e a aba volta a abrir em
    "Pedem providência" (v0.37.4). */
-var S={situacao:${JSON.stringify(SITUACAO_PADRAO)},ordem:null,porPagina:25,pagina:1,foco:'',confirmar:'',aviso:'',ocupado:{}};
-var R=null,O=null,corpo=null,live=null;
+var S={situacao:${JSON.stringify(SITUACAO_PADRAO)},ordem:null,porPagina:25,pagina:1,termo:'',foco:'',confirmar:'',aviso:'',ocupado:{}};
+var R=null,O=null,raiz=null,corpo=null,barra=null,live=null,filtrosEl=null,entrada=null,limparBusca=null,espera=null;
+var ESPERA_BUSCA_MS=200;
 
 var SITUACOES=[['todas','Todas'],['naoLidas','Não lidas'],['providencia','Pedem providência']];
 var NOMES_ORDEM={processo:'Processo',tribunal:'Tribunal',dataAto:'Data do ato',detectado:'Detectado'};
@@ -286,7 +294,7 @@ function cabecalho(){
 
 function filtros(cont){
   var todas=R.janelaDias===null;
-  var h='<div class="nvt-filtros">'+
+  var h=''+
     '<div class="nvt-bloco"><span class="nvt-rot" id="nvt-rot-periodo">Período</span>'+
     '<div class="nvt-chips" role="group" aria-labelledby="nvt-rot-periodo">'+
     '<button type="button" class="chip'+(todas?'':' on')+'" aria-pressed="'+(todas?'false':'true')+'" data-acao="periodo" data-janela="padrao" data-foco="periodo-padrao">Últimos '+R.janelaPadraoDias+' dias</button>'+
@@ -311,8 +319,7 @@ function filtros(cont){
     ['dataAto:desc','dataAto:asc','detectado:desc','detectado:asc','processo:asc','processo:desc','tribunal:asc','tribunal:desc'].map(function(v){
       var p=v.split(':'),on=S.ordem&&S.ordem.chave===p[0]&&S.ordem.direcao===p[1];
       var d=(p[0]==='dataAto'||p[0]==='detectado')?(p[1]==='desc'?'mais recente primeiro':'mais antiga primeiro'):(p[1]==='asc'?'A–Z':'Z–A');
-      return '<option value="'+v+'"'+(on?' selected':'')+'>'+NOMES_ORDEM[p[0]]+' ('+d+')</option>'}).join('')+'</select></div>'+
-    '</div>';
+      return '<option value="'+v+'"'+(on?' selected':'')+'>'+NOMES_ORDEM[p[0]]+' ('+d+')</option>'}).join('')+'</select></div>';
   return h;
 }
 
@@ -393,6 +400,36 @@ function rodape(pg){
   return h+'</span></nav>';
 }
 
+/* ---------- busca pelo número (v0.41.0) ---------- */
+/* Uma frase por motivo, só quando o número é maior que zero. O "Ver" tira esse motivo e MANTÉM a busca. */
+function frasesDaBusca(b){
+  var f=[];
+  if(b.situacao>0)f.push({txt:b.situacao+(b.situacao===1?' processo com esse número em outra situação':' processos com esse número em outra situação'),acao:'busca-situacao',foco:'busca-sit'});
+  if(b.periodo>0)f.push({txt:b.periodo+' fora dos últimos '+R.janelaPadraoDias+' dias',acao:'periodo',janela:'todas',foco:'busca-per'});
+  if(b.tribunal>0)f.push({txt:b.tribunal+' em outro tribunal',acao:'busca-tribunal',foco:'busca-trib'});
+  return f;
+}
+function htmlDasFrases(fr){
+  return fr.map(function(x){
+    return esc(x.txt)+' · <button type="button" class="nov-btn" data-acao="'+x.acao+'"'+(x.janela?' data-janela="'+x.janela+'"':'')+' data-foco="'+x.foco+'">Ver</button>';
+  }).join(' · ');
+}
+function textoDasFrases(fr){return fr.map(function(x){return x.txt}).join('. ')}
+
+/* Acima da tabela, quando há resultado: quantos casam e o que ficou fora dos filtros. */
+function avisoDaBusca(achados,b){
+  var fr=frasesDaBusca(b);
+  return '<div class="nota nvt-busca-aviso" data-foco="busca-aviso"><strong>'+achados+'</strong> '+(achados===1?'processo encontrado':'processos encontrados')+
+    (fr.length?' · '+htmlDasFrases(fr):'')+'</div>';
+}
+/* Nada casa nos filtros atuais. Com casamento fora, as frases ocupam o lugar do vazio, e nunca se diz
+   que "não há processo"; sem casamento em lugar nenhum, a frase própria e nenhum "Ver". */
+function semBusca(b){
+  var fr=frasesDaBusca(b);
+  if(!fr.length)return '<div class="nvt-sem-prov nvt-busca-aviso" role="status" data-foco="busca-aviso"><strong>Nenhum processo acompanhado com esse número.</strong></div>';
+  return '<div class="nvt-sem-prov nvt-busca-aviso" role="status" data-foco="busca-aviso"><strong>Sem resultado nos filtros atuais.</strong><p>'+htmlDasFrases(fr)+'</p></div>';
+}
+
 /* ---------- estados sem tabela ---------- */
 function semProcessos(){
   return pv().vazio('🔔','Nenhum processo acompanhado ainda',
@@ -444,27 +481,51 @@ function avisoSemLeitura(baseLinhas){
 /* ---------- desenho ---------- */
 function anunciar(texto){if(live)live.textContent=texto}
 
+/* A lista da tela, na ordem em que as regras se aplicam: Situação, depois a busca, depois a ordenação. */
+function listaDaTela(base){
+  return ordenarGrupos(filtrarPorNumero(filtrarPorSituacao(base,S.situacao),S.termo),S.ordem);
+}
+function ligarFiltros(sim){
+  if(sim&&!filtrosEl.parentNode)raiz.insertBefore(filtrosEl,corpo);
+  if(!sim&&filtrosEl.parentNode)filtrosEl.parentNode.removeChild(filtrosEl);
+}
+
 function desenhar(anunciarMudanca){
   var base=montarLinhas(R.grupos,R.semNovidade||[],R.janelaDias===null),cont=contarSituacoes(base);
-  if(!R.acompanhados&&!base.length){corpo.innerHTML=semProcessos();return}
-  var filtrados=filtrarPorSituacao(base,S.situacao);
+  if(!R.acompanhados&&!base.length){ligarFiltros(false);barra.innerHTML='';corpo.innerHTML=semProcessos();return}
+  ligarFiltros(true);
+  var porSituacao=filtrarPorSituacao(base,S.situacao);
+  var filtrados=filtrarPorNumero(porSituacao,S.termo);
   var ordenados=ordenarGrupos(filtrados,S.ordem);
+  var busca=contarForaDosFiltros(S.termo,base,filtrados,R.numerosForaDaJanela,R.numerosEmOutroTribunal);
   var pg=paginar(ordenados.length,S.pagina,S.porPagina);
   S.pagina=pg.pagina;
-  var h=filtros(cont)+(S.aviso?'<div class="nota nvt-erro" role="alert">'+esc(S.aviso)+'</div>':'')+resumo(base.length,filtrados.length,base)+avisoDeOcultas();
-  if(S.situacao==='providencia')h+=avisoSemLeitura(base);
-  if(!base.length)h+=semBase();
+  /* O resumo e os avisos de situação falam da Situação; a busca tem a linha dela. */
+  barra.innerHTML=filtros(cont);
+  var h=(S.aviso?'<div class="nota nvt-erro" role="alert">'+esc(S.aviso)+'</div>':'')+resumo(base.length,porSituacao.length,base)+avisoDeOcultas();
+  if(S.situacao==='providencia'&&!busca.valido)h+=avisoSemLeitura(base);
+  if(busca.valido&&!filtrados.length)h+=semBusca(busca);
+  else if(!base.length)h+=semBase();
   else if(!filtrados.length&&S.situacao==='providencia')h+=semProvidencia(base);
   else if(!filtrados.length&&S.situacao==='cumpridos')h+=semCumpridos();
   else if(!filtrados.length&&S.situacao==='outros')h+=semOutros();
   else if(!filtrados.length)h+=semResultado(base.length);
   else{
+    if(busca.valido)h+=avisoDaBusca(filtrados.length,busca);
     h+=avisoDeAnteriores(filtrados);
     h+='<div class="nvt-wrap"><table class="nvt-tabela" role="table"><caption class="nvt-sr">Processos acompanhados e a atualização mais recente de cada um</caption>'+
       cabecalho()+'<tbody>'+ordenados.slice(pg.inicio,pg.fim).map(linha).join('')+'</tbody></table></div>'+rodape(pg);
   }
   corpo.innerHTML=h;
-  if(anunciarMudanca&&filtrados.length)
+  if(anunciarMudanca==='busca'){
+    /* Só depois da espera (quem chama), com o número de processos e o que ficou fora dos filtros. */
+    if(!busca.valido)anunciar(filtrados.length?'Busca limpa. Mostrando '+pg.total+(pg.total===1?' processo':' processos'):'Busca limpa');
+    else if(filtrados.length)anunciar(filtrados.length+(filtrados.length===1?' processo encontrado':' processos encontrados'));
+    else{
+      var fr=textoDasFrases(frasesDaBusca(busca));
+      anunciar(fr?'Nenhum resultado nos filtros atuais. '+fr:'Nenhum processo acompanhado com esse número');
+    }
+  }else if(anunciarMudanca&&filtrados.length)
     anunciar('Mostrando '+pg.de+' a '+pg.ate+' de '+pg.total+(pg.total===1?' processo':' processos'));
   else if(anunciarMudanca)anunciar('Nenhum processo com este filtro');
   devolverFoco();
@@ -478,14 +539,15 @@ function devolverFoco(){
   /* "a|b|c": a primeira que existir. Marcar tira a linha da lista; o foco vai para o vizinho. */
   var cand=f.split('|'),alvo=null;
   for(var i=0;i<cand.length&&!alvo;i++){
-    var c=corpo.querySelector('[data-foco="'+cand[i]+'"]');
-    if(!c&&VIZINHO[cand[i]])c=corpo.querySelector('[data-foco="'+VIZINHO[cand[i]]+'"]');
+    var c=raiz.querySelector('[data-foco="'+cand[i]+'"]');
+    if(!c&&VIZINHO[cand[i]])c=raiz.querySelector('[data-foco="'+VIZINHO[cand[i]]+'"]');
     if(c&&!c.disabled)alvo=c;
   }
   if(!alvo)return;
   /* O resumo não é um controle: ganha tabindex só no instante do foco programático e o perde ao sair,
      para não deixar um tabindex negativo escondido na página. */
-  if(alvo.getAttribute('data-foco')==='resumo'&&!alvo.hasAttribute('tabindex')){
+  var foco=alvo.getAttribute('data-foco');
+  if((foco==='resumo'||foco==='busca-aviso')&&!alvo.hasAttribute('tabindex')){
     alvo.setAttribute('tabindex','-1');
     alvo.addEventListener('blur',function(){alvo.removeAttribute('tabindex')},{once:true});
   }
@@ -524,7 +586,7 @@ function baseAtual(){return montarLinhas(R.grupos,R.semNovidade||[],R.janelaDias
 /* O processo ao lado, na página como está AGORA: depois de marcar, a linha pode sair da
    lista e o foco do teclado tem de ir para algum lugar coerente. */
 function vizinhoDe(num){
-  var ord=ordenarGrupos(filtrarPorSituacao(baseAtual(),S.situacao),S.ordem);
+  var ord=listaDaTela(baseAtual());
   var pg=paginar(ord.length,S.pagina,S.porPagina),vis=ord.slice(pg.inicio,pg.fim),i=-1;
   for(var k=0;k<vis.length;k++)if(vis[k].numero===num)i=k;
   var v=i<0?null:(vis[i+1]||vis[i-1]);
@@ -590,7 +652,7 @@ function aoTeclar(ev){
 /* ---------- eventos (um só ouvinte, na raiz: o HTML interno é trocado a cada desenho) ---------- */
 function aoClicar(ev){
   var el=ev.target.closest?ev.target.closest('[data-acao]'):null;
-  if(!el||!corpo.contains(el))return;
+  if(!el||!raiz.contains(el))return;
   var acao=el.getAttribute('data-acao'),num=el.getAttribute('data-num');
   if(acao==='ia'||acao.indexOf('ia-')===0){ia().clicar(acao,el);return}
   if(acao==='abrir'){ev.preventDefault();pv().abrir(num);return}
@@ -611,6 +673,9 @@ function aoClicar(ev){
     O.aoMudar({janela:el.getAttribute('data-janela')});return;
   }
   S.foco=el.getAttribute('data-foco')||'';
+  /* Os "Ver" da busca: tiram UM motivo e mantêm o termo. O de período segue pelo ramo acima. */
+  if(acao==='busca-situacao'){S.situacao='todas';S.pagina=1;S.foco='busca-aviso';desenhar(true);return}
+  if(acao==='busca-tribunal'){S.pagina=1;S.foco='trib';O.aoMudar({tribunal:''});return}
   if(acao==='situacao'){S.situacao=el.getAttribute('data-sit');S.pagina=1;desenhar(true);return}
   if(acao==='limpar'){
     S.situacao='todas';S.pagina=1;
@@ -619,7 +684,7 @@ function aoClicar(ev){
   }
   if(acao==='ord'){S.ordem=proximaOrdem(S.ordem,el.getAttribute('data-chave'));S.pagina=1;desenhar(true);return}
   if(acao==='pagina'){
-    var tot=Math.ceil(filtrarPorSituacao(montarLinhas(R.grupos,R.semNovidade||[],R.janelaDias===null),S.situacao).length/S.porPagina)||1;
+    var tot=Math.ceil(listaDaTela(baseAtual()).length/S.porPagina)||1;
     var v=el.getAttribute('data-vai');
     S.pagina=v==='primeira'?1:v==='anterior'?S.pagina-1:v==='proxima'?S.pagina+1:tot;
     desenhar(true);
@@ -637,16 +702,52 @@ function aoMudar(ev){
   }
 }
 
+/* ---------- busca pelo número: o campo vive FORA da área redesenhada ---------- */
+function aplicarTermo(valor,anunciarMudanca){
+  S.termo=valor;S.pagina=1;
+  desenhar(anunciarMudanca?'busca':false);
+}
+function mostrarLimpar(){limparBusca.hidden=!entrada.value}
+function aoDigitar(){
+  mostrarLimpar();
+  if(espera)clearTimeout(espera);
+  /* Espera curta: o desenho e o anúncio só acontecem quando a pessoa para de digitar. */
+  espera=setTimeout(function(){espera=null;aplicarTermo(entrada.value,true)},ESPERA_BUSCA_MS);
+}
+function limparTermo(){
+  if(espera){clearTimeout(espera);espera=null}
+  entrada.value='';mostrarLimpar();
+  aplicarTermo('',true);
+  entrada.focus();
+}
+function aoTeclarNaBusca(ev){
+  if(ev.key==='Escape'&&(entrada.value||S.termo)){ev.preventDefault();limparTermo()}
+}
+
 /* A tela inteira. opc: { tribunais, tribunal, aoMudar({janela?, tribunal?}) }.
    O estado dos filtros (S) sobrevive ao recarregamento do período e do tribunal. */
 function montar(alvo,r,opc){
   R=r;O=opc;
+  if(espera){clearTimeout(espera);espera=null}
   alvo.innerHTML='<section class="nvt" aria-label="Últimas atualizações"><div id="nvt-corpo"></div>'+
     '<div class="nvt-sr" id="nvt-live" role="status" aria-live="polite" aria-atomic="true"></div></section>';
+  raiz=alvo.querySelector('.nvt');
   corpo=alvo.querySelector('#nvt-corpo');live=alvo.querySelector('#nvt-live');
-  corpo.addEventListener('click',aoClicar);
-  corpo.addEventListener('change',aoMudar);
-  corpo.addEventListener('keydown',aoTeclar);
+  /* Os filtros: o bloco da busca é criado UMA vez por montagem e nunca é refeito; só os outros blocos
+     (#nvt-barra, display:contents) são redesenhados. Assim digitar não perde foco nem cursor. */
+  filtrosEl=document.createElement('div');filtrosEl.className='nvt-filtros';
+  filtrosEl.innerHTML='<div class="nvt-bloco nvt-busca"><label class="nvt-rot" for="nvt-busca">Número do processo</label>'+
+    '<div class="nvt-busca-campo"><input id="nvt-busca" type="search" inputmode="numeric" autocomplete="off" placeholder="Digite parte do número">'+
+    '<button type="button" class="nov-btn nvt-busca-limpar" hidden>Limpar</button></div></div><div id="nvt-barra" class="nvt-barra"></div>';
+  barra=filtrosEl.querySelector('#nvt-barra');
+  entrada=filtrosEl.querySelector('#nvt-busca');limparBusca=filtrosEl.querySelector('.nvt-busca-limpar');
+  entrada.value=S.termo;mostrarLimpar();
+  entrada.addEventListener('input',aoDigitar);
+  entrada.addEventListener('keydown',aoTeclarNaBusca);
+  limparBusca.addEventListener('click',limparTermo);
+  raiz.addEventListener('click',aoClicar);
+  raiz.addEventListener('change',aoMudar);
+  raiz.addEventListener('keydown',aoTeclar);
   /* IA (v0.38.0): desligada, não há botão. Ligada, a primeira pergunta ao servidor redesenha UMA vez. */
   ia().ligar({redesenhar:function(f){S.foco=f||'';desenhar(false)},anunciar:anunciar});
   if(!ia().habilitada())ia().carregar().then(function(h){if(h&&corpo&&corpo.isConnected)desenhar(false)});
