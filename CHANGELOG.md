@@ -9,6 +9,36 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.41.0] — 2026-10-14
+
+**Atualizações: busca pelo número do processo.** Advogado com muitos processos acompanhados vai direto a um
+número. Só a aba Atualizações; nenhuma consulta ao tribunal, nada de prazo.
+
+### Adicionado
+
+- Campo "Número do processo" no bloco de filtros, antes de Período: `type="search"`, `inputmode="numeric"`,
+  rótulo visível. Compara só dígitos e casa por trecho (começo, meio ou fim); colar o número formatado funciona.
+  Filtra enquanto digita, com espera de 200 ms; "Limpar" (visível com termo) e Esc limpam; mudar o termo volta à
+  página 1. Termo com menos de 4 dígitos não filtra e não avisa. O termo vive na página, nunca em
+  `localStorage`: recarregar zera.
+- A busca combina com Situação (inclusive "cumpridos" e "outros"), Período, Tribunal e ordenação, e **diz quantos
+  casam fora deles**, uma frase por motivo, só quando o número é maior que zero, cada uma com "Ver" que mantém a
+  busca: "N processos com esse número em outra situação" (Situação = Todas), "N fora dos últimos X dias" (Período
+  = Todas; X vem do servidor) e "N em outro tribunal" (Todos os tribunais). Processo fora por mais de um motivo
+  conta uma vez, no primeiro da ordem Situação, Período, Tribunal. Sem resultado nos filtros mas com casamento
+  fora, as frases ocupam o lugar do vazio (nunca "Nenhum processo"); sem casamento em lugar nenhum: "Nenhum
+  processo acompanhado com esse número.", sem "Ver".
+- A contagem ("N processos encontrados") vai à região `aria-live` da aba, só depois da espera.
+- `GET /v1/novidades` ganhou `numerosForaDaJanela` e `numerosEmOutroTribunal`: só os NÚMEROS dos processos que o
+  Período ou o Tribunal deixaram fora, da própria conta; vazios sem filtro, com `naoVistas` ou `numero`.
+  Opcionais para quem lê: servidor antigo sem eles = a tela não conta o que está fora do período ou do tribunal.
+- `filtrarPorNumero` e `contarForaDosFiltros` em `ui/tabelaAtualizacoes.ts` (puras, injetadas por `toString()`).
+
+### Não faz
+
+- Buscar parte, classe, tribunal ou texto do ato; buscar dentro das atualizações anteriores de um processo;
+  guardar a busca entre recarregamentos; busca em outras abas; destaque do trecho casado (opcional, não feito).
+
 ## [0.40.1] — 2026-10-12
 
 **IA como secretária, Etapa 2 (tela): "Resumir este processo com IA" na capa do processo.** Só a interface,
