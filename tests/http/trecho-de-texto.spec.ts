@@ -65,7 +65,9 @@ describe('trechoDeTexto (v0.35.1) — só o começo do texto do ato', () => {
   });
 
   it('um texto de ~3.000 caracteres vira um trecho curto', () => {
-    const t = trechoDeTexto('Julgo procedente o pedido formulado na inicial. '.repeat(64));
+    const t = trechoDeTexto(
+      'Julgo procedente o pedido formulado na inicial. '.repeat(64),
+    );
     expect(t.cortado).toBe(true);
     expect(Array.from(t.texto).length).toBeLessThanOrEqual(220);
   });
@@ -74,7 +76,7 @@ describe('trechoDeTexto (v0.35.1) — só o começo do texto do ato', () => {
 describe('módulo de Atualizações usa o trecho', () => {
   it('injeta a mesma função e não imprime o conteúdo inteiro', () => {
     expect(SCRIPT_ATUALIZACOES).toContain('var trechoDeTexto=function trechoDeTexto(');
-    expect(SCRIPT_ATUALIZACOES).not.toContain("p.esc(n.conteudo)");
+    expect(SCRIPT_ATUALIZACOES).not.toContain('p.esc(n.conteudo)');
   });
 
   it('as reticências ficam fora da leitura e há "Abrir processo" quando houve corte', () => {

@@ -99,9 +99,7 @@ describe('GET /v1/novidades — processos acompanhados sem novidade', () => {
 
   /** O 1º retrato: guarda o processo e NÃO cria novidade (regra de detectarNovidades). */
   const primeiroRetrato = (w: string, d: string, p: Processo) =>
-    repo
-      .acompanhar(w, d)
-      .then(() => repo.registrarSincronizacao(w, d, p, []));
+    repo.acompanhar(w, d).then(() => repo.registrarSincronizacao(w, d, p, []));
 
   it('o processo recém-acompanhado aparece em semNovidade, sem criar novidade no banco', async () => {
     await primeiroRetrato(
@@ -123,12 +121,22 @@ describe('GET /v1/novidades — processos acompanhados sem novidade', () => {
     expect(linha.ultimaMovimentacao?.titulo).toBe('Juntada de Petição');
     expect(linha.ultimaMovimentacao?.conteudo).toBe('Texto do ato.');
     expect(linha.ultimaMovimentacao?.data).toBe(dia(3).toISOString());
-    expect((db.prepare('SELECT COUNT(*) AS n FROM novidades').get() as { n: number }).n).toBe(0);
+    expect(
+      (db.prepare('SELECT COUNT(*) AS n FROM novidades').get() as { n: number }).n,
+    ).toBe(0);
   });
 
   it('com 2 acompanhados e 1 com novidade: 1 grupo, 1 semNovidade; os campos antigos intactos', async () => {
-    await primeiroRetrato(WS, dA, processo(NUMERO_TJSP_A, [{ dias: 30, titulo: 'Distribuição' }]));
-    await primeiroRetrato(WS, dB, processo(NUMERO_TJSP_B, [{ dias: 30, titulo: 'Distribuição' }]));
+    await primeiroRetrato(
+      WS,
+      dA,
+      processo(NUMERO_TJSP_A, [{ dias: 30, titulo: 'Distribuição' }]),
+    );
+    await primeiroRetrato(
+      WS,
+      dB,
+      processo(NUMERO_TJSP_B, [{ dias: 30, titulo: 'Distribuição' }]),
+    );
     await repo.registrarSincronizacao(
       WS,
       dB,
@@ -152,7 +160,10 @@ describe('GET /v1/novidades — processos acompanhados sem novidade', () => {
     await repo.registrarSincronizacao(
       WS,
       dB,
-      processo(NUMERO_TJSP_B, [{ dias: 5, titulo: 'X' }, { dias: 30, titulo: 'Velha' }]),
+      processo(NUMERO_TJSP_B, [
+        { dias: 5, titulo: 'X' },
+        { dias: 30, titulo: 'Velha' },
+      ]),
       [{ data: dia(30), titulo: 'Velha' }],
     );
     db.prepare('UPDATE novidades SET detectada_em = ?').run(dia(30).toISOString());
@@ -187,7 +198,11 @@ describe('GET /v1/novidades — processos acompanhados sem novidade', () => {
     await primeiroRetrato(
       WS,
       dA,
-      processo(NUMERO_TJSP_A, [{ dias: 2, titulo: 'Decisão', conteudo: 'TEXTO RESERVADO' }], true),
+      processo(
+        NUMERO_TJSP_A,
+        [{ dias: 2, titulo: 'Decisão', conteudo: 'TEXTO RESERVADO' }],
+        true,
+      ),
     );
     const corpo = (await servidor.inject({ method: 'GET', url: '/v1/novidades' })).body;
     expect(corpo).not.toContain('TEXTO RESERVADO');
@@ -198,8 +213,16 @@ describe('GET /v1/novidades — processos acompanhados sem novidade', () => {
   });
 
   it('"pede providência" segue a regra do selo da carteira também para quem não tem novidade', async () => {
-    await primeiroRetrato(WS, dA, processo(NUMERO_TJSP_A, [{ dias: 2, titulo: 'Intimação para manifestação' }]));
-    await primeiroRetrato(WS, dB, processo(NUMERO_TJSP_B, [{ dias: 60, titulo: 'Intimação para manifestação' }]));
+    await primeiroRetrato(
+      WS,
+      dA,
+      processo(NUMERO_TJSP_A, [{ dias: 2, titulo: 'Intimação para manifestação' }]),
+    );
+    await primeiroRetrato(
+      WS,
+      dB,
+      processo(NUMERO_TJSP_B, [{ dias: 60, titulo: 'Intimação para manifestação' }]),
+    );
     const r = await ler();
     const por = new Map(r.semNovidade.map((s) => [s.numero, s.processo.pedeProvidencia]));
     expect(por.get(dA)).toBe(true);
@@ -258,21 +281,33 @@ describe('GET /v1/sincronizacao e POST /v1/sincronizar — por conta', () => {
       req.workspace = atual;
     });
     await servidor.register(
-      rotasDeAcompanhamento(servico, { novidadesJanelaDias: 15, pendenciaJanelaDias: 10 }),
+      rotasDeAcompanhamento(servico, {
+        novidadesJanelaDias: 15,
+        pendenciaJanelaDias: 10,
+      }),
     );
 
     // A varredura global é do sistema: roda para as duas contas.
     const global = servico.sincronizar();
     for (let i = 0; i < 50; i++) await new Promise((r) => setImmediate(r));
 
-    const sa = (await servidor.inject({ method: 'GET', url: '/v1/sincronizacao' })).json() as Record<string, unknown>;
+    const sa = (
+      await servidor.inject({ method: 'GET', url: '/v1/sincronizacao' })
+    ).json() as Record<string, unknown>;
     expect(sa['emAndamento']).toBe(true);
     expect(sa['pendentes']).toBe(1); // nunca 2: a fila global não sai
-    expect(Object.keys(sa).sort()).toEqual(['demorando', 'desde', 'emAndamento', 'pendentes']);
+    expect(Object.keys(sa).sort()).toEqual([
+      'demorando',
+      'desde',
+      'emAndamento',
+      'pendentes',
+    ]);
 
     // Uma conta sem nada na fila não herda o "verificando" dos outros.
     atual = 'ws-sem-processos';
-    const sc = (await servidor.inject({ method: 'GET', url: '/v1/sincronizacao' })).json() as Record<string, unknown>;
+    const sc = (
+      await servidor.inject({ method: 'GET', url: '/v1/sincronizacao' })
+    ).json() as Record<string, unknown>;
     expect(sc['emAndamento']).toBe(false);
 
     // Segundo clique da conta A: não dispara outra verificação, não é 409.

@@ -486,8 +486,17 @@ describe('cumprido: contagens e frases da tela', () => {
   });
 
   it('conta quantos saíram por marca e quantos por tempo', () => {
-    const grupos = [comProv('pede'), comProv('cumprida'), comProv('cumprida'), comProv('venceu')];
-    expect(contarSaidasDaProvidencia(grupos)).toEqual({ cumpridos: 2, vencidos: 1, outros: 0 });
+    const grupos = [
+      comProv('pede'),
+      comProv('cumprida'),
+      comProv('cumprida'),
+      comProv('venceu'),
+    ];
+    expect(contarSaidasDaProvidencia(grupos)).toEqual({
+      cumpridos: 2,
+      vencidos: 1,
+      outros: 0,
+    });
   });
 
   it('as frases dizem o número e a janela, sem a palavra "prazo"', () => {
@@ -508,7 +517,11 @@ describe('cumprido: contagens e frases da tela', () => {
 });
 
 describe('o ato que a linha mostra (v0.37.6): o que gera a providência, e o último andamento à parte', () => {
-  const linha = (data: string | null, titulo: string, situacao: 'pede' | 'cumprida' = 'pede') => ({
+  const linha = (
+    data: string | null,
+    titulo: string,
+    situacao: 'pede' | 'cumprida' = 'pede',
+  ) => ({
     maisRecente: { data, titulo },
     processo: {
       tribunal: null,
@@ -518,7 +531,9 @@ describe('o ato que a linha mostra (v0.37.6): o que gera a providência, e o úl
   });
 
   it('com providência, a linha é sobre o ato que a gera; o último andamento vai à parte', () => {
-    expect(atoExibido(linha('2026-10-01T12:00:00.000Z', 'Juntada de petição'))).toMatchObject({
+    expect(
+      atoExibido(linha('2026-10-01T12:00:00.000Z', 'Juntada de petição')),
+    ).toMatchObject({
       rotulo: 'Ato ordinatório',
       data: ATO.data,
       tipo: 'intimacao',
@@ -563,7 +578,12 @@ describe('o ato que a linha mostra (v0.37.6): o que gera a providência, e o úl
         pedeProvidencia: true,
         providencia: {
           situacao: 'pede' as const,
-          motivo: { ...ATO, rotulo: 'Decisão', data: '2026-09-29T15:00:00.000Z', tipo: 'outro' as const },
+          motivo: {
+            ...ATO,
+            rotulo: 'Decisão',
+            data: '2026-09-29T15:00:00.000Z',
+            tipo: 'outro' as const,
+          },
           cumpridoEm: null,
         },
       },
@@ -573,7 +593,9 @@ describe('o ato que a linha mostra (v0.37.6): o que gera a providência, e o úl
   });
 
   it('o destinatário do ato vai junto, e é desconhecido quando o servidor não o disse', () => {
-    expect(atoExibido(linha('2026-10-01T12:00:00.000Z', 'x')).paraOUsuario).toBe('desconhecido');
+    expect(atoExibido(linha('2026-10-01T12:00:00.000Z', 'x')).paraOUsuario).toBe(
+      'desconhecido',
+    );
   });
 
   it('o selo do tipo é Intimação ou Citação, e só isso', () => {
@@ -620,7 +642,13 @@ describe('"Detectado" legível (v0.37.6)', () => {
 });
 
 describe('intimação a outro destinatário (v0.37.6): contagem, frase e filtro', () => {
-  const outro = { rotulo: 'Intimação', data: '2026-10-01T12:00:00.000Z', chave: 'k', tipo: 'intimacao', paraOUsuario: 'nao' };
+  const outro = {
+    rotulo: 'Intimação',
+    data: '2026-10-01T12:00:00.000Z',
+    chave: 'k',
+    tipo: 'intimacao',
+    paraOUsuario: 'nao',
+  };
   const g = (pede: boolean, prov: object | null) => ({
     numero: '1',
     maisRecente: { data: null, detectadaEm: null },
@@ -631,22 +659,44 @@ describe('intimação a outro destinatário (v0.37.6): contagem, frase e filtro'
 
   it('conta só quem o filtro deixou de fora por causa dela', () => {
     const grupos = [
-      g(false, { situacao: 'outro', motivo: outro, cumpridoEm: null, outroDestinatario: outro }),
-      g(true, { situacao: 'pede', motivo: outro, cumpridoEm: null, outroDestinatario: outro }),
+      g(false, {
+        situacao: 'outro',
+        motivo: outro,
+        cumpridoEm: null,
+        outroDestinatario: outro,
+      }),
+      g(true, {
+        situacao: 'pede',
+        motivo: outro,
+        cumpridoEm: null,
+        outroDestinatario: outro,
+      }),
       g(false, null),
     ];
     expect(contarSaidasDaProvidencia(grupos).outros).toBe(1);
   });
 
   it('a frase diz "N com intimação a outro destinatário" e some em zero', () => {
-    expect(frasesDeSaidas(0, 0, 30, 3).outros).toBe('3 com intimação a outro destinatário');
+    expect(frasesDeSaidas(0, 0, 30, 3).outros).toBe(
+      '3 com intimação a outro destinatário',
+    );
     expect(frasesDeSaidas(0, 0, 30, 0).outros).toBe('');
     expect(Object.values(frasesDeSaidas(1, 2, 30, 3)).join(' ')).not.toMatch(/prazo/i);
   });
 
   it('o filtro "outros" lista esses processos; o de providência não os inclui', () => {
-    const a = g(false, { situacao: 'outro', motivo: outro, cumpridoEm: null, outroDestinatario: outro });
-    const b = g(true, { situacao: 'pede', motivo: outro, cumpridoEm: null, outroDestinatario: outro });
+    const a = g(false, {
+      situacao: 'outro',
+      motivo: outro,
+      cumpridoEm: null,
+      outroDestinatario: outro,
+    });
+    const b = g(true, {
+      situacao: 'pede',
+      motivo: outro,
+      cumpridoEm: null,
+      outroDestinatario: outro,
+    });
     expect(filtrarPorSituacao([a, b], 'outros')).toEqual([a]);
     expect(filtrarPorSituacao([a, b], 'providencia')).toEqual([b]);
     expect(filtrarPorSituacao([a, b], 'todas')).toHaveLength(2);
@@ -667,7 +717,12 @@ describe('ordenar por "Data do ato" usa a data que a linha mostra (v0.37.6)', ()
           ? null
           : {
               situacao: 'pede' as const,
-              motivo: { rotulo: 'Decisão', data: providenciaEm, chave: 'k', tipo: 'outro' as const },
+              motivo: {
+                rotulo: 'Decisão',
+                data: providenciaEm,
+                chave: 'k',
+                tipo: 'outro' as const,
+              },
               cumpridoEm: null,
             },
     },

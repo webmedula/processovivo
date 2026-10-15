@@ -380,17 +380,18 @@ describe.skipIf(sem)(
       expect(await pend.innerText()).toContain(
         'Parte autora: apresentar manifestação sobre o laudo',
       );
-      expect(await pend.innerText()).toContain('bloco “Pede providência” do sistema');
+      expect(await pend.innerText()).toContain('marcação “providência” do sistema');
     });
 
-    it('o bloco "Pede providência" do sistema não muda com o resumo', async () => {
+    it('a marcação de providência do sistema (linha do tempo) não muda com o resumo; o bloco da tela do processo saiu na 0.41.1', async () => {
       await abrir();
-      const bloco = page.locator('#conteudo .cartao.alerta');
-      await bloco.waitFor();
-      const antes = await bloco.innerHTML();
+      const marcas = page.locator('#conteudo .ev.pede');
+      await marcas.first().waitFor();
+      const antes = await marcas.evaluateAll((l) => l.map((e) => e.innerHTML));
+      expect(antes.length).toBeGreaterThan(0);
+      expect(await page.locator('#conteudo .cartao.alerta').count()).toBe(0);
       await resumir();
-      expect(await bloco.count()).toBe(1);
-      expect(await bloco.innerHTML()).toBe(antes);
+      expect(await marcas.evaluateAll((l) => l.map((e) => e.innerHTML))).toEqual(antes);
       expect(await painel().locator('.alerta').count()).toBe(0);
     });
 

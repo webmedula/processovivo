@@ -18,7 +18,9 @@ describe('validarChavesDeApi', () => {
     expect(() => validarChavesDeApi([], false)).toThrow(
       ConfiguracaoDeChavesInvalidaError,
     );
-    expect(() => validarChavesDeApi([], false)).toThrow(/PROCESSOVIVO_API_KEYS não definida/);
+    expect(() => validarChavesDeApi([], false)).toThrow(
+      /PROCESSOVIVO_API_KEYS não definida/,
+    );
   });
 
   it('recusa chave curta — pior que nenhuma, porque parece segura', () => {

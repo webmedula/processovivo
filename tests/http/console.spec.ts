@@ -63,8 +63,14 @@ describe('rotas de acompanhamento', () => {
     // carteira de dois assinantes.
     await acompanhar(a);
 
-    expect((await s.inject({ method: 'GET', url: '/v1/acompanhamentos', headers: a })).json().total).toBe(1);
-    expect((await s.inject({ method: 'GET', url: '/v1/acompanhamentos', headers: b })).json().total).toBe(0);
+    expect(
+      (await s.inject({ method: 'GET', url: '/v1/acompanhamentos', headers: a })).json()
+        .total,
+    ).toBe(1);
+    expect(
+      (await s.inject({ method: 'GET', url: '/v1/acompanhamentos', headers: b })).json()
+        .total,
+    ).toBe(0);
   });
 
   it('não deixa pedir a carteira de outro workspace pela query', async () => {
@@ -86,7 +92,10 @@ describe('rotas de acompanhamento', () => {
       headers: a,
     });
     expect(r.statusCode).toBe(200);
-    expect((await s.inject({ method: 'GET', url: '/v1/acompanhamentos', headers: a })).json().total).toBe(0);
+    expect(
+      (await s.inject({ method: 'GET', url: '/v1/acompanhamentos', headers: a })).json()
+        .total,
+    ).toBe(0);
   });
 
   it('404 ao detalhar processo não acompanhado', async () => {

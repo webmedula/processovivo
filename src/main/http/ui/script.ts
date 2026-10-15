@@ -1085,26 +1085,15 @@ function agrupar(movs){
 }
 
 /**
- * A tela de um processo. Ordem (v0.32.1): capa, dados do processo, PEÇAS, o que
- * pede providência (só dentro da janela), último ato, partes, linha do tempo.
- * Desde a v0.10.0 a providência vem antes do último ato e das partes — a
- * pergunta de quem abre é "o que eu preciso fazer?" —, e as peças subiram para
- * logo depois dos dados porque eram o que o advogado procurava rolando a tela.
+ * A tela de um processo. Ordem (v0.41.1): capa, dados do processo, PEÇAS,
+ * partes, linha do tempo. Os blocos "Pede providência" e "Última movimentação"
+ * saíram por decisão do dono: repetiam o cabeçalho do tribunal e, para entender
+ * um ato, o advogado abre a Pasta digital. A providência continua marcada na
+ * linha do tempo (selo e filtro) e na aba Atualizações.
  */
 function processoHtml(p,acomp,op){
   op=op||{};
   var movs=p.movimentacoes||[];
-  var relev=movs.filter(function(m){return !INTERNOS[m.codigoTpu]});
-  var ultima=relev[0]||movs[0]||null;
-  // O campo exigeAcao vem do servidor (domain/entities/triagem.ts). A tela não
-  // reclassifica: duas heurísticas para a mesma coisa divergem no dia em que
-  // alguém ajusta só uma.
-  var janPend=(estado.facetas&&estado.facetas.pendenciaJanelaDias)||0;
-  var limPend=janPend>0?Date.now()-janPend*86400000:0;
-  var pedem=movs.filter(function(m){return m.exigeAcao});
-  var acoes=pedem.filter(function(m){return new Date(m.data).getTime()>=limPend});
-  var pendAnteriores=pedem.length-acoes.length;
-
   var h='<div class="capa"><div class="num">'+esc(p.numero)+'</div>'+
     '<div class="sob">'+esc(p.classe||'Classe não informada')+
     (p.assunto?' · '+esc(p.assunto):'')+'</div><div class="selos">'+
@@ -1138,44 +1127,7 @@ function processoHtml(p,acomp,op){
   //    cresce no meio da página empurra o texto que está sendo lido.
   h+='<div id="pecas-resumo" style="min-height:96px"></div>';
 
-  // 3. O que pede providência, DENTRO da janela (PENDENCIA_JANELA_DIAS, a mesma
-  //    do selo da carteira e do card do painel — o servidor entrega o valor).
-  //    Ato mais antigo continua marcado na linha do tempo e é contado aqui:
-  //    sair do topo não é sumir da tela.
-  if(acoes.length){
-    h+='<div class="cartao alerta"><h3 class="sec">Pede providência · '+acoes.length+
-      (janPend>0?' <span class="nota" style="font-weight:500">(últimos '+janPend+' dias)</span>':'')+'</h3>';
-    acoes.forEach(function(m){
-      h+='<div class="acao"><div class="dt">'+dt(m.data)+'</div><div>'+
-        '<div class="tt">'+esc(m.titulo)+'</div>'+
-        (m.conteudo?'<div class="cp">'+esc(recorte(m.conteudo,260))+'</div>':'')+
-        '</div></div>';
-    });
-    if(pendAnteriores>0)h+='<div class="nota">'+pendAnteriores+' ato(s) anterior(es) que pedem '+
-      'providência não estão aqui — veja na linha do tempo.</div>';
-    h+='<div class="nota">Marcado por leitura automática do texto (prazo, '+
-      '"intime-se", "manifeste-se"). <strong>Confira sempre no ato completo</strong> — '+
-      'a contagem do prazo é sua.</div></div>';
-  }else if(pendAnteriores>0){
-    h+='<div class="cartao"><div class="nota">Nenhum ato dos últimos '+janPend+' dias pede providência. '+
-      pendAnteriores+' ato(s) anterior(es) que pedem providência — veja na linha do tempo.</div></div>';
-  }
-
-  // 4. O último ato, com trecho do teor. Antes esta faixa mostrava só o rótulo
-  //    ("Ato ordinatório"), que é categoria e não informação.
-  if(ultima){
-    h+='<div class="agora"><div class="k">Última movimentação</div>'+
-      '<div class="t">'+esc(ultima.titulo)+'</div>'+
-      '<div class="d">'+dt(ultima.data)+' · '+humano(ultima.data)+
-      (ultima.fonte?' · via '+esc(ultima.fonte):'')+'</div>'+
-      (ultima.conteudo?'<div class="cp">'+esc(recorte(ultima.conteudo,320))+'</div>':'')+
-      (ultima.teorIndisponivel?'<div class="nota">O diário não publica o texto deste '+
-        'documento'+(ultima.url?' — <a href="'+esc(ultima.url)+'" target="_blank" '+
-        'rel="noopener noreferrer">abrir no tribunal</a>':'')+'.</div>':'')+
-      '</div>';
-  }
-
-  // 5. Partes: quem está do outro lado importa mais que a data de distribuição.
+  // 3. Partes: quem está do outro lado importa mais que a data de distribuição.
   h+='<div class="cartao"><h3 class="sec">Partes</h3>';
   if(p.partes&&p.partes.length){
     p.partes.forEach(function(pt){
@@ -1191,7 +1143,7 @@ function processoHtml(p,acomp,op){
   }
   h+='</div>';
 
-  // 5. A régua temporal.
+  // 4. A régua temporal.
   /* A régua só substitui a linha do tempo quando a espinha é a DO TRIBUNAL.
      Degradada — MNI sem movimentos, ou chave que não bateu em peça nenhuma —
      ela não acrescenta nada que a página já não tenha, e trocar uma pela outra

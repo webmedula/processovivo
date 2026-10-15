@@ -29,17 +29,18 @@ describe('fontes servidas pelo próprio servidor', () => {
     await servidor.close();
   });
 
-  it.each(['plus-jakarta-sans.woff2', 'jetbrains-mono-500.woff2', 'jetbrains-mono-600.woff2'])(
-    'serve %s sem pedir autenticação, como woff2 de verdade',
-    async (arquivo) => {
-      const r = await servidor.inject({ method: 'GET', url: `/ui/fontes/${arquivo}` });
-      expect(r.statusCode).toBe(200);
-      expect(r.headers['content-type']).toBe('font/woff2');
-      // Assinatura do formato: todo WOFF2 começa com "wOF2".
-      expect(r.rawPayload.subarray(0, 4).toString('latin1')).toBe('wOF2');
-      expect(r.headers['cache-control']).toContain('max-age=');
-    },
-  );
+  it.each([
+    'plus-jakarta-sans.woff2',
+    'jetbrains-mono-500.woff2',
+    'jetbrains-mono-600.woff2',
+  ])('serve %s sem pedir autenticação, como woff2 de verdade', async (arquivo) => {
+    const r = await servidor.inject({ method: 'GET', url: `/ui/fontes/${arquivo}` });
+    expect(r.statusCode).toBe(200);
+    expect(r.headers['content-type']).toBe('font/woff2');
+    // Assinatura do formato: todo WOFF2 começa com "wOF2".
+    expect(r.rawPayload.subarray(0, 4).toString('latin1')).toBe('wOF2');
+    expect(r.headers['cache-control']).toContain('max-age=');
+  });
 
   it('nome fora da lista não vira caminho de arquivo', async () => {
     for (const url of [

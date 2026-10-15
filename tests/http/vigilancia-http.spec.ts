@@ -74,8 +74,14 @@ describe('rotas de vigilância por OAB', () => {
       headers: a,
       payload: { oab: '47383', uf: 'GO' },
     });
-    expect((await s.inject({ method: 'GET', url: '/v1/vigilancias', headers: a })).json().total).toBe(1);
-    expect((await s.inject({ method: 'GET', url: '/v1/vigilancias', headers: b })).json().total).toBe(0);
+    expect(
+      (await s.inject({ method: 'GET', url: '/v1/vigilancias', headers: a })).json()
+        .total,
+    ).toBe(1);
+    expect(
+      (await s.inject({ method: 'GET', url: '/v1/vigilancias', headers: b })).json()
+        .total,
+    ).toBe(0);
   });
 
   it('400 com UF fora do formato', async () => {
@@ -113,7 +119,11 @@ describe('rotas de vigilância por OAB', () => {
   });
 
   it('a varredura manual responde 202 sem segurar a conexão', async () => {
-    const r = await s.inject({ method: 'POST', url: '/v1/vigilancias/varrer', headers: a });
+    const r = await s.inject({
+      method: 'POST',
+      url: '/v1/vigilancias/varrer',
+      headers: a,
+    });
     expect(r.statusCode).toBe(202);
   });
 
@@ -214,10 +224,11 @@ describe('console com a aba de vigilância', () => {
   });
 
   it('o topo do processo passa a responder "o que preciso fazer"', async () => {
-    // A mudança de layout da v0.10.0. Se estes blocos sumirem, a tela volta a
-    // ser uma ficha cadastral.
+    // A mudança de layout da v0.10.0. Desde a v0.41.1 o bloco "Pede providência" não
+    // existe na tela do processo: a pergunta é respondida pela marca no ato da linha do
+    // tempo (e pelo filtro), e pela aba Atualizações.
     const r = await s.inject({ method: 'GET', url: '/' });
-    expect(r.body).toContain('Pede providência');
+    expect(r.body).toContain('Pede providência'); // o filtro da linha do tempo e o de Atualizações
     expect(r.body).toContain('ler o ato inteiro');
     expect(r.body).toContain('Com inteiro teor');
   });
@@ -226,6 +237,6 @@ describe('console com a aba de vigilância', () => {
     // Dizer ao advogado que o prazo está calculado é o pior que este produto
     // pode fazer.
     const r = await s.inject({ method: 'GET', url: '/' });
-    expect(r.body).toContain('Confira sempre no ato completo');
+    expect(r.body).toContain('Confira no ato completo');
   });
 });

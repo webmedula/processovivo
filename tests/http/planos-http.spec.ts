@@ -241,15 +241,25 @@ describe('cadastro cria o teste de 14 dias', () => {
     const cadastro = await servidor.inject({
       method: 'POST',
       url: '/v1/contas',
-      payload: { email: 'ana@escritorio.com.br', nome: 'Ana', senha: 'senha-bem-comprida' },
+      payload: {
+        email: 'ana@escritorio.com.br',
+        nome: 'Ana',
+        senha: 'senha-bem-comprida',
+      },
     });
     expect(cadastro.statusCode).toBe(201);
 
     const cookie = cadastro.headers['set-cookie'];
     expect(cookie).toBeDefined();
-    const sessao = { cookie: String(Array.isArray(cookie) ? cookie[0] : cookie).split(';')[0] };
+    const sessao = {
+      cookie: String(Array.isArray(cookie) ? cookie[0] : cookie).split(';')[0],
+    };
 
-    const r = await servidor.inject({ method: 'GET', url: '/v1/assinatura', headers: sessao });
+    const r = await servidor.inject({
+      method: 'GET',
+      url: '/v1/assinatura',
+      headers: sessao,
+    });
     expect(r.statusCode).toBe(200);
     expect(r.json().assinatura.status).toBe('teste');
     // O teste entrega o plano que mostra o DIFERENCIAL. Um teste que só dá

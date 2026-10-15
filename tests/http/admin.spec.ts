@@ -353,7 +353,9 @@ describe('Área administrativa — planos e regras', () => {
     precoMensalCentavos: 19900,
   };
 
-  async function planosAVendaDoAssinante(): Promise<Array<{ codigo: string; precoMensalCentavos: number | null }>> {
+  async function planosAVendaDoAssinante(): Promise<
+    Array<{ codigo: string; precoMensalCentavos: number | null }>
+  > {
     const r = await servidor.inject({
       method: 'GET',
       url: '/v1/assinatura',
@@ -375,7 +377,11 @@ describe('Área administrativa — planos e regras', () => {
   });
 
   it('mostra o catálogo, os recursos que existem e as regras', async () => {
-    const r = await servidor.inject({ method: 'GET', url: '/admin/api/planos', headers: auth });
+    const r = await servidor.inject({
+      method: 'GET',
+      url: '/admin/api/planos',
+      headers: auth,
+    });
     expect(r.statusCode).toBe(200);
     const corpo = r.json();
     expect(corpo.planos.map((p: { codigo: string }) => p.codigo)).toEqual([
@@ -384,10 +390,15 @@ describe('Área administrativa — planos e regras', () => {
       'ia',
     ]);
     expect(corpo.planos[1].assinantes).toBeDefined();
-    expect(corpo.recursos.find((x: { recurso: string }) => x.recurso === 'analiseIa').implementado).toBe(
-      false,
-    );
-    expect(corpo.regras).toEqual({ diasDeTeste: 14, planoDoTeste: 'pecas', diasDeCarencia: 7 });
+    expect(
+      corpo.recursos.find((x: { recurso: string }) => x.recurso === 'analiseIa')
+        .implementado,
+    ).toBe(false);
+    expect(corpo.regras).toEqual({
+      diasDeTeste: 14,
+      planoDoTeste: 'pecas',
+      diasDeCarencia: 7,
+    });
   });
 
   it('cria um plano, e ele aparece à venda para o assinante, com preço', async () => {
@@ -445,9 +456,10 @@ describe('Área administrativa — planos e regras', () => {
       payload: { precoMensalCentavos: 9990 },
     });
     expect(r.json().precoMensalCentavos).toBe(9990);
-    expect((await planosAVendaDoAssinante()).find((p) => p.codigo === 'pecas')?.precoMensalCentavos).toBe(
-      9990,
-    );
+    expect(
+      (await planosAVendaDoAssinante()).find((p) => p.codigo === 'pecas')
+        ?.precoMensalCentavos,
+    ).toBe(9990);
   });
 
   it('recusa colocar à venda o plano de IA, com a razão', async () => {
@@ -473,7 +485,12 @@ describe('Área administrativa — planos e regras', () => {
   });
 
   it('um plano criado aqui pode ser liberado por e-mail', async () => {
-    await servidor.inject({ method: 'POST', url: '/admin/api/planos', headers: auth, payload: NOVO });
+    await servidor.inject({
+      method: 'POST',
+      url: '/admin/api/planos',
+      headers: auth,
+      payload: NOVO,
+    });
     await servidor.inject({
       method: 'POST',
       url: '/v1/contas',

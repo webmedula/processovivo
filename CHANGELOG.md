@@ -9,6 +9,46 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.41.1] — 2026-10-15
+
+Tela do processo mais limpa (decisão do dono). Os blocos **"Pede providência (últimos
+N dias)"** e **"Última movimentação"** repetiam o cabeçalho do tribunal e não tinham uso
+prático — para entender um ato, o advogado estuda o processo na Pasta digital. Só a
+**apresentação** na tela de detalhe saiu. A ordem agora é: cabeçalho do processo → Peças do
+processo → **Partes** → Linha do tempo.
+
+### Removido
+
+- Da tela do processo (`processoHtml`, em `ui/script.ts`): o cartão "Pede providência",
+  a linha "N ato(s) anterior(es) que pedem providência…", o aviso "Marcado por leitura
+  automática…", a variante "Nenhum ato dos últimos N dias…" e o bloco "Última
+  movimentação" (com o aviso de teor indisponível dele). Saíram junto as variáveis que só
+  eles liam e o CSS `.agora`. `script.ts` encolheu.
+
+### Alterado
+
+- "Partes" sobe para logo abaixo do card "Peças do processo". Conteúdo e visual iguais.
+- Resumo por IA: duas frases do painel citavam o bloco "Pede providência" ("Confira o bloco…" e "É outra coisa que o bloco…"); agora apontam para a linha do tempo e para a marcação "providência" do sistema. O painel continua logo após a capa e não dependia dos blocos removidos. A busca por número, só da aba Atualizações, também não.
+
+### Não mudou (de propósito)
+
+- A detecção de "pede providência", `GET /v1/novidades`, `/v1/painel`, o filtro Situação,
+  o selo e a linha de providência na aba Atualizações, as contagens, o "Marcar como
+  cumprido", o calendário. A linha do tempo continua marcando o ato (selo "providência" e
+  chip de filtro). Nenhuma rota, esquema ou migração; o servidor continua entregando
+  `pendenciaJanelaDias` em `/v1/facetas`, agora lido só pela aba Atualizações.
+
+### Testes
+
+- Novo `tests/browser/detalhe-limpo-navegador.spec.ts` (Chromium): sem os blocos, ordem
+  Peças → Partes → Linha do tempo, sem vão, regressão do selo/filtro/contagem na aba
+  Atualizações para o mesmo processo, sem rolagem horizontal em 1920/1366/1280/1024/768/390
+  e axe nos temas claro e escuro.
+- `atualizacoes-tela.spec.ts` e `vigilancia-http.spec.ts`: ajustados só onde afirmavam a
+  presença dos blocos antigos.
+
+---
+
 ## [0.41.0] — 2026-10-14
 
 **Atualizações: busca pelo número do processo.** Advogado com muitos processos acompanhados vai direto a um

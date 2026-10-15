@@ -327,7 +327,11 @@ describe('Contas — perfil e trilha de liberação', () => {
   });
 
   it('a conta nova tem a conta pronta e o resto pendente', async () => {
-    const r = await servidor.inject({ method: 'GET', url: '/v1/eu', headers: { cookie } });
+    const r = await servidor.inject({
+      method: 'GET',
+      url: '/v1/eu',
+      headers: { cookie },
+    });
 
     expect(r.json().trilha).toEqual({ conta: true, oab: false, tribunal: false });
   });
@@ -354,7 +358,11 @@ describe('Contas — perfil e trilha de liberação', () => {
       headers: { cookie },
       payload: { oab: '47383', ufOab: 'GO' },
     });
-    const r = await servidor.inject({ method: 'GET', url: '/v1/eu', headers: { cookie } });
+    const r = await servidor.inject({
+      method: 'GET',
+      url: '/v1/eu',
+      headers: { cookie },
+    });
 
     expect(r.json().usuario.nome).toBe('Maria Silva');
   });
@@ -633,7 +641,12 @@ describe('Meus processos — filtro por parte', () => {
           umProcesso({
             partes: [
               { nome: CLIENTE, polo: 'ATIVO', tipoPessoa: 'JURIDICA', advogados: [] },
-              { nome: 'Outra Parte Qualquer', polo: 'PASSIVO', tipoPessoa: 'FISICA', advogados: [] },
+              {
+                nome: 'Outra Parte Qualquer',
+                polo: 'PASSIVO',
+                tipoPessoa: 'FISICA',
+                advogados: [],
+              },
             ],
           }),
       }),

@@ -7,12 +7,12 @@
  *
  * O que sustenta a tela (CLAUDE.md §8, "Resumo do processo por IA"):
  * - é APOIO À LEITURA: nada aqui altera "pede providência", "não lida", ordem, contagem,
- *   calendário ou o bloco "Pede providência" do sistema, e NADA é criado (nenhum aviso,
+ *   calendário ou a marcação "providência" do sistema, e NADA é criado (nenhum aviso,
  *   nenhum evento). O aviso fixo diz isso;
  * - o botão só existe para processo ACOMPANHADO e só quando a IA está disponível para a
  *   página (a mesma rota de disponibilidade da análise de ato);
  * - o pedido não leva corpo nenhum: o servidor lê os atos do retrato da conta;
- * - as pendências "segundo a IA" ficam em bloco SEPARADO do "Pede providência" do sistema, e a
+ * - as pendências "segundo a IA" ficam em bloco SEPARADO da marcação "providência" do sistema, e a
  *   tela diz quantos atos o sistema marca como pedem providência e a IA não citou;
  * - a tela diz o que ficou de fora: atos fora do resumo e itens descartados na verificação
  *   (só a contagem, nunca o texto descartado);
@@ -100,7 +100,7 @@ function contagensHtml(c){
     h+=c.providenciasNaoCitadas>0
       ?'<li>O sistema marca '+pl(c.providenciasDoSistema,'ato','atos')+' como pedem providência; '+
         '<strong>'+pl(c.providenciasNaoCitadas,'não foi citado','não foram citados')+'</strong> neste resumo. '+
-        'Confira o bloco “Pede providência” e a linha do tempo.</li>'
+        'Confira a linha do tempo, onde o sistema marca esses atos.</li>'
       :'<li>O sistema marca '+pl(c.providenciasDoSistema,'ato','atos')+' como pedem providência, e '+
         (c.providenciasDoSistema===1?'ele foi citado':'todos foram citados')+' neste resumo.</li>';
   }else h+='<li>O sistema não marca nenhum ato como pede providência neste momento.</li>';
@@ -115,7 +115,7 @@ function resultadoHtml(d){
   h+='<section class="pvres-sec"><h4 class="pvres-rot">Situação do processo</h4><ul class="pvres-itens">'+
     d.situacao.map(itemHtml).join('')+'</ul></section>';
   h+='<section class="pvres-sec pvres-pend"><h4 class="pvres-rot">Pendências segundo a IA</h4>'+
-    '<p class="pvres-nota">Leitura automática dos atos. É outra coisa que o bloco “Pede providência” do sistema, que não muda.</p>';
+    '<p class="pvres-nota">Leitura automática dos atos. É outra coisa que a marcação “providência” do sistema na linha do tempo, que não muda.</p>';
   if(d.pendencias.length)h+='<ul class="pvres-itens">'+d.pendencias.map(itemHtml).join('')+'</ul>';
   else h+='<p class="pvres-vazio">A IA não indicou pendências nos atos lidos.</p>';
   h+='</section>';
