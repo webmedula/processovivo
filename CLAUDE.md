@@ -847,8 +847,8 @@ Não são detalhes — moldam o código.
   um escritório ativo vivia marcada). Sem janela, um "intime-se" de 2019
   deixaria a pasta marcada para sempre, toda linha da carteira antiga ficaria
   vermelha, e o selo passaria a ser ignorado justamente quando estiver certo.
-  É UM valor, lido pelo selo da carteira, pelo card do painel e pelo bloco da
-  tela do processo — o servidor o entrega à tela, e a tela nunca escreve o
+  É UM valor, lido pelo selo da carteira, pelo card do painel (e, até a v0.37.6, pelo bloco da
+  tela do processo) — o servidor o entrega à tela, e a tela nunca escreve o
   número. O bloco lista só os atos dentro da janela e conta os anteriores que
   pedem providência ("veja na linha do tempo"); a linha do tempo continua
   marcando todos: sair do topo não é sumir. Não é cálculo de prazo e não se
@@ -1089,7 +1089,7 @@ Não são detalhes — moldam o código.
   a mensagem de erro é a do servidor — o `explicar()` do console diz "já existe uma
   conta" para todo 409. Foco: depois de marcar vai ao vizinho; `aria-live` discreto.
   **Hoje só a tabela de Atualizações tem o botão**: a Pasta não tem selo de providência
-  e o cartão da tela do processo mora no `script.ts`, que não cresce.
+  e a tela do processo não mostra bloco de providência desde a v0.37.7.
 - **Conferir com o Projudi: a sonda, a linha do ato da providência e o destinatário**
   (v0.37.6). (1) **`scripts/diagnostico-providencia.mjs` é SOMENTE LEITURA**: abre o banco
   com `readOnly` e `query_only` e **nunca por `abrirBanco`** (que cria esquema e migra),
@@ -1124,6 +1124,14 @@ Não são detalhes — moldam o código.
   comunicação que a próxima sincronização trouxer; resposta sem inscrições não apaga o que
   já se sabia. Nada aqui é prazo: o Projudi mostra "Possível Data Limite" e o sistema
   continua sem informá-la.
+- **A tela do processo NÃO tem bloco "Pede providência" nem "Última movimentação"**
+  (v0.37.7, decisão do dono). Repetiam o cabeçalho do tribunal e não serviam para
+  entender o ato — isso se faz na Pasta digital. Ordem: cabeçalho → Peças do processo →
+  Partes → Linha do tempo. Saiu só a APRESENTAÇÃO: a detecção, o selo e o filtro de
+  Atualizações, o "cumprido" e as contagens são os mesmos, e a linha do tempo segue
+  marcando todo ato que pede providência (selo e chip "Pede providência"), então sair do
+  topo da tela não é sumir. Não reintroduza um resumo de providência no detalhe sem decisão
+  do dono; `tests/browser/detalhe-limpo-navegador.spec.ts` fixa a ausência.
 - **Encerramento se decide pelo ato MAIS RECENTE, nunca pelo histórico.**
   Processo arquivado e depois desarquivado tem os dois atos nos autos; procurar
   "existe arquivamento" marcaria como encerrada a pasta que voltou a correr — e
@@ -1456,7 +1464,7 @@ teste e carência** (v0.28.0), **visual novo a partir do logo** (v0.29.0),
 **calendário: detecção, agenda, tela e feed ICS** (v0.32.0),
 **ajustes dos advogados: Atualizações por processo, peças no topo, providência em 10 dias** (v0.32.1),
 **Pasta digital: backend (v0.33.0) e tela (v0.33.1) — peça aberta ao clique, guarda por peça, montar pasta completa, baixar marcadas**,
-**ato (movimentação) de cada peça na lista da Pasta, com descrição** (v0.33.2) **e o número da movimentação calculado pela posição do ato, com aviso de atos bloqueados** (v0.34.0; a 0.33.3 havia removido o número errado da 0.33.2), **calibração do número com o Projudi feita pelo advogado: exato quando provado, faixa ou estimado quando não** (v0.35.0), **página inicial: Últimas atualizações mostra só o trecho do texto e o trilho de peças baixadas não estoura a largura** (v0.35.1), **Pasta: número da movimentação no lugar do índice; página inicial: "detectado há N dias" e cartão "pede providência"** (v0.35.2), **Pasta: lista em altura total com avisos compactados** (v0.35.3), **Pasta: todas as movimentações na lista, inclusive as sem peça, com lacuna de numeração provada e lista mais larga** (v0.36.0), **página inicial: tabela de últimas atualizações, uma linha por processo, com filtros que contam no lugar dos cartões; histórico de peças baixadas dentro da Pasta** (v0.37.0), **tabela sem "+N anteriores", "Detectado" enxuto e descrição do ato sem repetição na exibição** (v0.37.1), **classe legível e agrupada no filtro, última movimentação sem repetição e carteira sem rodapé redundante** (v0.37.2), **Atualizações lista todos os processos acompanhados, período como filtro opcional e verificação por conta** (v0.37.3), **Atualizações abre em "Pedem providência", com a lista completa a um clique** (v0.37.4), **intimação do Diário pede providência por 30 dias ou até "cumprido", marca por ato, correção da avalanche de novidades e reparo só com dry-run** (v0.37.5), **conferência com o Projudi: sonda de diagnóstico só de leitura, linha do ato da providência, "Detectado" legível e intimação a outro destinatário** (v0.37.6),
+**ato (movimentação) de cada peça na lista da Pasta, com descrição** (v0.33.2) **e o número da movimentação calculado pela posição do ato, com aviso de atos bloqueados** (v0.34.0; a 0.33.3 havia removido o número errado da 0.33.2), **calibração do número com o Projudi feita pelo advogado: exato quando provado, faixa ou estimado quando não** (v0.35.0), **página inicial: Últimas atualizações mostra só o trecho do texto e o trilho de peças baixadas não estoura a largura** (v0.35.1), **Pasta: número da movimentação no lugar do índice; página inicial: "detectado há N dias" e cartão "pede providência"** (v0.35.2), **Pasta: lista em altura total com avisos compactados** (v0.35.3), **Pasta: todas as movimentações na lista, inclusive as sem peça, com lacuna de numeração provada e lista mais larga** (v0.36.0), **página inicial: tabela de últimas atualizações, uma linha por processo, com filtros que contam no lugar dos cartões; histórico de peças baixadas dentro da Pasta** (v0.37.0), **tabela sem "+N anteriores", "Detectado" enxuto e descrição do ato sem repetição na exibição** (v0.37.1), **classe legível e agrupada no filtro, última movimentação sem repetição e carteira sem rodapé redundante** (v0.37.2), **Atualizações lista todos os processos acompanhados, período como filtro opcional e verificação por conta** (v0.37.3), **Atualizações abre em "Pedem providência", com a lista completa a um clique** (v0.37.4), **intimação do Diário pede providência por 30 dias ou até "cumprido", marca por ato, correção da avalanche de novidades e reparo só com dry-run** (v0.37.5), **conferência com o Projudi: sonda de diagnóstico só de leitura, linha do ato da providência, "Detectado" legível e intimação a outro destinatário** (v0.37.6), **tela do processo sem os blocos "Pede providência" e "Última movimentação", Partes logo abaixo das peças** (v0.37.7),
 Dockerfile multi-stage, CI, 1662 testes.
 
 **Pasta digital (v0.33.0, backend):** `GET /v1/processos/:numero/pasta` (lista +

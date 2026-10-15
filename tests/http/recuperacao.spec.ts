@@ -135,7 +135,10 @@ describe('Recuperação de senha — disponibilidade', () => {
     const m = montarComEmail();
     encerrar = m.encerrar;
 
-    const consulta = await m.servidor.inject({ method: 'GET', url: '/v1/senha/recuperar' });
+    const consulta = await m.servidor.inject({
+      method: 'GET',
+      url: '/v1/senha/recuperar',
+    });
     const pedido = await pedir(m.servidor, 'ninguem@escritorio.com.br');
 
     expect(consulta.statusCode).toBe(200);

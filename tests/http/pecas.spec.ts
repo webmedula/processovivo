@@ -24,10 +24,7 @@ class ProvedorFalsoDePecas implements ProvedorDePecas {
   readonly tribunais = ['TJGO'];
   recusar = false;
 
-  async listarPecas(
-    _numero: string,
-    _credencial: CredencialTribunal,
-  ): Promise<Peca[]> {
+  async listarPecas(_numero: string, _credencial: CredencialTribunal): Promise<Peca[]> {
     if (this.recusar) {
       throw new CredencialTribunalInvalidaError(this.nome, 'Usuário ou Senha inválida.');
     }

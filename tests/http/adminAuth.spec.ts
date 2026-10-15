@@ -48,9 +48,9 @@ describe('validarConfiguracaoAdmin', () => {
   });
 
   it('recusa texto de exemplo mesmo sendo longo o bastante', () => {
-    expect(() =>
-      validarConfiguracaoAdmin('COLE_AQUI_O_USUARIO', SENHA_FORTE),
-    ).toThrow(/texto de exemplo/);
+    expect(() => validarConfiguracaoAdmin('COLE_AQUI_O_USUARIO', SENHA_FORTE)).toThrow(
+      /texto de exemplo/,
+    );
   });
 });
 

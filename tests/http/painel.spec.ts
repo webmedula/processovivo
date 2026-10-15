@@ -187,7 +187,12 @@ describe('painel', () => {
 
   it('a verificação do painel é DA CONTA: sem processo pendente dela, não há "andamento" nem "demorando" (v0.37.3)', async () => {
     const v = (await painel())['verificacao'] as unknown as Record<string, unknown>;
-    expect(v).toMatchObject({ emAndamento: false, pendentes: 0, desde: null, demorando: false });
+    expect(v).toMatchObject({
+      emAndamento: false,
+      pendentes: 0,
+      desde: null,
+      demorando: false,
+    });
   });
 
   it('o painel NÃO promete prazo', async () => {

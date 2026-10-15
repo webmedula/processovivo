@@ -9,6 +9,45 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.37.7] — 2026-10-15
+
+Tela do processo mais limpa (decisão do dono). Os blocos **"Pede providência (últimos
+N dias)"** e **"Última movimentação"** repetiam o cabeçalho do tribunal e não tinham uso
+prático — para entender um ato, o advogado estuda o processo na Pasta digital. Só a
+**apresentação** na tela de detalhe saiu. A ordem agora é: cabeçalho do processo → Peças do
+processo → **Partes** → Linha do tempo.
+
+### Removido
+
+- Da tela do processo (`processoHtml`, em `ui/script.ts`): o cartão "Pede providência",
+  a linha "N ato(s) anterior(es) que pedem providência…", o aviso "Marcado por leitura
+  automática…", a variante "Nenhum ato dos últimos N dias…" e o bloco "Última
+  movimentação" (com o aviso de teor indisponível dele). Saíram junto as variáveis que só
+  eles liam e o CSS `.agora`. `script.ts` encolheu.
+
+### Alterado
+
+- "Partes" sobe para logo abaixo do card "Peças do processo". Conteúdo e visual iguais.
+
+### Não mudou (de propósito)
+
+- A detecção de "pede providência", `GET /v1/novidades`, `/v1/painel`, o filtro Situação,
+  o selo e a linha de providência na aba Atualizações, as contagens, o "Marcar como
+  cumprido", o calendário. A linha do tempo continua marcando o ato (selo "providência" e
+  chip de filtro). Nenhuma rota, esquema ou migração; o servidor continua entregando
+  `pendenciaJanelaDias` em `/v1/facetas`, agora lido só pela aba Atualizações.
+
+### Testes
+
+- Novo `tests/browser/detalhe-limpo-navegador.spec.ts` (Chromium): sem os blocos, ordem
+  Peças → Partes → Linha do tempo, sem vão, regressão do selo/filtro/contagem na aba
+  Atualizações para o mesmo processo, sem rolagem horizontal em 1920/1366/1280/1024/768/390
+  e axe nos temas claro e escuro.
+- `atualizacoes-tela.spec.ts` e `vigilancia-http.spec.ts`: ajustados só onde afirmavam a
+  presença dos blocos antigos.
+
+---
+
 ## [0.37.6] — 2026-10-09
 
 Conferência com o Projudi. O dono pôs a aba Atualizações ao lado da tela de

@@ -336,12 +336,6 @@ button.bt3:hover{color:var(--erro)}
   font-variant-numeric:tabular-nums}
 .capa .sob{margin-top:4px;color:var(--tinta2);font-size:14px}
 .selos{display:flex;gap:6px;flex-wrap:wrap;margin-top:12px}
-.agora{background:var(--papel2);border:1px solid var(--linha);border-top:0;
-  border-radius:0 0 var(--r) var(--r);padding:14px 18px;margin-bottom:14px}
-.agora .k{font-size:11px;font-weight:700;color:var(--tinta3);
-  text-transform:uppercase;letter-spacing:.07em}
-.agora .t{font-size:17px;font-weight:600;margin-top:4px}
-.agora .d{font-size:13px;color:var(--tinta2);margin-top:2px}
 .fatos{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));
   gap:1px;background:var(--linha2);border:1px solid var(--linha);
   border-radius:var(--r);overflow:hidden;margin-bottom:14px}
@@ -442,9 +436,8 @@ h3.sec{font-size:12px;font-weight:700;text-transform:uppercase;
 @keyframes pulsa{0%,100%{opacity:.25}50%{opacity:1}}
 
 /* ---------- providência, filtros e leitura do ato ---------- */
-/* O cartão de providência é o primeiro da página e precisa se distinguir sem
-   gritar: borda de acento à esquerda, não fundo vermelho. Alarme permanente
-   deixa de ser alarme. */
+/* O cartão de alerta precisa se distinguir sem gritar: borda de acento à
+   esquerda, não fundo vermelho. Alarme permanente deixa de ser alarme. */
 .cartao.alerta{border-left:3px solid var(--atencao-ponto)}
 .acao{display:grid;grid-template-columns:88px 1fr;gap:10px;padding:9px 0;
   border-bottom:1px solid var(--linha)}

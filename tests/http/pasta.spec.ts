@@ -548,9 +548,7 @@ describe('API — Pasta digital: a movimentação de cada peça (v0.33.2) e a po
   });
 
   it('o identificador interno do tribunal nunca sai como número (regressão da v0.33.2)', async () => {
-    provedor.movimentos = [
-      ato(516017862, 'Juntada de Petição de Impugnação'),
-    ];
+    provedor.movimentos = [ato(516017862, 'Juntada de Petição de Impugnação')];
     provedor.pecas = provedor.pecas.map((p) =>
       p.id === 'a' ? { ...p, movimento: 516017862 } : p,
     );
@@ -561,13 +559,19 @@ describe('API — Pasta digital: a movimentação de cada peça (v0.33.2) e a po
       descricao: 'Juntada de Petição de Impugnação',
       posicao: 1,
     });
-    expect(JSON.stringify(c.pecas.map((p) => p['movimentacao']))).not.toContain('516017862');
+    expect(JSON.stringify(c.pecas.map((p) => p['movimentacao']))).not.toContain(
+      '516017862',
+    );
   });
 
   it('a posição segue a ordem cronológica, mesmo com os atos fora de ordem na resposta', async () => {
     const em = (dia: number): Date => new Date(Date.UTC(2026, 8, dia, 13, 0, 0));
     provedor.pecas = provedor.pecas.map((p) =>
-      p.id === 'a' ? { ...p, movimento: 900000003 } : p.id === 'b' ? { ...p, movimento: 900000001 } : p,
+      p.id === 'a'
+        ? { ...p, movimento: 900000003 }
+        : p.id === 'b'
+          ? { ...p, movimento: 900000001 }
+          : p,
     );
     // Cronologia: 900000001 (dia 1), 900000002 (dia 5), 900000003 (dia 9).
     provedor.movimentos = [
@@ -594,19 +598,31 @@ describe('API — Pasta digital: a movimentação de cada peça (v0.33.2) e a po
     ];
     await carregarPecas();
     let c = await pasta();
-    expect(c.pecas.find((p) => p.pecaId === 'b')?.['movimentacao']).toMatchObject({ posicao: 1 });
-    expect(c.pecas.find((p) => p.pecaId === 'a')?.['movimentacao']).toMatchObject({ posicao: 2 });
+    expect(c.pecas.find((p) => p.pecaId === 'b')?.['movimentacao']).toMatchObject({
+      posicao: 1,
+    });
+    expect(c.pecas.find((p) => p.pecaId === 'a')?.['movimentacao']).toMatchObject({
+      posicao: 2,
+    });
     // A ordem em que o tribunal respondeu não muda o resultado.
     provedor.movimentos = [...provedor.movimentos].reverse();
     await carregarPecas();
     c = await pasta();
-    expect(c.pecas.find((p) => p.pecaId === 'b')?.['movimentacao']).toMatchObject({ posicao: 1 });
-    expect(c.pecas.find((p) => p.pecaId === 'a')?.['movimentacao']).toMatchObject({ posicao: 2 });
+    expect(c.pecas.find((p) => p.pecaId === 'b')?.['movimentacao']).toMatchObject({
+      posicao: 1,
+    });
+    expect(c.pecas.find((p) => p.pecaId === 'a')?.['movimentacao']).toMatchObject({
+      posicao: 2,
+    });
   });
 
   it('totalAtosRecebidos conta TODOS os atos da resposta, também os sem peça — e fica nulo sem listagem ou sem atos', async () => {
     expect((await pasta())['totalAtosRecebidos']).toBeNull(); // nada carregado
-    provedor.movimentos = [ato(1, 'Um'), ato(2, 'Dois', { data: new Date('2026-09-29T13:00:00Z') }), ato(3, 'Três', { data: new Date('2026-09-30T13:00:00Z') })];
+    provedor.movimentos = [
+      ato(1, 'Um'),
+      ato(2, 'Dois', { data: new Date('2026-09-29T13:00:00Z') }),
+      ato(3, 'Três', { data: new Date('2026-09-30T13:00:00Z') }),
+    ];
     await carregarPecas();
     expect((await pasta())['totalAtosRecebidos']).toBe(3);
     provedor.movimentos = [];
@@ -630,7 +646,9 @@ describe('API — Pasta digital: a movimentação de cada peça (v0.33.2) e a po
     await carregarPecas();
     const c = await pasta();
     expect(c['totalAtosRecebidos']).toBe(3);
-    expect(c.pecas.find((p) => p.pecaId === 'a')?.['movimentacao']).toMatchObject({ posicao: 3 });
+    expect(c.pecas.find((p) => p.pecaId === 'a')?.['movimentacao']).toMatchObject({
+      posicao: 3,
+    });
   });
 
   it('sem complemento o campo vem nulo; peça que aponta ato que o tribunal não listou fica sem bloco', async () => {
@@ -679,7 +697,10 @@ describe('API — Pasta digital: a movimentação de cada peça (v0.33.2) e a po
   });
 
   it('posição e total do A nunca vazam para o B', async () => {
-    provedor.movimentos = [ato(1, 'Ato do A'), ato(2, 'Outro do A', { data: new Date('2026-09-29T13:00:00Z') })];
+    provedor.movimentos = [
+      ato(1, 'Ato do A'),
+      ato(2, 'Outro do A', { data: new Date('2026-09-29T13:00:00Z') }),
+    ];
     await carregarPecas(A);
     const doB = await pasta(B);
     expect(doB['totalAtosRecebidos']).toBeNull();

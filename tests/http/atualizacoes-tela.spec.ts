@@ -97,7 +97,7 @@ describe('tela de Atualizações — uma linha por processo', () => {
   });
 });
 
-describe('tela do processo — ordem e janela de pendência', () => {
+describe('tela do processo — ordem dos blocos', () => {
   const corpo = corpoDe('processoHtml');
   const pos = (marca: string): number => {
     const i = corpo.indexOf(marca);
@@ -105,24 +105,27 @@ describe('tela do processo — ordem e janela de pendência', () => {
     return i;
   };
 
-  it('as peças vêm logo depois dos dados do processo; os demais blocos mantêm a ordem', () => {
+  it('as peças vêm logo depois dos dados do processo, depois as partes e a linha do tempo', () => {
     const ordem = [
       pos('class="capa"'),
       pos('class="fatos"'), // dados do processo
       pos('id="pecas-resumo"'), // card "Peças do processo"
-      pos('Pede providência'),
-      pos('Última movimentação'),
       pos('<h3 class="sec">Partes</h3>'),
       pos("'Linha do tempo'"),
     ];
     expect([...ordem].sort((a, b) => a - b)).toEqual(ordem);
   });
 
-  it('o bloco "Pede providência" lê a janela que o servidor entrega, sem número próprio', () => {
-    expect(corpo).toContain('estado.facetas.pendenciaJanelaDias');
-    expect(corpo).toContain('veja na linha do tempo');
-    expect(corpo).not.toMatch(/\b30\b/);
-    expect(corpo).not.toContain('slice(0,5)');
+  it('v0.37.7: os blocos "Pede providência" e "Última movimentação" saíram da tela do processo', () => {
+    // A apresentação saiu; a detecção, não. A janela segue sendo lida só pelas telas que
+    // ainda mostram a pendência (Atualizações), nunca pela tela do processo.
+    // O chip "Pede providência" do filtro da linha do tempo continua (é a marca do ato).
+    expect(corpo).not.toMatch(/Pede providência\s*·/);
+    expect(corpo).not.toContain('Última movimentação');
+    expect(corpo).not.toContain('pendenciaJanelaDias');
+    expect(corpo).not.toContain('veja na linha do tempo');
+    expect(corpo).not.toContain('class="agora"');
+    expect(corpo).not.toContain('cartao alerta');
   });
 
   it('a linha do tempo continua marcando o ato fora da janela (a marca é exigeAcao, sem data)', () => {
