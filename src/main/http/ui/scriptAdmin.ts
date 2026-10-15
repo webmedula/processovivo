@@ -242,7 +242,7 @@ function formularioPlano(){
   var marcas=estado.catalogo.recursos.map(function(r){
     var marcado=p.recursos.indexOf(r.recurso)>=0;
     return '<label><input type="checkbox" data-recurso="'+esc(r.recurso)+'"'+(marcado?' checked':'')+'>'+
-      esc(r.nome)+(r.implementado?'':' <span class="t-sub">— ainda não existe no sistema</span>')+'</label>';
+      esc(r.nome)+(r.implementado?'':' <span class="t-sub">— em teste fechado: libere à mão; ainda não pode ir à venda</span>')+'</label>';
   }).join('');
 
   var h='<div class="cartao"><h3 class="sec">'+(novo?'Novo plano':'Editar plano '+esc(p.nome))+'</h3>';

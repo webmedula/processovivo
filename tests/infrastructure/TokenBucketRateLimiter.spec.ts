@@ -72,8 +72,6 @@ describe('TokenBucketRateLimiter', () => {
   });
 
   it('recusa capacidade não positiva na construção', () => {
-    expect(() => new TokenBucketRateLimiter({ capacidade: 0 })).toThrow(
-      /maior que zero/,
-    );
+    expect(() => new TokenBucketRateLimiter({ capacidade: 0 })).toThrow(/maior que zero/);
   });
 });

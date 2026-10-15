@@ -8,6 +8,8 @@ import { SCRIPT_PASTA_BAIXADAS } from '../../src/main/http/ui/scriptPastaBaixada
 import { SCRIPT_CALENDARIO } from '../../src/main/http/ui/calendario.js';
 import { SCRIPT_ATUALIZACOES } from '../../src/main/http/ui/atualizacoes.js';
 import { SCRIPT_PROVIDENCIA } from '../../src/main/http/ui/providencia.js';
+import { SCRIPT_ANALISE_IA } from '../../src/main/http/ui/analiseIA.js';
+import { SCRIPT_RESUMO_IA } from '../../src/main/http/ui/resumoIA.js';
 
 /*
  * O console é JavaScript dentro de uma string.
@@ -40,6 +42,8 @@ describe.each([
   ['calendário', SCRIPT_CALENDARIO],
   ['atualizações (tabela)', SCRIPT_ATUALIZACOES],
   ['marcar como cumprido', SCRIPT_PROVIDENCIA],
+  ['análise por IA', SCRIPT_ANALISE_IA],
+  ['resumo por IA', SCRIPT_RESUMO_IA],
 ])('console web — o JavaScript da interface (%s)', (_nome, codigo) => {
   const linter = new Linter();
 

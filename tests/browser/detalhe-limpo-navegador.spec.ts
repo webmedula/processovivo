@@ -14,7 +14,7 @@ import { numeroValido } from '../helpers/atualizacoesSinteticas.js';
 import type { FastifyInstance } from 'fastify';
 
 /*
- * v0.37.7 NUM NAVEGADOR: a tela de detalhe do processo sem os blocos "Pede providência"
+ * v0.41.1 NUM NAVEGADOR: a tela de detalhe do processo sem os blocos "Pede providência"
  * e "Última movimentação"; a ordem passa a ser cabeçalho → Peças do processo → Partes →
  * Linha do tempo. O mesmo processo, que TEM ato pedindo providência, continua com selo,
  * filtro e contagem na aba Atualizações (regressão: só a apresentação do detalhe saiu).

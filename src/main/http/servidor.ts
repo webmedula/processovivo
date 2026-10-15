@@ -25,6 +25,8 @@ import { rotasDePecas } from './rotas/pecas.js';
 import { rotasDoLeitor } from './rotas/leitor.js';
 import { rotasDaPasta } from './rotas/pasta.js';
 import { rotasDoPainel } from './rotas/painel.js';
+import { rotasDaAnaliseIA } from './rotas/analiseIA.js';
+import { rotasDoResumoIA } from './rotas/resumoIA.js';
 import { ROTA_FEED_PUBLICO, rotasDoCalendario } from './rotas/calendario.js';
 import { rotasDeAssinaturas } from './rotas/assinaturas.js';
 import { ROTAS_ADMIN, rotasDeAdmin } from './rotas/admin.js';
@@ -142,6 +144,8 @@ export function construirServidor(app: Aplicacao, config: Config): FastifyInstan
   void servidor.register(rotasDeProcesso(app));
   void servidor.register(rotasDeAcompanhamento(app.acompanhamento, config.telas));
   void servidor.register(rotasDePecas(app.pecas, app.assinaturas));
+  void servidor.register(rotasDaAnaliseIA(app.analiseIa, app.avisoDoPrazo));
+  void servidor.register(rotasDoResumoIA(app.resumoDoProcesso));
   void servidor.register(rotasDoLeitor(app.leitor, app.assinaturas));
   void servidor.register(rotasDaPasta(app.pasta, app.assinaturas));
   void servidor.register(

@@ -116,7 +116,7 @@ describe('tela do processo — ordem dos blocos', () => {
     expect([...ordem].sort((a, b) => a - b)).toEqual(ordem);
   });
 
-  it('v0.37.7: os blocos "Pede providência" e "Última movimentação" saíram da tela do processo', () => {
+  it('v0.41.1: os blocos "Pede providência" e "Última movimentação" saíram da tela do processo', () => {
     // A apresentação saiu; a detecção, não. A janela segue sendo lida só pelas telas que
     // ainda mostram a pendência (Atualizações), nunca pela tela do processo.
     // O chip "Pede providência" do filtro da linha do tempo continua (é a marca do ato).

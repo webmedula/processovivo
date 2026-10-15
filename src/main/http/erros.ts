@@ -2,7 +2,10 @@ import { ZodError } from 'zod';
 import {
   AcompanhamentoNaoEncontradoError,
   AssinaturaInativaError,
+  AnaliseNaoEncontradaError,
   AtoDaProvidenciaInvalidoError,
+  EntradaNaoAnalisavelError,
+  PrazoNaoCalculavelError,
   ChaveApiNaoEncontradaError,
   PlanoJaExisteError,
   CredenciaisInvalidasError,
@@ -126,7 +129,41 @@ export function mapearErro(erro: unknown): RespostaDeErro {
     return { status: 409, corpo: { erro: erro.codigo, mensagem: erro.message } };
   }
 
+  // Análise por IA (v0.38.0). Cada motivo tem a frase dele na tela; o corpo traz `motivo`.
+  // Nenhum desses casos chamou o modelo.
+  if (erro instanceof EntradaNaoAnalisavelError) {
+    const status =
+      erro.motivo === 'sem_plano' || erro.motivo === 'segredo_de_justica'
+        ? 403
+        : erro.motivo === 'limite_de_uso'
+          ? 429
+          : erro.motivo === 'ato_nao_encontrado'
+            ? 409
+            : 422;
+    return {
+      status,
+      corpo: {
+        erro: erro.codigo,
+        mensagem: erro.message,
+        detalhes: { motivo: erro.motivo },
+      },
+    };
+  }
+
+  // Aviso de prazo a partir da análise (v0.39.0): o corpo traz `motivo` para a tela escolher a frase.
+  if (erro instanceof PrazoNaoCalculavelError) {
+    return {
+      status: erro.motivo === 'ato_nao_encontrado' ? 409 : 422,
+      corpo: {
+        erro: erro.codigo,
+        mensagem: erro.message,
+        detalhes: { motivo: erro.motivo },
+      },
+    };
+  }
+
   if (
+    erro instanceof AnaliseNaoEncontradaError ||
     erro instanceof ProcessoNaoEncontradoError ||
     erro instanceof AcompanhamentoNaoEncontradoError ||
     erro instanceof ChaveApiNaoEncontradaError ||

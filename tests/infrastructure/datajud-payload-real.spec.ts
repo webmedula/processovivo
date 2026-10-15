@@ -122,10 +122,7 @@ describe('formatos de data desconhecidos', () => {
 
   it('falha ALTO em vez de devolver o campo vazio', () => {
     expect(() =>
-      mapearProcesso(
-        { ...base, dataAjuizamento: '26/08/2015' },
-        CONSULTADO_EM,
-      ),
+      mapearProcesso({ ...base, dataAjuizamento: '26/08/2015' }, CONSULTADO_EM),
     ).toThrow(RespostaInvalidaError);
   });
 

@@ -133,6 +133,26 @@ export class ServicoAssinaturas {
     }
   }
 
+  /**
+   * O workspace tem este recurso, SEM a exceção do `exigir`?
+   *
+   * O `exigir` deixa passar quem não tem assinatura (chave de API, integrações do
+   * operador) para não derrubar o n8n no dia do deploy. A análise por IA é a única
+   * exceção a essa exceção (v0.38.0, decisão do dono): manda texto a um terceiro e
+   * custa dinheiro por chamada, então só passa quem TEM assinatura vigente cujo
+   * plano inclui o recurso. Sem assinatura, vencida além da carência ou plano sem o
+   * recurso: `false`. Não lança — quem pergunta decide a frase.
+   */
+  async temRecursoSemExcecao(
+    workspace: string,
+    recurso: RecursoDoPlano,
+  ): Promise<boolean> {
+    const assinatura = await this.repositorio.porWorkspace(workspace);
+    if (!assinatura) return false;
+    if (!assinatura.estaVigenteEm(this.agora())) return false;
+    return planoInclui(await this.planoDe(assinatura), recurso);
+  }
+
   /** O teste de conta nova. Chamado pelo cadastro, nunca por rota pública. */
   async criarTeste(workspace: string): Promise<Assinatura> {
     const regras = await this.regras.ler();

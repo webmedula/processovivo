@@ -5,6 +5,7 @@ import { trechoDeTexto } from '../../src/main/http/ui/trechoDeTexto.js';
 import {
   SITUACAO_PADRAO,
   atoExibido,
+  chaveDoAtoDaLinha,
   detectadoDistanteDoAto,
   diaMesBrasilia,
   contarSaidasDaProvidencia,
@@ -735,5 +736,61 @@ describe('ordenar por "Data do ato" usa a data que a linha mostra (v0.37.6)', ()
       (x) => x.numero,
     );
     expect(ordem).toEqual(['B', 'A']);
+  });
+});
+
+describe('chaveDoAtoDaLinha — o ato que o botão "Analisar com IA" analisa (v0.38.0)', () => {
+  const processo = (situacao: string | null) => ({
+    providencia: situacao
+      ? { situacao, motivo: { chave: 'chave-da-providencia' } }
+      : null,
+  });
+
+  it('processo que pede providência: o ato que gera a providência, não o último andamento', () => {
+    expect(
+      chaveDoAtoDaLinha({
+        maisRecente: { chaveDoAto: 'chave-do-ultimo' },
+        processo: processo('pede'),
+      }),
+    ).toBe('chave-da-providencia');
+  });
+
+  it('sem providência pendente (cumprida, vencida ou nenhuma): o ato da própria linha', () => {
+    for (const situacao of ['cumprida', 'venceu', 'outro', null]) {
+      expect(
+        chaveDoAtoDaLinha({
+          maisRecente: { chaveDoAto: 'chave-do-ultimo' },
+          processo: processo(situacao),
+        }),
+      ).toBe('chave-do-ultimo');
+    }
+  });
+
+  it('ato não identificável: vazio (a tela não desenha o botão)', () => {
+    expect(chaveDoAtoDaLinha({ maisRecente: {}, processo: null })).toBe('');
+    expect(
+      chaveDoAtoDaLinha({ maisRecente: { chaveDoAto: null }, processo: processo(null) }),
+    ).toBe('');
+  });
+
+  it('a linha de processo sem novidade carrega a chave da última movimentação', () => {
+    const [linha] = montarLinhas(
+      [],
+      [
+        {
+          numero: '12345674720238260100',
+          processo: null,
+          segredoJustica: false,
+          ultimaMovimentacao: {
+            data: '2026-10-01T12:00:00.000Z',
+            titulo: 'Despacho',
+            conteudo: null,
+            chaveDoAto: 'chave-sem-novidade',
+          },
+        },
+      ],
+      true,
+    );
+    expect(linha && chaveDoAtoDaLinha(linha)).toBe('chave-sem-novidade');
   });
 });

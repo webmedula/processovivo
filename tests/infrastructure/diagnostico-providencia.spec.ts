@@ -33,7 +33,11 @@ const GO_CUMPRIDO = numeroValido(4, '09', '0004'); // pediria; marca cobre
 const SP = numeroValido(5, '26', '0100'); // outro tribunal
 const NAO_ACOMPANHADO = numeroValido(6, '09', '0006');
 
-const intimacao = (dias: number, id: number, paraOUsuario?: 'sim' | 'nao'): Movimentacao => ({
+const intimacao = (
+  dias: number,
+  id: number,
+  paraOUsuario?: 'sim' | 'nao',
+): Movimentacao => ({
   data: dia(dias),
   titulo: 'Ato ordinatório',
   idExterno: `djen:${id}`,
@@ -41,7 +45,12 @@ const intimacao = (dias: number, id: number, paraOUsuario?: 'sim' | 'nao'): Movi
   ...(paraOUsuario ? { paraOUsuario } : {}),
 });
 
-function processo(numero: string, tribunal: string, movs: Movimentacao[], provider = 'datajud+djen'): Processo {
+function processo(
+  numero: string,
+  tribunal: string,
+  movs: Movimentacao[],
+  provider = 'datajud+djen',
+): Processo {
   return new Processo({
     numero: NumeroCNJ.criar(numero),
     tribunal,
@@ -60,16 +69,29 @@ describe('sonda de diagnóstico da providência', () => {
   async function semear(): Promise<void> {
     const db = abrirBanco(caminho);
     const repo = new RepositorioAcompanhamentosSqlite(db);
-    const gravar = async (n: string, t: string, movs: Movimentacao[], novidades: Movimentacao[] = []): Promise<void> => {
+    const gravar = async (
+      n: string,
+      t: string,
+      movs: Movimentacao[],
+      novidades: Movimentacao[] = [],
+    ): Promise<void> => {
       await repo.acompanhar(WS, NumeroCNJ.criar(n).digitos);
-      await repo.registrarSincronizacao(WS, NumeroCNJ.criar(n).digitos, processo(n, t, movs), novidades);
+      await repo.registrarSincronizacao(
+        WS,
+        NumeroCNJ.criar(n).digitos,
+        processo(n, t, movs),
+        novidades,
+      );
     };
     const nova = intimacao(3, 10, 'sim');
     await gravar(GO_1, 'TJGO', [nova], [nova]);
     await gravar(GO_SEM_DETECCAO, 'TJGO', [intimacao(4, 20)]);
-    await gravar(GO_SEM_PROV, 'TJGO', [{ data: dia(1), titulo: 'Juntada de petição' }], [
-      { data: dia(1), titulo: 'Juntada de petição' },
-    ]);
+    await gravar(
+      GO_SEM_PROV,
+      'TJGO',
+      [{ data: dia(1), titulo: 'Juntada de petição' }],
+      [{ data: dia(1), titulo: 'Juntada de petição' }],
+    );
     const velha = intimacao(6, 30);
     await gravar(GO_CUMPRIDO, 'TJGO', [velha]);
     await repo.marcarCumprido(WS, NumeroCNJ.criar(GO_CUMPRIDO).digitos, {
@@ -86,7 +108,10 @@ describe('sonda de diagnóstico da providência', () => {
     db.close();
   }
 
-  const rodar = (args: string[], extra: Partial<Parameters<typeof executarDiagnostico>[1]> = {}): number =>
+  const rodar = (
+    args: string[],
+    extra: Partial<Parameters<typeof executarDiagnostico>[1]> = {},
+  ): number =>
     executarDiagnostico(args, {
       caminhoBanco: caminho,
       agora: () => AGORA,
@@ -96,7 +121,8 @@ describe('sonda de diagnóstico da providência', () => {
       ...extra,
     });
   const texto = (): string => saida.join('\n');
-  const hash = (): string => createHash('sha256').update(readFileSync(caminho)).digest('hex');
+  const hash = (): string =>
+    createHash('sha256').update(readFileSync(caminho)).digest('hex');
 
   beforeEach(async () => {
     pasta = mkdtempSync(join(tmpdir(), 'sonda-'));
@@ -123,7 +149,9 @@ describe('sonda de diagnóstico da providência', () => {
 
     it('outro tribunal: diz o do retrato e o do número', () => {
       rodar([`--numeros=${SP}`]);
-      expect(texto()).toMatch(/NÃO aparece, porque o tribunal do retrato é TJSP, não TJGO/);
+      expect(texto()).toMatch(
+        /NÃO aparece, porque o tribunal do retrato é TJSP, não TJGO/,
+      );
       expect(texto()).toContain('tribunal=TJGO:não');
     });
 
@@ -132,25 +160,36 @@ describe('sonda de diagnóstico da providência', () => {
       const t = texto();
       expect(t).toContain('situação(pede providência):sim');
       expect(t).toContain('período(detectadaEm ≤ 15d):não');
-      expect(t).toMatch(/NÃO aparece, porque o Período usa a data de DETECÇÃO e este processo nunca teve novidade/);
+      expect(t).toMatch(
+        /NÃO aparece, porque o Período usa a data de DETECÇÃO e este processo nunca teve novidade/,
+      );
       expect(t).toContain('novidades: 0 no total');
     });
 
     it('Situação: novidade recente mas nada pede providência', () => {
       rodar([`--numeros=${GO_SEM_PROV}`]);
       expect(texto()).toContain('período(detectadaEm ≤ 15d):sim');
-      expect(texto()).toMatch(/NÃO aparece, porque nenhum ato dentro da janela pede providência/);
+      expect(texto()).toMatch(
+        /NÃO aparece, porque nenhum ato dentro da janela pede providência/,
+      );
     });
 
     it('retrato antigo, sem o tipo da comunicação gravado: diz que o tipo só entra na próxima sincronização', async () => {
       const antigo = numeroValido(8, '09', '0008');
       const db = abrirBanco(caminho);
       const repo = new RepositorioAcompanhamentosSqlite(db);
-      const semTipo: Movimentacao = { data: dia(4), titulo: 'Ato ordinatório', idExterno: 'djen:80' };
+      const semTipo: Movimentacao = {
+        data: dia(4),
+        titulo: 'Ato ordinatório',
+        idExterno: 'djen:80',
+      };
       await repo.acompanhar(WS, NumeroCNJ.criar(antigo).digitos);
-      await repo.registrarSincronizacao(WS, NumeroCNJ.criar(antigo).digitos, processo(antigo, 'TJGO', [semTipo]), [
-        { ...semTipo, data: dia(4) },
-      ]);
+      await repo.registrarSincronizacao(
+        WS,
+        NumeroCNJ.criar(antigo).digitos,
+        processo(antigo, 'TJGO', [semTipo]),
+        [{ ...semTipo, data: dia(4) }],
+      );
       db.close();
       rodar([`--numeros=${antigo}`]);
       expect(texto()).toContain('0 com tipo gravado');
@@ -217,12 +256,17 @@ describe('sonda de diagnóstico da providência', () => {
       await repo.registrarSincronizacao(
         WS,
         NumeroCNJ.criar(longo).digitos,
-        processo(longo, 'TJGO', [{ data: dia(2), titulo: `Despacho ${'x'.repeat(100)}` }]),
+        processo(longo, 'TJGO', [
+          { data: dia(2), titulo: `Despacho ${'x'.repeat(100)}` },
+        ]),
         [{ data: dia(2), titulo: 'x' }],
       );
       db.close();
       rodar([`--numeros=${longo}`, '--mostrar']);
-      const linha = texto().split('\n').find((l) => l.includes('providência: pede')) ?? '';
+      const linha =
+        texto()
+          .split('\n')
+          .find((l) => l.includes('providência: pede')) ?? '';
       const rotulo = /"(.*)"/.exec(linha)?.[1] ?? '';
       expect(rotulo).toHaveLength(60);
       expect(rotulo.endsWith('…')).toBe(true);
@@ -240,8 +284,12 @@ describe('sonda de diagnóstico da providência', () => {
 
     it('a conexão recusa escrita', () => {
       const db = abrirSomenteLeitura(caminho);
-      expect(() => db.exec('DELETE FROM novidades')).toThrow(/readonly|read-only|query_only/i);
-      expect(() => db.exec('CREATE TABLE intruso (x)')).toThrow(/readonly|read-only|query_only/i);
+      expect(() => db.exec('DELETE FROM novidades')).toThrow(
+        /readonly|read-only|query_only/i,
+      );
+      expect(() => db.exec('CREATE TABLE intruso (x)')).toThrow(
+        /readonly|read-only|query_only/i,
+      );
       db.close();
     });
 
@@ -253,11 +301,9 @@ describe('sonda de diagnóstico da providência', () => {
                CREATE TABLE novidades (id INTEGER PRIMARY KEY, workspace TEXT, numero TEXT, data TEXT,
                  titulo TEXT, detectada_em TEXT, vista_em TEXT);
                CREATE TABLE usuarios (id TEXT, email TEXT, workspace TEXT);`);
-      db.prepare('INSERT INTO acompanhamentos (workspace, numero, tribunal) VALUES (?, ?, ?)').run(
-        'w',
-        NumeroCNJ.criar(GO_1).digitos,
-        'TJGO',
-      );
+      db.prepare(
+        'INSERT INTO acompanhamentos (workspace, numero, tribunal) VALUES (?, ?, ?)',
+      ).run('w', NumeroCNJ.criar(GO_1).digitos, 'TJGO');
       db.close();
       const h = createHash('sha256').update(readFileSync(antigo)).digest('hex');
       const codigo = executarDiagnostico([`--numeros=${GO_1}`], {
@@ -271,7 +317,11 @@ describe('sonda de diagnóstico da providência', () => {
       expect(texto()).toContain('SEM retrato');
       expect(createHash('sha256').update(readFileSync(antigo)).digest('hex')).toBe(h);
       const conferir = new DatabaseSync(antigo, { readOnly: true });
-      const cols = (conferir.prepare('PRAGMA table_info(acompanhamentos)').all() as Array<{ name: string }>).map((c) => c.name);
+      const cols = (
+        conferir.prepare('PRAGMA table_info(acompanhamentos)').all() as Array<{
+          name: string;
+        }>
+      ).map((c) => c.name);
       conferir.close();
       expect(cols).not.toContain('cumprido_chave');
     });
@@ -333,7 +383,9 @@ describe('sonda de diagnóstico da providência', () => {
       expect(rodar([`--arquivo=${arq}`])).toBe(0);
       expect(texto()).toContain('#1 ');
       expect(texto()).toContain('#2 ');
-      expect(avisos.join('\n')).toContain('1 número(s) pedido(s) não são números CNJ válidos');
+      expect(avisos.join('\n')).toContain(
+        '1 número(s) pedido(s) não são números CNJ válidos',
+      );
     });
 
     it('sem nada para fazer, mostra o uso', () => {
@@ -368,7 +420,9 @@ describe('sonda de diagnóstico da providência', () => {
 
     it('o resumo separa os pedidos por destinatário', () => {
       rodar(['--lista-filtro']);
-      const { resumo } = JSON.parse(readFileSync(join(pasta, NOME_DO_ARQUIVO_DA_TABELA), 'utf8')) as {
+      const { resumo } = JSON.parse(
+        readFileSync(join(pasta, NOME_DO_ARQUIVO_DA_TABELA), 'utf8'),
+      ) as {
         resumo: Record<string, number>;
       };
       expect(resumo['passamNoFiltro']).toBe(1);

@@ -80,17 +80,48 @@ export class OperacaoNaoSuportadaError extends DomainError {
  * O provider falhou: rede, timeout, 5xx, HTML inesperado, captcha, tribunal fora do ar.
  * É o erro que dispara o fallback para o próximo provider da cadeia.
  */
+/**
+ * O que a fonte disse sobre ONDE a chamada parou (v0.38.2), para o log dizer a causa de
+ * uma indisponibilidade sem precisar adivinhar. Só dado já SANEADO pelo adapter que o
+ * preenche: status HTTP, o passo do roteamento (um token curto) e o funil (contagens). Nunca
+ * corpo cru, mensagem da fonte nem texto do pedido — a mensagem de um roteador pode ecoá-lo.
+ */
+export interface RoteamentoDaFalha {
+  readonly status?: number;
+  readonly passo?: string;
+  readonly funil?: unknown;
+}
+
+/** Monta o roteamento sem campo `undefined` (`exactOptionalPropertyTypes`). */
+export function roteamentoDaFalha(
+  status?: number,
+  passo?: string,
+  funil?: unknown,
+): RoteamentoDaFalha {
+  return {
+    ...(status !== undefined ? { status } : {}),
+    ...(passo !== undefined ? { passo } : {}),
+    ...(funil !== undefined ? { funil } : {}),
+  };
+}
+
 export class ProviderIndisponivelError extends DomainError {
   // `string` e não o literal: `MniBloqueadoError` especializa este erro com
   // código próprio, e o literal impediria a subclasse de redefini-lo.
   readonly codigo: string = 'PROVIDER_INDISPONIVEL';
+  /** Onde a chamada parou, quando a fonte informou (v0.38.2). Ver `RoteamentoDaFalha`. */
+  readonly roteamento?: RoteamentoDaFalha;
 
   constructor(
     readonly provider: string,
     motivo: string,
-    options?: { cause?: unknown },
+    options?: { cause?: unknown; roteamento?: RoteamentoDaFalha },
   ) {
-    super(`Provider "${provider}" indisponível: ${motivo}`, options);
+    super(
+      `Provider "${provider}" indisponível: ${motivo}`,
+      options?.cause !== undefined ? { cause: options.cause } : undefined,
+    );
+    if (options?.roteamento !== undefined) this.roteamento = options.roteamento;
   }
 }
 
@@ -403,6 +434,64 @@ export class ChaveApiNaoEncontradaError extends DomainError {
 
   constructor(readonly identificador: string) {
     super(`Nenhuma chave de API com o identificador "${identificador}".`);
+  }
+}
+
+/**
+ * O OpenRouter não tem NENHUM provedor com retenção zero (ZDR) para o modelo pedido
+ * (ou nenhum que cumpra também os demais requisitos do pedido). É indisponibilidade,
+ * não defeito: quem chama NÃO repete, porque a única repetição possível seria sem ZDR,
+ * e isso está proibido. Especializa `ProviderIndisponivelError` para quem já trata
+ * indisponibilidade continuar tratando.
+ */
+export class ZdrIndisponivelError extends ProviderIndisponivelError {
+  override readonly codigo: string = 'ZDR_INDISPONIVEL';
+
+  /**
+   * @param passo  o `failed_routing_step` que o OpenRouter informou — aqui, o filtro de política de dados
+   * @param funil  o `routing_funnel` do erro (estrutura de contagens, sem texto)
+   */
+  constructor(
+    provider: string,
+    readonly modelo: string,
+    readonly passo?: string,
+    readonly funil?: unknown,
+    status?: number,
+  ) {
+    super(
+      provider,
+      `o roteamento parou no filtro de política de dados (ZDR) para o modelo "${modelo}"` +
+        (passo ? ` (passo: ${passo})` : '') +
+        '; a chamada NÃO é repetida sem ZDR',
+      { roteamento: roteamentoDaFalha(status, passo, funil) },
+    );
+  }
+}
+
+/**
+ * Nenhum provedor atendeu, mas o passo do roteamento que falhou NÃO é o filtro de política de
+ * dados (é, por exemplo, o de parâmetros suportados ou o de `provider.only`). Não é "sem ZDR":
+ * chamar assim um 404 que veio de outro filtro esconderia a causa. Carrega o passo e o funil
+ * exatamente como o OpenRouter os informou. Também NÃO se repete.
+ */
+export class SemProvedorQueAtendaError extends ProviderIndisponivelError {
+  override readonly codigo: string = 'SEM_PROVEDOR_QUE_ATENDA';
+
+  constructor(
+    provider: string,
+    readonly modelo: string,
+    readonly passo?: string,
+    readonly funil?: unknown,
+    status?: number,
+  ) {
+    super(
+      provider,
+      `nenhum provedor atendeu "${modelo}": ` +
+        (passo
+          ? `o roteamento parou no passo "${passo}"`
+          : 'o erro não informou o passo do roteamento'),
+      { roteamento: roteamentoDaFalha(status, passo, funil) },
+    );
   }
 }
 
@@ -724,5 +813,70 @@ export class AtoDaProvidenciaInvalidoError extends DomainError {
 
   constructor(motivo: string) {
     super(motivo);
+  }
+}
+
+/**
+ * O ato NÃO pode ser analisado por IA, e a razão é do ato ou da conta, não de
+ * falha: a tela mostra a frase própria de cada `motivo`. Nenhum desses casos
+ * chama o modelo — a checagem acontece antes de qualquer saída de dados.
+ *
+ * - `sem_plano`: a conta não tem o plano IA (sem exceção, nem para quem não tem
+ *   assinatura: chave de API e conta sem assinatura também não passam);
+ * - `segredo_de_justica`: o texto de processo sigiloso nunca sai do sistema;
+ * - `texto_insuficiente`: o ato só tem rótulo (ou quase), não há o que ler;
+ * - `texto_indisponivel`: o tribunal avisou que o teor não é público — outro
+ *   problema, outra frase: o advogado precisa abrir o processo no tribunal;
+ * - `limite_de_uso`: limite por hora da conta, ou análises demais em curso;
+ * - `ato_nao_encontrado`: o ato saiu do retrato (a tela estava desatualizada).
+ */
+export type MotivoDeEntradaNaoAnalisavel =
+  | 'sem_plano'
+  | 'segredo_de_justica'
+  | 'texto_insuficiente'
+  | 'texto_indisponivel'
+  | 'limite_de_uso'
+  | 'ato_nao_encontrado';
+
+export class EntradaNaoAnalisavelError extends DomainError {
+  readonly codigo = 'ENTRADA_NAO_ANALISAVEL';
+
+  constructor(
+    readonly motivo: MotivoDeEntradaNaoAnalisavel,
+    mensagem: string,
+  ) {
+    super(mensagem);
+  }
+}
+
+/** Por que o aviso de prazo não pôde ser montado (v0.39.0). */
+export type MotivoDePrazoNaoCalculavel =
+  | 'sem_prazo_na_analise'
+  | 'ato_fora_do_diario'
+  | 'ato_nao_encontrado'
+  | 'tipo_necessario';
+
+/**
+ * Prazo calculado a partir de uma análise: a análise não tem prazo, o ato não é do Diário
+ * (sem data de disponibilização não há termo inicial), o ato saiu do retrato, ou o ato não diz
+ * se os dias são úteis ou corridos e o advogado ainda não escolheu. NENHUM chamou o modelo.
+ */
+export class PrazoNaoCalculavelError extends DomainError {
+  readonly codigo = 'PRAZO_NAO_CALCULAVEL';
+
+  constructor(
+    readonly motivo: MotivoDePrazoNaoCalculavel,
+    mensagem: string,
+  ) {
+    super(mensagem);
+  }
+}
+
+/** A análise pedida não existe PARA ESTE workspace (ou é de outro): 404, mesma resposta. */
+export class AnaliseNaoEncontradaError extends DomainError {
+  readonly codigo = 'ANALISE_NAO_ENCONTRADA';
+
+  constructor() {
+    super('Essa análise não foi encontrada.');
   }
 }

@@ -200,7 +200,6 @@ describe('banco — retrocarga tolerante', () => {
   });
 });
 
-
 /*
  * As colunas da marca de "cumprido" (v0.37.5) foram acrescentadas com a tabela
  * já em produção: sem a migração explícita, o deploy quebraria ao gravar a marca.
@@ -217,7 +216,9 @@ describe('banco — colunas da marca de cumprido', () => {
          tribunal TEXT, classe TEXT, ultima_mov_data TEXT, partes_texto TEXT, cliente TEXT,
          PRIMARY KEY (workspace, numero))`);
       antigo
-        .prepare("INSERT INTO acompanhamentos (workspace, numero, criado_em) VALUES ('ws', '1', '2026-01-01')")
+        .prepare(
+          "INSERT INTO acompanhamentos (workspace, numero, criado_em) VALUES ('ws', '1', '2026-01-01')",
+        )
         .run();
       antigo.close();
 
@@ -225,7 +226,12 @@ describe('banco — colunas da marca de cumprido', () => {
       const nomes = (
         db.prepare('PRAGMA table_info(acompanhamentos)').all() as Array<{ name: string }>
       ).map((c) => c.name);
-      for (const coluna of ['cumprido_chave', 'cumprido_ate', 'cumprido_em', 'cumprido_por']) {
+      for (const coluna of [
+        'cumprido_chave',
+        'cumprido_ate',
+        'cumprido_em',
+        'cumprido_por',
+      ]) {
         expect(nomes).toContain(coluna);
       }
       const linha = db

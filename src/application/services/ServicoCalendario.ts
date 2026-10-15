@@ -64,6 +64,8 @@ export interface NovoEventoManual {
   readonly horaLocal?: string;
   readonly duracaoMin?: number;
   readonly observacao?: string;
+  /** Prazo calculado pelo sistema a partir de ato do Diário (v0.39.0). */
+  readonly calculado?: boolean;
 }
 
 export interface ResultadoIngestao {
@@ -165,6 +167,7 @@ export class ServicoCalendario {
       ...(dados.horaLocal !== undefined ? { horaLocal: dados.horaLocal } : {}),
       ...(dados.duracaoMin !== undefined ? { duracaoMin: dados.duracaoMin } : {}),
       ...(dados.observacao !== undefined ? { observacao: dados.observacao } : {}),
+      ...(dados.calculado === true ? { calculado: true } : {}),
       agora: this.agora(),
     });
     await this.eventos.salvar(evento);

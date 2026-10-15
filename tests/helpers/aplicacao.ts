@@ -33,6 +33,11 @@ import { abrirBanco } from '../../src/infrastructure/persistencia/sqlite/banco.j
 import { RepositorioAcompanhamentosSqlite } from '../../src/infrastructure/persistencia/sqlite/RepositorioAcompanhamentosSqlite.js';
 import { RepositorioNotificacaoSqlite } from '../../src/infrastructure/persistencia/sqlite/RepositorioNotificacaoSqlite.js';
 import { RepositorioVigilanciasSqlite } from '../../src/infrastructure/persistencia/sqlite/RepositorioVigilanciasSqlite.js';
+import { ServicoAvisoDoPrazo } from '../../src/application/services/ServicoAvisoDoPrazo.js';
+import { ServicoAnaliseDoAto } from '../../src/application/services/ServicoAnaliseDoAto.js';
+import { LimiteDeAnalises } from '../../src/application/politicas/limiteDeAnalises.js';
+import type { AnalisadorDeAto } from '../../src/domain/ports/AnalisadorDeAto.js';
+import { RepositorioAnalisesSqlite } from '../../src/infrastructure/persistencia/sqlite/RepositorioAnalisesSqlite.js';
 import type { Aplicacao } from '../../src/main/factories/makeProcessoSearchService.js';
 import { ServicoContas } from '../../src/application/services/ServicoContas.js';
 import { ServicoAssinaturas } from '../../src/application/services/ServicoAssinaturas.js';
@@ -48,7 +53,13 @@ import { RepositorioChavesApiSqlite } from '../../src/infrastructure/persistenci
 import { tokensDeSessao } from '../../src/infrastructure/seguranca/sessao.js';
 import { chavesDeApi } from '../../src/infrastructure/seguranca/chavesDeApi.js';
 import type { HashDeSenha } from '../../src/domain/ports/Criptografia.js';
-import { SenhaFracaError } from '../../src/domain/errors/index.js';
+import {
+  EntradaNaoAnalisavelError,
+  SenhaFracaError,
+} from '../../src/domain/errors/index.js';
+import { ServicoResumoDoProcesso } from '../../src/application/services/ServicoResumoDoProcesso.js';
+import type { ResumidorDeProcesso } from '../../src/domain/ports/ResumidorDeProcesso.js';
+import { RepositorioResumosSqlite } from '../../src/infrastructure/persistencia/sqlite/RepositorioResumosSqlite.js';
 
 /**
  * Hash de senha BARATO, só para teste.
@@ -146,6 +157,25 @@ export interface OpcoesAplicacaoDeTeste {
    * navegador); o padrão, 0, é instantâneo.
    */
   readonly pasta?: { readonly debounceMs?: number };
+  /**
+   * Liga a análise por IA com um analisador DUBLÊ (nenhum teste toca a rede). Ausente = IA
+   * desligada, o padrão de produção.
+   */
+  readonly analiseIa?: {
+    readonly analisador: AnalisadorDeAto;
+    readonly porHora?: number;
+    readonly simultaneasNoTotal?: number;
+    readonly clock?: Clock;
+  };
+  /**
+   * Liga o resumo de processo por IA (v0.40.0) com um resumidor DUBLÊ (nenhum teste toca a
+   * rede). Ausente = desligado. A regra do plano é a da análise de ato.
+   */
+  readonly resumoIa?: {
+    readonly resumidor: ResumidorDeProcesso;
+    readonly porHora?: number;
+    readonly clock?: Clock;
+  };
   /** Liga a área administrativa. Ausente por padrão — mesma regra de `comAssinaturas`. */
   readonly admin?: { readonly usuario: string; readonly senha: string };
 }
@@ -319,6 +349,67 @@ export function aplicacaoDeTeste(
       tarefa: async () => {},
     });
 
+  const analiseIa = opcoes.analiseIa
+    ? new ServicoAnaliseDoAto({
+        repositorio: repositorioCru,
+        analises: new RepositorioAnalisesSqlite(db),
+        assinaturas,
+        analisador: opcoes.analiseIa.analisador,
+        limite: new LimiteDeAnalises({
+          porHora: opcoes.analiseIa.porHora ?? 100,
+          simultaneasNoTotal: opcoes.analiseIa.simultaneasNoTotal ?? 10,
+          clock: opcoes.analiseIa.clock ?? {
+            agora: () => (opcoes.agora ? opcoes.agora() : new Date()),
+            monotonico: () => 0,
+          },
+        }),
+        clock: opcoes.analiseIa.clock ?? {
+          agora: () => (opcoes.agora ? opcoes.agora() : new Date()),
+          monotonico: () => 0,
+        },
+        logger: loggerSilencioso,
+        novoId: () => randomUUID(),
+      })
+    : undefined;
+  const clockDoResumo: Clock = opcoes.resumoIa?.clock ?? {
+    agora: () => (opcoes.agora ? opcoes.agora() : new Date()),
+    monotonico: () => 0,
+  };
+  const resumoDoProcesso = opcoes.resumoIa
+    ? new ServicoResumoDoProcesso({
+        repositorio: repositorioCru,
+        resumos: new RepositorioResumosSqlite(db),
+        resumidor: opcoes.resumoIa.resumidor,
+        exigirPlanoIa: async (ws) => {
+          if (!(await assinaturas.temRecursoSemExcecao(ws, 'analiseIa'))) {
+            throw new EntradaNaoAnalisavelError(
+              'sem_plano',
+              'A análise por IA faz parte do plano IA. Faça upgrade do plano para usar.',
+            );
+          }
+        },
+        limite: new LimiteDeAnalises({
+          porHora: opcoes.resumoIa.porHora ?? 100,
+          simultaneasNoTotal: 10,
+          clock: clockDoResumo,
+        }),
+        clock: clockDoResumo,
+        logger: loggerSilencioso,
+        novoId: () => randomUUID(),
+        janelaDePendenciaDias: 10,
+      })
+    : undefined;
+  const analisesRepo = new RepositorioAnalisesSqlite(db);
+  const avisoDoPrazo = analiseIa
+    ? new ServicoAvisoDoPrazo({
+        analises: analisesRepo,
+        repositorio: repositorioCru,
+        calendario,
+        exigirPlanoIa: (ws) => analiseIa.exigirPlano(ws),
+        exigirCalendario: (ws) => assinaturas.exigir(ws, 'calendario'),
+      })
+    : undefined;
+
   return {
     buscarProcessoPorNumero: new BuscarProcessoPorNumero(orquestrador),
     buscarProcessosPorOab: new BuscarProcessosPorOab(orquestrador),
@@ -328,6 +419,9 @@ export function aplicacaoDeTeste(
     vigilancia,
     notificacao,
     pecas,
+    analiseIa,
+    resumoDoProcesso,
+    avisoDoPrazo,
     leitor,
     pasta,
     agendadorLeitor: undefined,

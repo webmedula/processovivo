@@ -224,7 +224,7 @@ describe('console com a aba de vigilância', () => {
   });
 
   it('o topo do processo passa a responder "o que preciso fazer"', async () => {
-    // A mudança de layout da v0.10.0. Desde a v0.37.7 o bloco "Pede providência" não
+    // A mudança de layout da v0.10.0. Desde a v0.41.1 o bloco "Pede providência" não
     // existe na tela do processo: a pergunta é respondida pela marca no ato da linha do
     // tempo (e pelo filtro), e pela aba Atualizações.
     const r = await s.inject({ method: 'GET', url: '/' });

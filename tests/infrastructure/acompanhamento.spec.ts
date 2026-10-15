@@ -103,7 +103,12 @@ describe('RepositorioAcompanhamentosSqlite', () => {
 
   it('acompanhar duas vezes não duplica nem apaga o retrato', async () => {
     await repo.acompanhar(WS, NUM, 'Original');
-    await repo.registrarSincronizacao(WS, NUM, processo([mov('2024-01-01T00:00:00Z', 'A')]), []);
+    await repo.registrarSincronizacao(
+      WS,
+      NUM,
+      processo([mov('2024-01-01T00:00:00Z', 'A')]),
+      [],
+    );
     await repo.acompanhar(WS, NUM);
 
     const a = await repo.buscar(WS, NUM);
@@ -124,9 +129,12 @@ describe('RepositorioAcompanhamentosSqlite', () => {
 
   it('registra novidades e conta as não vistas', async () => {
     await repo.acompanhar(WS, NUM);
-    await repo.registrarSincronizacao(WS, NUM, processo([mov('2024-01-01T00:00:00Z', 'A')]), [
-      mov('2024-02-01T00:00:00Z', 'Sentença', 219),
-    ]);
+    await repo.registrarSincronizacao(
+      WS,
+      NUM,
+      processo([mov('2024-01-01T00:00:00Z', 'A')]),
+      [mov('2024-02-01T00:00:00Z', 'Sentença', 219)],
+    );
 
     expect(await repo.contarNaoVistas(WS)).toBe(1);
     const nov = await repo.listarNovidades(WS);
@@ -160,7 +168,9 @@ describe('RepositorioAcompanhamentosSqlite', () => {
 
   it('deixar de acompanhar leva as novidades junto', async () => {
     await repo.acompanhar(WS, NUM);
-    await repo.registrarSincronizacao(WS, NUM, processo([]), [mov('2024-02-01T00:00:00Z', 'A')]);
+    await repo.registrarSincronizacao(WS, NUM, processo([]), [
+      mov('2024-02-01T00:00:00Z', 'A'),
+    ]);
 
     expect(await repo.deixarDeAcompanhar(WS, NUM)).toBe(true);
     expect(await repo.listarNovidades(WS)).toHaveLength(0);
@@ -328,7 +338,10 @@ describe('ServicoAcompanhamento', () => {
       nome: 'p',
       porNumero: async () =>
         segunda
-          ? processo([mov('2024-03-01T00:00:00Z', 'Sentença'), mov('2024-01-01T00:00:00Z', 'Distribuição')])
+          ? processo([
+              mov('2024-03-01T00:00:00Z', 'Sentença'),
+              mov('2024-01-01T00:00:00Z', 'Distribuição'),
+            ])
           : processo([mov('2024-01-01T00:00:00Z', 'Distribuição')]),
     });
     const s = servico(provider);

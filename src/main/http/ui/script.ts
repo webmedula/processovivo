@@ -1069,7 +1069,7 @@ function ligarBotoesDetalhe(numero,acompanhado){
     api('/v1/acompanhamentos/'+encodeURIComponent(numero),{method:'DELETE'})
       .then(function(){carregarFacetas();atualizarBolha();ir('processos')})
       .catch(function(e){alert(explicar(e))})});
-  void acompanhado;
+  if(window.__pvResumoIA)window.__pvResumoIA.aposDesenhar(numero,acompanhado);// ui/resumoIA.ts
 }
 
 function agrupar(movs){
@@ -1085,7 +1085,7 @@ function agrupar(movs){
 }
 
 /**
- * A tela de um processo. Ordem (v0.37.7): capa, dados do processo, PEÇAS,
+ * A tela de um processo. Ordem (v0.41.1): capa, dados do processo, PEÇAS,
  * partes, linha do tempo. Os blocos "Pede providência" e "Última movimentação"
  * saíram por decisão do dono: repetiam o cabeçalho do tribunal e, para entender
  * um ato, o advogado abre a Pasta digital. A providência continua marcada na
@@ -2218,6 +2218,7 @@ function salvarNotificacao(ativa){
 }
 
 function render(){
+  if(!estado.detalhe&&window.__pvResumoIA)window.__pvResumoIA.sair();// ui/resumoIA.ts
   if(estado.detalhe)return;
   $('conteudo').classList.toggle('env-larga',estado.aba==='novidades');
   if(estado.aba==='novidades')return verNovidades();

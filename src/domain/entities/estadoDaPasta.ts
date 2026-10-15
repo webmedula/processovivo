@@ -213,6 +213,43 @@ export function lerProvidencia(
   };
 }
 
+/**
+ * TODOS os atos que pedem providência agora (v0.40.0), do mais recente ao mais antigo: o
+ * mesmo critério de `lerProvidencia` — pede ação, está dentro da janela do tipo dele e não
+ * está coberto pela marca de "cumprido" —, mas devolvendo a lista inteira em vez de só o mais
+ * recente. O resumo por IA usa a lista para dizer quantos desses atos a IA não citou. Há teste
+ * que fixa que o primeiro daqui é sempre o `pendente` de `lerProvidencia`.
+ */
+export function atosQuePedemProvidencia(
+  movs: readonly Movimentacao[],
+  agora: Date,
+  janelaDias: number = PENDENCIA_JANELA_DIAS_PADRAO,
+  janelaIntimacaoDias: number = PENDENCIA_INTIMACAO_JANELA_DIAS,
+  cumprido?: MarcaDeCumprido,
+): AtoDaProvidencia[] {
+  const atos: AtoDaProvidencia[] = [];
+  for (const m of movs) {
+    const tipoDoDiario = tipoDaComunicacao(m.tipoComunicacao);
+    const paraOUsuario = m.paraOUsuario ?? 'desconhecido';
+    const aOutro = tipoDoDiario !== 'outro' && paraOUsuario === 'nao';
+    const exige = aOutro ? triar(m).exigeAcao : (m.exigeAcao ?? triar(m).exigeAcao);
+    if (!exige) continue;
+    const tipo = aOutro ? 'outro' : tipoDoDiario;
+    const janela = tipo === 'outro' ? janelaDias : janelaIntimacaoDias;
+    const dentro = m.data.getTime() >= inicioDaJanelaDePendencia(agora, janela).getTime();
+    const marcado = cumprido !== undefined && m.data.getTime() <= cumprido.ate.getTime();
+    if (!dentro || marcado) continue;
+    atos.push({
+      rotulo: m.titulo,
+      data: m.data,
+      chave: chaveDaMovimentacao(m),
+      tipo,
+      paraOUsuario,
+    });
+  }
+  return atos.sort((a, b) => b.data.getTime() - a.data.getTime());
+}
+
 export function estadoDaPasta(
   entrada: EntradaDoEstado,
   agora: Date = new Date(),

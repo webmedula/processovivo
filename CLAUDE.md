@@ -83,19 +83,27 @@ src/
 │   ├── entities/                # Processo, Movimentacao, Parte, NumeroCNJ, Oab,
 │   │                            #   posicaoDoAto + numeracaoDoProjudi (Pasta digital),
 │   │                            #   tipoDaComunicacao + estadoDaPasta/lerProvidencia (cumprido),
-│   │                            #   destinatarioDaComunicacao (paraOUsuario)
+│   │                            #   destinatarioDaComunicacao (paraOUsuario),
+│   │                            #   AnaliseDoAto + vocabularioDaAnalise (IA),
+│   │                            #   prazoEmDias (calculadora, exceção v0.39.0) + atoDoDiario
 │   ├── errors/                  # hierarquia de DomainError
 │   ├── ports/                   # ProcessoProvider, RepositorioAcompanhamentos, Cache…
 │   └── usecases/                # BuscarProcessoPorNumero, BuscarProcessosPorOab
 ├── application/
+│   ├── politicas/               # redigirParaIA, verificarAnalise, entradaDoModelo,
+│   │                            #   limiteDeAnalises (política PURA da análise por IA)
 │   └── services/                # ProcessoSearchService, ServicoAcompanhamento,
 │                                #   ServicoVigilanciaOab, ServicoNotificacao,
 │                                #   ServicoPecas, ServicoContas,
 │                                #   ServicoAssinaturas, ServicoLeitor,
 │                                #   ServicoPasta + GuardaDePecas (Pasta digital),
-│                                #   ServicoCalendario (+ ingestaoDoCalendario)
+│                                #   ServicoCalendario (+ ingestaoDoCalendario),
+│                                #   ServicoAnaliseDoAto (IA, por botão),
+│                                #   ServicoAvisoDoPrazo (aviso no calendário, v0.39.0),
+│                                #   ServicoResumoDoProcesso (resumo por IA, por botão, v0.40.0)
 ├── infrastructure/
 │   ├── adapters/
+│   │   ├── modelo/              # OpenRouter: transporte (ZDR), lista ZDR 24 h, analisador
 │   │   ├── datajud/             # adapter + mapper + schemas + aliases
 │   │   ├── djen/                # adapter + mapper + limpeza de HTML
 │   │   ├── mni/                 # adapter + envelope SOAP + mapper + MTOM
@@ -218,7 +226,11 @@ interface ProcessoProvider {
 | `CalibracaoDeNumeracaoInvalidaError` | número do Projudi informado não serve como âncora (fora dos atos, abaixo da posição, incompatível com os outros, acima de 50) | 400; a mensagem diz qual — conferir o que foi digitado |
 | `FeedDoCalendarioNaoEncontradoError` | token do feed inválido, revogado, assinatura bloqueada ou plano sem o recurso | 404 com o MESMO corpo seco nos quatro casos |
 | `AcompanhamentoNaoEncontradoError` | pediu algo sobre processo que ESTE workspace não acompanha | 404; mesma resposta para "não existe" e "é de outra conta" |
+| `EntradaNaoAnalisavelError` | a análise por IA não se aplica: `sem_plano` (403), `segredo_de_justica` (403), `texto_insuficiente` / `texto_indisponivel` (422), `limite_de_uso` (429), `ato_nao_encontrado` (409) | corpo com `detalhes.motivo`; NENHUM chamou o modelo |
+| `AnaliseNaoEncontradaError` | avaliar análise que não existe PARA ESTE workspace | 404; mesma resposta para "não existe" e "é de outra conta" |
+| `ZdrIndisponivelError` / `SemProvedorQueAtendaError` | o OpenRouter não achou provedor ZDR (passo da política de dados) / não achou por outro passo | são `ProviderIndisponivelError`; NUNCA repetir a chamada sem ZDR |
 | `AtoDaProvidenciaInvalidoError` | "marcar como cumprido" apontou para ato que saiu do retrato ou que não pede providência | 409; a tela recarrega e a pessoa decide de novo |
+| `PrazoNaoCalculavelError` | o aviso de prazo a partir da análise não se aplica: `sem_prazo_na_analise`, `ato_fora_do_diario`, `tipo_necessario` (422) ou `ato_nao_encontrado` (409) | corpo com `detalhes.motivo`; NENHUM chamou o modelo e nada foi criado |
 
 **A distinção que sustenta o produto:** "esse processo não existe" ≠ "não
 consegui ver esse processo". Colapsar as duas coisas faz o sistema dizer ao
@@ -295,6 +307,8 @@ npm run cli -- assinatura liberar ana@escritorio.com.br pecas 12 --obs "Pix 22/0
 npm run cli -- assinatura cancelar ana@escritorio.com.br
 npm run cli -- assinatura avisar            # o mesmo que o agendador roda
 
+npm run build && node scripts/ia-avaliacoes.mjs                         # avaliações da análise por IA (v0.38.0), só leitura
+node scripts/sonda-ia-ato.mjs --listar-modelos-zdr=deepseek               # provedores ZDR do modelo (lê a lista do OpenRouter)
 npm run build && node scripts/diagnostico-providencia.mjs --lista-filtro   # sonda (v0.37.6), só leitura
 node scripts/diagnostico-providencia.mjs --numeros=<n1,n2> --mostrar        # por que cada um aparece ou não
 
@@ -758,7 +772,73 @@ Não são detalhes — moldam o código.
   retrocarga no arranque e o teste criado junto com a conta, nunca uma negativa
   por omissão. E **cobrança que entra sem retrocarga é bloqueio em massa**: o
   advogado que usou o sistema ontem abre hoje e vê "sua assinatura venceu"
-  sobre a carteira que ele montou à mão.
+  sobre a carteira que ele montou à mão. **Uma única exceção, a análise por IA
+  (v0.38.0, decisão do dono):** o recurso `analiseIa` NÃO passa sem assinatura —
+  manda texto a um terceiro e custa dinheiro por chamada. Quem decide é
+  `ServicoAssinaturas.temRecursoSemExcecao`, que devolve `false` sem assinatura,
+  com assinatura vencida além da carência ou com plano sem o recurso, e é
+  usada SÓ por `ServicoAnaliseDoAto`. Os outros recursos continuam com `exigir()`
+  e a regra acima. Não generalize a exceção.
+- **Ações possíveis da análise por IA são providência, sem citação; o rodapé não mostra o modelo**
+  (v0.38.5). `acoes_possiveis` = `{ acao }` (Zod strict, sem `trecho`): infinitivo ou imperativo curto,
+  dizendo QUEM faz O QUÊ, nunca cópia ou paráfrase do `trecho_chave`; sem providência clara = lista vazia
+  e a tela diz "Sem providência indicada no ato." O trecho do ato aparece UMA vez, no `trecho_chave`.
+  `verificarAnalise` (regras 1.1.0) rejeita o resultado inteiro (`acao_copiada_do_trecho`, sem texto em
+  tela, banco ou log) quando uma ação tem mais de 60% das palavras de conteúdo em comum com o
+  `trecho_chave` (contra o maior dos dois conjuntos); o resto da verificação não mudou. Prompt `ato-1.1.0`.
+  O rodapé e o selo dizem "Gerado por IA em DATA E HORA. Confira no ato." — o modelo segue gravado em
+  `analises_ia`, na API e em `ia-avaliacoes.mjs`. Linha gravada antes com `trecho` na ação não o expõe.
+- **A análise por IA pede o formato em TEXTO, não em esquema estrito** (v0.38.4). Em produção o
+  filtro "Filter by Parameters" do OpenRouter (por causa de `require_parameters` + `response_format`
+  `json_schema`) deixou 0 endpoints: o único endpoint ZDR do modelo não declara saída estruturada
+  (404, ~2,6 s). A chamada normal agora usa o formato do degrau C: SEM `require_parameters` e SEM
+  `response_format`; a instrução de formato vai no sistema (`INSTRUCAO_DE_FORMATO_EM_TEXTO`), o JSON sai
+  por `jsonDoTexto` (tolera cerca de código; chaves ANTES do JSON falham) e o Zod `.strict()` do
+  analisador (`lerRespostaDoModelo`) valida. **Nada da proteção do texto foi afrouxado:** `zdr`,
+  `data_collection: deny`, `allow_fallbacks: false`, `only` (⊆ permitidos), a conferência do par
+  modelo + provedor e `verificarAnalise` valem em toda chamada. O que se perde é só a garantia de forma
+  no provedor: resposta fora do formato vira `RespostaInvalidaError`, sem repetir e sem texto em erro
+  ou log. Sem "escada" (tentar o estrito antes): o rodízio da 0.38.3 segue como está e se desliga
+  sozinho com um provedor só. No diagnóstico em degraus, o A é só comparação (produção até a 0.38.3) e
+  o C é a produção.
+- **Depois de 429/5xx a análise por IA muda de provedor, sem soltar a lista** (v0.38.3).
+  `allow_fallbacks` continua `false`: o OpenRouter não escolhe reserva. Quem roda a lista é o
+  `TransporteOpenRouter`: 1ª tentativa com `only` = TODOS os permitidos; após 429/5xx, cada nova
+  tentativa leva `only` = UM provedor, em ordem, sem repetir (não depende do corpo do erro dizer
+  quem limitou — por isso a 1ª pode cair no mesmo que limitou). Esgotada a lista (1 + N), falha
+  com o roteamento da 0.38.2. Esperas 1 s, 3 s e, depois, 3 s. Só 429/5xx rodam; rede repete com
+  os mesmos permitidos; um provedor só repete como antes; o degrau D (sem `only`) não roda.
+  `zdr`, `data_collection`, `only` ⊆ permitidos e a conferência do par
+  modelo + provedor da resposta valem em TODA tentativa (`require_parameters` saiu na 0.38.4). Quem pensar em `allow_fallbacks: true`
+  deve ler a nota da sonda (2.1): conferir DEPOIS não impede o texto de sair.
+- **O log da análise por IA diz onde a chamada parou, sem texto** (v0.38.2).
+  `ProviderIndisponivelError.roteamento` (`status`, `passo`, `funil`) é preenchido só em
+  `traduzirErro` (`TransporteOpenRouter`), com o que o OpenRouter devolveu JÁ SANEADO
+  (`extrairRoteamento` + `sanearCorpoEnviado`); `ServicoAnaliseDoAto` o põe na linha "análise do
+  ato não concluída" (`statusHttp`, `passoDoRoteamento`, `funilDoRoteamento` truncado em 600).
+  Corpo cru, mensagem do SDK e `requestBodyValues` NUNCA são copiados — o roteador pode ecoar o
+  pedido, que leva texto de ato. Ler o tempo: 400/401/402/403/404 falham na 1ª resposta;
+  429/5xx/rede repetem com esperas de 1 s e 3 s (~5 s no total).
+- **Exceção de TESTE FECHADO da análise por IA, ligada por variável — REMOVER
+  ANTES DE ABRIR AO PÚBLICO** (v0.38.1). `PROCESSOVIVO_IA_WORKSPACES_LIBERADOS`:
+  ids de workspace (16 hex) separados por vírgula. Workspace da lista passa na
+  checagem do plano IA **sem assinatura, só para `analiseIa`**: a lista é lida em
+  `carregarConfig` (`ia.workspacesLiberados`), vai ao composition root e só
+  `ServicoAnaliseDoAto` a consulta (`workspacesLiberados`, ANTES de perguntar a
+  `temRecursoSemExcecao`). Peças, Pasta, leitor e calendário não mudam,
+  `ServicoAssinaturas` nem fica sabendo, e **nenhuma linha é criada em
+  `assinaturas`** — por isso não nasce vencimento nem carência para uma
+  integração que hoje passa livre. Continua exigindo `PROCESSOVIVO_IA_HABILITADA=true` e
+  TODAS as outras travas (ZDR, redação, verificação, limite de uso, segredo de
+  justiça). Formato inválido derruba o arranque (mesmo com a IA desligada) e a
+  mensagem diz a POSIÇÃO do item, nunca o valor — quem cola a chave de API no
+  lugar do id não pode vê-la no log do contêiner. Log e tela só mostram o id
+  MASCARADO (`1ed3…1867`, `mascararWorkspace`). Quem não está na lista e não tem
+  o plano continua vendo "A análise por IA faz parte do plano IA…". NÃO destrava
+  a venda: `analiseIa` segue `implementado: false`. Para remover: tire a variável
+  do ambiente (lista vazia = comportamento de sempre) e, ao abrir ao público,
+  apague a variável, `lerWorkspacesLiberados`, `workspacesLiberados`
+  e este item.
 - **Status de assinatura é DERIVADO das datas, nunca gravado.** Status em
   coluna precisa de alguém que o atualize, e esse alguém é sempre uma tarefa
   agendada que pode não ter rodado — uma assinatura que venceu às 3h e só é
@@ -772,7 +852,10 @@ Não são detalhes — moldam o código.
   `validarRegras` aplica a mesma trava ao plano do teste. Há teste que falha
   se alguém virar `implementado` antes de a análise existir. Cobrar assinatura
   de funcionalidade ausente, com advogado, não volta como pedido de reembolso —
-  volta como reclamação formal.
+  volta como reclamação formal. **v0.38.0:** a análise por IA existe, em teste
+  fechado, para a conta que o operador liberou à mão no plano IA; `analiseIa`
+  segue `implementado: false` porque o que a trava impede é a VENDA, não o uso.
+  Virar `true` é decisão do dono, depois da avaliação com uso real.
 - **Planos são dado; recursos são código.** Nome, descrição, preço, combinação
   de recursos, ordem e "à venda" moram na tabela `planos` e mudam pelo painel
   sem deploy. O que cada RECURSO faz (e se existe) continua em código, porque
@@ -952,6 +1035,18 @@ Não são detalhes — moldam o código.
   consulta com a senha do advogado). "Abrir pasta" na tabela pede a Pasta
   (`pedirAbertura`, validade de 60 s e um processo só) e a Pasta abre quando a tela
   do processo desenha o botão dela.
+- **A busca por número da aba Atualizações respeita os filtros e diz quantos casam fora deles** (v0.41.0).
+  Só o número do processo (dígitos, por trecho, a partir de 4 dígitos; abaixo disso não filtra nem avisa) —
+  nunca parte, classe, tribunal nem texto do ato; uma linha por processo continua, as atualizações anteriores
+  seguem em "Abrir processo". Combina com Situação, Período, Tribunal e ordenação, e **nunca diz "nada
+  encontrado" quando o processo existe em outro filtro**: uma frase por motivo, só se o número for maior que
+  zero, cada uma com "Ver" que desfaz AQUELE filtro e mantém a busca (mesma regra de "mostrando X de Y"). Processo
+  fora por mais de um motivo conta UMA vez, no primeiro da ordem Situação, Período, Tribunal. Situação só se
+  afirma sobre quem o navegador tem (Período e Tribunal são filtrados no servidor); dos de fora a tela só tem o
+  número — `numerosForaDaJanela` e `numerosEmOutroTribunal` em `GET /v1/novidades`, só números, da própria conta,
+  vazios sem filtro — e a Situação deles aparece depois do "Ver". O campo mora FORA da área redesenhada (`#nvt-barra`
+  e `#nvt-corpo`): digitar nunca perde foco nem cursor. O termo vive na página (nunca `localStorage`); a regra pura
+  está em `filtrarPorNumero` e `contarForaDosFiltros` (`ui/tabelaAtualizacoes.ts`).
 - **A tabela não tem "+N anteriores" nem aviso de anterior; "Detectado" é enxuto; a
   descrição do ato perde a repetição só na EXIBIÇÃO** (v0.37.1, decisão do dono). (1)
   Cada processo é UMA linha com a atualização mais recente e mais nada: saíram o
@@ -1089,7 +1184,7 @@ Não são detalhes — moldam o código.
   a mensagem de erro é a do servidor — o `explicar()` do console diz "já existe uma
   conta" para todo 409. Foco: depois de marcar vai ao vizinho; `aria-live` discreto.
   **Hoje só a tabela de Atualizações tem o botão**: a Pasta não tem selo de providência
-  e a tela do processo não mostra bloco de providência desde a v0.37.7.
+  e a tela do processo não mostra bloco de providência desde a v0.41.1.
 - **Conferir com o Projudi: a sonda, a linha do ato da providência e o destinatário**
   (v0.37.6). (1) **`scripts/diagnostico-providencia.mjs` é SOMENTE LEITURA**: abre o banco
   com `readOnly` e `query_only` e **nunca por `abrirBanco`** (que cria esquema e migra),
@@ -1125,13 +1220,118 @@ Não são detalhes — moldam o código.
   já se sabia. Nada aqui é prazo: o Projudi mostra "Possível Data Limite" e o sistema
   continua sem informá-la.
 - **A tela do processo NÃO tem bloco "Pede providência" nem "Última movimentação"**
-  (v0.37.7, decisão do dono). Repetiam o cabeçalho do tribunal e não serviam para
+  (v0.41.1, decisão do dono). Repetiam o cabeçalho do tribunal e não serviam para
   entender o ato — isso se faz na Pasta digital. Ordem: cabeçalho → Peças do processo →
   Partes → Linha do tempo. Saiu só a APRESENTAÇÃO: a detecção, o selo e o filtro de
   Atualizações, o "cumprido" e as contagens são os mesmos, e a linha do tempo segue
   marcando todo ato que pede providência (selo e chip "Pede providência"), então sair do
   topo da tela não é sumir. Não reintroduza um resumo de providência no detalhe sem decisão
   do dono; `tests/browser/detalhe-limpo-navegador.spec.ts` fixa a ausência.
+- **Análise por IA: por botão, só o texto que o sistema já tem, redigida, com
+  citação verificada, ZDR falhando fechado, desligada por padrão, plano IA sem
+  exceção** (v0.38.0; especificação `docs/ia-analise-do-ato-especificacao-v1.0.0.md`,
+  Errata v1.1.0). (1) **Só por clique**, um ato por vez, nunca em lote nem
+  automática: nada é enviado a um terceiro sem a pessoa pedir aquele ato. (2) **O
+  texto vem do servidor**: o pedido carrega só a `chaveDoAto`; `ServicoAnaliseDoAto`
+  lê o ato do retrato da PRÓPRIA conta, e texto vindo do cliente nunca é aceito. Só o
+  que já está guardado — nada de peça, PDF ou consulta ao tribunal. (3) **Redigida
+  antes de sair** (`application/politicas/redigirParaIA.ts`: nomes de parte e
+  advogado, CPF/CNPJ, e-mail, telefone, OAB e número de processo viram marcadores) e
+  **verificada ao voltar** (`verificarAnalise.ts`: citação tem de existir no texto
+  enviado; número inventado ou expressão proibida descarta o resultado). O banco
+  guarda o resultado COM marcadores, nunca o texto do ato nem os valores originais;
+  os valores voltam só na resposta, da própria conta. (4) **Segredo de justiça, texto
+  insuficiente (< 80 caracteres), teor indisponível (`teorIndisponivel`) e conta sem o
+  plano IA não chamam o modelo** — e há teste de ZERO chamadas ao adaptador.
+  "Indisponível" e "insuficiente" têm frases diferentes: uma manda abrir o processo no
+  tribunal, a outra manda ler o ato. (5) **ZDR falha fechada e não tem chave de
+  desligar** (nenhuma variável, nenhum degrau): toda chamada leva `zdr: true`,
+  `data_collection: deny`, `allow_fallbacks: false` e `provider.only` com os provedores
+  ZDR do modelo (após 429/5xx, um provedor por tentativa — v0.38.3; sem `require_parameters` nem `response_format` desde a v0.38.4); lista inalcançável, vazia ou sem provedor = nenhuma chamada;
+  resposta de provedor fora do conjunto é descartada e o log leva só nomes; 4xx e
+  "sem provedor" nunca geram segunda chamada sem ZDR; modelo é id real (sem `~`/`:`).
+  `PROCESSOVIVO_IA_PROVEDORES_PERMITIDOS` só restringe (interseção). (6) **Desligada
+  por padrão** (`PROCESSOVIVO_IA_HABILITADA=false`); ligada, o arranque exige
+  `OPENROUTER_API_KEY` real (barrada por `pareceValorDeExemplo`), que nunca vai a log,
+  resposta ou erro; a mensagem de erro do SDK nunca é copiada (pode ecoar o pedido). (7)
+  **Apoio à leitura, não decisão**: a IA não altera "pede providência", "não lida",
+  ordem, contagens, painel nem calendário — **única exceção (v0.39.0): o aviso criado
+  pelo advogado, depois do clique de confirmar, ver o item do aviso no calendário**;
+  nenhuma ação depende do resultado; a tela traz o aviso fixo e a palavra "prazo" só nele,
+  no ponto de atenção "conferir o prazo no processo" e no bloco do aviso (prazo escrito
+  no ato, prévia e confirmação). (8) **Freio de uso em memória** (limite por hora por conta, uma em
+  andamento por conta, teto global baixo): reiniciar zera — o teto real de gasto é o
+  limite da chave no OpenRouter. Sem cota mensal, sem cache, sem tabela de uso: clique
+  repetido analisa de novo. (9) **A qualidade se mede em uso real** pelos botões Útil /
+  Errado / Perigoso (sem texto livre) e se lê com `scripts/ia-avaliacoes.mjs`. A sonda
+  (`scripts/sonda-ia-ato.mjs`) segue só com casos SINTÉTICOS: caso real nunca entra no
+  repositório nem em log. (10) A lista ZDR e o transporte moram em
+  `infrastructure/adapters/modelo/`; a sonda e o serviço compartilham a MESMA política
+  (`application/politicas/`), sem duplicação.
+- **Resumo do processo por IA: por clique, só o retrato da conta, UM redator, verificação
+  item a item, separado do "Pede providência"** (v0.40.0, Etapa 2 da "IA como secretária"; só o
+  servidor, a tela é a 0.40.1; errata v1.4.0 da especificação). (1) `POST
+  /v1/acompanhamentos/:numero/resumo`, sem corpo: `ServicoResumoDoProcesso` lê os atos do retrato
+  da PRÓPRIA conta (nada de peça, PDF ou consulta ao tribunal) e as MESMAS travas da análise de
+  ato valem: plano IA sem exceção (`exigirPlanoIa` reaproveita `ServicoAnaliseDoAto.exigirPlano`,
+  com a lista do teste fechado), segredo de justiça e processo sem ato com texto utilizável
+  encerram ANTES de qualquer chamada ao modelo (há teste de zero chamadas). (2) **Seleção**
+  (`selecionarAtosParaResumo`): providências em aberto (`atosQuePedemProvidencia`, a mesma regra e
+  janela de `lerProvidencia`), os atos recentes com texto, uma linha do tempo só de títulos e a
+  contagem do que ficou de fora; os números de `ORCAMENTO_DO_RESUMO` são ESTIMATIVA até se medir
+  preço e contexto reais na lista ZDR. (3) **UM redator para o pedido inteiro**: o mesmo nome
+  vira o mesmo marcador em todos os atos; o banco (`resumos_ia`) guarda COM marcadores, nunca o
+  texto dos atos. **Não há "reabrir o último resumo"**: os marcadores dependem da ordem de
+  aparição do pedido. (4) **`verificarResumo` (regras 1.0.0), item a item**: identificador de ato
+  enviado, trecho no texto DAQUELE ato, número ou data presentes nele, texto que não copia o
+  trecho; o item que falha é descartado e contado, expressão proibida derruba o resultado, e sem
+  item de situação sobrevivente o resultado é "não verificado". (5) **Resumo e providência são
+  coisas separadas**: a resposta traz `contagens.providenciasDoSistema` e `providenciasNaoCitadas`
+  (atos que o sistema marca como pedem providência e a IA não citou); a IA não altera selo,
+  ordem, contagem nem calendário. (6) A peça comum `ModeloComZdr` serve aos dois adaptadores:
+  ZDR, lista de provedores e conferência do par modelo + provedor são UM código só — não se
+  afrouxa um sem o outro. Limite de uso em memória, instância própria
+  (`PROCESSOVIVO_IA_RESUMO_MAX_POR_HORA`, 6); avaliação Útil / Errado / Perigoso em `POST
+  /v1/resumos/:id/avaliacao`; `ia-avaliacoes` lê `analises_ia` e `resumos_ia` em seções
+  separadas.
+- **Tela do resumo do processo: botão na capa, estado só na página, sem reabrir, sem criar nada**
+  (v0.40.1; arquivo `ui/resumoIA.ts`, `window.__pvResumoIA`). (1) **O botão "Resumir este processo
+  com IA" só existe para processo ACOMPANHADO** (nasce ao lado de `#parar`; a consulta avulsa não
+  o tem) **e só com a IA disponível** — a MESMA pergunta única a `GET /v1/analises/disponibilidade`
+  da análise de ato (`__pvAnaliseIA.carregar`); IA desligada = nenhum botão na página. (2) **Gancho
+  mínimo em `script.ts`, que não cresceu**: `ligarBotoesDetalhe` chama `aposDesenhar(numero,
+  acompanhado)` e `render()` chama `sair()` quando a tela deixa de ser a de um processo. (3) **O
+  estado vive na página, enquanto a pessoa fica NESTE processo, e é apagado ao sair** (voltar, trocar
+  de aba, abrir outro processo): não há "reabrir resumo anterior" — vale a regra do servidor, e o
+  nada-em-`localStorage` da tela de Atualizações. O redesenho da tela do processo (a régua do
+  tribunal chegando) NÃO apaga o painel nem repete o pedido: `aposDesenhar` devolve o painel e o
+  botão a partir do estado em memória. (4) **O pedido não tem corpo nem `content-type`** (o Fastify
+  recusa JSON vazio); a avaliação usa `POST /v1/resumos/:id/avaliacao`. (5) **Estados**: resumindo
+  (aviso de "até 2 minutos" e Cancelar, que aborta a requisição e, no servidor, a chamada ao modelo),
+  resultado, "Não foi possível resumir com segurança. Leia os atos." (não verificado), erro genérico,
+  sem plano, limite de uso, segredo de justiça, sem texto utilizável e "não acompanha" — **toda frase
+  de recusa é fixa na tela, nunca texto do servidor ou do modelo**. (6) **O resultado separa o que é
+  da IA do que é do sistema**: "Situação do processo" e "Pendências segundo a IA" são blocos do
+  resumo, cada item com o ato de origem (rótulo, data e tipo da comunicação vêm do RETRATO, não do
+  modelo) e o trecho citado; o bloco "Pede providência" do sistema não é tocado (há teste que
+  compara o HTML antes e depois). A tela diz quantos atos o sistema marca como pedem providência e a
+  IA não citou, quantos atos ficaram de fora do resumo (e quantos entraram só pelo título) e quantos
+  itens foram descartados na verificação — **só a contagem, nunca o texto descartado**. (7) **Link do
+  ato**: leva ao andamento da linha do tempo com a mesma data e o mesmo rótulo (`.ev[data-quando]`,
+  como o calendário); se ele está recolhido ou filtrado, a tela DIZ isso em vez de rolar para lugar
+  nenhum. (8) **Rodapé "Gerado por IA em DATA E HORA. Confira nos atos." sem o nome do modelo**; aviso
+  fixo "Apoio à leitura, não substitui a leitura dos atos nem a contagem de prazo." — a palavra
+  "prazo" só aparece nele e no ponto de atenção "conferir o prazo no processo". (9) **Nada é criado**:
+  nenhum aviso, evento ou marca (há teste que confere que os únicos POST são o resumo e a avaliação).
+  (10) **Acessibilidade** fixada por teste de navegador: axe nos temas claro e escuro (sobre a capa e
+  o painel), foco no painel ao abrir e no botão ao fechar, Esc, região `aria-live` no `<body>` (nunca
+  trocada), `aria-busy` enquanto resume, sem rolagem horizontal de 390 a 1920 px.
+- **Prazo do aviso: nenhuma opção de "úteis ou corridos" vem pré-marcada, e "Calcular" só ativa depois
+  da escolha** (v0.40.1, fecha o pendente da 0.39.0). Quando o ato não diz o tipo, **não há tipo
+  padrão**: os dois rádios nascem desmarcados e o botão "Calcular" nasce `disabled`; escolher ativa o
+  botão no lugar (sem redesenhar, o foco fica no rádio) e só o clique em "Calcular" pede a prévia. A
+  escolha DA PESSOA volta marcada se o painel for redesenhado; Cancelar e reabrir voltam ao estado
+  limpo. Ato que já diz o tipo calcula direto, sem rádio. O servidor continua recusando `tipo_necessario`.
 - **Encerramento se decide pelo ato MAIS RECENTE, nunca pelo histórico.**
   Processo arquivado e depois desarquivado tem os dois atos nos autos; procurar
   "existe arquivamento" marcaria como encerrada a pasta que voltou a correr — e
@@ -1374,7 +1574,35 @@ Não são detalhes — moldam o código.
   contagem de prazo sem contar prazo, para advogado, não volta como reclamação
   de interface. `tests/http/painel.spec.ts` falha se a palavra entrar no
   contrato da rota por descuido.
-- **O calendário LÊ datas; não calcula prazo** (v0.32.0). Evento detectado só
+- **Aviso no calendário a partir da análise por IA, com calculadora de prazo: EXCEÇÃO
+  REGISTRADA à regra "o calendário não calcula prazo"** (v0.39.0, decisão do dono, Etapa 1 da
+  "IA como secretária"). (1) **A IA nunca escreve data.** O esquema ganhou `prazo` opcional
+  (`{ dias, tipo }`, `tipo` = `uteis` | `corridos` | `null`); o prompt `ato-1.2.0` manda COPIAR o
+  número que o ato escreve. `verificarAnalise` (regras 1.2.0) descarta SÓ o prazo — a análise segue —
+  quando o número não está escrito no texto enviado (colado a "dia(s)", em dígitos ou por extenso),
+  está fora de 1–365 ou o tipo é desconhecido. (2) **Quem calcula é o nosso código**
+  (`domain/entities/prazoEmDias.ts`, pura): sábado e domingo, feriados NACIONAIS fixos (1/1, 21/4, 1/5,
+  7/9, 12/10, 2/11, 15/11, 20/11 desde 2024, 25/12), Sexta-feira Santa (pela Páscoa) e o recesso de
+  20/12 a 20/01. Termo inicial: publicação no primeiro dia útil depois da disponibilização, contagem a
+  partir do primeiro dia útil depois da publicação (dia 1); em dias corridos, vencimento em dia sem
+  expediente passa ao primeiro dia útil seguinte. **Não sabe**, e diz: feriado estadual, municipal ou
+  do tribunal, ponto facultativo, suspensão por ato do tribunal, prazo em dobro, regras de juizado.
+  (3) **Só roda depois do clique, só para ato do Diário** (`atoDoDiario`: `idExterno` `djen:…`, a única
+  fonte com data de disponibilização); nos outros atos o botão não calcula e a tela manda criar o aviso
+  manualmente. Ato que não diz úteis ou corridos: a tela pede a escolha, **não há tipo padrão**.
+  (4) **Duas rotas, ambas exigem `analiseIa` E `calendario`** e nenhuma chama o modelo (o serviço nem
+  tem analisador): `POST /v1/analises/:id/aviso/previa` NÃO GRAVA NADA e devolve data, premissas e o
+  aviso "a conferir"; `POST /v1/analises/:id/aviso` recalcula DE NOVO no servidor (o que o navegador viu
+  não é fonte), aceita a data calculada ou uma editada (formato AAAA-MM-DD, senão 400) e cria o evento
+  `prazo`, dia inteiro, `origem: manual`, com a observação das premissas. Sem o clique de confirmar,
+  nada nasce. (5) **Marcador `calculado`** no evento (coluna `calculado`, migração aditiva, sem
+  retrocarga): o feed diz "Data calculada pelo Processo Vivo: confira no processo." Editar a data — no
+  aviso ou depois, no calendário — apaga o marcador: o feed não pode dizer "calculada" de data que o
+  advogado mexeu. (6) **Privacidade:** o título sai só de campos estruturados ("Prazo de 15 dias úteis
+  (a conferir)"), sem texto da IA e sem nome de parte; o feed continua levando só tipo e número do
+  processo (ou "sigiloso"), nunca título, observação nem trecho. Ver `PrazoNaoCalculavelError`.
+- **O calendário LÊ datas; não calcula prazo** (v0.32.0; **exceção registrada na v0.39.0: o aviso
+  a partir da análise por IA, item acima — fora dele a regra segue valendo**). Evento detectado só
   nasce de data EXPLÍCITA no texto do andamento, colada a um gatilho na mesma
   frase, e nasce `sugerido` — vale quando o advogado confirma. Tipo `prazo` só
   com data final escrita ("até 20/10/2026"); "prazo de 15 dias" NÃO vira
@@ -1464,8 +1692,9 @@ teste e carência** (v0.28.0), **visual novo a partir do logo** (v0.29.0),
 **calendário: detecção, agenda, tela e feed ICS** (v0.32.0),
 **ajustes dos advogados: Atualizações por processo, peças no topo, providência em 10 dias** (v0.32.1),
 **Pasta digital: backend (v0.33.0) e tela (v0.33.1) — peça aberta ao clique, guarda por peça, montar pasta completa, baixar marcadas**,
-**ato (movimentação) de cada peça na lista da Pasta, com descrição** (v0.33.2) **e o número da movimentação calculado pela posição do ato, com aviso de atos bloqueados** (v0.34.0; a 0.33.3 havia removido o número errado da 0.33.2), **calibração do número com o Projudi feita pelo advogado: exato quando provado, faixa ou estimado quando não** (v0.35.0), **página inicial: Últimas atualizações mostra só o trecho do texto e o trilho de peças baixadas não estoura a largura** (v0.35.1), **Pasta: número da movimentação no lugar do índice; página inicial: "detectado há N dias" e cartão "pede providência"** (v0.35.2), **Pasta: lista em altura total com avisos compactados** (v0.35.3), **Pasta: todas as movimentações na lista, inclusive as sem peça, com lacuna de numeração provada e lista mais larga** (v0.36.0), **página inicial: tabela de últimas atualizações, uma linha por processo, com filtros que contam no lugar dos cartões; histórico de peças baixadas dentro da Pasta** (v0.37.0), **tabela sem "+N anteriores", "Detectado" enxuto e descrição do ato sem repetição na exibição** (v0.37.1), **classe legível e agrupada no filtro, última movimentação sem repetição e carteira sem rodapé redundante** (v0.37.2), **Atualizações lista todos os processos acompanhados, período como filtro opcional e verificação por conta** (v0.37.3), **Atualizações abre em "Pedem providência", com a lista completa a um clique** (v0.37.4), **intimação do Diário pede providência por 30 dias ou até "cumprido", marca por ato, correção da avalanche de novidades e reparo só com dry-run** (v0.37.5), **conferência com o Projudi: sonda de diagnóstico só de leitura, linha do ato da providência, "Detectado" legível e intimação a outro destinatário** (v0.37.6), **tela do processo sem os blocos "Pede providência" e "Última movimentação", Partes logo abaixo das peças** (v0.37.7),
-Dockerfile multi-stage, CI, 1662 testes.
+**ato (movimentação) de cada peça na lista da Pasta, com descrição** (v0.33.2) **e o número da movimentação calculado pela posição do ato, com aviso de atos bloqueados** (v0.34.0; a 0.33.3 havia removido o número errado da 0.33.2), **calibração do número com o Projudi feita pelo advogado: exato quando provado, faixa ou estimado quando não** (v0.35.0), **página inicial: Últimas atualizações mostra só o trecho do texto e o trilho de peças baixadas não estoura a largura** (v0.35.1), **Pasta: número da movimentação no lugar do índice; página inicial: "detectado há N dias" e cartão "pede providência"** (v0.35.2), **Pasta: lista em altura total com avisos compactados** (v0.35.3), **Pasta: todas as movimentações na lista, inclusive as sem peça, com lacuna de numeração provada e lista mais larga** (v0.36.0), **página inicial: tabela de últimas atualizações, uma linha por processo, com filtros que contam no lugar dos cartões; histórico de peças baixadas dentro da Pasta** (v0.37.0), **tabela sem "+N anteriores", "Detectado" enxuto e descrição do ato sem repetição na exibição** (v0.37.1), **classe legível e agrupada no filtro, última movimentação sem repetição e carteira sem rodapé redundante** (v0.37.2), **Atualizações lista todos os processos acompanhados, período como filtro opcional e verificação por conta** (v0.37.3), **Atualizações abre em "Pedem providência", com a lista completa a um clique** (v0.37.4), **intimação do Diário pede providência por 30 dias ou até "cumprido", marca por ato, correção da avalanche de novidades e reparo só com dry-run** (v0.37.5), **conferência com o Projudi: sonda de diagnóstico só de leitura, linha do ato da providência, "Detectado" legível e intimação a outro destinatário** (v0.37.6), **"Analisar com IA": por botão, texto redigido, citação verificada, ZDR falhando fechado, desligada por padrão e só no plano IA** (v0.38.0; sonda de IA v1.2.0 e `ia-avaliacoes.mjs` v1.0.0), **exceção de teste fechado da IA por variável (`PROCESSOVIVO_IA_WORKSPACES_LIBERADOS`), a remover antes de abrir ao público** (v0.38.1), **log da análise por IA com status HTTP, passo e funil do roteamento** (v0.38.2), **análise por IA: rodízio por provedor depois de 429/5xx, sem `allow_fallbacks`** (v0.38.3), **análise por IA: formato da resposta em texto, sem `require_parameters` nem `response_format`, ZDR e lista intactas** (v0.38.4), **análise por IA: ações possíveis como providência sem citação, rejeição de ação que copia o trecho-chave e rodapé sem o nome do modelo** (v0.38.5), **IA como secretária, Etapa 1: prazo escrito no ato, calculadora de prazo (exceção registrada) e "Criar aviso no calendário" com prévia e confirmação** (v0.39.0), **IA como secretária, Etapa 2 (só o servidor): resumo do processo por IA, por clique, com verificação item a item e a contagem das providências do sistema que a IA não citou** (v0.40.0), **tela do resumo do processo: botão na capa, painel com estados, link do ato à linha do tempo e correção do prazo sem opção pré-marcada** (v0.40.1), **Atualizações: busca pelo número do processo, que respeita os filtros e diz quantos casam fora deles** (v0.41.0),
+**tela do processo sem os blocos "Pede providência" e "Última movimentação", Partes logo abaixo das peças** (v0.41.1),
+Dockerfile multi-stage, CI, 2306 testes.
 
 **Pasta digital (v0.33.0, backend):** `GET /v1/processos/:numero/pasta` (lista +
 estado de cada peça + intervalos de página + totais SEM filtro + procedência
@@ -1601,7 +1830,8 @@ verificada — e a biblioteca não oficial que resolveria numa tarde viola os
 termos e derruba o número, levando junto o aviso de prazo de todos os
 assinantes), **cálculo de prazo** (dias úteis do art. 219 do CPC, recesso,
 suspensões — alto valor e alto risco: só entra como calculadora com as contas à
-vista, nunca como afirmação), página do processo para o cliente do advogado,
+vista, nunca como afirmação; **a v0.39.0 trouxe uma calculadora mínima, só para ato do
+Diário e só depois do clique, sem feriado local, suspensão nem prazo em dobro**), página do processo para o cliente do advogado,
 alerta de evento do calendário por e-mail/push, sincronização de mão dupla
 com Google/Outlook, fila de jobs genérica (a do leitor é mínima e só dele). O cache é em memória — uma instância, e evapora no redeploy.
 

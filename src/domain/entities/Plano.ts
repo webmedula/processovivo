@@ -45,6 +45,11 @@ export interface DescricaoDoRecurso {
    * recurso que ainda não funciona, para advogado, não volta como pedido de
    * reembolso — volta como reclamação formal. Virar para `true` é o passo
    * consciente de quando a análise existir.
+   *
+   * v0.38.0: a análise por IA EXISTE, mas em teste fechado — funciona para a conta que o
+   * operador liberou à mão no plano IA (`ServicoAnaliseDoAto` exige o plano, sem exceção),
+   * e continua `false` aqui: o que esta trava impede é colocar à VENDA, não usar. Virar
+   * `true` é decisão do dono, depois da avaliação com uso real.
    */
   readonly implementado: boolean;
 }

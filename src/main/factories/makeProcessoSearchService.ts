@@ -31,6 +31,21 @@ import { RepositorioAcompanhamentosSqlite } from '../../infrastructure/persisten
 import { RepositorioNotificacaoSqlite } from '../../infrastructure/persistencia/sqlite/RepositorioNotificacaoSqlite.js';
 import { RepositorioVigilanciasSqlite } from '../../infrastructure/persistencia/sqlite/RepositorioVigilanciasSqlite.js';
 import type { Logger } from '../../domain/ports/Logger.js';
+import type { RepositorioAcompanhamentos } from '../../domain/ports/RepositorioAcompanhamentos.js';
+import { mascararWorkspace } from '../../domain/entities/workspaceLiberado.js';
+import { ServicoAnaliseDoAto } from '../../application/services/ServicoAnaliseDoAto.js';
+import { ServicoResumoDoProcesso } from '../../application/services/ServicoResumoDoProcesso.js';
+import { ServicoAvisoDoPrazo } from '../../application/services/ServicoAvisoDoPrazo.js';
+import { LimiteDeAnalises } from '../../application/politicas/limiteDeAnalises.js';
+import { clockDoSistema } from '../../domain/ports/Clock.js';
+import { ModeloComZdr } from '../../infrastructure/adapters/modelo/ModeloComZdr.js';
+import { OpenRouterResumidorDeProcesso } from '../../infrastructure/adapters/modelo/OpenRouterResumidorDeProcesso.js';
+import { OpenRouterAnalisadorDeAto } from '../../infrastructure/adapters/modelo/OpenRouterAnalisadorDeAto.js';
+import { TransporteOpenRouter } from '../../infrastructure/adapters/modelo/TransporteOpenRouter.js';
+import { buscarEndpointsZdr } from '../../infrastructure/adapters/modelo/endpointsZdr.js';
+import { HttpClient } from '../../infrastructure/http/HttpClient.js';
+import { RepositorioResumosSqlite } from '../../infrastructure/persistencia/sqlite/RepositorioResumosSqlite.js';
+import { RepositorioAnalisesSqlite } from '../../infrastructure/persistencia/sqlite/RepositorioAnalisesSqlite.js';
 import type { ProcessoProvider } from '../../domain/ports/ProcessoProvider.js';
 import { BuscarProcessoPorNumero } from '../../domain/usecases/BuscarProcessoPorNumero.js';
 import { BuscarProcessosPorOab } from '../../domain/usecases/BuscarProcessosPorOab.js';
@@ -90,6 +105,15 @@ export interface Aplicacao {
   readonly acompanhamento: ServicoAcompanhamento;
   readonly vigilancia: ServicoVigilanciaOab | undefined;
   readonly notificacao: ServicoNotificacao;
+  /**
+   * Análise de ato por IA (v0.38.0). `undefined` com `PROCESSOVIVO_IA_HABILITADA=false`
+   * (o padrão): as rotas não oferecem nada e a tela não mostra o botão.
+   */
+  readonly analiseIa: ServicoAnaliseDoAto | undefined;
+  /** Resumo de processo por IA (v0.40.0). Só existe com a IA ligada. */
+  readonly resumoDoProcesso: ServicoResumoDoProcesso | undefined;
+  /** "Criar aviso no calendário" a partir da análise (v0.39.0). Só existe com a IA ligada. */
+  readonly avisoDoPrazo: ServicoAvisoDoPrazo | undefined;
   /**
    * `undefined` quando não há chave de cofre configurada. As rotas respondem
    * 501 com a instrução, em vez de existirem e falharem na primeira consulta.
@@ -483,6 +507,14 @@ export function montarAplicacao(config: Config): Aplicacao {
         })
       : undefined;
 
+  const { analiseIa, resumoDoProcesso } = montarAnaliseIa(
+    config,
+    db,
+    logger,
+    repositorio,
+    assinaturas,
+  );
+
   return {
     buscarProcessoPorNumero,
     buscarProcessosPorOab: new BuscarProcessosPorOab(provider),
@@ -492,6 +524,18 @@ export function montarAplicacao(config: Config): Aplicacao {
     vigilancia,
     notificacao,
     pecas,
+    analiseIa,
+    resumoDoProcesso,
+    avisoDoPrazo:
+      analiseIa === undefined
+        ? undefined
+        : new ServicoAvisoDoPrazo({
+            analises: new RepositorioAnalisesSqlite(db),
+            repositorio,
+            calendario,
+            exigirPlanoIa: (ws) => analiseIa.exigirPlano(ws),
+            exigirCalendario: (ws) => assinaturas.exigir(ws, 'calendario'),
+          }),
     leitor,
     pasta,
     agendadorLeitor,
@@ -527,6 +571,92 @@ export function montarAplicacao(config: Config): Aplicacao {
       db.close();
     },
   };
+}
+
+/**
+ * Monta a análise de ato por IA — ou não monta (desligada por padrão). A configuração
+ * já foi validada no arranque (`carregarConfig`): com a IA ligada há chave real e modelo real.
+ * O transporte, o limite e a lista ZDR são UMA instância cada, para o processo inteiro.
+ */
+function montarAnaliseIa(
+  config: Config,
+  db: ReturnType<typeof abrirBanco>,
+  logger: Logger,
+  repositorio: RepositorioAcompanhamentos,
+  assinaturas: ServicoAssinaturas,
+): {
+  analiseIa: ServicoAnaliseDoAto | undefined;
+  resumoDoProcesso: ServicoResumoDoProcesso | undefined;
+} {
+  const ia = config.ia;
+  if (!ia.habilitada) return { analiseIa: undefined, resumoDoProcesso: undefined };
+  const http = new HttpClient({ timeoutMs: 20_000, tentativas: 2 });
+  // UMA peça comum para a análise de ato e o resumo de processo: uma lista ZDR e as mesmas
+  // travas (modelo real, `provider.only`, conferência do par) para os dois.
+  const modeloZdr = new ModeloComZdr({
+    transporte: new TransporteOpenRouter({
+      chave: ia.chave,
+      timeoutMs: ia.timeoutMs,
+      ajustes: { raciocinio: ia.raciocinio, maxTokens: ia.maxTokens },
+    }),
+    modelo: ia.modelo,
+    buscarListaZdr: async () => (await buscarEndpointsZdr(http, ia.chave)).endpoints,
+    provedoresDoOperador: ia.provedoresPermitidos,
+    clock: clockDoSistema,
+    logger,
+  });
+  const analisador = new OpenRouterAnalisadorDeAto({ modeloZdr });
+  logger.info('análise de ato por IA habilitada', {
+    modelo: ia.modelo,
+    raciocinio: ia.raciocinio,
+    provedoresDoOperador: ia.provedoresPermitidos.length,
+  });
+  if (ia.workspacesLiberados.length > 0) {
+    // Só ids MASCARADOS: o workspace identifica de quem é a carteira.
+    logger.warn(
+      'análise por IA: exceção de teste fechado ligada (remover antes de abrir ao público)',
+      {
+        workspaces: ia.workspacesLiberados.map(mascararWorkspace),
+      },
+    );
+  }
+  const analiseIa = new ServicoAnaliseDoAto({
+    repositorio,
+    analises: new RepositorioAnalisesSqlite(db),
+    assinaturas,
+    analisador,
+    limite: new LimiteDeAnalises({
+      porHora: ia.maxPorHora,
+      simultaneasNoTotal: ia.maxSimultaneas,
+      clock: clockDoSistema,
+    }),
+    clock: clockDoSistema,
+    logger,
+    novoId: () => randomUUID(),
+    workspacesLiberados: new Set(ia.workspacesLiberados),
+  });
+  const resumoDoProcesso = new ServicoResumoDoProcesso({
+    repositorio,
+    resumos: new RepositorioResumosSqlite(db),
+    resumidor: new OpenRouterResumidorDeProcesso({
+      modeloZdr,
+      maxTokens: ia.resumoMaxTokens,
+      timeoutMs: ia.resumoTimeoutMs,
+    }),
+    // A MESMA regra do plano IA da análise de ato, inclusive a exceção de teste fechado.
+    exigirPlanoIa: (ws) => analiseIa.exigirPlano(ws),
+    // Freio próprio do resumo: mais caro que a análise de um ato.
+    limite: new LimiteDeAnalises({
+      porHora: ia.resumoMaxPorHora,
+      simultaneasNoTotal: ia.maxSimultaneas,
+      clock: clockDoSistema,
+    }),
+    clock: clockDoSistema,
+    logger,
+    novoId: () => randomUUID(),
+    janelaDePendenciaDias: config.telas.pendenciaJanelaDias,
+  });
+  return { analiseIa, resumoDoProcesso };
 }
 
 /**

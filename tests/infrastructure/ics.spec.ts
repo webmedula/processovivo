@@ -233,3 +233,33 @@ describe('ICS — privacidade', () => {
     expect(sigiloso).toContain('Abrir no Processo Vivo: https://exemplo.invalid/\r\n');
   });
 });
+
+describe('feed ICS — prazo calculado (v0.39.0)', () => {
+  const desdobrar = (ics: string): string => ics.replace(/\r\n /g, '');
+
+  it('o evento calculado diz, na descrição, que a data foi calculada pelo Processo Vivo', () => {
+    const e = manual({
+      tipo: 'prazo',
+      titulo: 'Prazo de 15 dias úteis (a conferir)',
+      calculado: true,
+    });
+    const ics = desdobrar(gerarIcs([e], OPCOES));
+    expect(ics).toContain('Data calculada pelo Processo Vivo: confira no processo.');
+    // O título livre continua fora do feed.
+    expect(ics).not.toContain('a conferir)');
+    expect(ics).toContain(`SUMMARY:Prazo — ${FORMATADO}`);
+  });
+
+  it('evento comum não leva a frase', () => {
+    const ics = desdobrar(gerarIcs([manual()], OPCOES));
+    expect(ics).not.toContain('Data calculada pelo Processo Vivo');
+  });
+
+  it('processo sigiloso: a frase vai, o número não', () => {
+    const e = manual({ tipo: 'prazo', calculado: true, segredoJustica: true });
+    const ics = desdobrar(gerarIcs([e], OPCOES));
+    expect(ics).toContain('Data calculada pelo Processo Vivo: confira no processo.');
+    expect(ics).toContain('SUMMARY:Prazo (processo sigiloso)');
+    expect(ics).not.toContain(NUMERO);
+  });
+});

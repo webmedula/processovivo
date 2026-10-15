@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { HttpClient, HttpTimeoutError } from '../../src/infrastructure/http/HttpClient.js';
+import {
+  HttpClient,
+  HttpTimeoutError,
+} from '../../src/infrastructure/http/HttpClient.js';
 
 /**
  * Testa a política de timeout e retry contra um `fetch` dublado — sem rede.

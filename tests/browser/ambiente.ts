@@ -193,6 +193,9 @@ export async function iniciar(
       LOG_LEVEL: 'silent',
       CACHE_ENABLED: 'false',
       PROCESSOVIVO_API_KEYS: CHAVE,
+      // Uma suíte inteira de navegador passa por aqui com a mesma chave: sem isso o limite de
+      // requisições do servidor vira a causa de falhas que não são da tela.
+      RATE_LIMIT_MAX: '100000',
     } as NodeJS.ProcessEnv),
   );
   const headers = { 'x-api-key': CHAVE };
