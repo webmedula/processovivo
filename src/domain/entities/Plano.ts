@@ -127,6 +127,44 @@ export interface Plano {
   readonly precoMensalCentavos: number | null;
   /** Posição na lista, do menor para o maior. Também é a ordem de upgrade. */
   readonly ordem: number;
+  /**
+   * De quanto em quanto tempo o plano se renova (v0.44.0). Ausente = `mensal`, o padrão
+   * seguro de toda linha gravada antes da coluna existir. Só `mensal` é VENDÁVEL hoje
+   * (`CICLOS_VENDAVEIS`): o campo existe para o trimestral e o anual entrarem sem mexer em código.
+   */
+  readonly ciclo?: CicloDoPlano;
+}
+
+/** O ciclo de renovação. `meses` é o que o gateway chama de frequência e o que `liberar` soma. */
+export type CicloDoPlano = 'mensal' | 'trimestral' | 'anual';
+
+export const MESES_POR_CICLO: Readonly<Record<CicloDoPlano, number>> = Object.freeze({
+  mensal: 1,
+  trimestral: 3,
+  anual: 12,
+});
+
+/** Os ciclos que a cobrança recorrente aceita contratar nesta versão. */
+export const CICLOS_VENDAVEIS: readonly CicloDoPlano[] = Object.freeze(['mensal']);
+
+export function ehCiclo(valor: unknown): valor is CicloDoPlano {
+  return typeof valor === 'string' && valor in MESES_POR_CICLO;
+}
+
+/** O ciclo do plano, com o padrão seguro quando a linha não o tem. */
+export function cicloDoPlano(plano: Pick<Plano, 'ciclo'>): CicloDoPlano {
+  return plano.ciclo ?? 'mensal';
+}
+
+/**
+ * O valor de UMA cobrança, em centavos: o preço por mês vezes os meses do ciclo. `null` sem preço
+ * publicado — e plano sem preço não se contrata (o valor nunca é inventado nem arredondado).
+ */
+export function valorDoCicloEmCentavos(
+  plano: Pick<Plano, 'ciclo' | 'precoMensalCentavos'>,
+): number | null {
+  if (plano.precoMensalCentavos === null || plano.precoMensalCentavos <= 0) return null;
+  return plano.precoMensalCentavos * MESES_POR_CICLO[cicloDoPlano(plano)];
 }
 
 /**
@@ -230,6 +268,9 @@ export function validarPlano(plano: Plano): void {
       plano.precoMensalCentavos > PRECO_MAXIMO_CENTAVOS)
   ) {
     throw new PlanoInvalidoError('O preço precisa ser um valor entre R$ 0,00 e R$ 100.000,00.');
+  }
+  if (plano.ciclo !== undefined && !ehCiclo(plano.ciclo)) {
+    throw new PlanoInvalidoError('O ciclo precisa ser mensal, trimestral ou anual.');
   }
   if (!Number.isInteger(plano.ordem) || plano.ordem < 0 || plano.ordem > 9999) {
     throw new PlanoInvalidoError('A ordem precisa ser um número inteiro entre 0 e 9999.');

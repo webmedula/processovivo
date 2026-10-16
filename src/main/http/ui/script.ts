@@ -2048,7 +2048,7 @@ function verConta(){
   $('conteudo').innerHTML=
     '<div class="titulo-secao"><div><h2>Minha conta</h2>'+
     '<div class="sub">'+esc(u.nome)+' · '+esc(u.email)+'</div></div></div>'+
-    cartaoPlano+
+    cartaoPlano+(window.__pvPagamento?window.__pvPagamento.cartao():'')+
 
     '<div class="cartao"><h3 class="sec">Inscrição na OAB</h3>'+
     '<div class="nota">É o que permite achar os processos no seu nome sem você '+
@@ -2070,7 +2070,7 @@ function verConta(){
       '<div><label class="rotulo" for="s-nova">Senha nova</label>'+
       '<input id="s-nova" type="password" autocomplete="new-password"></div>'+
       '<div style="align-self:end"><button class="bt bt2" id="s-salvar">Trocar</button></div>'+
-    '</div><div id="s-aviso"></div></div>';
+    '</div><div id="s-aviso"></div></div>';if(window.__pvPagamento)window.__pvPagamento.ligar();// ui/pagamento.ts
 
   $('p-salvar').addEventListener('click',function(){
     var oab=$('p-oab').value.trim(), uf=$('p-uf').value.trim().toUpperCase();

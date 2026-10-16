@@ -31,6 +31,7 @@ import { rotasDaAnaliseIA } from './rotas/analiseIA.js';
 import { rotasDoResumoIA } from './rotas/resumoIA.js';
 import { ROTA_FEED_PUBLICO, rotasDoCalendario } from './rotas/calendario.js';
 import { rotasDeAssinaturas } from './rotas/assinaturas.js';
+import { ROTA_WEBHOOK_DE_PAGAMENTO, rotasDePagamentos } from './rotas/pagamentos.js';
 import { ROTAS_ADMIN, rotasDeAdmin } from './rotas/admin.js';
 import {
   ROTA_CONTAS,
@@ -131,6 +132,9 @@ export function construirServidor(app: Aplicacao, config: Config): FastifyInstan
       ROTA_FEED_PUBLICO,
       // Volta do Google: navegação sem cookie nem chave; autentica-se pelo `state` assinado.
       ROTA_DRIVE_RETORNO,
+      // O aviso do gateway de pagamento: sem cookie e sem chave. Quem o autentica é a assinatura do
+      // próprio aviso (`x-signature`); inválida = 401. Desligado o recurso, a rota nem existe (404).
+      ROTA_WEBHOOK_DE_PAGAMENTO,
       ...ROTAS_ADMIN,
     ],
   });
@@ -159,7 +163,13 @@ export function construirServidor(app: Aplicacao, config: Config): FastifyInstan
   void servidor.register(
     rotasDoCalendario(app.calendario, app.assinaturas, { urlBase: config.http.urlBase }),
   );
-  void servidor.register(rotasDeAssinaturas(app.assinaturas, app.planos));
+  void servidor.register(
+    rotasDeAssinaturas(app.assinaturas, app.planos, {
+      pagamentos: app.pagamentos,
+      urlDosTermos: config.pagamento.urlDosTermos,
+    }),
+  );
+  void servidor.register(rotasDePagamentos(app.pagamentos, log));
   void servidor.register(rotasDeVigilancia(app.vigilancia, app.preferenciasNotificacao));
   void servidor.register(
     rotasDeAdmin({
@@ -167,6 +177,8 @@ export function construirServidor(app: Aplicacao, config: Config): FastifyInstan
       assinaturas: app.assinaturas,
       planos: app.planos,
       repositorioAssinaturas: app.repositorioAssinaturas,
+      pagamentos: app.pagamentos,
+      emProducao: config.pagamento.emProducao,
       usuarios: app.usuarios,
       chavesApi: app.chavesApi,
       localizador: new LocalizadorDeWorkspace({

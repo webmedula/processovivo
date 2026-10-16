@@ -5,7 +5,12 @@ import {
   planosAVenda,
   validarPlano,
 } from '../../domain/entities/Plano.js';
-import type { CodigoPlano, Plano, RecursoDoPlano } from '../../domain/entities/Plano.js';
+import type {
+  CicloDoPlano,
+  CodigoPlano,
+  Plano,
+  RecursoDoPlano,
+} from '../../domain/entities/Plano.js';
 import { validarRegras } from '../../domain/entities/RegrasDeAssinatura.js';
 import type { RegrasDeAssinatura } from '../../domain/entities/RegrasDeAssinatura.js';
 import { PlanoDesconhecidoError, PlanoJaExisteError } from '../../domain/errors/index.js';
@@ -24,6 +29,8 @@ export interface DadosDePlano {
   readonly precoMensalCentavos: number | null;
   /** Ausente na criação: o plano novo entra no fim da lista. */
   readonly ordem?: number;
+  /** Ausente = `mensal` (v0.44.0). Só `mensal` é vendável pela cobrança recorrente. */
+  readonly ciclo?: CicloDoPlano;
 }
 
 export interface NovoPlano extends DadosDePlano {
@@ -150,6 +157,7 @@ export class ServicoPlanos {
       // De dez em dez, para sobrar espaço de encaixar um plano entre dois sem
       // renumerar a lista inteira.
       ordem: dados.ordem ?? Math.min(ultimo + 10, 9999),
+      ...(dados.ciclo !== undefined ? { ciclo: dados.ciclo } : {}),
     };
     validarPlano(plano);
 
@@ -183,6 +191,9 @@ export class ServicoPlanos {
           ? mudancas.precoMensalCentavos
           : atual.precoMensalCentavos,
       ordem: mudancas.ordem ?? atual.ordem,
+      ...((mudancas.ciclo ?? atual.ciclo) !== undefined
+        ? { ciclo: (mudancas.ciclo ?? atual.ciclo) as CicloDoPlano }
+        : {}),
     };
     validarPlano(novo);
 

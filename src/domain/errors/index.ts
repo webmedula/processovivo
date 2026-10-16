@@ -1012,3 +1012,75 @@ export class AutorizacaoDoDestinoVencidaError extends DomainError {
     super('A autorização do Google Drive venceu.');
   }
 }
+
+// ---------------------------------------------------------------------------
+// Cobrança recorrente pelo gateway de pagamento (v0.44.0). Nenhum desses erros carrega dado de
+// cartão, token, segredo nem texto cru do gateway.
+
+/** O gateway não respondeu: rede, timeout, 5xx, limite. Nada foi cobrado de forma confirmada. */
+export class GatewayDePagamentoIndisponivelError extends ProviderIndisponivelError {
+  override readonly codigo: string = 'GATEWAY_DE_PAGAMENTO_INDISPONIVEL';
+
+  constructor(gateway: string, motivo: string, options?: { cause?: unknown }) {
+    super(gateway, motivo, options);
+  }
+}
+
+/** O gateway respondeu e recusou o pedido (4xx definitivo) ou devolveu algo fora do contrato. */
+export class GatewayDePagamentoRecusouError extends DomainError {
+  readonly codigo = 'GATEWAY_DE_PAGAMENTO_RECUSOU';
+
+  constructor(
+    readonly gateway: string,
+    readonly status: number | undefined,
+    motivo: string,
+  ) {
+    super(`Gateway de pagamento "${gateway}" recusou o pedido: ${motivo}`);
+  }
+}
+
+/**
+ * O aviso (webhook) não prova que veio do gateway: assinatura ausente, malformada, adulterada,
+ * de outro recurso ou velha demais. 401, e NADA é gravado. A mensagem nunca diz qual foi o motivo
+ * exato a quem chama (isso ajudaria a forjar); o motivo vai só para o log.
+ */
+export class AssinaturaDeWebhookInvalidaError extends DomainError {
+  readonly codigo = 'ASSINATURA_DE_WEBHOOK_INVALIDA';
+
+  constructor(
+    readonly motivo:
+      | 'ausente'
+      | 'malformada'
+      | 'sem_timestamp'
+      | 'sem_hash'
+      | 'sem_segredo'
+      | 'diferente'
+      | 'fora_do_prazo',
+  ) {
+    super('Assinatura do webhook inválida.');
+  }
+}
+
+export type MotivoDePagamentoRecusado =
+  | 'plano_sem_preco'
+  | 'plano_nao_vendavel'
+  | 'ciclo_nao_suportado'
+  | 'conta_sem_email'
+  | 'ja_assinante'
+  | 'sem_recorrencia'
+  | 'plano_desconhecido';
+
+/**
+ * O pedido de cobrança não se aplica, e a razão é da conta ou do plano — nenhum desses casos chamou o
+ * gateway. O corpo da resposta traz `detalhes.motivo` para a tela escolher a frase.
+ */
+export class PagamentoRecusadoError extends DomainError {
+  readonly codigo = 'PAGAMENTO_RECUSADO';
+
+  constructor(
+    readonly motivo: MotivoDePagamentoRecusado,
+    mensagem: string,
+  ) {
+    super(mensagem);
+  }
+}

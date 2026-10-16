@@ -16,7 +16,7 @@ export const SCRIPT_ADMIN = String.raw`
 var $=function(i){return document.getElementById(i)};
 
 var estado={aba:'assinaturas',assinaturas:null,chaves:null,chaveEmitida:null,
-  catalogo:null,editando:null,avisoPlanos:null};
+  catalogo:null,editando:null,avisoPlanos:null,pagamento:{habilitado:false}};
 
 /* ---------------- utilidades (mesmas convenções de ui/script.ts) ---------------- */
 function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){
@@ -82,9 +82,23 @@ function render(){
   else{renderAssinaturas()}
 }
 
+/* O ambiente da cobrança recorrente. Em modo de TESTE o aviso é impossível de não ver: nenhum pagamento
+   é real, e em produção isso quase sempre é engano. Sem a cobrança habilitada, nada aparece. */
+function carregarPagamento(){
+  return api('/admin/api/pagamento').then(function(r){estado.pagamento=r}).catch(function(){estado.pagamento={habilitado:false}});
+}
+function bannerDoAmbiente(){
+  var p=estado.pagamento;
+  if(!p||!p.habilitado||!p.modoDeTeste)return '';
+  return '<div class="aviso" role="status" style="margin-bottom:12px;border-color:var(--erro)">'+
+    '<strong style="color:var(--erro)">TESTE</strong> — '+esc(p.aviso||'Nenhum pagamento é real.')+'</div>';
+}
+var ROTULO_DO_ESTADO_DO_GATEWAY={pendente:'aguardando pagamento',autorizada:'renovação automática ativa',
+  pausada:'pausada',cancelada:'renovação encerrada'};
+
 /* ---------------- assinaturas ---------------- */
 function renderAssinaturas(){
-  Promise.all([api('/admin/api/assinaturas'),api('/admin/api/planos')]).then(function(rs){
+  Promise.all([api('/admin/api/assinaturas'),api('/admin/api/planos'),carregarPagamento()]).then(function(rs){
     estado.assinaturas=rs[0].assinaturas||[];
     estado.catalogo=rs[1];
     desenharAssinaturas();
@@ -102,6 +116,17 @@ function opcoesDePlano(selecionado){
   }).join('');
 }
 
+/* Origem e cobrança no gateway: só metadado (estado, id, último pagamento) — nunca dado do pagador. */
+function celulaDeOrigem(a){
+  if(!a.pagamento)return '<td class="t-sub">manual</td>';
+  var g=a.pagamento;
+  return '<td>Mercado Pago'+
+    '<div class="t-sub">'+esc(ROTULO_DO_ESTADO_DO_GATEWAY[g.estadoNoGateway]||g.estadoNoGateway)+'</div>'+
+    '<div class="t-sub" style="font-family:ui-monospace,monospace;user-select:all">'+esc(g.gatewayId||'—')+'</div>'+
+    '<div class="t-sub">último pagamento: '+(g.ultimoPagamento?esc(g.ultimoPagamento)+' em '+dt(g.ultimoPagamentoEm):'—')+'</div>'+
+    '<button class="bt3" data-reconciliar="'+esc(a.workspace)+'">reconciliar</button></td>';
+}
+
 function linhaAssinatura(a){
   return '<tr>'+
     '<td>'+(a.email?esc(a.email):'(sem conta — chave de API) <span class="t-sub" style="font-family:ui-monospace,monospace;user-select:all">'+esc(a.workspace)+'</span>')+'</td>'+
@@ -109,6 +134,7 @@ function linhaAssinatura(a){
     '<td>'+esc(a.status)+'</td>'+
     '<td>'+dt(a.venceEm)+'</td>'+
     '<td class="t-sub">'+esc(a.observacao||'—')+'</td>'+
+    (estado.pagamento.habilitado?celulaDeOrigem(a):'')+
     '</tr>';
 }
 
@@ -118,12 +144,15 @@ function desenharAssinaturas(){
     ? '<div class="vazio"><p>Nenhuma assinatura cadastrada ainda.</p></div>'
     : '<div class="cartao sem-borda"><div class="tab-rolo"><table class="tab">'+
       '<thead><tr><th>Conta</th><th>Plano</th><th>Status</th><th>Vence em</th>'+
-      '<th>Observação</th></tr></thead><tbody>'+linhas+'</tbody></table></div></div>';
+      '<th>Observação</th>'+(estado.pagamento.habilitado?'<th>Origem / cobrança</th>':'')+
+      '</tr></thead><tbody>'+linhas+'</tbody></table></div></div>';
 
-  var h='';
+  var h=bannerDoAmbiente();
   h+='<div class="titulo-secao"><div><h2>Assinaturas</h2>'+
     '<div class="sub">'+estado.assinaturas.length+' assinatura(s) cadastrada(s)</div>'+
-    '</div><button class="bt2" id="bt-avisar">Enviar avisos de vencimento agora</button></div>';
+    '</div><div><button class="bt2" id="bt-avisar">Enviar avisos de vencimento agora</button>'+
+    (estado.pagamento.habilitado?' <button class="bt2" id="bt-reconciliar">Reconciliar cobranças</button>':'')+
+    '</div></div>';
   h+='<div id="resultado-avisar"></div>';
 
   h+='<div class="cartao"><h3 class="sec">Gerenciar por e-mail ou workspace</h3>';
@@ -147,6 +176,22 @@ function desenharAssinaturas(){
 
   h+=tabela;
   $('conteudo').innerHTML=h;
+
+  /* Reconciliar: consulta o gateway e corrige o que divergir (aviso perdido). Uma conta ou todas. */
+  function reconciliar(workspace,bt){
+    bt.disabled=true;
+    api('/admin/api/pagamento/reconciliar',{method:'POST',body:workspace?{workspace:workspace}:{}}).then(function(r){
+      $('resultado-avisar').innerHTML='<div class="aviso" style="margin-top:10px">'+esc(r.verificadas)+
+        ' verificada(s), '+esc(r.corrigidas)+' corrigida(s), '+esc(r.pagamentosNovos)+' pagamento(s) novo(s), '+
+        esc(r.falhas)+' falha(s).</div>';
+      renderAssinaturas();
+    }).catch(function(e){$('resultado-avisar').innerHTML=erroBloco(e);bt.disabled=false});
+  }
+  if($('bt-reconciliar'))$('bt-reconciliar').addEventListener('click',function(){reconciliar('',$('bt-reconciliar'))});
+  var recs=document.querySelectorAll('[data-reconciliar]');
+  for(var k=0;k<recs.length;k++){
+    (function(bt){bt.addEventListener('click',function(){reconciliar(bt.getAttribute('data-reconciliar'),bt)})})(recs[k]);
+  }
 
   $('bt-avisar').addEventListener('click',function(){
     var bt=$('bt-avisar');bt.disabled=true;
@@ -194,11 +239,12 @@ function desenharAssinaturas(){
 
 /* ---------------- planos ---------------- */
 function renderPlanos(){
-  api('/admin/api/planos').then(function(r){
-    estado.catalogo=r;
+  Promise.all([api('/admin/api/planos'),carregarPagamento()]).then(function(rs){
+    estado.catalogo=rs[0];
     desenharPlanos();
   }).catch(function(e){$('conteudo').innerHTML=erroBloco(e)});
 }
+var ROTULO_DO_CICLO={mensal:'mensal',trimestral:'trimestral',anual:'anual'};
 
 function vigentes(p){return p.assinantes.teste+p.assinantes.ativa+p.assinantes.carencia}
 
@@ -223,6 +269,7 @@ function linhaPlano(p){
       '<div class="t-sub">'+esc(p.codigo)+'</div>'+
       (p.ehPlanoDoTeste?'<div style="margin-top:4px"><span class="selo nv">plano do teste</span></div>':'')+'</td>'+
     '<td>'+esc(fmtPreco(p.precoMensalCentavos))+'</td>'+
+    '<td>'+esc(ROTULO_DO_CICLO[p.ciclo||'mensal']||p.ciclo)+'</td>'+
     '<td class="t-sub">'+esc(p.recursos.map(nomeRecurso).join(', '))+'</td>'+
     '<td>'+sit+'</td>'+
     '<td><strong>'+vigentes(p)+'</strong> com acesso'+
@@ -243,7 +290,7 @@ function planoPorCodigo(codigo){
 function formularioPlano(){
   var novo=estado.editando==='novo';
   var p=novo?{codigo:'',nome:'',resumo:'',recursos:['consulta','acompanhamento','vigilancia'],
-    disponivelParaContratacao:false,precoMensalCentavos:null,ordem:''}:planoPorCodigo(estado.editando);
+    disponivelParaContratacao:false,precoMensalCentavos:null,ordem:'',ciclo:'mensal'}:planoPorCodigo(estado.editando);
   if(!p)return '';
   var marcas=estado.catalogo.recursos.map(function(r){
     var marcado=p.recursos.indexOf(r.recurso)>=0;
@@ -267,6 +314,10 @@ function formularioPlano(){
   h+='<div><label class="rotulo" for="pl-preco">Preço por mês (R$)</label>'+
     '<input id="pl-preco" placeholder="49,90" value="'+esc(precoParaCampo(p.precoMensalCentavos))+'">'+
     '<div class="nota">Vazio = sem preço publicado.</div></div>';
+  h+='<div><label class="rotulo" for="pl-ciclo">Ciclo de renovação</label>'+
+    '<select id="pl-ciclo">'+['mensal','trimestral','anual'].map(function(c){
+      return '<option value="'+c+'"'+((p.ciclo||'mensal')===c?' selected':'')+'>'+ROTULO_DO_CICLO[c]+'</option>'}).join('')+'</select>'+
+    '<div class="nota">Só o mensal pode ser contratado pelo site nesta versão.</div></div>';
   h+='<div><label class="rotulo" for="pl-ordem">Ordem na lista</label>'+
     '<input id="pl-ordem" type="number" min="0" max="9999" value="'+esc(p.ordem)+'"'+
     (novo?' placeholder="no fim"':'')+'></div>';
@@ -304,7 +355,7 @@ function formularioRegras(){
 
 function desenharPlanos(){
   var c=estado.catalogo;
-  var h='';
+  var h=bannerDoAmbiente();
   h+='<div class="titulo-secao"><div><h2>Planos</h2>'+
     '<div class="sub">'+c.planos.length+' plano(s). Pausar tira da oferta; quem já tem o plano continua com ele.</div>'+
     '</div><button class="bt2" id="bt-novo-plano">Novo plano</button></div>';
@@ -315,7 +366,7 @@ function desenharPlanos(){
   if(estado.editando)h+=formularioPlano();
 
   h+='<div class="cartao sem-borda"><div class="tab-rolo"><table class="tab">'+
-    '<thead><tr><th>Plano</th><th>Preço/mês</th><th>Recursos</th><th>Situação</th>'+
+    '<thead><tr><th>Plano</th><th>Preço/mês</th><th>Ciclo</th><th>Recursos</th><th>Situação</th>'+
     '<th>Assinantes</th><th></th></tr></thead><tbody>'+
     c.planos.map(linhaPlano).join('')+'</tbody></table></div></div>';
   h+=formularioRegras();
@@ -367,7 +418,7 @@ function salvarPlano(){
   for(var i=0;i<cks.length;i++){if(cks[i].checked)recursos.push(cks[i].getAttribute('data-recurso'))}
 
   var corpo={nome:$('pl-nome').value,resumo:$('pl-resumo').value,recursos:recursos,
-    disponivelParaContratacao:$('pl-venda').checked,precoMensalCentavos:preco};
+    disponivelParaContratacao:$('pl-venda').checked,precoMensalCentavos:preco,ciclo:$('pl-ciclo').value};
   var ordem=$('pl-ordem').value.trim();
   if(ordem!=='')corpo.ordem=Number(ordem);
 

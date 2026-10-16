@@ -9,6 +9,85 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.44.0] — 2026-10-20
+
+**Cobrança recorrente pelo Mercado Pago, parte 1: assinatura por cartão atrás de uma porta de pagamento.**
+A conta assina pela tela "Minha conta", o Mercado Pago cobra o cartão a cada ciclo e o plano é liberado e
+renovado sozinho — pelo MESMO caminho do `assinatura liberar` manual. Nasce **desligada**
+(`PROCESSOVIVO_PAGAMENTO_HABILITADO=false`): sem rota de checkout, webhook 404, nada na tela. Pix e boleto
+avulsos são a parte 2; a porta já tem o gancho (`criarCobrancaAvulsa`, opcional, sem implementação).
+
+### O que entrou
+
+- **Porta `GatewayDePagamento`** (`domain/ports`) e três implementações do lado de fora do domínio:
+  `MercadoPagoAdapter` (REST com o `HttpClient` do projeto, **sem SDK**: a dependência inteira serviria a
+  cinco chamadas), `GatewayFalso` (sem rede; só teste e desenvolvimento) e a validação do aviso. Leitura
+  repete até 3 vezes; **criar e cancelar nunca repetem sozinhos**; nenhum erro carrega token, corpo do
+  gateway ou dado do pagador.
+- **Fluxo hospedado, sem cartão no sistema:** assinatura sem plano com pagamento pendente
+  (`POST /preapproval`, `status: pending`); a conta vai à página do Mercado Pago e volta para
+  `/?assinatura=retorno`. O retorno só mostra "processando": **o estado verdadeiro vem do webhook ou da
+  consulta**. O e-mail vai ao gateway (que o exige) e não é gravado; o vínculo com o workspace é um
+  `external_reference` aleatório de uso único.
+- **Rotas:** `POST /v1/assinatura/checkout` (corpo só com o código do plano; preço e valor saem do
+  servidor), `DELETE /v1/assinatura/recorrencia` (encerra a RENOVAÇÃO; o plano vale até o fim do período
+  pago; evento registrado para auditoria), `GET /v1/assinatura` (agora com `pagamento`, `ciclo`,
+  `valorDoCicloCentavos`, `contratavel` — aditivo) e `POST /v1/pagamentos/webhook/mercadopago` (pública).
+  Conta de chave de API (sem e-mail) é recusada (`conta_sem_email`, 403).
+- **Webhook:** assinatura do aviso conferida como no SDK oficial, em tempo constante (inválida = 401, nada
+  gravado nem consultado). O corpo não é fonte de nada: o id serve para consultar a API. **Idempotente** por
+  chave única; 200 em até 15 s. Aprovado renova; recusado avisa a conta e mantém o plano; cancelado ou
+  pausado vira "sem renovação" (o plano segue); estorno e contestação **não revogam sozinhos** (registram e
+  avisam o operador).
+- **Reconciliação sem agendador:** `pagamento reconciliar [--workspace <id>]` (CLI) e botão no /admin.
+- **/admin:** ambiente em destaque (**TESTE**), origem da assinatura (manual ou gateway), estado, id, último
+  pagamento e reconciliar; o plano ganha o campo **Ciclo de renovação** (coluna nova `planos.ciclo`, padrão
+  `mensal`, migração aditiva). Só `mensal` é vendável; **plano sem preço não contrata**.
+- **Variáveis:** `PROCESSOVIVO_PAGAMENTO_HABILITADO`, `PROCESSOVIVO_PAGAMENTO_GATEWAY`,
+  `MERCADOPAGO_ACCESS_TOKEN`, `MERCADOPAGO_WEBHOOK_SECRET`, `PROCESSOVIVO_PAGAMENTO_PERMITIR_TESTE`,
+  `PROCESSOVIVO_PAGAMENTO_AVISO_EMAIL` e `PROCESSOVIVO_TERMOS_URL`. Ligada sem credencial, **não sobe** (sem
+  imprimir segredo); token de teste em produção só com `PERMITIR_TESTE=true`.
+- Tabelas novas (`cobrancas_recorrentes`, `pagamentos_processados`, `eventos_de_pagamento`), só metadado.
+  Nada destrutivo; `assinaturas`, `exigir()`, carência, teste de 14 dias, IA, Drive, peças e calendário não
+  mudaram. `script.ts` não cresceu (tela em `ui/pagamento.ts`).
+
+### Divergências e pontos para o primeiro teste com credenciais
+
+A página oficial do Mercado Pago **não estava acessível** ao escrever isto (o ambiente bloqueava o domínio):
+a fórmula do webhook vem do código do SDK oficial (`mercadopago/sdk-nodejs`), e o restante, do resumo da
+documentação passado pelo dono. Tudo o que depende disso está num arquivo só,
+`infrastructure/adapters/pagamento/mercadoPago.constantes.ts` (e no corpo de `criarAssinatura`).
+
+| Item a confirmar no teste | O que assumi | Onde mudar |
+|---|---|---|
+| `POST /preapproval` com `status: "pending"` devolve `init_point`, e o comprador consegue pagar só com cartão | sim | `esquemaDaCriacao` e `STATUS_AO_CRIAR` |
+| `end_date` | omitido (assinatura sem fim) | corpo de `criarAssinatura` |
+| `payer_email` precisa ser o e-mail da conta do Mercado Pago do comprador | a tela avisa que pode ser diferente do e-mail do Processo Vivo | `AVISO_DA_CONTA_DO_GATEWAY` em `ui/pagamento.ts` |
+| `notification_url` existe no `POST /preapproval` (e vale para assinaturas) | sim; o painel de Webhooks é a segunda via | corpo de `criarAssinatura`; DEPLOY.md |
+| `X-Idempotency-Key` é aceito na criação da assinatura | sim (a chave é a referência) | cabeçalho em `chamar` |
+| Cancelar e pausar: `PUT /preapproval/{id}` com `cancelled` / `paused` | `cancelled` para cancelar; `paused` lido | `STATUS_PARA_CANCELAR`, `ESTADO_DA_ASSINATURA` |
+| Nomes dos tópicos do aviso | `subscription_preapproval`, `subscription_authorized_payment`, `payment` | `TOPICO_DO_AVISO` |
+| `GET /authorized_payments/{id}` traz `preapproval_id`, `status`, `payment { id, status }` e `external_reference` | sim | `esquemaDaCobranca`, `CAMINHOS.cobrancas` |
+| Busca das parcelas: `GET /authorized_payments/search?preapproval_id=` com `results[]` | sim | `CAMINHOS.buscaDeCobrancas`, `esquemaDaBuscaDeCobrancas` |
+| Status de pagamento → resultado; estorno parcial = `approved` com `transaction_amount_refunded` > 0 | tabela em `RESULTADO_DO_PAGAMENTO` | `mercadoPago.constantes.ts` |
+| `GET /v1/payments/{id}` traz `metadata.preapproval_id` e/ou `external_reference` da assinatura | sim (um dos dois liga o pagamento à conta) | `esquemaDoPagamento` |
+| Prefixo do token de teste | `TEST-` (o ambiente sai dele) | `PREFIXO_DO_TOKEN_DE_TESTE` |
+| `data.id` no manifesto sem converter para minúsculas; `x-request-id` presente | como no SDK | `validacaoDeWebhook.ts` |
+| Ciclo anual como `frequency: 12` + `months` | sim (não vendável ainda) | `MESES_POR_CICLO`, `TIPO_DE_FREQUENCIA` |
+| Link dos Termos | **não há página de Termos no sistema**; o link sai de `PROCESSOVIVO_TERMOS_URL` (sem a variável, o texto sai sem link) | `urlDosTermos` |
+
+### Testes
+
+`mercadopago-webhook-assinatura` (válida, ausente, malformada, adulterada, `data.id` diferente, timestamp
+velho, segredo ausente), `MercadoPagoAdapter` (respostas sintéticas gravadas à mão, sem rede),
+`pagamentos` (HTTP de ponta a ponta com `GatewayFalso`: checkout, aprovado = mesmo caminho do manual,
+idempotência x3, fora de ordem, recusa, cancelamento, pausa, estorno, isolamento, reconciliação),
+`admin-pagamento`, `config-pagamento` (fail-closed), `ciclo-do-plano` (inclui migração), repositório,
+CLI, invariantes da tela e o teste de navegador (Assinar com e sem preço, processando, cancelar, axe nos
+dois temas, seis larguras). Fixtures sintéticas: nenhum token, segredo, e-mail ou id de pagamento real.
+
+---
+
 ## [0.43.0] — 2026-10-16
 
 **Atualizações: a coluna Situação mostra o estado como TEXTO e a caixa "Cumprido" é o único controle.**

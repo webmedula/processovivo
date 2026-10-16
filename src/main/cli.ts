@@ -49,6 +49,7 @@ Processo Vivo — consulta de processos judiciais
   npm run cli -- assinatura liberar --workspace <id> <plano> <meses> [--obs "..."]
   npm run cli -- assinatura cancelar <email> [--obs "pediu por e-mail"]
   npm run cli -- assinatura avisar
+  npm run cli -- pagamento reconciliar [--workspace <id>]
   npm run cli -- novidades reparar [--aplicar] [--desfazer <arquivo>]
 
 Exemplos:
@@ -565,6 +566,31 @@ async function main(
         `Ação desconhecida: "${acao}". Use ver, liberar, cancelar ou avisar.`,
       );
       return 1;
+    }
+
+    case 'pagamento': {
+      const acao = args[0] ?? '';
+      if (acao !== 'reconciliar') {
+        console.error('Uso: pagamento reconciliar [--workspace <id>]');
+        return 1;
+      }
+      // Sem agendador, de propósito: é o comando do operador para o caso de aviso perdido. Consulta o
+      // gateway pelo id de cada assinatura aberta e corrige o que divergir; só imprime contagens.
+      if (!app.pagamentos) {
+        console.error(
+          'A cobrança recorrente está desligada. Defina PROCESSOVIVO_PAGAMENTO_HABILITADO=true ' +
+            'e as credenciais do gateway.',
+        );
+        return 1;
+      }
+      const r = await app.pagamentos.reconciliar(
+        values.workspace ? { workspace: values.workspace } : {},
+      );
+      console.log(
+        `Verificadas: ${r.verificadas} · corrigidas: ${r.corrigidas} · ` +
+          `pagamentos novos: ${r.pagamentosNovos} · falhas: ${r.falhas}.`,
+      );
+      return r.falhas > 0 ? 1 : 0;
     }
 
     default:
