@@ -68,6 +68,18 @@ recusados; cookie de outro workspace recusado; fluxo completo da conta de chave 
 "conectado", desconectar); regressão da conta com cookie. Liberar e ver por workspace (CLI de verdade
 com banco temporário e rota admin), os dois identificadores, nenhum, id malformado, inexistente e de
 chave revogada, `salvarNoDrive` só depois da liberação, e a liberação por e-mail como antes.
+O CLI ganhou `executar(argv, ambiente)` (o mesmo código, chamável em processo; o arquivo só roda como
+programa quando é o ponto de entrada) e os testes o chamam direto: um `tsx` filho por chamada gastava
+~1 s e estourava o timeout de 5 s no CI. Resta um único teste que sobe o processo de verdade.
+
+### Corrigido: a volta do Google podia não mostrar a mensagem (corrida no console, existia na 0.42.0)
+
+Ao abrir `/?drive=ok`, o console desenha a aba inicial ("Últimas atualizações") e logo vai para
+"Meus acessos". A resposta de `/v1/novidades`, se chegasse depois, repintava a aba antiga POR CIMA
+do cartão do Drive: a pessoa voltava do Google e não via "conectado" (ou "cancelada"). Medido: o teste
+de navegador falhava em ~1 de cada 3 execuções sob carga de CPU, também na 0.42.0. Agora a resposta
+tardia confere se a aba ainda é a dela antes de pintar (`script.ts`, sem crescer), e a mensagem do
+retorno vive até a primeira ação da pessoa no cartão, em vez de sumir no primeiro desenho.
 
 ---
 

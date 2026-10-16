@@ -36,7 +36,7 @@ var ctx=null;
 var envio=null;          /* {id, numero} em acompanhamento */
 var timer=null;
 var pedido=null;         /* o último pedido, para "tentar de novo" */
-var retorno=null;        /* mensagem do retorno do Google, mostrada uma vez */
+var retorno=null;        /* mensagem do retorno do Google: fica até a pessoa agir no cartão (ver esquecerRetorno) */
 
 function pv(){return window.__pv}
 function $(i){return document.getElementById(i)}
@@ -105,6 +105,10 @@ window.__pvAoIniciar=function(){
 function cartao(alvo){
   carregar().then(function(v){
     if(!v||!v.habilitado||!alvo||!document.body.contains(alvo))return;
+    /* Duas aberturas da mesma aba (o console desenha duas vezes ao carregar) pedem o cartão duas vezes
+       e as duas respostas chegam depois da última pintura: sem isto o cartão aparece em dobro. */
+    var antigo=alvo.querySelector('#drive-cartao');
+    if(antigo)antigo.remove();
     var el=document.createElement('div');
     el.className='cartao drive-cartao';
     el.id='drive-cartao';
@@ -113,9 +117,14 @@ function cartao(alvo){
   });
 }
 
+/* O console desenha a aba mais de uma vez ao abrir (assinatura e facetas chegam em ordem que a rede
+   decide). Se a mensagem sumisse no primeiro desenho, o segundo a apagaria da tela: a pessoa voltava
+   do Google e nunca via "conectado". Por isso ela vive até a primeira AÇÃO no cartão. */
+function esquecerRetorno(){retorno=null}
+
 function mensagemDoRetorno(){
   if(!retorno)return '';
-  var m=retorno;retorno=null;
+  var m=retorno;
   return m.ok
     ?'<div class="drive-msg ok" role="status">Google Drive conectado. A pasta “Processo Vivo” foi criada no seu Drive.</div>'
     :'<div class="drive-msg falha" role="status">'+esc(MOTIVOS_DO_RETORNO[m.motivo]||MOTIVOS_DO_RETORNO.autorizacao_recusada)+'</div>';
@@ -155,6 +164,7 @@ function desenharCartao(el,v){
 }
 
 function conectar(botao){
+  esquecerRetorno();
   botao.disabled=true;
   pv().api('/v1/drive/conexao',{method:'POST'}).then(function(r){
     /* Só se navega para o endereço de autorização do Google — nunca para outro. */
@@ -175,6 +185,7 @@ function avisoDoCartao(t){
 function pedirDesconexao(el,v){
   var acoes=$('drive-acoes');
   if(!acoes)return;
+  esquecerRetorno();
   acoes.innerHTML='<span class="drive-conf" id="drive-conf">Desconectar? As peças já salvas continuam no seu Drive.</span> '+
     '<button class="bt" id="drive-desconectar-sim">Sim, desconectar</button> '+
     '<button class="bt bt2" id="drive-desconectar-nao">Cancelar</button>';
