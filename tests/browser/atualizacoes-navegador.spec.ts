@@ -407,7 +407,7 @@ describe.skipIf(sem)(
       expect(await linhas().first().locator('.c-sit').innerText()).toContain(
         '151 não lidas',
       );
-      expect(await linhas().first().locator('.c-sit .selo.am').count()).toBe(0);
+      expect(await linhas().first().locator('.c-sit .sit-pede').count()).toBe(0);
     });
 
     it('a frase da regra de ouro é UMA, da página: aparece quando algum processo tem mais de uma atualização, sem contagem', async () => {
@@ -605,7 +605,9 @@ describe.skipIf(sem)(
       expect(await page.locator('.nvt-resumo').innerText()).toContain(
         'Mostrando 2 de 6 processos',
       );
-      expect(await page.locator('.c-sit .selo.am').count()).toBe(2);
+      // (v0.43.0) O estado da providência é TEXTO ("● Pede providência"), não mais o selo âmbar:
+      // a contagem do filtro continua a mesma, só o seletor do estado mudou.
+      expect(await page.locator('.c-sit .sit-pede').count()).toBe(2);
 
       await page.getByRole('button', { name: /^Todas \(6\)/ }).click();
       expect(await linhas().count()).toBe(6);
@@ -1019,7 +1021,8 @@ describe.skipIf(sem)(
       ]);
       await page.getByRole('button', { name: /^Pedem providência/ }).click();
       expect(await linhas().count()).toBe(1);
-      expect(await page.locator('.c-sit .selo.am').count()).toBe(1);
+      // (v0.43.0) Mesmo caso, com o estado em texto no lugar do selo.
+      expect(await page.locator('.c-sit .sit-pede').count()).toBe(1);
     });
 
     /* ----------------------------------------------------------------- ações */

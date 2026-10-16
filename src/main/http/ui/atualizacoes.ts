@@ -45,6 +45,7 @@ import {
   seloDoTipo,
   contarSemLeitura,
   contarSituacoes,
+  situacaoDaLinha,
   montarLinhas,
   filtrarPorSituacao,
   filtrarPorNumero,
@@ -83,11 +84,15 @@ var diaMesBrasilia=${diaMesBrasilia.toString()};
 var contarSaidasDaProvidencia=${contarSaidasDaProvidencia.toString()};
 var frasesDeSaidas=${frasesDeSaidas.toString()};
 var seloDoTipo=${seloDoTipo.toString()};
+var situacaoDaLinha=${situacaoDaLinha.toString()};
 
 /* Só a escolha da sessão: some quando a página recarrega e a aba volta a abrir em
    "Pedem providência" (v0.37.4). */
-var S={situacao:${JSON.stringify(SITUACAO_PADRAO)},ordem:null,porPagina:25,pagina:1,termo:'',foco:'',confirmar:'',aviso:'',ocupado:{}};
-var R=null,O=null,raiz=null,corpo=null,barra=null,live=null,filtrosEl=null,entrada=null,limparBusca=null,espera=null;
+var S={situacao:${JSON.stringify(SITUACAO_PADRAO)},ordem:null,porPagina:25,pagina:1,termo:'',foco:'',aviso:'',ocupado:{}};
+var R=null,O=null,raiz=null,corpo=null,barra=null,live=null,filtrosEl=null,avisoEl=null,entrada=null,limparBusca=null,espera=null;
+/* O aviso "Marcado como cumprido. Desfazer" some sozinho; o tempo é uma constante, nunca um sleep dos testes. */
+var TEMPO_DO_AVISO_MS=6000;
+var T={num:'',timer:null};
 var ESPERA_BUSCA_MS=200;
 
 var SITUACOES=[['todas','Todas'],['naoLidas','Não lidas'],['providencia','Pedem providência']];
@@ -130,11 +135,6 @@ function notaDoAto(n){
     (t.cortado?'<span aria-hidden="true">…</span>':'')+'</div>'+
     (t.cortado?'<button type="button" class="lnh nov-abrir" data-acao="abrir" data-num="'+esc(n.numero)+
       '" aria-label="Abrir o processo para ler o texto completo">Abrir processo</button>':'')+'</div>';
-}
-
-function seloProvidencia(motivo){
-  return '<span class="selo am" title="'+esc((motivo?motivo+'. ':'')+
-    'Marcado por leitura automática do texto. Confira no ato completo.')+'">pede providência</span>';
 }
 
 /* ---------- a linha do processo ---------- */
@@ -201,23 +201,22 @@ function celulaAtualizacao(g){
     (a.igualAAtualizacao?notaDoAto(n):'')+linhaUltimoAndamento(a)+'</td>';
 }
 
+/* A coluna Situação (v0.43.0): o ESTADO da providência é texto ("● Pede providência", "✓ Cumprido", "—")
+   e a caixa "Cumprido" é o único controle da coluna. Os outros avisos (não lida, sem marca há mais de N dias,
+   intimação a outro destinatário) seguem como antes, abaixo do estado. */
 function celulaSituacao(g){
-  var s='',P=g.processo&&g.processo.providencia?g.processo.providencia:null;
-  if(g.naoVistas>0)s+='<span class="selo nv" title="'+esc(g.naoVistas+(g.naoVistas>1?' atualizações ainda não lidas neste processo':' atualização ainda não lida neste processo'))+'">'+
-    (g.naoVistas>1?g.naoVistas+' não lidas':'Não lida')+'</span>';
-  if(g.processo&&g.processo.pedeProvidencia){
-    s+=seloProvidencia(g.processo.motivoProvidencia);
-    if(P&&P.situacao==='pede')s+='<div>'+prov().botaoCumprir(g.numero,P.motivo.chave,'cumprir-'+g.numero)+'</div>';
-  }else if(P&&P.situacao==='cumprida'){
-    s+='<span class="selo cum" title="'+esc('Você marcou como cumprido'+(P.cumpridoEm?' em '+pv().dth(P.cumpridoEm):'')+
-      '. Um ato novo que exija ação volta a pedir providência sozinho.')+'">cumprido</span>'+
-      '<div>'+prov().controleDeDesfazer(g.numero,S.confirmar===g.numero,'desfazer-'+g.numero)+'</div>';
-  }else if(P&&P.situacao==='venceu'){
-    s+='<span class="selo neutro nvt-venceu" title="Esta comunicação do Diário passou da janela de leitura automática sem você marcar como cumprida. Confira no processo.">sem marca há mais de '+R.pendenciaIntimacaoJanelaDias+' dias</span>';
+  var P=g.processo&&g.processo.providencia?g.processo.providencia:null;
+  var sit=situacaoDaLinha(g);
+  var s=prov().estado(sit.estado,g.processo?g.processo.motivoProvidencia:'',sit.cumpridoEm);
+  if(sit.caixa)s+='<div>'+prov().caixa(g.numero,pv().mascara(g.numero),sit.chave,sit.marcado,'cumprir-'+g.numero)+'</div>';
+  if(g.naoVistas>0)s+='<div><span class="selo nv" title="'+esc(g.naoVistas+(g.naoVistas>1?' atualizações ainda não lidas neste processo':' atualização ainda não lida neste processo'))+'">'+
+    (g.naoVistas>1?g.naoVistas+' não lidas':'Não lida')+'</span></div>';
+  if(P&&P.situacao==='venceu'&&sit.estado==='nenhuma'){
+    s+='<div><span class="selo neutro nvt-venceu" title="Esta comunicação do Diário passou da janela de leitura automática sem você marcar como cumprida. Confira no processo.">sem marca há mais de '+R.pendenciaIntimacaoJanelaDias+' dias</span></div>';
   }
   /* (v0.37.6) Intimação/citação do Diário dirigida a OUTRO destinatário: o processo não entra em "Pedem
      providência" por causa dela, e a linha diz por quê, em "Todas" e em "Ver". */
-  if(P&&P.outroDestinatario)s+='<span class="selo neutro nvt-outro" title="'+esc('Comunicação do Diário Eletrônico dirigida a advogado que não é uma das suas inscrições na OAB. Por isso não conta como providência. Se for de um colega do escritório, confira no processo.')+'">Intimação a outro destinatário</span>';
+  if(P&&P.outroDestinatario)s+='<div><span class="selo neutro nvt-outro" title="'+esc('Comunicação do Diário Eletrônico dirigida a advogado que não é uma das suas inscrições na OAB. Por isso não conta como providência. Se for de um colega do escritório, confira no processo.')+'">Intimação a outro destinatário</span></div>';
   return '<td class="c-sit" data-rotulo="Situação">'+s+'</td>';
 }
 
@@ -266,7 +265,7 @@ function celulaDetectado(g){
 
 function linha(g){
   var classe=classeDaLinha(g);
-  var h='<tr class="nvt-linha'+(g.semNovidade?' nvt-sem-nov':'')+'" role="row" data-processo="'+esc(g.numero)+'">'+
+  var h='<tr class="nvt-linha'+(g.semNovidade?' nvt-sem-nov':'')+(situacaoDaLinha(g).estado==='cumprido'?' nvt-cumprida':'')+'" role="row" data-processo="'+esc(g.numero)+'">'+
     celulaProcesso(g)+celulaPartes(g)+(g.semNovidade?celulaSemNovidade(g):celulaAtualizacao(g))+
     '<td class="c-trib" data-rotulo="Tribunal">'+esc(g.processo&&g.processo.tribunal?g.processo.tribunal:'—')+classe.mini+'</td>'+
     '<td class="c-classe" data-rotulo="Classe">'+classe.cheia+'</td>'+
@@ -486,7 +485,7 @@ function listaDaTela(base){
   return ordenarGrupos(filtrarPorNumero(filtrarPorSituacao(base,S.situacao),S.termo),S.ordem);
 }
 function ligarFiltros(sim){
-  if(sim&&!filtrosEl.parentNode)raiz.insertBefore(filtrosEl,corpo);
+  if(sim&&!filtrosEl.parentNode)raiz.insertBefore(filtrosEl,avisoEl);
   if(!sim&&filtrosEl.parentNode)filtrosEl.parentNode.removeChild(filtrosEl);
 }
 
@@ -600,57 +599,94 @@ function trocarProcesso(num,info){
   });
 }
 
-/* A mensagem do servidor já vem em português e diz o que houve; o explicar() do console traduz
-   por status (409 vira "já existe uma conta"), o que aqui seria mentira. */
-function textoDoErro(e){
-  return e&&e.codigo&&e.message?e.message:pv().explicar(e);
+/* O aviso curto depois de marcar: fora da tabela e da área redesenhada, sem prender o foco. */
+function fecharAviso(comFoco){
+  if(T.timer){clearTimeout(T.timer);T.timer=null}
+  var tinhaFoco=avisoEl&&avisoEl.contains(document.activeElement);
+  var num=T.num;T.num='';
+  if(avisoEl)avisoEl.innerHTML='';
+  /* O botão em foco sumiu: o foco vai para a caixa da mesma linha, se ela está na tela, senão para o resumo. */
+  if(comFoco&&tinhaFoco&&raiz){S.foco='cumprir-'+num+'|resumo';devolverFoco()}
 }
-
-function falhouNaMarca(num,e,foco){
-  delete S.ocupado[num];
-  S.aviso=textoDoErro(e);S.foco=foco;desenhar(false);
-}
-
-function cumprir(el){
-  var num=el.getAttribute('data-num'),chave=el.getAttribute('data-chave');
-  if(S.ocupado[num])return;
-  S.ocupado[num]=true;S.aviso='';
-  el.disabled=true;el.setAttribute('aria-busy','true');
-  var viz=vizinhoDe(num);
-  prov().marcar(num,chave).then(function(info){
-    delete S.ocupado[num];
-    trocarProcesso(num,info);
-    var pedem=contarSituacoes(baseAtual()).pedemProvidencia;
-    S.foco='desfazer-'+num+'|cumprir-'+viz+'|abrir-'+viz+'|resumo';
-    desenhar(false);
-    anunciar('Marcado como cumprido. '+(pedem===0?'Nenhum processo pede providência agora.':
-      pedem===1?'1 processo ainda pede providência.':pedem+' processos ainda pedem providência.'));
-  },function(e){falhouNaMarca(num,e,'cumprir-'+num)});
-}
-
-function desfazerMarca(num){
-  if(S.ocupado[num])return;
-  S.ocupado[num]=true;S.aviso='';
-  var viz=vizinhoDe(num);
-  prov().remover(num).then(function(info){
-    delete S.ocupado[num];S.confirmar='';
-    trocarProcesso(num,info);
-    /* Desfez o último da lista dos marcados: volta ao filtro de onde veio, sem tela vazia. */
-    if(S.situacao==='cumpridos'&&!filtrarPorSituacao(baseAtual(),'cumpridos').length)S.situacao='providencia';
-    S.foco='cumprir-'+num+'|desfazer-'+viz+'|abrir-'+viz+'|resumo';
-    desenhar(false);
-    anunciar('Marca de cumprido desfeita.');
-  },function(e){S.confirmar='';falhouNaMarca(num,e,'desfazer-'+num)});
-}
-
+/* Esc fecha o aviso quando o foco está nele; em qualquer outro lugar a tecla não faz nada aqui. */
 function aoTeclar(ev){
-  if(ev.key!=='Escape'||!S.confirmar)return;
-  var num=S.confirmar;
-  S.confirmar='';S.foco='desfazer-'+num;desenhar(false);
+  if(ev.key==='Escape'&&avisoEl&&avisoEl.contains(document.activeElement))fecharAviso(true);
+}
+function mostrarAviso(num){
+  fecharAviso(false);
+  T.num=num;
+  avisoEl.innerHTML='<span>Marcado como cumprido.</span> <button type="button" class="nov-btn" data-desfazer="'+esc(num)+'">Desfazer</button>';
+  T.timer=setTimeout(function(){T.timer=null;fecharAviso(true)},TEMPO_DO_AVISO_MS);
+}
+
+/* Falha: a tela volta ao que os dados dizem (o servidor não mudou nada), e a pessoa vê por quê. A frase é
+   a combinada; só o 409 (o ato saiu do retrato) leva também a explicação do servidor, porque "tente de
+   novo" sozinho não resolve. */
+function textoDaFalha(e){
+  var t='Não foi possível salvar. Tente de novo.';
+  if(e&&e.status===409&&e.codigo&&e.message)t+=' '+e.message;
+  return t;
+}
+function falhouNaMarca(num,e){
+  delete S.ocupado[num];
+  S.aviso=textoDaFalha(e);S.foco='cumprir-'+num;desenhar(false);
+}
+
+/* A mudança APARECE na linha na hora (estado em texto e caixa); a lista, as contagens e os filtros
+   se refazem quando o servidor responde. Se ele falhar, desenhar() de novo devolve a linha ao que os dados dizem. */
+function pintarOtimista(caixa,marcar){
+  var tr=caixa.closest?caixa.closest('tr'):null;
+  caixa.setAttribute('aria-busy','true');
+  if(!tr)return;
+  tr.classList.toggle('nvt-cumprida',marcar);
+  var est=tr.querySelector('.sit');
+  if(est)est.outerHTML=prov().estado(marcar?'cumprido':'pede','',null);
+}
+
+function concluir(num,marcar,viz,info){
+  delete S.ocupado[num];
+  trocarProcesso(num,info);
+  /* Desfez o último da lista dos marcados: volta ao filtro de onde veio, sem tela vazia. */
+  if(!marcar&&S.situacao==='cumpridos'&&!filtrarPorSituacao(baseAtual(),'cumpridos').length)S.situacao='providencia';
+  S.foco='cumprir-'+num+'|cumprir-'+viz+'|abrir-'+viz+'|resumo';
+  desenhar(false);
+  if(marcar){
+    mostrarAviso(num);
+    var pedem=contarSituacoes(baseAtual()).pedemProvidencia;
+    anunciar(pedem===0?'Nenhum processo pede providência agora.':
+      pedem===1?'1 processo ainda pede providência.':pedem+' processos ainda pedem providência.');
+  }else{
+    anunciar('Desmarcado.');
+  }
+}
+
+function salvar(num,marcar,chave){
+  S.ocupado[num]=true;S.aviso='';
+  var viz=vizinhoDe(num);
+  var req=marcar?prov().marcar(num,chave):prov().remover(num);
+  req.then(function(info){concluir(num,marcar,viz,info)},function(e){falhouNaMarca(num,e)});
+}
+
+/* A caixa mudou (clique, Espaço ou o rótulo): marca ou desmarca com as MESMAS chamadas do botão antigo. */
+function aoMudarCaixa(el){
+  var num=el.getAttribute('data-num'),marcar=el.checked;
+  if(S.ocupado[num]){el.checked=!marcar;return}
+  fecharAviso(false);
+  pintarOtimista(el,marcar);
+  salvar(num,marcar,el.getAttribute('data-chave'));
+}
+
+/* "Desfazer" do aviso: a mesma chamada de desmarcar, mesmo com a linha fora da lista filtrada. */
+function desfazerDoAviso(num){
+  if(S.ocupado[num])return;
+  fecharAviso(false);
+  salvar(num,false,'');
 }
 
 /* ---------- eventos (um só ouvinte, na raiz: o HTML interno é trocado a cada desenho) ---------- */
 function aoClicar(ev){
+  var d=ev.target.closest?ev.target.closest('[data-desfazer]'):null;
+  if(d&&avisoEl.contains(d)){desfazerDoAviso(d.getAttribute('data-desfazer'));return}
   var el=ev.target.closest?ev.target.closest('[data-acao]'):null;
   if(!el||!raiz.contains(el))return;
   var acao=el.getAttribute('data-acao'),num=el.getAttribute('data-num');
@@ -664,10 +700,6 @@ function aoClicar(ev){
   if(acao==='copiar'){copiar(el,num);return}
   if(acao==='buscar'){window.__processovivo_ir('buscar');return}
   if(acao==='processos'){window.__processovivo_ir('processos');return}
-  if(acao==='cumprir'){cumprir(el);return}
-  if(acao==='desfazer'){S.confirmar=num;S.foco=el.getAttribute('data-foco')||'';desenhar(false);return}
-  if(acao==='desfazer-nao'){S.confirmar='';S.foco='desfazer-'+num;desenhar(false);return}
-  if(acao==='desfazer-sim'){desfazerMarca(num);return}
   if(acao==='periodo'){
     S.pagina=1;S.foco=el.getAttribute('data-foco')||'';
     O.aoMudar({janela:el.getAttribute('data-janela')});return;
@@ -691,7 +723,9 @@ function aoClicar(ev){
   }
 }
 function aoMudar(ev){
-  var el=ev.target,sel=el.getAttribute?el.getAttribute('data-sel'):null;
+  var el=ev.target;
+  if(el.getAttribute&&el.getAttribute('data-cx')==='cumprido'){aoMudarCaixa(el);return}
+  var sel=el.getAttribute?el.getAttribute('data-sel'):null;
   if(!sel)return;
   S.foco=el.getAttribute('data-foco')||'';
   if(sel==='tribunal'){S.pagina=1;O.aoMudar({tribunal:el.value});return}
@@ -729,10 +763,12 @@ function aoTeclarNaBusca(ev){
 function montar(alvo,r,opc){
   R=r;O=opc;
   if(espera){clearTimeout(espera);espera=null}
-  alvo.innerHTML='<section class="nvt" aria-label="Últimas atualizações"><div id="nvt-corpo"></div>'+
+  if(T.timer){clearTimeout(T.timer);T.timer=null}
+  T.num='';
+  alvo.innerHTML='<section class="nvt" aria-label="Últimas atualizações"><div id="nvt-desfazer" class="nvt-desfazer" role="status" aria-live="polite" aria-atomic="true"></div><div id="nvt-corpo"></div>'+
     '<div class="nvt-sr" id="nvt-live" role="status" aria-live="polite" aria-atomic="true"></div></section>';
   raiz=alvo.querySelector('.nvt');
-  corpo=alvo.querySelector('#nvt-corpo');live=alvo.querySelector('#nvt-live');
+  corpo=alvo.querySelector('#nvt-corpo');avisoEl=alvo.querySelector('#nvt-desfazer');live=alvo.querySelector('#nvt-live');
   /* Os filtros: o bloco da busca é criado UMA vez por montagem e nunca é refeito; só os outros blocos
      (#nvt-barra, display:contents) são redesenhados. Assim digitar não perde foco nem cursor. */
   filtrosEl=document.createElement('div');filtrosEl.className='nvt-filtros';

@@ -1,6 +1,6 @@
 {
   "name": "processovivo",
-  "version": "0.42.2",
+  "version": "0.43.0",
   "private": true,
   "description": "SaaS de consulta e acompanhamento de processos judiciais nos tribunais brasileiros",
   "type": "module",
