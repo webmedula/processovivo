@@ -12,9 +12,10 @@ import type { Clock } from '../../domain/ports/Clock.js';
  * - é de USO ÚNICO: o nonce sai da memória no primeiro uso, e repetir o mesmo retorno é recusado;
  * - tem VALIDADE curta (10 minutos): a pessoa que abandonou a tela do Google não deixa um
  *   convite eterno rondando;
- * - é AMARRADO ao workspace que o pediu: o retorno só vale para quem começou a conexão — o
- *   `state` de outra conta é recusado (e não é gasto, para não permitir que alguém sabote a
- *   conexão alheia só mandando o `state` errado).
+ * - CARREGA o workspace que o pediu, dentro da parte assinada (v0.42.1): o retorno do Google é
+ *   uma navegação sem cookie nem chave de API, e é do `state` que sai o dono da conexão. Se a
+ *   navegação trouxer uma sessão por cookie de OUTRO workspace, o retorno é recusado (e o `state`
+ *   não é gasto, para não permitir que alguém sabote a conexão alheia).
  *
  * O PKCE soma uma segunda trava: o `code_verifier` nasce aqui, fica só na memória do servidor
  * e é o que o Google exige junto do código — um código interceptado sozinho não serve.
@@ -86,10 +87,31 @@ export class EstadosDeConexao {
   }
 
   /**
-   * Confere e GASTA o `state`. Devolve o verificador PKCE da conexão.
+   * Confere e GASTA o `state`. Devolve o workspace dele e o verificador PKCE da conexão.
+   * `workspaceEsperado`, se vier (a sessão por cookie que fez a navegação), tem de ser o mesmo:
+   * recusa SEM gastar o nonce, para ninguém sabotar a conexão alheia mandando um `state` errado.
    * @throws {EstadoDeConexaoRecusado} assinatura ruim, expirado, já usado ou de outro workspace.
    */
-  consumir(estado: string, workspace: string): { readonly verificador: string } {
+  consumir(
+    estado: string,
+    workspaceEsperado?: string,
+  ): { readonly workspace: string; readonly verificador: string } {
+    const dados = this.ler(estado);
+    if (workspaceEsperado !== undefined && dados.w !== workspaceEsperado) {
+      throw new EstadoDeConexaoRecusado('de_outra_conta');
+    }
+    const pendente = this.pendentes.get(dados.n);
+    if (!pendente) throw new EstadoDeConexaoRecusado('usado');
+    // Gasta antes de conferir a validade: expirado ou não, este `state` não volta.
+    this.pendentes.delete(dados.n);
+    if (pendente.workspace !== dados.w) throw new EstadoDeConexaoRecusado('invalido');
+    if (this.opcoes.clock.agora().getTime() > dados.e) {
+      throw new EstadoDeConexaoRecusado('expirado');
+    }
+    return { workspace: dados.w, verificador: pendente.verificador };
+  }
+
+  private ler(estado: string): { n: string; w: string; e: number } {
     const partes = estado.split('.');
     const corpo = partes[0];
     const mac = partes[1];
@@ -111,19 +133,7 @@ export class EstadosDeConexao {
     ) {
       throw new EstadoDeConexaoRecusado('invalido');
     }
-    // De outra conta: recusa SEM gastar o nonce. Quem começou a conexão ainda pode concluí-la.
-    if (dados.w !== workspace) throw new EstadoDeConexaoRecusado('de_outra_conta');
-
-    const pendente = this.pendentes.get(dados.n);
-    if (!pendente) throw new EstadoDeConexaoRecusado('usado');
-    // Gasta antes de conferir a validade: expirado ou não, este `state` não volta.
-    this.pendentes.delete(dados.n);
-    if (pendente.workspace !== workspace)
-      throw new EstadoDeConexaoRecusado('de_outra_conta');
-    if (this.opcoes.clock.agora().getTime() > dados.e) {
-      throw new EstadoDeConexaoRecusado('expirado');
-    }
-    return { verificador: pendente.verificador };
+    return { n: dados.n, w: dados.w, e: dados.e };
   }
 
   /** Quantos estão pendentes (diagnóstico e teste). */

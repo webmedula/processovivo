@@ -10,6 +10,9 @@ import {
   WorkspaceNaoResolvidoError,
 } from '../../../domain/errors/index.js';
 
+/** Pública para o plugin de autenticação: ver a nota em `rotasDoDrive`. */
+export const ROTA_DRIVE_RETORNO = '/v1/drive/retorno';
+
 function workspaceDe(requisicao: FastifyRequest): string {
   const ws = requisicao.workspace;
   if (!ws) throw new WorkspaceNaoResolvidoError();
@@ -83,8 +86,10 @@ function envioJson(e: EnvioParaODrive): Record<string, unknown> {
  * indefinido: `GET /v1/drive` responde `{ habilitado: false }` — é como a tela sabe que não deve
  * mostrar nada — e todas as outras respondem 501.
  *
- * O retorno do Google (`GET /v1/drive/retorno`) é uma NAVEGAÇÃO do navegador, com o cookie da
- * sessão (SameSite=Lax vai em navegação de topo). Nunca mostra token, nunca põe token em URL e
+ * O retorno do Google (`GET /v1/drive/retorno`) é uma NAVEGAÇÃO do navegador, sem JavaScript: não
+ * leva `x-api-key` e a conta de chave não tem cookie. Por isso a rota é PÚBLICA para o plugin de
+ * autenticação (`ROTA_DRIVE_RETORNO`) e quem manda é o `state` assinado, que carrega o workspace.
+ * Cookie de outro workspace + `state` válido = recusado. Nunca mostra token, nunca põe token em URL e
  * nunca registra o código: o log de acesso guarda só o caminho, sem a query string. A resposta é
  * sempre um redirecionamento para a tela, com uma mensagem CURTA (`?drive=ok` ou
  * `?drive=erro&motivo=…`).
@@ -112,25 +117,27 @@ export function rotasDoDrive(servico: ServicoDrive | undefined): FastifyPluginAs
       return { url };
     });
 
-    servidor.get('/v1/drive/retorno', async (req, reply) => {
+    servidor.get(ROTA_DRIVE_RETORNO, async (req, reply) => {
       const s = exigir();
       const q = consultaDoRetorno.parse(req.query);
       // Nunca guardar a página de retorno (tem o código na URL) nem repassá-la como referência.
       void reply
         .header('cache-control', 'no-store')
         .header('referrer-policy', 'no-referrer');
-      const ws = workspaceDe(req);
+      // O dono da conexão é o workspace do `state` ASSINADO — não o cookie, que a conta de chave
+      // de API não tem. O cookie, quando existe, só pode CONFIRMAR: de outro workspace, recusa.
+      const sessao = req.workspace;
 
       if (q.error !== undefined || q.code === undefined || q.state === undefined) {
         // O advogado recusou na tela do Google (ou a volta veio incompleta). Gasta o `state`,
         // se veio, para ele não ficar valendo — e volta para a tela sem drama.
-        if (q.state !== undefined) s.descartarConexao(ws, q.state);
+        if (q.state !== undefined) s.descartarConexao(q.state, sessao);
         return reply.redirect(`/?drive=erro&motivo=negado`);
       }
       const r = await s.concluirConexao({
-        workspace: ws,
         codigo: q.code,
         estado: q.state,
+        ...(sessao ? { workspaceDaSessao: sessao } : {}),
       });
       return reply.redirect(r.ok ? '/?drive=ok' : `/?drive=erro&motivo=${r.motivo}`);
     });

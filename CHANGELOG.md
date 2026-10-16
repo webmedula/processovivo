@@ -9,6 +9,68 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.42.1] — 2026-10-16
+
+**Google Drive: a conexão agora se completa também para conta de chave de API.** O retorno do
+Google (`GET /v1/drive/retorno`) é uma navegação do navegador, sem JavaScript: não leva `x-api-key`
+e a conta de chave não tem cookie de sessão. A rota exigia autenticação e usava o workspace do
+cookie, então essa conta nunca concluía a conexão (o navegador recebia 401 ao voltar do Google).
+
+### Corrigido
+
+- **O dono da conexão vem do `state` assinado**, não do cookie. O `state` (HMAC, uso único, 10 min)
+  já levava o workspace dentro da parte assinada; agora o retorno lê dali. A rota passou a ser
+  pública para o plugin de autenticação (`ROTA_DRIVE_RETORNO`) — quem manda é o `state`.
+- **Cookie de outro workspace + `state` válido é recusado** (`?drive=erro&motivo=estado_invalido`),
+  nada é gravado e o `state` não é gasto: quem começou a conexão ainda a conclui.
+- Mantido: assinatura, validade de 10 min, uso único (gasto também em erro), PKCE (o verificador
+  fica no servidor), escopo `drive.file`, sentido único, sigilo fora, só por clique, tokens no
+  cofre, `PROCESSOVIVO_DRIVE_HABILITADO`. `POST /v1/drive/conexao`, `DELETE /v1/drive`, o envio e
+  o status continuam exigindo cookie ou chave e conferindo o plano. Nada de `state`, código ou
+  token vai a log; a chave de API continua só em chamada de JavaScript, nunca em URL.
+- O indicador de resultado segue `?drive=ok` / `?drive=erro&motivo=…`, e a tela já o trata sem
+  cookie: lê o parâmetro, limpa a URL e consulta `GET /v1/drive` com a chave do `localStorage`.
+
+### Sem mudança de regra de plano
+
+Conta de chave continua precisando de uma assinatura de plano Peças ou IA para o workspace dela
+(`temRecursoSemExcecao`, sem a exceção do "workspace sem assinatura passa livre"). Não há exceção
+por tipo de autenticação.
+
+### Assinatura de uma conta de chave de API: `--workspace <id>`
+
+Chave de API não tem e-mail, e todo comando de liberação achava a conta por e-mail: não havia como
+dar o plano Peças/IA (e, com ele, o Drive) a uma conta de chave. Agora:
+
+- **CLI:** `assinatura liberar --workspace <id> <plano> <meses>` e `assinatura ver --workspace <id>`.
+  E-mail e `--workspace` juntos, ou nenhum dos dois, é erro claro e não grava nada.
+- **Admin:** `GET /admin/api/workspaces/:workspace/assinatura` e
+  `POST /admin/api/workspaces/:workspace/assinatura/liberar`, e o campo **Workspace** em
+  `/admin` → Assinaturas. A aba **Chaves de API** passou a mostrar a coluna **Workspace**.
+- **O id é conferido** (`LocalizadorDeWorkspace`): 16 hex (chave) ou 32 hex (conta) e tem de ser de
+  uma conta, de uma chave emitida e não revogada ou de uma chave do `.env`. Malformado = 400,
+  inexistente = 404 (`WORKSPACE_INVALIDO`, sem repetir o valor digitado); nada é gravado.
+- **Nenhuma regra de plano mudou.** É a mesma `liberar`/`resumo`, só com outro identificador. Plano
+  Peças/IA inclui todos os recursos que existem hoje; o plano Acompanhamento continua sem o Drive.
+- **Atenção:** a assinatura de uma chave vence como qualquer outra. Passada a carência, o
+  workspace é barrado em tudo (402) e não sai aviso (não há e-mail). O comando avisa disso.
+
+### Projeto
+
+- `npm run check` agora inclui `npm run build` (o build de produção não tem a lib DOM e já falhou
+  separado do typecheck).
+- `DEPLOY.md`: o backup em produção é `node dist/main/cli.js backup` (a imagem não tem `tsx`).
+
+### Testes
+
+State com workspace conecta sem cookie nem chave; state reutilizado, adulterado e inventado
+recusados; cookie de outro workspace recusado; fluxo completo da conta de chave (iniciar, retorno,
+"conectado", desconectar); regressão da conta com cookie. Liberar e ver por workspace (CLI de verdade
+com banco temporário e rota admin), os dois identificadores, nenhum, id malformado, inexistente e de
+chave revogada, `salvarNoDrive` só depois da liberação, e a liberação por e-mail como antes.
+
+---
+
 ## [0.42.0] — 2026-10-16
 
 **Salvar as peças no Google Drive do advogado.** Na Pasta digital, o botão **"Salvar no Drive"**

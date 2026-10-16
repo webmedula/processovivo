@@ -210,6 +210,7 @@ interface ProcessoProvider {
 | `AssinaturaInativaError` | venceu e passou da carência, ou foi cancelada | 402; pagar o que já foi contratado |
 | `RecursoNaoIncluidoNoPlanoError` | está em dia, o plano não cobre | 403; trocar de plano — outra ação, outro código |
 | `PlanoDesconhecidoError` | código de plano que não existe | 400; letra trocada no comando, não bug |
+| `WorkspaceInvalidoError` | `--workspace`/rota admin com id fora do formato (`malformado`, 400) ou que não é de conta, chave ativa nem chave do `.env` (`inexistente`, 404) | nada é gravado; a mensagem não repete o valor |
 | `SemHabilitacaoNosAutosError` | o tribunal devolveu só o cabeçalho, sem conteúdo | 403; conferir de quem é a credencial — NÃO é processo vazio |
 | `MniBloqueadoError` | o tribunal respondeu 403: disjuntor aberto, MNI inteiro em pausa | 503 com a hora de retomada; é um `ProviderIndisponivelError` — quem tratava indisponibilidade continua tratando |
 | `JobDoLeitorNaoEncontradoError` | job do leitor não existe PARA ESTE workspace | 404; mesma resposta para "não existe" e "é de outro" |
@@ -312,6 +313,7 @@ npm run cli -- email eu@meudominio.com.br   # testa o SMTP de verdade
 npm run cli -- assinatura ver                            # todas, em tabela
 npm run cli -- assinatura ver ana@escritorio.com.br
 npm run cli -- assinatura liberar ana@escritorio.com.br pecas 12 --obs "Pix 22/09"
+npm run cli -- assinatura liberar --workspace <id> pecas 60   # conta de CHAVE de API (sem e-mail); em produção: node dist/main/cli.js …
 npm run cli -- assinatura cancelar ana@escritorio.com.br
 npm run cli -- assinatura avisar            # o mesmo que o agendador roda
 
@@ -330,7 +332,7 @@ npm run check            # typecheck + lint + test  ← rode antes de commitar
 npm run build            # compila para dist/
 ```
 
-**Antes de qualquer commit: `npm run check` verde.** Sem exceção.
+**Antes de qualquer commit: `npm run check` verde** (typecheck + lint + testes + build de produção). Sem exceção.
 
 ---
 
@@ -848,6 +850,15 @@ Não são detalhes — moldam o código.
   do ambiente (lista vazia = comportamento de sempre) e, ao abrir ao público,
   apague a variável, `lerWorkspacesLiberados`, `workspacesLiberados`
   e este item.
+- **Assinar uma conta de chave de API é pelo workspace, e nada mais muda** (v0.42.1). Chave não tem
+  e-mail: `assinatura liberar|ver --workspace <id>` (CLI) e `/admin/api/workspaces/:workspace/assinatura`
+  (admin) usam o MESMO `ServicoAssinaturas.liberar/resumo` — só o identificador difere, e nunca os dois
+  juntos. O id passa por `LocalizadorDeWorkspace` (16 hex de chave ou 32 de conta; conta, chave ativa ou
+  chave do `.env`), senão `WorkspaceInvalidoError` e nada gravado. Não há exceção de plano por tipo de
+  autenticação. **Consequência a lembrar:** dar assinatura a um workspace que hoje passa livre o
+  coloca na regra normal — vencida a carência, `exigir()` o barra em TUDO (402) e não sai aviso, por não
+  haver e-mail. Plano Peças/IA inclui todo recurso que existe hoje, então durante a vigência nada é
+  limitado; liberar por 60 meses e anotar a data.
 - **Status de assinatura é DERIVADO das datas, nunca gravado.** Status em
   coluna precisa de alguém que o atualize, e esse alguém é sempre uma tarefa
   agendada que pode não ter rodado — uma assinatura que venceu às 3h e só é
@@ -1385,6 +1396,12 @@ Não são detalhes — moldam o código.
   progresso, Cancelar e resumo ("12 enviadas · 3 já estavam · 2 sigilosas ficaram de fora · 1 falhou").
   Toda frase é fixa na tela; `script.ts` não cresceu. Nome do arquivo: `NNNN - Rótulo - dd-mm-aaaa.pdf`
   (`nomeDoArquivoNoDrive`), com o número do ato COMO A PASTA O MOSTRA — nunca "oficial".
+  **(v0.42.1) O retorno do OAuth usa o workspace do `state` assinado, nunca o cookie.** O retorno do
+  Google é uma navegação sem JavaScript: não leva `x-api-key` e a conta de chave não tem cookie. Por
+  isso `GET /v1/drive/retorno` é rota pública (`ROTA_DRIVE_RETORNO`, em `rotasPublicas`) e o dono da
+  conexão sai do `w` dentro da parte ASSINADA do `state` (emitido por `POST /v1/drive/conexao`, esse
+  autenticado). Cookie presente de OUTRO workspace = recusado, sem gastar o `state`. A regra de plano é
+  a mesma para cookie e chave (`temRecursoSemExcecao`): conta de chave só usa o Drive com assinatura.
 - **Encerramento se decide pelo ato MAIS RECENTE, nunca pelo histórico.**
   Processo arquivado e depois desarquivado tem os dois atos nos autos; procurar
   "existe arquivamento" marcaria como encerrada a pasta que voltou a correr — e
@@ -1746,8 +1763,8 @@ teste e carência** (v0.28.0), **visual novo a partir do logo** (v0.29.0),
 **ajustes dos advogados: Atualizações por processo, peças no topo, providência em 10 dias** (v0.32.1),
 **Pasta digital: backend (v0.33.0) e tela (v0.33.1) — peça aberta ao clique, guarda por peça, montar pasta completa, baixar marcadas**,
 **ato (movimentação) de cada peça na lista da Pasta, com descrição** (v0.33.2) **e o número da movimentação calculado pela posição do ato, com aviso de atos bloqueados** (v0.34.0; a 0.33.3 havia removido o número errado da 0.33.2), **calibração do número com o Projudi feita pelo advogado: exato quando provado, faixa ou estimado quando não** (v0.35.0), **página inicial: Últimas atualizações mostra só o trecho do texto e o trilho de peças baixadas não estoura a largura** (v0.35.1), **Pasta: número da movimentação no lugar do índice; página inicial: "detectado há N dias" e cartão "pede providência"** (v0.35.2), **Pasta: lista em altura total com avisos compactados** (v0.35.3), **Pasta: todas as movimentações na lista, inclusive as sem peça, com lacuna de numeração provada e lista mais larga** (v0.36.0), **página inicial: tabela de últimas atualizações, uma linha por processo, com filtros que contam no lugar dos cartões; histórico de peças baixadas dentro da Pasta** (v0.37.0), **tabela sem "+N anteriores", "Detectado" enxuto e descrição do ato sem repetição na exibição** (v0.37.1), **classe legível e agrupada no filtro, última movimentação sem repetição e carteira sem rodapé redundante** (v0.37.2), **Atualizações lista todos os processos acompanhados, período como filtro opcional e verificação por conta** (v0.37.3), **Atualizações abre em "Pedem providência", com a lista completa a um clique** (v0.37.4), **intimação do Diário pede providência por 30 dias ou até "cumprido", marca por ato, correção da avalanche de novidades e reparo só com dry-run** (v0.37.5), **conferência com o Projudi: sonda de diagnóstico só de leitura, linha do ato da providência, "Detectado" legível e intimação a outro destinatário** (v0.37.6), **"Analisar com IA": por botão, texto redigido, citação verificada, ZDR falhando fechado, desligada por padrão e só no plano IA** (v0.38.0; sonda de IA v1.2.0 e `ia-avaliacoes.mjs` v1.0.0), **exceção de teste fechado da IA por variável (`PROCESSOVIVO_IA_WORKSPACES_LIBERADOS`), a remover antes de abrir ao público** (v0.38.1), **log da análise por IA com status HTTP, passo e funil do roteamento** (v0.38.2), **análise por IA: rodízio por provedor depois de 429/5xx, sem `allow_fallbacks`** (v0.38.3), **análise por IA: formato da resposta em texto, sem `require_parameters` nem `response_format`, ZDR e lista intactas** (v0.38.4), **análise por IA: ações possíveis como providência sem citação, rejeição de ação que copia o trecho-chave e rodapé sem o nome do modelo** (v0.38.5), **IA como secretária, Etapa 1: prazo escrito no ato, calculadora de prazo (exceção registrada) e "Criar aviso no calendário" com prévia e confirmação** (v0.39.0), **IA como secretária, Etapa 2 (só o servidor): resumo do processo por IA, por clique, com verificação item a item e a contagem das providências do sistema que a IA não citou** (v0.40.0), **tela do resumo do processo: botão na capa, painel com estados, link do ato à linha do tempo e correção do prazo sem opção pré-marcada** (v0.40.1), **Atualizações: busca pelo número do processo, que respeita os filtros e diz quantos casam fora deles** (v0.41.0),
-**tela do processo sem os blocos "Pede providência" e "Última movimentação", Partes logo abaixo das peças** (v0.41.1), **Google Drive: conectar a conta do advogado e salvar as peças da Pasta digital numa pasta "Processo Vivo", por botão, escopo `drive.file`, desligado por padrão, planos Peças e IA** (v0.42.0),
-Dockerfile multi-stage, CI, 2515 testes.
+**tela do processo sem os blocos "Pede providência" e "Última movimentação", Partes logo abaixo das peças** (v0.41.1), **Google Drive: conectar a conta do advogado e salvar as peças da Pasta digital numa pasta "Processo Vivo", por botão, escopo `drive.file`, desligado por padrão, planos Peças e IA** (v0.42.0), **Drive: o retorno do OAuth usa o workspace do `state` assinado e a conta de chave de API também conecta** (v0.42.1),
+Dockerfile multi-stage, CI, 2534 testes.
 
 **Pasta digital (v0.33.0, backend):** `GET /v1/processos/:numero/pasta` (lista +
 estado de cada peça + intervalos de página + totais SEM filtro + procedência

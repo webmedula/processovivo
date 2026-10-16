@@ -130,10 +130,33 @@ async function conectar(h = A): Promise<void> {
   ) as string;
   const r = await servidor.inject({
     method: 'GET',
+    // Como o navegador volta do Google: sem JavaScript, sem x-api-key, sem cookie.
     url: `/v1/drive/retorno?code=${CODIGO_DO_GOOGLE}&state=${encodeURIComponent(estado)}`,
-    headers: h,
   });
   expect(r.headers['location']).toBe('/?drive=ok');
+}
+
+/** Inicia a conexão (chamada de JS, autenticada) e devolve o `state` que foi ao Google. */
+async function iniciar(h = A): Promise<string> {
+  const c = await servidor.inject({
+    method: 'POST',
+    url: '/v1/drive/conexao',
+    headers: h,
+  });
+  expect(c.statusCode).toBe(200);
+  return new URL((c.json() as { url: string }).url).searchParams.get('state') as string;
+}
+
+/** Cadastra uma conta com e-mail e senha e devolve o cookie de sessão; o plano de teste vale. */
+async function entrarComCookie(email: string): Promise<string> {
+  const r = await servidor.inject({
+    method: 'POST',
+    url: '/v1/contas',
+    payload: { nome: 'Maria Silva', email, senha: 'uma-senha-boa-o-bastante' },
+  });
+  expect(r.statusCode).toBe(201);
+  const bruto = r.headers['set-cookie'];
+  return String((Array.isArray(bruto) ? bruto[0] : bruto) ?? '').split(';')[0] ?? '';
 }
 
 async function carregarPecas(h = A): Promise<void> {
@@ -202,9 +225,6 @@ describe('Drive habilitado', () => {
     expect((await servidor.inject({ url: '/v1/drive' })).statusCode).toBe(401);
     expect(
       (await servidor.inject({ method: 'POST', url: '/v1/drive/conexao' })).statusCode,
-    ).toBe(401);
-    expect(
-      (await servidor.inject({ url: '/v1/drive/retorno?code=x&state=y' })).statusCode,
     ).toBe(401);
     expect(
       (
@@ -284,7 +304,6 @@ describe('Drive habilitado', () => {
     const r = await servidor.inject({
       method: 'GET',
       url: `/v1/drive/retorno?code=${CODIGO_DO_GOOGLE}&state=${encodeURIComponent(estado)}`,
-      headers: A,
     });
     expect(r.statusCode).toBe(302);
     expect(r.headers['location']).toBe('/?drive=ok');
@@ -304,27 +323,123 @@ describe('Drive habilitado', () => {
     expect(JSON.stringify(v)).not.toContain(TOKEN_DE_RENOVACAO);
   });
 
-  it('retorno com state reutilizado, de outra conta ou inventado volta para a tela com motivo curto', async () => {
+  it('retorno com state reutilizado, adulterado ou inventado volta para a tela com motivo curto', async () => {
+    const estado = await iniciar();
+    const q = (e: string) => `/v1/drive/retorno?code=x&state=${encodeURIComponent(e)}`;
+    const erro = '/?drive=erro&motivo=estado_invalido';
+
+    expect((await servidor.inject({ url: q('a.b') })).headers['location']).toBe(erro);
+    // Adulterado: troca o workspace dentro da parte assinada, mantendo a assinatura antiga.
+    const [corpo, mac] = estado.split('.') as [string, string];
+    const dados = JSON.parse(Buffer.from(corpo, 'base64url').toString('utf8')) as {
+      w: string;
+    };
+    dados.w = workspaceDaChave(CHAVE_B);
+    const falso = `${Buffer.from(JSON.stringify(dados)).toString('base64url')}.${mac}`;
+    expect((await servidor.inject({ url: q(falso) })).headers['location']).toBe(erro);
+    expect(destino.contar('concluirConexao')).toBe(0);
+    // Nada foi gravado em nenhum dos dois workspaces.
+    for (const h of [A, B]) {
+      const v = (await servidor.inject({ url: '/v1/drive', headers: h })).json() as {
+        estado: string;
+      };
+      expect(v.estado).toBe('desconectado');
+    }
+
+    // O legítimo ainda vale uma vez — e só uma.
+    expect((await servidor.inject({ url: q(estado) })).headers['location']).toBe(
+      '/?drive=ok',
+    );
+    expect((await servidor.inject({ url: q(estado) })).headers['location']).toBe(erro);
+    expect(destino.contar('concluirConexao')).toBe(1);
+  });
+
+  it('cookie de OUTRO workspace + state válido: recusado, nada gravado, e o state não é gasto', async () => {
+    const estado = await iniciar();
+    const cookie = await entrarComCookie('outra@escritorio.com.br');
+    const r = await servidor.inject({
+      url: `/v1/drive/retorno?code=${CODIGO_DO_GOOGLE}&state=${encodeURIComponent(estado)}`,
+      headers: { cookie },
+    });
+    expect(r.headers['location']).toBe('/?drive=erro&motivo=estado_invalido');
+    expect(destino.contar('concluirConexao')).toBe(0);
+    expect(
+      (
+        (await servidor.inject({ url: '/v1/drive', headers: A })).json() as {
+          estado: string;
+        }
+      ).estado,
+    ).toBe('desconectado');
+    // Quem começou a conexão ainda a conclui (a recusa não sabotou o state).
+    const ok = await servidor.inject({
+      url: `/v1/drive/retorno?code=${CODIGO_DO_GOOGLE}&state=${encodeURIComponent(estado)}`,
+    });
+    expect(ok.headers['location']).toBe('/?drive=ok');
+  });
+
+  it('conta com COOKIE continua conectando (regressão): iniciar e voltar com a própria sessão', async () => {
+    const cookie = await entrarComCookie('cookie@escritorio.com.br');
     const c = await servidor.inject({
       method: 'POST',
       url: '/v1/drive/conexao',
-      headers: A,
+      headers: { cookie },
     });
+    expect(c.statusCode).toBe(200);
     const estado = new URL((c.json() as { url: string }).url).searchParams.get(
       'state',
     ) as string;
-    const q = (e: string) => `/v1/drive/retorno?code=x&state=${encodeURIComponent(e)}`;
+    const r = await servidor.inject({
+      url: `/v1/drive/retorno?code=${CODIGO_DO_GOOGLE}&state=${encodeURIComponent(estado)}`,
+      headers: { cookie },
+    });
+    expect(r.headers['location']).toBe('/?drive=ok');
+    const v = await servidor.inject({ url: '/v1/drive', headers: { cookie } });
+    expect(v.json()).toMatchObject({ estado: 'conectado' });
+  });
 
-    const deOutra = await servidor.inject({ url: q(estado), headers: B });
-    expect(deOutra.headers['location']).toBe('/?drive=erro&motivo=estado_invalido');
-    const inventado = await servidor.inject({ url: q('a.b'), headers: A });
-    expect(inventado.headers['location']).toBe('/?drive=erro&motivo=estado_invalido');
-    expect(destino.contar('concluirConexao')).toBe(0);
+  it('fluxo completo da conta de CHAVE: iniciar → retorno sem credencial → conectado → desconectar', async () => {
+    const estado = await iniciar(A);
+    // O navegador volta do Google sem cookie e sem x-api-key.
+    const r = await servidor.inject({
+      url: `/v1/drive/retorno?code=${CODIGO_DO_GOOGLE}&state=${encodeURIComponent(estado)}`,
+    });
+    expect(r.statusCode).toBe(302);
+    expect(r.headers['location']).toBe('/?drive=ok');
+    expect(r.headers['set-cookie']).toBeUndefined();
 
-    await servidor.inject({ url: q(estado), headers: A });
-    const repetido = await servidor.inject({ url: q(estado), headers: A });
-    expect(repetido.headers['location']).toBe('/?drive=erro&motivo=estado_invalido');
-    expect(destino.contar('concluirConexao')).toBe(1);
+    // A tela (com a chave no localStorage) pergunta o estado e vê "conectado" — só no workspace A.
+    const v = await servidor.inject({ url: '/v1/drive', headers: A });
+    expect(v.json()).toMatchObject({ estado: 'conectado', plano: true });
+    expect(
+      (
+        (await servidor.inject({ url: '/v1/drive', headers: B })).json() as {
+          estado: string;
+        }
+      ).estado,
+    ).toBe('desconectado');
+
+    // Desconectar continua exigindo autenticação.
+    expect(
+      (await servidor.inject({ method: 'DELETE', url: '/v1/drive' })).statusCode,
+    ).toBe(401);
+    const d = await servidor.inject({ method: 'DELETE', url: '/v1/drive', headers: A });
+    expect(d.json()).toEqual({ desconectado: true });
+    expect(
+      (
+        (await servidor.inject({ url: '/v1/drive', headers: A })).json() as {
+          estado: string;
+        }
+      ).estado,
+    ).toBe('desconectado');
+  });
+
+  it('o retorno é público, mas sem state válido não faz nada (nem chama o Google)', async () => {
+    const r = await servidor.inject({ url: '/v1/drive/retorno?code=x&state=y' });
+    expect(r.statusCode).toBe(302);
+    expect(r.headers['location']).toBe('/?drive=erro&motivo=estado_invalido');
+    const semNada = await servidor.inject({ url: '/v1/drive/retorno' });
+    expect(semNada.headers['location']).toBe('/?drive=erro&motivo=negado');
+    expect(destino.chamadas).toEqual([]);
   });
 
   it('o advogado cancelou no Google (`error=access_denied`): volta sem drama e o state é gasto', async () => {
@@ -338,13 +453,11 @@ describe('Drive habilitado', () => {
     ) as string;
     const r = await servidor.inject({
       url: `/v1/drive/retorno?error=access_denied&state=${encodeURIComponent(estado)}`,
-      headers: A,
     });
     expect(r.headers['location']).toBe('/?drive=erro&motivo=negado');
     expect(destino.contar('concluirConexao')).toBe(0);
     const depois = await servidor.inject({
       url: `/v1/drive/retorno?code=x&state=${encodeURIComponent(estado)}`,
-      headers: A,
     });
     expect(depois.headers['location']).toBe('/?drive=erro&motivo=estado_invalido');
   });
@@ -360,7 +473,6 @@ describe('Drive habilitado', () => {
     ) as string;
     await servidor.inject({
       url: `/v1/drive/retorno?code=${CODIGO_DO_GOOGLE}&state=${encodeURIComponent(estado)}`,
-      headers: A,
     });
     const tudo = espiao.linhas.join('\n');
     expect(tudo).toContain('"rota":"/v1/drive/retorno"');

@@ -429,8 +429,8 @@ não bater, a cópia é apagada e o erro vai para o log. Backup que ninguém abr
 Para tirar uma cópia na hora, fora do horário:
 
 ```bash
-npm run cli -- backup
-npm run cli -- backup --manter 14
+node dist/main/cli.js backup
+node dist/main/cli.js backup --manter 14
 ```
 
 ### O limite honesto: isso não é backup ainda
@@ -604,8 +604,38 @@ retrocarga o acrescenta uma vez aos planos já gravados). Para dar a uma conta:
 `/admin` → **Assinaturas** → procure o e-mail → **Liberar plano** → escolha **Peças** (ou IA).
 Para dar a um plano que você criou: `/admin` → **Planos** → editar → marque **Salvar no Google
 Drive** (e deixe **Peças do processo** marcado: o Drive envia o que a Pasta digital guarda).
-O plano Acompanhamento não tem o recurso. Conta **sem assinatura** (chave de API) também não.
+O plano Acompanhamento não tem o recurso. Conta **sem assinatura** (chave de API) também não: a
+regra de plano é a mesma para quem entra por cookie e por chave. Conta de chave só usa o Drive se o
+workspace dela (o identificador de 16 caracteres da chave) tiver uma assinatura de plano Peças ou IA.
+Uma chave não tem e-mail, então a liberação é **pelo workspace** (v0.42.1):
+
+**Onde está o id do workspace:** `/admin` → **Chaves de API** → coluna **Workspace** (16
+caracteres hexadecimais; selecione e copie). Na aba **Assinaturas**, a linha de uma chave que já tem
+plano mostra o mesmo id ao lado de "(sem conta — chave de API)". Chave do arquivo de configuração
+(`PROCESSOVIVO_API_KEYS`) não aparece na lista: o id dela é o `workspace` que `node dist/main/cli.js
+assinatura ver` (sem argumento) mostra quando ela já tem assinatura, ou o da chave emitida no
+`/admin`, que é o caminho recomendado.
+
+**Liberar, em produção** (no terminal do contêiner; troque o id, o plano e os meses; o id abaixo é
+sintético):
+
+```bash
+node dist/main/cli.js assinatura liberar --workspace 0123456789abcdef pecas 60 --obs "chave do operador"
+node dist/main/cli.js assinatura ver --workspace 0123456789abcdef
+```
+
+Ou, no `/admin` → **Assinaturas** → campo **Workspace** (deixe o e-mail vazio) → **Liberar /
+renovar**. Nunca os dois campos juntos. O id precisa ser de uma conta, de uma chave emitida e não
+revogada ou de uma chave do `.env`; senão nada é gravado.
+
+**Cuidado com o vencimento:** assinatura de chave **vence como qualquer outra**. Passada a
+carência, o workspace é barrado em tudo (402), inclusive consulta e acompanhamento, e **não sai
+e-mail de aviso** (não há conta). Use `60` meses e anote a data que o comando imprime.
 **O plano IA continua fora de venda** — o recurso novo não muda isso.
+
+O retorno do Google (`/v1/drive/retorno`) é uma navegação do navegador, sem `x-api-key` nem cookie:
+o dono da conexão sai do `state` assinado, emitido por `POST /v1/drive/conexao` (esse sim
+autenticado). Por isso a conexão também se completa para conta de chave de API.
 
 ---
 
@@ -624,7 +654,7 @@ O plano Acompanhamento não tem o recurso. Conta **sem assinatura** (chave de AP
 | POST | `/v1/senha/redefinir` | não | troca a senha pelo link e já entra |
 | GET | `/v1/drive` | sim | Google Drive: `{habilitado:false}` se desligado; senão o estado da conexão |
 | POST | `/v1/drive/conexao` | sim | devolve o endereço de autorização do Google |
-| GET | `/v1/drive/retorno` | sim (sessão) | volta do Google; **sempre** redireciona para a tela, sem token |
+| GET | `/v1/drive/retorno` | não — o `state` assinado manda | volta do Google (navegação, sem cookie nem chave); **sempre** redireciona para a tela, sem token |
 | DELETE | `/v1/drive` | sim | desconecta (revoga e apaga a autorização) |
 | POST | `/v1/processos/:numero/pasta/drive` | sim | salva peças no Drive (só chaves de peças da pasta); 202 + id |
 | GET/DELETE | `/v1/drive/jobs/:id` | sim | progresso / cancelar o envio |
@@ -772,7 +802,7 @@ dados sumiram.
 ### 1. Tire um backup antes de qualquer coisa
 
 ```bash
-npm run cli -- backup
+node dist/main/cli.js backup
 ```
 
 Ou, se preferir, apenas confirme que a cópia automática de hoje está lá em

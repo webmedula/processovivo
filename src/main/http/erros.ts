@@ -42,6 +42,7 @@ import {
   TeorNaoAutorizadoError,
   TodasAsFontesFalharamError,
   WorkspaceNaoResolvidoError,
+  WorkspaceInvalidoError,
 } from '../../domain/errors/index.js';
 
 export interface RespostaDeErro {
@@ -321,6 +322,11 @@ export function mapearErro(erro: unknown): RespostaDeErro {
         mensagem: 'A fonte de dados respondeu em formato inesperado.',
       },
     };
+  }
+
+  // Workspace informado à mão: inexistente é 404, malformado cai no 400 genérico abaixo.
+  if (erro instanceof WorkspaceInvalidoError && erro.motivo === 'inexistente') {
+    return { status: 404, corpo: { erro: erro.codigo, mensagem: erro.message } };
   }
 
   if (erro instanceof DomainError) {

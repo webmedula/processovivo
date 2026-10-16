@@ -104,7 +104,7 @@ function opcoesDePlano(selecionado){
 
 function linhaAssinatura(a){
   return '<tr>'+
-    '<td>'+esc(a.email||'(sem conta — chave de API)')+'</td>'+
+    '<td>'+(a.email?esc(a.email):'(sem conta — chave de API) <span class="t-sub" style="font-family:ui-monospace,monospace;user-select:all">'+esc(a.workspace)+'</span>')+'</td>'+
     '<td>'+esc(a.nomeDoPlano)+(a.ehTeste?' <span class="selo">teste</span>':'')+'</td>'+
     '<td>'+esc(a.status)+'</td>'+
     '<td>'+dt(a.venceEm)+'</td>'+
@@ -126,9 +126,10 @@ function desenharAssinaturas(){
     '</div><button class="bt2" id="bt-avisar">Enviar avisos de vencimento agora</button></div>';
   h+='<div id="resultado-avisar"></div>';
 
-  h+='<div class="cartao"><h3 class="sec">Gerenciar por e-mail</h3>';
+  h+='<div class="cartao"><h3 class="sec">Gerenciar por e-mail ou workspace</h3>';
   h+='<div class="grade">';
   h+='<div><label class="rotulo">E-mail da conta</label><input id="in-email" placeholder="ana@escritorio.com.br"></div>';
+  h+='<div><label class="rotulo">ou Workspace (conta de chave de API, sem e-mail)</label><input id="in-ws" placeholder="0123456789abcdef" autocomplete="off"></div>';
   h+='</div>';
   h+='<div class="grade" style="margin-top:10px">';
   var doTeste=estado.catalogo&&estado.catalogo.regras?estado.catalogo.regras.planoDoTeste:'';
@@ -161,13 +162,18 @@ function desenharAssinaturas(){
 
   $('bt-liberar').addEventListener('click',function(){
     var email=$('in-email').value.trim();
-    if(!email){$('resultado-gerenciar').innerHTML=erroBloco({message:'Informe o e-mail da conta.'});return}
+    var wsId=$('in-ws').value.trim();
+    if(email&&wsId){$('resultado-gerenciar').innerHTML=erroBloco({message:'Informe o e-mail OU o workspace, não os dois.'});return}
+    if(!email&&!wsId){$('resultado-gerenciar').innerHTML=erroBloco({message:'Informe o e-mail da conta ou o workspace.'});return}
     var corpo={plano:$('in-plano').value,meses:Number($('in-meses').value)||12};
     var obs=$('in-obs').value.trim();
     if(obs)corpo.observacao=obs;
-    api('/admin/api/assinaturas/'+encodeURIComponent(email)+'/liberar',
+    var rotaLiberar=email
+      ?'/admin/api/assinaturas/'+encodeURIComponent(email)+'/liberar'
+      :'/admin/api/workspaces/'+encodeURIComponent(wsId)+'/assinatura/liberar';
+    api(rotaLiberar,
       {method:'POST',body:corpo}).then(function(r){
-        $('resultado-gerenciar').innerHTML='<div class="aviso">'+esc(email)+': plano '+
+        $('resultado-gerenciar').innerHTML='<div class="aviso">'+esc(email||('workspace '+r.workspace))+': plano '+
           esc(r.nomeDoPlano)+', vence em '+dt(r.venceEm)+'.</div>';
         renderAssinaturas();
       }).catch(function(e){$('resultado-gerenciar').innerHTML=erroBloco(e)});
@@ -175,7 +181,7 @@ function desenharAssinaturas(){
 
   $('bt-cancelar').addEventListener('click',function(){
     var email=$('in-email').value.trim();
-    if(!email){$('resultado-gerenciar').innerHTML=erroBloco({message:'Informe o e-mail da conta.'});return}
+    if(!email){$('resultado-gerenciar').innerHTML=erroBloco({message:'Informe o e-mail da conta (cancelar por workspace não existe nesta versão).'});return}
     if(!window.confirm('Cancelar a assinatura de '+email+'?'))return;
     var obs=$('in-obs').value.trim();
     api('/admin/api/assinaturas/'+encodeURIComponent(email)+'/cancelar',
@@ -405,6 +411,7 @@ function linhaChave(c){
   return '<tr>'+
     '<td>'+esc(c.rotulo)+'</td>'+
     '<td class="t-sub">'+esc(c.identificador)+'</td>'+
+    '<td class="t-sub" style="font-family:ui-monospace,monospace;user-select:all">'+esc(c.workspace)+'</td>'+
     '<td>'+status+'</td>'+
     '<td>'+dth(c.criadaEm)+'</td>'+
     '<td>'+acao+'</td>'+
@@ -416,7 +423,7 @@ function desenharChaves(){
   var tabela=estado.chaves.length===0
     ? '<div class="vazio"><p>Nenhuma chave emitida ainda.</p></div>'
     : '<div class="cartao sem-borda"><div class="tab-rolo"><table class="tab">'+
-      '<thead><tr><th>Rótulo</th><th>Identificador</th><th>Status</th>'+
+      '<thead><tr><th>Rótulo</th><th>Identificador</th><th>Workspace</th><th>Status</th>'+
       '<th>Criada em</th><th></th></tr></thead><tbody>'+linhas+'</tbody></table></div></div>';
 
   var h='';
