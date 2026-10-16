@@ -18,6 +18,7 @@ import {
   ordenarGrupos,
   paginar,
   proximaOrdem,
+  situacaoDaLinha,
   textoDePartes,
   textoDeProvidencia,
 } from '../../src/main/http/ui/tabelaAtualizacoes.js';
@@ -792,5 +793,84 @@ describe('chaveDoAtoDaLinha — o ato que o botão "Analisar com IA" analisa (v0
       true,
     );
     expect(linha && chaveDoAtoDaLinha(linha)).toBe('chave-sem-novidade');
+  });
+});
+
+describe('situacaoDaLinha — estado em texto e a caixa "Cumprido" (v0.43.0)', () => {
+  const motivo = {
+    chave: 'chave-ato',
+    rotulo: 'Intimação',
+    data: '2026-10-01',
+    tipo: 'intimacao',
+  };
+  const com = (
+    pede: boolean,
+    providencia: { situacao: string; cumpridoEm?: string | null } | null,
+  ): Parameters<typeof situacaoDaLinha>[0] => ({
+    processo: {
+      pedeProvidencia: pede,
+      providencia: providencia ? { motivo, cumpridoEm: null, ...providencia } : null,
+    },
+  });
+
+  it('pede providência com ato marcável: estado "pede", caixa desmarcada e a chave do ato', () => {
+    expect(situacaoDaLinha(com(true, { situacao: 'pede' }))).toEqual({
+      estado: 'pede',
+      caixa: true,
+      marcado: false,
+      chave: 'chave-ato',
+      cumpridoEm: null,
+    });
+  });
+
+  it('pede providência sem ato marcável (servidor antigo ou sem chave): mostra o estado e NÃO inventa caixa', () => {
+    expect(situacaoDaLinha(com(true, null))).toMatchObject({
+      estado: 'pede',
+      caixa: false,
+      chave: '',
+    });
+    expect(situacaoDaLinha({ processo: { pedeProvidencia: true } })).toMatchObject({
+      estado: 'pede',
+      caixa: false,
+    });
+    expect(
+      situacaoDaLinha({
+        processo: {
+          pedeProvidencia: true,
+          providencia: { situacao: 'pede', motivo: { chave: '' }, cumpridoEm: null },
+        },
+      }),
+    ).toMatchObject({ estado: 'pede', caixa: false });
+  });
+
+  it('cumprido: estado "cumprido", caixa MARCADA (para poder desmarcar) e a data em que foi marcado', () => {
+    expect(
+      situacaoDaLinha(
+        com(false, { situacao: 'cumprida', cumpridoEm: '2026-10-05T10:00:00.000Z' }),
+      ),
+    ).toEqual({
+      estado: 'cumprido',
+      caixa: true,
+      marcado: true,
+      chave: 'chave-ato',
+      cumpridoEm: '2026-10-05T10:00:00.000Z',
+    });
+  });
+
+  it('sem providência (nada, venceu, outro destinatário, sem processo): traço e nenhuma caixa', () => {
+    for (const g of [
+      com(false, null),
+      com(false, { situacao: 'venceu' }),
+      com(false, { situacao: 'outro' }),
+      { processo: null },
+    ]) {
+      expect(situacaoDaLinha(g)).toEqual({
+        estado: 'nenhuma',
+        caixa: false,
+        marcado: false,
+        chave: '',
+        cumpridoEm: null,
+      });
+    }
   });
 });

@@ -1198,13 +1198,36 @@ Não são detalhes — moldam o código.
   que gera a providência (a "Pede providência por:" saiu) e o último andamento, se for
   outro, vai em "Último andamento: …" (rótulo e data, nunca texto de ato nem prazo;
   segredo de justiça mostra só isso). O chip conta
-  só os que AINDA pedem; "N marcados como cumpridos · Ver" lista os marcados com
-  "Desfazer", e desfazer pede confirmação leve na própria célula (sem `alert`/`confirm`;
-  Esc cancela). Ação num componente só, `ui/providencia.ts` (`window.__pvProvidencia`);
-  a mensagem de erro é a do servidor — o `explicar()` do console diz "já existe uma
-  conta" para todo 409. Foco: depois de marcar vai ao vizinho; `aria-live` discreto.
-  **Hoje só a tabela de Atualizações tem o botão**: a Pasta não tem selo de providência
+  só os que AINDA pedem; "N marcados como cumpridos · Ver" lista os marcados. **A forma de
+  marcar e desmarcar é a da v0.43.0 (item "Situação como texto", logo abaixo):** a caixa
+  "Cumprido" e o aviso "Desfazer" substituíram o botão e a confirmação na célula. Ação num
+  componente só, `ui/providencia.ts` (`window.__pvProvidencia`). Foco: depois de marcar vai ao
+  vizinho; `aria-live` discreto.
+  **Hoje só a tabela de Atualizações tem o controle**: a Pasta não tem selo de providência
   e a tela do processo não mostra bloco de providência desde a v0.41.1.
+- **A coluna Situação mostra o estado como TEXTO e a caixa "Cumprido" é o ÚNICO controle** (v0.43.0,
+  decisão do dono; só apresentação e controle: a regra de "pede providência", a de "cumprido", as
+  rotas e as contagens são as de antes). (1) **Estado = texto, nunca botão:** "● Pede providência"
+  (âmbar), "✓ Cumprido" (verde discreto, linha um pouco mais apagada: só o título perde peso, nada
+  some e o contraste não cai) e "—" (sem providência); sem fundo, sem borda, sem hover de clique;
+  ícone e texto sempre juntos (não depende de cor); texto nos tons `--atencao` e `--verde-tinta`,
+  4,5:1 nos dois temas (axe). Os outros avisos da célula (não lida, "sem marca há mais de N dias",
+  "intimação a outro destinatário") seguem abaixo do estado. A decisão de qual estado e se há caixa é
+  `situacaoDaLinha` (`ui/tabelaAtualizacoes.ts`, pura): caixa só com ato marcável (`pede` com chave) ou
+  já cumprido (para desmarcar) — nunca se inventa chave. (2) **Caixa = `<input type="checkbox">` real**
+  com `<label>` visível "Cumprido", alvo de 32 px (44 px abaixo de 1024), foco visível, Espaço, nome
+  acessível "Cumprido: processo …". Marcar e desmarcar chamam as MESMAS duas rotas de antes (`POST` com
+  `{ chaveDoAto }`, `DELETE`), pelo `prov().marcar/remover`; **desmarcar a caixa é o desfazer** (a
+  confirmação "Sim, desfazer" e o botão "Marcar como cumprido" saíram). (3) **Otimista com reversão:** a
+  linha muda na hora (`pintarOtimista`); lista, contadores e filtros se refazem quando o servidor
+  responde; na falha, o redesenho devolve a linha ao que os dados dizem e a tela diz "Não foi possível
+  salvar. Tente de novo." (só o 409 acrescenta a mensagem do servidor, porque o ato que saiu do retrato
+  não se resolve repetindo). Uma segunda mudança na mesma linha durante o salvamento é ignorada.
+  (4) **Aviso "Marcado como cumprido. Desfazer"** por 6 s (`TEMPO_DO_AVISO_MS`), em `role="status"`,
+  FORA da tabela e da área redesenhada, sem prender o foco (Esc fecha; se o foco estava nele, vai à
+  caixa); o "Desfazer" é um botão e faz a mesma chamada de desmarcar. Teste: relógio falso do
+  Playwright, nunca espera real. (5) A coluna Ações não mudou (abrir, pasta, "Analisar com IA"). Nada
+  de "prazo" em texto novo. `script.ts` não cresceu.
 - **Conferir com o Projudi: a sonda, a linha do ato da providência e o destinatário**
   (v0.37.6). (1) **`scripts/diagnostico-providencia.mjs` é SOMENTE LEITURA**: abre o banco
   com `readOnly` e `query_only` e **nunca por `abrirBanco`** (que cria esquema e migra),
@@ -1767,8 +1790,8 @@ teste e carência** (v0.28.0), **visual novo a partir do logo** (v0.29.0),
 **ajustes dos advogados: Atualizações por processo, peças no topo, providência em 10 dias** (v0.32.1),
 **Pasta digital: backend (v0.33.0) e tela (v0.33.1) — peça aberta ao clique, guarda por peça, montar pasta completa, baixar marcadas**,
 **ato (movimentação) de cada peça na lista da Pasta, com descrição** (v0.33.2) **e o número da movimentação calculado pela posição do ato, com aviso de atos bloqueados** (v0.34.0; a 0.33.3 havia removido o número errado da 0.33.2), **calibração do número com o Projudi feita pelo advogado: exato quando provado, faixa ou estimado quando não** (v0.35.0), **página inicial: Últimas atualizações mostra só o trecho do texto e o trilho de peças baixadas não estoura a largura** (v0.35.1), **Pasta: número da movimentação no lugar do índice; página inicial: "detectado há N dias" e cartão "pede providência"** (v0.35.2), **Pasta: lista em altura total com avisos compactados** (v0.35.3), **Pasta: todas as movimentações na lista, inclusive as sem peça, com lacuna de numeração provada e lista mais larga** (v0.36.0), **página inicial: tabela de últimas atualizações, uma linha por processo, com filtros que contam no lugar dos cartões; histórico de peças baixadas dentro da Pasta** (v0.37.0), **tabela sem "+N anteriores", "Detectado" enxuto e descrição do ato sem repetição na exibição** (v0.37.1), **classe legível e agrupada no filtro, última movimentação sem repetição e carteira sem rodapé redundante** (v0.37.2), **Atualizações lista todos os processos acompanhados, período como filtro opcional e verificação por conta** (v0.37.3), **Atualizações abre em "Pedem providência", com a lista completa a um clique** (v0.37.4), **intimação do Diário pede providência por 30 dias ou até "cumprido", marca por ato, correção da avalanche de novidades e reparo só com dry-run** (v0.37.5), **conferência com o Projudi: sonda de diagnóstico só de leitura, linha do ato da providência, "Detectado" legível e intimação a outro destinatário** (v0.37.6), **"Analisar com IA": por botão, texto redigido, citação verificada, ZDR falhando fechado, desligada por padrão e só no plano IA** (v0.38.0; sonda de IA v1.2.0 e `ia-avaliacoes.mjs` v1.0.0), **exceção de teste fechado da IA por variável (`PROCESSOVIVO_IA_WORKSPACES_LIBERADOS`), a remover antes de abrir ao público** (v0.38.1), **log da análise por IA com status HTTP, passo e funil do roteamento** (v0.38.2), **análise por IA: rodízio por provedor depois de 429/5xx, sem `allow_fallbacks`** (v0.38.3), **análise por IA: formato da resposta em texto, sem `require_parameters` nem `response_format`, ZDR e lista intactas** (v0.38.4), **análise por IA: ações possíveis como providência sem citação, rejeição de ação que copia o trecho-chave e rodapé sem o nome do modelo** (v0.38.5), **IA como secretária, Etapa 1: prazo escrito no ato, calculadora de prazo (exceção registrada) e "Criar aviso no calendário" com prévia e confirmação** (v0.39.0), **IA como secretária, Etapa 2 (só o servidor): resumo do processo por IA, por clique, com verificação item a item e a contagem das providências do sistema que a IA não citou** (v0.40.0), **tela do resumo do processo: botão na capa, painel com estados, link do ato à linha do tempo e correção do prazo sem opção pré-marcada** (v0.40.1), **Atualizações: busca pelo número do processo, que respeita os filtros e diz quantos casam fora deles** (v0.41.0),
-**tela do processo sem os blocos "Pede providência" e "Última movimentação", Partes logo abaixo das peças** (v0.41.1), **Google Drive: conectar a conta do advogado e salvar as peças da Pasta digital numa pasta "Processo Vivo", por botão, escopo `drive.file`, desligado por padrão, planos Peças e IA** (v0.42.0), **Drive: o retorno do OAuth usa o workspace do `state` assinado e a conta de chave de API também conecta** (v0.42.1), **testes estáveis no CI e a volta do Google sem corrida no console** (v0.42.2),
-Dockerfile multi-stage, CI, 2534 testes.
+**tela do processo sem os blocos "Pede providência" e "Última movimentação", Partes logo abaixo das peças** (v0.41.1), **Google Drive: conectar a conta do advogado e salvar as peças da Pasta digital numa pasta "Processo Vivo", por botão, escopo `drive.file`, desligado por padrão, planos Peças e IA** (v0.42.0), **Drive: o retorno do OAuth usa o workspace do `state` assinado e a conta de chave de API também conecta** (v0.42.1), **testes estáveis no CI e a volta do Google sem corrida no console** (v0.42.2), **Atualizações: situação como texto e caixa "Cumprido" como único controle, com aviso para desfazer** (v0.43.0),
+Dockerfile multi-stage, CI, 2554 testes.
 
 **Pasta digital (v0.33.0, backend):** `GET /v1/processos/:numero/pasta` (lista +
 estado de cada peça + intervalos de página + totais SEM filtro + procedência

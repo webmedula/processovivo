@@ -303,6 +303,55 @@ export function atoExibido(g: {
 }
 
 /**
+ * O que a coluna Situação mostra de providência numa linha (v0.43.0): o ESTADO é texto
+ * (`pede` | `cumprido` | `nenhuma`) e a caixa "Cumprido" é o único controle. A caixa existe
+ * só onde há o que marcar (`pede`, com a chave do ato que a tela mostrou) ou desmarcar
+ * (`cumprido`). `pede` sem `providencia.situacao === 'pede'` (servidor antigo, ou
+ * providência que não vem de intimação marcável) mostra o estado e nenhuma caixa: marcar
+ * exige a chave do ato, e a tela nunca a inventa. Não decide nada novo: só lê o que
+ * `estadoDaPasta` e a marca já entregam. Pura e autocontida (vai ao navegador por `toString()`).
+ */
+export function situacaoDaLinha(g: {
+  readonly processo: {
+    readonly pedeProvidencia: boolean;
+    readonly providencia?: {
+      readonly situacao: string;
+      readonly motivo: { readonly chave: string };
+      readonly cumpridoEm: string | null;
+    } | null;
+  } | null;
+}): {
+  readonly estado: 'pede' | 'cumprido' | 'nenhuma';
+  readonly caixa: boolean;
+  readonly marcado: boolean;
+  readonly chave: string;
+  readonly cumpridoEm: string | null;
+} {
+  const pr = g.processo;
+  const p = pr && pr.providencia ? pr.providencia : null;
+  if (pr && pr.pedeProvidencia) {
+    const marcavel = !!p && p.situacao === 'pede' && !!p.motivo.chave;
+    return {
+      estado: 'pede',
+      caixa: marcavel,
+      marcado: false,
+      chave: marcavel && p ? p.motivo.chave : '',
+      cumpridoEm: null,
+    };
+  }
+  if (p && p.situacao === 'cumprida') {
+    return {
+      estado: 'cumprido',
+      caixa: true,
+      marcado: true,
+      chave: p.motivo.chave || '',
+      cumpridoEm: p.cumpridoEm,
+    };
+  }
+  return { estado: 'nenhuma', caixa: false, marcado: false, chave: '', cumpridoEm: null };
+}
+
+/**
  * A chave opaca do ato que a linha mostra e que o botão "Analisar com IA" analisa
  * (v0.38.0): o ato que gera a providência quando o processo pede; senão, o da
  * atualização/última movimentação da linha. Vazio = não identificável: sem botão.

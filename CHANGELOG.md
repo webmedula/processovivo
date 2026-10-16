@@ -9,6 +9,50 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.43.0] — 2026-10-16
+
+**Atualizações: a coluna Situação mostra o estado como TEXTO e a caixa "Cumprido" é o único controle.**
+Mudança de apresentação e de controle; a detecção de "pede providência", as regras de "cumprido", as
+rotas e os contadores não mudam.
+
+### O que mudou na tela
+
+- **Estado como texto**, sem fundo, sem borda e sem hover de clique: "● Pede providência" (âmbar),
+  "✓ Cumprido" (verde discreto) e "—" (sem providência). Ícone e texto andam sempre juntos, então a
+  informação não depende de cor; os tons de texto (`--atencao`, `--verde-tinta`) passam de 4,5:1 nos
+  temas claro e escuro (axe, nos dois). A linha cumprida fica um pouco mais apagada (só o título perde
+  o peso; nada some e o contraste não cai).
+- **Caixa "Cumprido"** (`<input type="checkbox">` real, rótulo visível, alvo de 32 px no desktop e 44 px
+  no empilhado, foco visível, Espaço, nome acessível "Cumprido: processo …"). Só existe onde há o que
+  marcar (pede providência, com o ato que a tela mostrou) ou desmarcar (cumprido). Substitui o botão
+  "Marcar como cumprido" e a confirmação "Sim, desfazer": **desmarcar a caixa é o desfazer**.
+- **Atualização otimista**: a linha muda na hora; se o servidor falhar, volta ao que estava e a tela diz
+  "Não foi possível salvar. Tente de novo." (no 409 — o ato saiu do retrato — a explicação do servidor
+  vem junto, porque "tente de novo" sozinho não resolveria). Lista, contadores e filtros se refazem
+  quando o servidor responde, como antes.
+- **Aviso "Marcado como cumprido. Desfazer"** por 6 s, em `role="status"`, fora da tabela, sem prender o
+  foco (Esc fecha; se o foco estava nele, vai para a caixa). "Desfazer" faz a mesma chamada de desmarcar.
+- Larguras da tabela: Situação 11% (era 9%), Partes 9,5% e Atualização 18,5%, para "Cumprido" não quebrar no
+  meio da palavra; o conteúdo da célula de Situação ficou ~30% mais baixo (142 → ~98 px numa linha com "Não lida", medido em 1366 px; sem "Não lida", ~80 px).
+
+### O que NÃO mudou
+
+Servidor, `GET /v1/novidades`, `/v1/painel`, calendário, rotas `POST`/`DELETE …/cumprido` (as mesmas
+duas chamadas, com as mesmas regras), "Analisar com IA" e seu painel, busca, filtros, tela do processo.
+Sem migração. `script.ts` não cresceu: o código novo está em `providencia.ts` (HTML do estado e da
+caixa, e as chamadas), `atualizacoes.ts` (comportamento) e `tabelaAtualizacoes.ts` (`situacaoDaLinha`,
+pura).
+
+### Testes
+
+`tests/http/providencia-componente.spec.ts` (novo: HTML de cada estado e as chamadas ao servidor),
+`situacaoDaLinha` em `tabela-atualizacoes.spec.ts`, e o teste de navegador de "cumprido" reescrito
+(mouse, teclado, otimista, falha, aviso e relógio falso, seis larguras, axe nos dois temas). Dois
+casos de `atualizacoes-navegador.spec.ts` só trocaram o seletor do selo antigo pelo estado em texto.
+Fixtures sintéticas.
+
+---
+
 ## [0.42.2] — 2026-10-16
 
 **Testes estáveis no CI e a volta do Google sem corrida.** Só correção; nenhuma regra de produto muda.

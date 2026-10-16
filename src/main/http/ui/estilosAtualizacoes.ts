@@ -76,11 +76,13 @@ export const ESTILOS_TABELA_ATUALIZACOES = `
 .nvt-tabela td.c-data{white-space:nowrap}
 .nvt-tabela tbody tr:first-child td{border-top:0}
 .nvt-tabela tbody tr.nvt-linha:hover td{background:var(--papel2)}
-/* Classe com 12,5% (era 8,5%): em 1366 px o conteúdo mede ~1060 px e 8,5% deixava ~74 px,
+/* (v0.43.0: Partes e Atualização cederam 2 pontos à Situação, para "Cumprido" não quebrar no meio da palavra; a
+   Classe segue com os 12,5% abaixo, que o teste de navegador dela exige.)
+   Classe com 12,5% (era 8,5%): em 1366 px o conteúdo mede ~1060 px e 8,5% deixava ~74 px,
    menos que a palavra "Procedimento". A largura veio de Partes e Atualização (o texto longo,
    que tem clamp e title) e de Processo; Ações e Data seguem com o que os botões e a data pedem. */
-.h-processo{width:16%}.h-partes{width:11%}.h-atu{width:19%}.h-tribunal{width:6.5%}.h-classe{width:12.5%}
-.h-dataAto{width:8.5%}.h-detectado{width:8%}.h-sit{width:9%}.h-acoes{width:9.5%}
+.h-processo{width:16%}.h-partes{width:9.5%}.h-atu{width:18.5%}.h-tribunal{width:6.5%}.h-classe{width:12.5%}
+.h-dataAto{width:8.5%}.h-detectado{width:8%}.h-sit{width:11%}.h-acoes{width:9.5%}
 .nvt-ord{font:inherit;font-size:inherit;font-weight:inherit;text-transform:inherit;letter-spacing:inherit;
   color:inherit;background:none;border:0;padding:4px 0;min-height:28px;cursor:pointer;text-align:left}
 .nvt-ord:hover{color:var(--tinta)}
@@ -148,8 +150,8 @@ export const ESTILOS_TABELA_ATUALIZACOES = `
 @media (min-width:1024px) and (max-width:1279px){
   .h-classe,.c-classe{display:none}
   .nvt-classe-mini{display:block}
-  .h-processo{width:17%}.h-partes{width:11.5%}.h-atu{width:19%}.h-tribunal{width:10%}
-  .h-dataAto{width:10.5%}.h-detectado{width:10.5%}.h-sit{width:10.5%}.h-acoes{width:11%}
+  .h-processo{width:17%}.h-partes{width:11%}.h-atu{width:18.5%}.h-tribunal{width:9.5%}
+  .h-dataAto{width:10%}.h-detectado{width:10%}.h-sit{width:13%}.h-acoes{width:11%}
   .nvt-tabela th{font-size:10px;letter-spacing:0}
   .nvt-classe-mini{font-size:11px;overflow-wrap:anywhere}
   .nvt-tabela th,.nvt-tabela td{padding-left:5px;padding-right:5px}
