@@ -9,6 +9,29 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.42.2] — 2026-10-16
+
+**Testes estáveis no CI e a volta do Google sem corrida.** Só correção; nenhuma regra de produto muda.
+
+### Testes do CLI (`--workspace`)
+
+O CLI ganhou `executar(argv, ambiente)` (o mesmo código, chamável em processo; o arquivo só roda como
+programa quando é o ponto de entrada) e os testes o chamam direto: um `tsx` filho por chamada gastava
+~1 s e estourava o timeout de 5 s no CI. Resta um único teste que sobe o processo de verdade, e o
+timeout folgado (30 s) vale só para esse arquivo.
+
+### Corrigido: a volta do Google podia não mostrar a mensagem (corrida no console, existia desde a 0.42.0)
+
+Ao abrir `/?drive=ok`, o console desenha a aba inicial ("Últimas atualizações") e logo vai para
+"Meus acessos". A resposta de `/v1/novidades`, se chegasse depois, repintava a aba antiga POR CIMA
+do cartão do Drive: a pessoa voltava do Google e não via "conectado" (ou "cancelada"). Medido: o teste
+de navegador falhava em ~1 de cada 3 execuções sob carga de CPU, também na 0.42.0. Agora a resposta
+tardia confere se a aba ainda é a dela antes de pintar (`script.ts`, sem crescer), o cartão do Drive
+não aparece em dobro quando a aba é desenhada duas vezes, e a mensagem do retorno vive até a primeira
+ação da pessoa no cartão, em vez de sumir no primeiro desenho.
+
+---
+
 ## [0.42.1] — 2026-10-16
 
 **Google Drive: a conexão agora se completa também para conta de chave de API.** O retorno do

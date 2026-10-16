@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 import { NumeroCNJ } from '../domain/entities/NumeroCNJ.js';
 import type { Processo } from '../domain/entities/Processo.js';
@@ -80,9 +81,34 @@ na tabela de usuários é como se constrói uma escalada de privilégio numa API
 cujo cadastro é aberto.
 `;
 
-async function main(): Promise<number> {
+/**
+ * O CLI como função: recebe os argumentos e o ambiente e devolve o código de saída. Existe para os
+ * testes chamarem em processo — um `tsx` filho gasta ~1 s só transpilando o grafo de imports, e
+ * cinco deles estouravam o timeout do CI. Dados vão a `console.log`, mensagens a `console.error`.
+ */
+export async function executar(
+  argv: readonly string[],
+  ambiente: NodeJS.ProcessEnv = process.env,
+): Promise<number> {
+  try {
+    return await main(argv, ambiente);
+  } catch (erro: unknown) {
+    if (erro instanceof DomainError) {
+      // Erro de domínio é situação prevista: mensagem legível, sem stack trace.
+      console.error(`\n[${erro.codigo}] ${erro.message}`);
+      return 2;
+    }
+    console.error('\nFalha inesperada:', erro);
+    return 1;
+  }
+}
+
+async function main(
+  argv: readonly string[],
+  ambiente: NodeJS.ProcessEnv,
+): Promise<number> {
   const { values, positionals } = parseArgs({
-    args: process.argv.slice(2),
+    args: [...argv],
     options: {
       json: { type: 'boolean', default: false },
       manter: { type: 'string' },
@@ -103,9 +129,10 @@ async function main(): Promise<number> {
     return comando ? 0 : 1;
   }
 
-  const config = carregarConfig();
+  const config = carregarConfig(ambiente);
 
-  if (comando === 'novidades') return repararNovidades(config.banco.caminho, args[0], values);
+  if (comando === 'novidades')
+    return repararNovidades(config.banco.caminho, args[0], values);
 
   const app = montarAplicacao(config);
 
@@ -564,7 +591,9 @@ function repararNovidades(
   const db = abrirBanco(caminhoBanco);
   try {
     if (opcoes.desfazer) {
-      const registro = JSON.parse(readFileSync(opcoes.desfazer, 'utf8')) as RegistroDoReparo;
+      const registro = JSON.parse(
+        readFileSync(opcoes.desfazer, 'utf8'),
+      ) as RegistroDoReparo;
       const desfeitas = desfazerReparo(db, registro);
       console.log(`Voltaram a "não lida": ${desfeitas} de ${registro.ids.length}.`);
       return 0;
@@ -581,7 +610,9 @@ function repararNovidades(
     console.log(`Total a marcar como lida: ${d.totalNaoLidas}`);
 
     if (!opcoes.aplicar) {
-      console.error('\nNada foi alterado. Para marcar como lidas, rode de novo com --aplicar.');
+      console.error(
+        '\nNada foi alterado. Para marcar como lidas, rode de novo com --aplicar.',
+      );
       return 0;
     }
     if (d.totalNaoLidas === 0) return 0;
@@ -706,17 +737,9 @@ function recortar(texto: string, limite: number): string {
   return texto.length <= limite ? texto : `${texto.slice(0, limite - 1)}…`;
 }
 
-main()
-  .then((codigo) => {
+// Só roda como programa quando é o ponto de entrada; importado por um teste, não faz nada.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  void executar(process.argv.slice(2)).then((codigo) => {
     process.exitCode = codigo;
-  })
-  .catch((erro: unknown) => {
-    if (erro instanceof DomainError) {
-      // Erro de domínio é situação prevista: mensagem legível, sem stack trace.
-      console.error(`\n[${erro.codigo}] ${erro.message}`);
-      process.exitCode = 2;
-      return;
-    }
-    console.error('\nFalha inesperada:', erro);
-    process.exitCode = 1;
   });
+}

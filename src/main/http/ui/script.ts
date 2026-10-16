@@ -259,7 +259,7 @@ function verNovidades(){
     api('/v1/novidades?'+q+jan),
     api('/v1/painel').catch(function(){return null})
   ]).then(function(res){
-    var r=res[0], pn=res[1];
+    var r=res[0], pn=res[1]; if(estado.aba!=='novidades'||estado.detalhe)return;/* resposta tardia não repinta por cima de outra aba */
     var h=blocoAssinatura()+blocoTrilha();
     /* O número de PROCESSOS entra no subtítulo, antes do de movimentações.
        Esta tela mostra movimentação NOVA, e processo recém-adicionado não gera
