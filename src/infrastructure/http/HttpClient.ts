@@ -71,14 +71,20 @@ export interface OpcoesRequisicao {
 }
 
 export class HttpTimeoutError extends Error {
-  constructor(readonly url: string, readonly timeoutMs: number) {
+  constructor(
+    readonly url: string,
+    readonly timeoutMs: number,
+  ) {
     super(`Timeout de ${timeoutMs}ms ao chamar ${url}`);
     this.name = 'HttpTimeoutError';
   }
 }
 
 export class HttpRedeError extends Error {
-  constructor(readonly url: string, causa: unknown) {
+  constructor(
+    readonly url: string,
+    causa: unknown,
+  ) {
     super(`Falha de rede ao chamar ${url}: ${descrever(causa)}`, { cause: causa });
     this.name = 'HttpRedeError';
   }
@@ -164,7 +170,9 @@ export class HttpClient {
       // um redirecionamento, e uma resposta 3xx aqui é sempre dado para o chamador decidir.
       redirect: 'manual',
       headers: { ...this.headersPadrao, ...pedido.headers },
-      ...(pedido.corpo !== undefined ? { body: pedido.corpo as BodyInit } : {}),
+      ...(pedido.corpo !== undefined
+        ? { body: pedido.corpo as NonNullable<RequestInit['body']> }
+        : {}),
     };
     return this.comRetry(pedido.url, init, opcoes, async (resposta) => {
       const headers: Record<string, string> = {};
