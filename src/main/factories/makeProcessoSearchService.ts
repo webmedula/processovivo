@@ -5,6 +5,12 @@ import { ServicoPecas } from '../../application/services/ServicoPecas.js';
 import { GuardaDePecas } from '../../application/services/GuardaDePecas.js';
 import { ServicoLeitor } from '../../application/services/ServicoLeitor.js';
 import { ServicoPasta } from '../../application/services/ServicoPasta.js';
+import { ServicoDrive } from '../../application/services/ServicoDrive.js';
+import { fonteDePecasDaPasta } from '../../application/services/fonteDePecasDaPasta.js';
+import { EstadosDeConexao } from '../../application/politicas/estadosDeConexao.js';
+import { GoogleDriveAdapter } from '../../infrastructure/adapters/drive/GoogleDriveAdapter.js';
+import { TransporteComHttpClient } from '../../infrastructure/adapters/drive/TransporteDoDrive.js';
+import { RepositorioDoDriveSqlite } from '../../infrastructure/persistencia/sqlite/RepositorioDoDriveSqlite.js';
 import { ServicoCalendario } from '../../application/services/ServicoCalendario.js';
 import { comIndicadorDeDestinatario } from '../../application/services/indicadorDeDestinatario.js';
 import { comDeteccaoDoCalendario } from '../../application/services/ingestaoDoCalendario.js';
@@ -129,6 +135,12 @@ export interface Aplicacao {
    * completa. Sobe junto com o leitor (mesmo `qpdf`, mesma guarda em disco).
    */
   readonly pasta: ServicoPasta | undefined;
+  /**
+   * Envio de peças ao Google Drive do advogado (v0.42.0). `undefined` com
+   * `PROCESSOVIVO_DRIVE_HABILITADO=false` (o padrão) ou sem a Pasta digital (qpdf/cofre): as
+   * rotas respondem 501 e a tela não mostra nada.
+   */
+  readonly drive: ServicoDrive | undefined;
   /** Executor da fila do leitor (a cada minuto) e limpeza por prazo (a cada hora). */
   readonly agendadorLeitor: Agendador | undefined;
   readonly agendadorLimpezaLeitor: Agendador | undefined;
@@ -430,11 +442,12 @@ export function montarAplicacao(config: Config): Aplicacao {
   // tenha as publicações do DJEN que o tribunal não numera. Cai em cache, então
   // não custa consulta nova quando a tela acabou de carregar o processo.
   const buscarProcessoPorNumero = new BuscarProcessoPorNumero(provider);
-  const { pecas, leitor, pasta } = montarServicoPecas(
+  const { pecas, leitor, pasta, drive } = montarServicoPecas(
     config,
     db,
     logger,
     buscarProcessoPorNumero,
+    assinaturas,
   );
 
   // O executor do leitor acorda a cada minuto para retomar job pausado por
@@ -538,6 +551,7 @@ export function montarAplicacao(config: Config): Aplicacao {
           }),
     leitor,
     pasta,
+    drive,
     agendadorLeitor,
     agendadorLimpezaLeitor,
     calendario,
@@ -673,12 +687,14 @@ function montarServicoPecas(
   db: ReturnType<typeof abrirBanco>,
   logger: Logger,
   processos: BuscarProcessoPorNumero,
+  assinaturas: ServicoAssinaturas,
 ): {
   pecas: ServicoPecas | undefined;
   leitor: ServicoLeitor | undefined;
   pasta: ServicoPasta | undefined;
+  drive: ServicoDrive | undefined;
 } {
-  const nada = { pecas: undefined, leitor: undefined, pasta: undefined };
+  const nada = { pecas: undefined, leitor: undefined, pasta: undefined, drive: undefined };
   if (pareceValorDeExemplo(config.mni.chaveDoCofre)) {
     logger.warn(
       'acesso a peças desligado: PROCESSOVIVO_CREDENCIAL_CHAVE ainda contém o texto de exemplo',
@@ -744,7 +760,73 @@ function montarServicoPecas(
     },
   });
 
-  return { pecas, leitor: montado?.leitor, pasta };
+  const drive = montarDrive(config, db, logger, cofre, assinaturas, montado);
+  return { pecas, leitor: montado?.leitor, pasta, drive };
+}
+
+/**
+ * O envio ao Google Drive (v0.42.0) — ou nada (desligado por padrão).
+ *
+ * Sobe só com o recurso habilitado E com a Pasta digital de pé: o que o Drive envia é a peça que
+ * a Pasta guardou, e sem `qpdf` não há Pasta. A configuração (client id, segredo, endereço de
+ * retorno, cofre) já foi validada no arranque por `carregarConfig`; aqui só se monta.
+ *
+ * UM adapter, UM `HttpClient` e UM `EstadosDeConexao` para o processo inteiro: o `state` do
+ * OAuth vive em memória, e dois conjuntos recusariam o retorno emitido pelo outro.
+ */
+function montarDrive(
+  config: Config,
+  db: ReturnType<typeof abrirBanco>,
+  logger: Logger,
+  cofre: Cofre,
+  assinaturas: ServicoAssinaturas,
+  montado: ReturnType<typeof montarLeitor>,
+): ServicoDrive | undefined {
+  if (!config.drive.habilitado) return undefined;
+  if (!montado) {
+    logger.warn('envio ao Google Drive desligado: a Pasta digital não está montada', {
+      motivo: 'o Drive envia as peças que a Pasta digital guarda, e ela exige o qpdf',
+      acao: 'instale o qpdf ou ajuste LEITOR_QPDF',
+    });
+    return undefined;
+  }
+  const chave = Buffer.from(config.mni.chaveDoCofre, 'base64');
+  const clock = clockDoSistema;
+  logger.info('envio ao Google Drive habilitado', {
+    // Só o endereço de retorno (o que se cadastra no Google Cloud), nunca id nem segredo.
+    uriDeRetorno: config.drive.uriDeRetorno,
+    maxSimultaneos: config.drive.maxSimultaneos,
+  });
+  return new ServicoDrive({
+    destino: new GoogleDriveAdapter({
+      clientId: config.drive.clientId,
+      clientSecret: config.drive.clientSecret,
+      transporte: new TransporteComHttpClient(new HttpClient({ tentativas: 1 })),
+      clock,
+    }),
+    repositorio: new RepositorioDoDriveSqlite(db, cofre, logger),
+    fonte: fonteDePecasDaPasta({
+      pasta: montado.pasta,
+      guarda: montado.guarda,
+      armazem: montado.armazem,
+    }),
+    estados: new EstadosDeConexao({
+      // Chave PRÓPRIA do `state`, derivada da do cofre: o mesmo segredo nunca assina duas coisas.
+      segredo: createHmac('sha256', chave).update('drive-state-v1').digest(),
+      clock,
+    }),
+    // `salvarNoDrive` E `pecas`, sem a exceção do "workspace sem assinatura passa livre": o Drive
+    // manda arquivo a um terceiro e usa a conta Google da pessoa, e chave de API não tem conta.
+    conferirPlano: async (workspace) =>
+      (await assinaturas.temRecursoSemExcecao(workspace, 'salvarNoDrive')) &&
+      (await assinaturas.temRecursoSemExcecao(workspace, 'pecas')),
+    logger,
+    uriDeRetorno: config.drive.uriDeRetorno,
+    maxSimultaneos: config.drive.maxSimultaneos,
+    pausaEntrePecasMs: config.drive.pausaEntrePecasMs,
+    clock,
+    gerarId: () => randomBytes(16).toString('hex'),
+  });
 }
 
 /**
@@ -761,7 +843,14 @@ function montarLeitor(
   processos: BuscarProcessoPorNumero,
   provedor: MniAdapter,
   credenciais: RepositorioCredenciaisSqlite,
-): { leitor: ServicoLeitor; pasta: ServicoPasta } | undefined {
+):
+  | {
+      leitor: ServicoLeitor;
+      pasta: ServicoPasta;
+      guarda: GuardaDePecas;
+      armazem: ArmazemEmDisco;
+    }
+  | undefined {
   if (!QpdfMontador.disponivelSync(config.leitor.qpdf)) {
     logger.warn('leitor de peças desligado: qpdf não encontrado', {
       binario: config.leitor.qpdf,
@@ -850,7 +939,7 @@ function montarLeitor(
     logger,
     debounceMs: config.pasta.debounceMs,
   });
-  return { leitor, pasta: servicoPasta };
+  return { leitor, pasta: servicoPasta, guarda, armazem };
 }
 
 /**

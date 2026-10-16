@@ -242,6 +242,20 @@ const schema = z.object({
   PROCESSOVIVO_IA_RESUMO_TIMEOUT_MS: inteiroPositivo(120_000),
   // Exigida SÓ com a IA habilitada. Nunca vai para log, resposta ou mensagem de erro.
   OPENROUTER_API_KEY: z.string().default(''),
+
+  // --- Google Drive (v0.42.0) -------------------------------------------------
+  // Nasce DESLIGADO; o dono liga. O escopo é um só (`drive.file`) e não tem variável: o sistema
+  // só enxerga o que ele mesmo criou, e pedir mais não é configuração, é outro produto.
+  PROCESSOVIVO_DRIVE_HABILITADO: booleano.default('false'),
+  // Nomes nativos do Google (Cloud Console > Credenciais > ID do cliente OAuth). Exigidos SÓ com
+  // o recurso habilitado. O segredo nunca vai a log, resposta ou mensagem de erro.
+  GOOGLE_CLIENT_ID: z.string().default(''),
+  GOOGLE_CLIENT_SECRET: z.string().default(''),
+  // Teto GLOBAL de envios em andamento (um job por workspace, e poucos ao mesmo tempo no
+  // servidor): o Drive é do advogado, mas o disco e a banda são nossos.
+  PROCESSOVIVO_DRIVE_MAX_SIMULTANEOS: inteiroPositivo(2),
+  // Pausa entre uma peça e outra do mesmo envio. Sem rajada: uma peça por vez.
+  PROCESSOVIVO_DRIVE_PAUSA_ENTRE_PECAS_MS: z.coerce.number().int().min(0).default(400),
 });
 
 export interface Config {
@@ -355,6 +369,16 @@ export interface Config {
     /** Vazia quando a IA está desligada. */
     readonly chave: string;
   };
+  readonly drive: {
+    readonly habilitado: boolean;
+    /** Vazios quando o recurso está desligado. Nunca vão a log, resposta ou erro. */
+    readonly clientId: string;
+    readonly clientSecret: string;
+    /** `PROCESSOVIVO_URL_BASE` + `/v1/drive/retorno`; vazio com o recurso desligado. */
+    readonly uriDeRetorno: string;
+    readonly maxSimultaneos: number;
+    readonly pausaEntrePecasMs: number;
+  };
   readonly admin: {
     /** Vazio quando a área administrativa está desligada (as duas variáveis vazias). */
     readonly usuario: string;
@@ -445,6 +469,7 @@ export function carregarConfig(fonte: NodeJS.ProcessEnv = process.env): Config {
 
   const env = resultado.data;
   validarConfiguracaoDaIa(env);
+  validarConfiguracaoDoDrive(env);
   // Validada mesmo com a IA desligada: erro de digitação aparece no deploy, não no dia de ligar.
   lerWorkspacesLiberados(env.PROCESSOVIVO_IA_WORKSPACES_LIBERADOS);
   return {
@@ -559,6 +584,18 @@ export function carregarConfig(fonte: NodeJS.ProcessEnv = process.env): Config {
       workspacesLiberados: lerWorkspacesLiberados(env.PROCESSOVIVO_IA_WORKSPACES_LIBERADOS),
       chave: env.PROCESSOVIVO_IA_HABILITADA ? env.OPENROUTER_API_KEY.trim() : '',
     },
+    drive: {
+      habilitado: env.PROCESSOVIVO_DRIVE_HABILITADO,
+      clientId: env.PROCESSOVIVO_DRIVE_HABILITADO ? env.GOOGLE_CLIENT_ID.trim() : '',
+      clientSecret: env.PROCESSOVIVO_DRIVE_HABILITADO
+        ? env.GOOGLE_CLIENT_SECRET.trim()
+        : '',
+      uriDeRetorno: env.PROCESSOVIVO_DRIVE_HABILITADO
+        ? `${env.PROCESSOVIVO_URL_BASE.trim().replace(/\/+$/, '')}${ROTA_DE_RETORNO_DO_DRIVE}`
+        : '',
+      maxSimultaneos: env.PROCESSOVIVO_DRIVE_MAX_SIMULTANEOS,
+      pausaEntrePecasMs: env.PROCESSOVIVO_DRIVE_PAUSA_ENTRE_PECAS_MS,
+    },
     admin: {
       usuario: env.PROCESSOVIVO_ADMIN_USUARIO.trim(),
       senha: env.PROCESSOVIVO_ADMIN_SENHA,
@@ -588,6 +625,69 @@ function validarConfiguracaoDaIa(env: z.infer<typeof schema>): void {
   if (modelo === '' || ehApelidoOuVariante(modelo)) {
     throw new Error(
       'Configuração inválida:\n  - PROCESSOVIVO_IA_MODELO: use o id de um modelo real (sem "~" nem ":")',
+    );
+  }
+}
+
+/** O caminho que o Google chama de volta depois da autorização. Cadastrado no Cloud Console. */
+export const ROTA_DE_RETORNO_DO_DRIVE = '/v1/drive/retorno';
+
+/**
+ * Com o Drive habilitado, o arranque exige tudo o que ele precisa — e diz o que falta, sem
+ * nunca trazer o valor de nenhuma chave. Falha cedo e alto: Drive ligado sem segredo só
+ * mostraria erro na primeira conexão de um assinante, e valor de exemplo colado no painel
+ * passa por qualquer checagem de presença.
+ *
+ * O cofre é pré-requisito: a autorização do Google (token de renovação) só pode ser guardada
+ * cifrada, como a senha do tribunal — e sem as peças não há o que enviar.
+ */
+function validarConfiguracaoDoDrive(env: z.infer<typeof schema>): void {
+  if (!env.PROCESSOVIVO_DRIVE_HABILITADO) return;
+  const problemas: string[] = [];
+  const id = env.GOOGLE_CLIENT_ID.trim();
+  const segredo = env.GOOGLE_CLIENT_SECRET.trim();
+  if (id === '')
+    problemas.push(
+      'GOOGLE_CLIENT_ID: obrigatório com PROCESSOVIVO_DRIVE_HABILITADO=true',
+    );
+  else if (pareceValorDeExemplo(id)) {
+    problemas.push(
+      'GOOGLE_CLIENT_ID: parece um valor de exemplo; coloque o ID real do cliente OAuth',
+    );
+  }
+  if (segredo === '') {
+    problemas.push(
+      'GOOGLE_CLIENT_SECRET: obrigatório com PROCESSOVIVO_DRIVE_HABILITADO=true',
+    );
+  } else if (pareceValorDeExemplo(segredo)) {
+    problemas.push(
+      'GOOGLE_CLIENT_SECRET: parece um valor de exemplo; coloque o segredo real',
+    );
+  }
+  const base = env.PROCESSOVIVO_URL_BASE.trim().replace(/\/+$/, '');
+  if (base === '') {
+    problemas.push(
+      'PROCESSOVIVO_URL_BASE: obrigatória com PROCESSOVIVO_DRIVE_HABILITADO=true ' +
+        `(o endereço de retorno é ela + ${ROTA_DE_RETORNO_DO_DRIVE})`,
+    );
+  } else if (
+    !/^https:\/\//i.test(base) &&
+    !/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(base)
+  ) {
+    problemas.push(
+      'PROCESSOVIVO_URL_BASE: o Google só aceita retorno em https (ou localhost)',
+    );
+  }
+  const cofre = env.PROCESSOVIVO_CREDENCIAL_CHAVE.trim();
+  if (cofre === '' || pareceValorDeExemplo(cofre)) {
+    problemas.push(
+      'PROCESSOVIVO_CREDENCIAL_CHAVE: obrigatória com PROCESSOVIVO_DRIVE_HABILITADO=true ' +
+        '(a autorização do Google só é guardada cifrada)',
+    );
+  }
+  if (problemas.length > 0) {
+    throw new Error(
+      `Configuração inválida:\n${problemas.map((p) => `  - ${p}`).join('\n')}`,
     );
   }
 }

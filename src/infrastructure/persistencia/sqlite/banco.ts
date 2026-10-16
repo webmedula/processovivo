@@ -470,6 +470,47 @@ const ESQUEMA = [
      feito_em  TEXT NOT NULL
    )`,
 
+  // Google Drive (v0.42.0). Três tabelas NOVAS e aditivas — nada derivado de dado já
+  // guardado, então sem retrocarga. Chaves começam por `workspace`: nenhuma consulta chega
+  // a uma linha sem dizer de quem ela é.
+  //
+  // `tokens_cifrados` guarda a autorização do Google cifrada pelo MESMO cofre das credenciais
+  // de tribunal (AES-256-GCM); NULL = desconectado (a revogação apaga). Não há coluna de
+  // e-mail nem de nome da conta Google: o sistema não precisa saber quem é.
+  `CREATE TABLE IF NOT EXISTS conexoes_drive (
+     workspace          TEXT PRIMARY KEY,
+     estado             TEXT NOT NULL,
+     pasta_raiz_id      TEXT,
+     pasta_raiz_link    TEXT,
+     tokens_cifrados    TEXT,
+     conectada_em       TEXT NOT NULL,
+     verificada_em      TEXT,
+     motivo_do_ultimo_erro TEXT
+   )`,
+  // A subpasta de cada processo. O escopo `drive.file` não permite procurar pasta pelo nome:
+  // o id que o sistema criou tem de ser guardado, ou a próxima vez duplicaria a pasta.
+  `CREATE TABLE IF NOT EXISTS pastas_no_drive (
+     workspace       TEXT NOT NULL,
+     numero          TEXT NOT NULL,
+     pasta_id        TEXT NOT NULL,
+     pasta_link      TEXT NOT NULL,
+     PRIMARY KEY (workspace, numero)
+   )`,
+  // O controle de idempotência: por (workspace, processo, peça). `hash` é o SHA-256 do PDF
+  // enviado. Sobrevive à desconexão (estado `desconectada`): o histórico não se perde.
+  `CREATE TABLE IF NOT EXISTS pecas_no_drive (
+     workspace      TEXT NOT NULL,
+     numero         TEXT NOT NULL,
+     peca_id        TEXT NOT NULL,
+     arquivo_id     TEXT NOT NULL,
+     hash           TEXT NOT NULL,
+     nome           TEXT NOT NULL,
+     estado         TEXT NOT NULL,
+     enviada_em     TEXT NOT NULL,
+     atualizada_em  TEXT,
+     PRIMARY KEY (workspace, numero, peca_id)
+   )`,
+
   `CREATE INDEX IF NOT EXISTS idx_sessoes_usuario ON sessoes(usuario_id)`,
   `CREATE INDEX IF NOT EXISTS idx_sessoes_expira ON sessoes(expira_em)`,
 ];
@@ -621,6 +662,7 @@ export function abrirBanco(caminho: string): DatabaseSync {
   preencherPartesTexto(db);
   semearPlanos(db);
   acrescentarCalendarioAosPlanos(db);
+  acrescentarSalvarNoDriveAosPlanos(db);
   retrocarregarAssinaturas(db);
 
   // Segunda passagem: o esquema já existe, então dá para perguntar ao banco se
@@ -854,6 +896,52 @@ function acrescentarCalendarioAosPlanos(db: DatabaseSync): void {
     }
     db.prepare('INSERT INTO estado (chave, valor) VALUES (?, ?)').run(
       MARCA_CALENDARIO_NOS_PLANOS,
+      new Date().toISOString(),
+    );
+    db.exec('COMMIT');
+  } catch (erro) {
+    db.exec('ROLLBACK');
+    throw erro;
+  }
+}
+
+/** Marca, na tabela `estado`, de que a retrocarga do Drive nos planos já rodou. */
+export const MARCA_DRIVE_NOS_PLANOS = 'retrocarga:salvar-no-drive-nos-planos';
+
+/**
+ * "Salvar no Drive" entra nos planos Peças e IA já gravados (v0.42.0, decisão do dono).
+ *
+ * Mesma lição do calendário: a semente só vale para banco vazio, e recurso que entra sem
+ * retrocarga é recurso que ninguém que já assina recebe. Roda UMA vez por banco (marca em
+ * `estado`) e só nos dois códigos que o dono nomeou: planos criados pelo painel NÃO ganham o
+ * recurso sozinhos (o operador marca, no /admin), e um redeploy nunca desfaz a decisão de quem
+ * o tirou depois. Não duplica.
+ */
+function acrescentarSalvarNoDriveAosPlanos(db: DatabaseSync): void {
+  const feita = db
+    .prepare('SELECT 1 FROM estado WHERE chave = ?')
+    .get(MARCA_DRIVE_NOS_PLANOS);
+  if (feita) return;
+
+  const planos = db
+    .prepare("SELECT codigo, recursos FROM planos WHERE codigo IN ('pecas', 'ia')")
+    .all() as Array<{ codigo: string; recursos: string }>;
+  const gravar = db.prepare('UPDATE planos SET recursos = ? WHERE codigo = ?');
+
+  db.exec('BEGIN');
+  try {
+    for (const p of planos) {
+      let recursos: unknown;
+      try {
+        recursos = JSON.parse(p.recursos);
+      } catch {
+        continue;
+      }
+      if (!Array.isArray(recursos) || recursos.includes('salvarNoDrive')) continue;
+      gravar.run(JSON.stringify([...recursos, 'salvarNoDrive']), p.codigo);
+    }
+    db.prepare('INSERT INTO estado (chave, valor) VALUES (?, ?)').run(
+      MARCA_DRIVE_NOS_PLANOS,
       new Date().toISOString(),
     );
     db.exec('COMMIT');

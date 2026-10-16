@@ -28,7 +28,8 @@ export type RecursoDoPlano =
   | 'vigilancia'
   | 'calendario'
   | 'pecas'
-  | 'analiseIa';
+  | 'analiseIa'
+  | 'salvarNoDrive';
 
 export interface DescricaoDoRecurso {
   readonly recurso: RecursoDoPlano;
@@ -76,6 +77,15 @@ export const RECURSOS: readonly DescricaoDoRecurso[] = Object.freeze([
   },
   { recurso: 'pecas', nome: 'Peças do processo', frase: 'as peças do processo', implementado: true },
   { recurso: 'analiseIa', nome: 'Análise com IA', frase: 'a análise com IA', implementado: false },
+  // v0.42.0: grava as peças da Pasta digital no Google Drive do advogado. `implementado: true`
+  // porque a funcionalidade existe; quem a liga é `PROCESSOVIVO_DRIVE_HABILITADO`, que nasce
+  // desligada — o recurso no plano é inofensivo enquanto o operador não ligar.
+  {
+    recurso: 'salvarNoDrive',
+    nome: 'Salvar no Google Drive',
+    frase: 'o envio de peças ao Google Drive',
+    implementado: true,
+  },
 ] as const);
 
 export function ehRecurso(valor: string): valor is RecursoDoPlano {
@@ -161,7 +171,7 @@ export const PLANOS_INICIAIS: readonly Plano[] = Object.freeze([
     nome: 'Peças',
     resumo:
       'Tudo do Acompanhamento, mais as peças do processo — petição, contestação, laudo e documento juntado pela parte.',
-    recursos: Object.freeze([...BASE, 'pecas'] as const),
+    recursos: Object.freeze([...BASE, 'pecas', 'salvarNoDrive'] as const),
     disponivelParaContratacao: true,
     precoMensalCentavos: null,
     ordem: 20,
@@ -170,7 +180,7 @@ export const PLANOS_INICIAIS: readonly Plano[] = Object.freeze([
     codigo: 'ia',
     nome: 'IA',
     resumo: 'Tudo do Peças, mais análise do processo com sugestões.',
-    recursos: Object.freeze([...BASE, 'pecas', 'analiseIa'] as const),
+    recursos: Object.freeze([...BASE, 'pecas', 'analiseIa', 'salvarNoDrive'] as const),
     // Não pode ficar à venda enquanto `analiseIa` não estiver implementado —
     // `validarPlano` recusa, venha a tentativa do código ou do painel.
     disponivelParaContratacao: false,

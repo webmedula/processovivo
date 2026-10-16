@@ -5,6 +5,11 @@ import { ServicoPecas } from '../../src/application/services/ServicoPecas.js';
 import { GuardaDePecas } from '../../src/application/services/GuardaDePecas.js';
 import { ServicoLeitor } from '../../src/application/services/ServicoLeitor.js';
 import { ServicoPasta } from '../../src/application/services/ServicoPasta.js';
+import { ServicoDrive } from '../../src/application/services/ServicoDrive.js';
+import { fonteDePecasDaPasta } from '../../src/application/services/fonteDePecasDaPasta.js';
+import { EstadosDeConexao } from '../../src/application/politicas/estadosDeConexao.js';
+import { RepositorioDoDriveSqlite } from '../../src/infrastructure/persistencia/sqlite/RepositorioDoDriveSqlite.js';
+import type { DestinoExternoDePecas } from '../../src/domain/ports/DestinoExternoDePecas.js';
 import { RepositorioDaPastaSqlite } from '../../src/infrastructure/persistencia/sqlite/RepositorioDaPastaSqlite.js';
 import { ServicoCalendario } from '../../src/application/services/ServicoCalendario.js';
 import { comDeteccaoDoCalendario } from '../../src/application/services/ingestaoDoCalendario.js';
@@ -176,6 +181,22 @@ export interface OpcoesAplicacaoDeTeste {
     readonly porHora?: number;
     readonly clock?: Clock;
   };
+  /**
+   * Liga o envio ao Google Drive (v0.42.0) com um destino DUBLÊ (nenhum teste toca a rede).
+   * Exige `leitor` (a Pasta digital). Ausente = desligado, o padrão de produção. O plano é o
+   * de sempre: sem `comAssinaturas`, o workspace não tem assinatura — e o Drive NÃO passa livre
+   * sem assinatura (como a análise por IA), então os testes liberam um plano com `salvarNoDrive`.
+   */
+  readonly drive?: {
+    readonly destino: DestinoExternoDePecas;
+    readonly uriDeRetorno?: string;
+    readonly maxSimultaneos?: number;
+    readonly pausaEntrePecasMs?: number;
+    readonly clock?: Clock;
+    readonly esperar?: (ms: number) => Promise<void>;
+    /** Teste de navegador: o envio anda sozinho com espera real curta. */
+    readonly gerarId?: () => string;
+  };
   /** Liga a área administrativa. Ausente por padrão — mesma regra de `comAssinaturas`. */
   readonly admin?: { readonly usuario: string; readonly senha: string };
 }
@@ -287,6 +308,8 @@ export function aplicacaoDeTeste(
   // peças — como no composition root. Os jobs não andam sozinhos: o teste
   // chama `processarFila()` quando quer, sem timer.
   let leitor: ServicoLeitor | undefined;
+  let guardaDoDrive: GuardaDePecas | undefined;
+  let armazemDoDrive: ArmazemEmDisco | undefined;
   if (opcoes.provedorDePecas && opcoes.leitor) {
     const armazem = new ArmazemEmDisco(opcoes.leitor.pasta);
     const montador = new QpdfMontador();
@@ -326,6 +349,8 @@ export function aplicacaoDeTeste(
           }
         : {}),
     });
+    guardaDoDrive = guarda;
+    armazemDoDrive = armazem;
     pasta = new ServicoPasta({
       leitor,
       guarda,
@@ -410,6 +435,38 @@ export function aplicacaoDeTeste(
       })
     : undefined;
 
+  // O Drive usa o MESMO cofre das credenciais (uma chave por teste) e o relógio do teste.
+  const clockDoDrive: Clock = opcoes.drive?.clock ?? {
+    agora: () => (opcoes.agora ? opcoes.agora() : new Date()),
+    monotonico: () => 0,
+  };
+  const drive =
+    opcoes.drive && pasta && guardaDoDrive && armazemDoDrive
+      ? new ServicoDrive({
+          destino: opcoes.drive.destino,
+          repositorio: new RepositorioDoDriveSqlite(
+            db,
+            Cofre.comChaveBase64(Cofre.gerarChaveBase64()),
+          ),
+          fonte: fonteDePecasDaPasta({
+            pasta,
+            guarda: guardaDoDrive,
+            armazem: armazemDoDrive,
+          }),
+          estados: new EstadosDeConexao({ segredo: randomBytes(32), clock: clockDoDrive }),
+          conferirPlano: async (ws) =>
+            (await assinaturas.temRecursoSemExcecao(ws, 'salvarNoDrive')) &&
+            (await assinaturas.temRecursoSemExcecao(ws, 'pecas')),
+          logger: loggerSilencioso,
+          uriDeRetorno: opcoes.drive.uriDeRetorno ?? 'https://app.exemplo.test/v1/drive/retorno',
+          maxSimultaneos: opcoes.drive.maxSimultaneos ?? 2,
+          pausaEntrePecasMs: opcoes.drive.pausaEntrePecasMs ?? 0,
+          clock: clockDoDrive,
+          esperar: opcoes.drive.esperar ?? (async (): Promise<void> => {}),
+          gerarId: opcoes.drive.gerarId ?? (() => randomBytes(8).toString('hex')),
+        })
+      : undefined;
+
   return {
     buscarProcessoPorNumero: new BuscarProcessoPorNumero(orquestrador),
     buscarProcessosPorOab: new BuscarProcessosPorOab(orquestrador),
@@ -424,6 +481,7 @@ export function aplicacaoDeTeste(
     avisoDoPrazo,
     leitor,
     pasta,
+    drive,
     agendadorLeitor: undefined,
     agendadorLimpezaLeitor: undefined,
     assinaturas,

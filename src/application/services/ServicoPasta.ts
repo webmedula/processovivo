@@ -649,6 +649,28 @@ export class ServicoPasta {
   }
 
   /**
+   * O estado de UMA peça, como a lista o mostraria (v0.42.0). Quem manda a peça ao Google
+   * Drive pede a peça por `solicitar` e acompanha por aqui — sem consulta nova ao tribunal.
+   * Reaproveita `visao` de propósito: um segundo cálculo do estado divergiria do primeiro.
+   */
+  async estadoDaPeca(
+    workspace: string,
+    numeroProcesso: string,
+    pecaId: string,
+  ): Promise<
+    | {
+        readonly estado: EstadoDaPecaNaPasta;
+        readonly motivo: MotivoNaoObtida | undefined;
+        readonly retomarEm: Date | undefined;
+      }
+    | undefined
+  > {
+    const v = await this.visao(workspace, numeroProcesso);
+    const p = v.pecas.find((x) => x.pecaId === pecaId);
+    return p ? { estado: p.estado, motivo: p.motivo, retomarEm: p.retomarEm } : undefined;
+  }
+
+  /**
    * O PDF de UMA peça guardada, para o PDF.js.
    *
    * @throws {PecaDaPastaNaoEncontradaError} não há — ou é de outro workspace.
