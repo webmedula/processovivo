@@ -639,6 +639,90 @@ autenticado). Por isso a conexão também se completa para conta de chave de API
 
 ---
 
+## Cobrança recorrente pelo Mercado Pago (v0.44.0)
+
+A conta passa a poder **assinar** um plano pela própria tela "Minha conta": o Mercado Pago cobra o
+**cartão** a cada ciclo e o Processo Vivo libera e renova o plano sozinho. Nasce **desligada**. A
+liberação manual (Pix por fora, `assinatura liberar`) continua igual.
+
+**O que o sistema nunca faz:** receber ou guardar número de cartão. O comprador paga na página do
+Mercado Pago. Do pagador, o sistema só guarda id, estado, valor, datas e o tipo do meio.
+
+**Só cartão, e só mensal (por enquanto).** A recorrência é por cartão; Pix e boleto avulsos ficam para
+a próxima versão. Só o ciclo **mensal** pode ser contratado pelo site; o campo de ciclo no plano
+(mensal, trimestral, anual) já existe para os outros entrarem depois sem mudar código.
+
+### 1. No Mercado Pago (uma vez)
+
+1. Em **Suas integrações**, crie a **aplicação** (tipo pagamentos online) e anote as credenciais. Faça
+   primeiro com as de **teste** (e usuários de teste: um vendedor e um comprador).
+2. **Webhooks → Configurar notificações.** Cadastre o endereço (modo teste e modo produção têm campos
+   separados; use o de cada ambiente):
+
+   ```text
+   https://app.processovivo.com.br/v1/pagamentos/webhook/mercadopago
+   ```
+
+   Eventos a marcar: **Planos e assinaturas** (`subscription_preapproval` e
+   `subscription_authorized_payment`) e **Pagamentos** (`payment`).
+3. Ao salvar, o painel mostra a **assinatura secreta** do webhook: é ela o `MERCADOPAGO_WEBHOOK_SECRET`.
+4. O sistema também manda o endereço do aviso **na criação de cada assinatura** (`notification_url`).
+   A configuração do painel é a segunda via: se o Mercado Pago não aceitar um dos dois para
+   assinaturas, o outro cobre. (Confirmar no teste; ver o CHANGELOG da 0.44.0.)
+
+### 2. No Easypanel (aba Environment)
+
+```text
+PROCESSOVIVO_PAGAMENTO_HABILITADO=true
+MERCADOPAGO_ACCESS_TOKEN=<o token da aplicação; começa por TEST- no ambiente de teste>
+MERCADOPAGO_WEBHOOK_SECRET=<a assinatura secreta que o painel mostrou>
+PROCESSOVIVO_URL_BASE=https://app.processovivo.com.br
+PROCESSOVIVO_PAGAMENTO_AVISO_EMAIL=<seu e-mail, para estorno e contestação>
+PROCESSOVIVO_TERMOS_URL=<o endereço dos Termos de Uso, se já houver>
+```
+
+Se faltar a credencial, ou se ela parecer texto de exemplo, **o serviço recusa subir** e diz qual
+variável falta (nunca mostra o valor). **Token de TESTE em servidor de produção também é recusado**,
+a não ser que você ponha `PROCESSOVIVO_PAGAMENTO_PERMITIR_TESTE=true` (para testar de propósito no
+servidor de verdade). Com isso ligado, o `/admin` mostra **TESTE** em destaque na aba Assinaturas e na
+aba Planos, e a tela da conta diz "MODO DE TESTE".
+
+Para **desligar**, volte `PROCESSOVIVO_PAGAMENTO_HABILITADO=false` e faça o deploy: o botão some, as
+rotas de checkout deixam de existir e o webhook responde 404. Nada é apagado; quem já assinou continua
+com o plano até o fim do período pago, mas o Mercado Pago continua cobrando até a assinatura ser
+cancelada **lá** — cancele no painel dele antes de desligar de vez.
+
+### 3. Preço e ciclo (/admin → Planos)
+
+O sistema cobra o valor cadastrado no plano: **preço por mês** × meses do ciclo. **Plano sem preço não
+pode ser contratado** (nem aparece o botão "Assinar"), e plano pausado também não. No formulário do
+plano há o campo **Ciclo de renovação**; hoje só `mensal` é vendável.
+
+### 4. O dia a dia
+
+- **Tudo certo:** o pagamento aprovado renova o plano pelo MESMO caminho do `assinatura liberar`.
+- **Cartão recusado:** o plano segue até vencer, a conta recebe um e-mail e o Mercado Pago tenta de
+  novo. Depois de 3 parcelas recusadas ele cancela a assinatura sozinho, e a conta é avisada de que
+  nada mais renova.
+- **Cancelar a renovação:** a própria conta faz em "Minha conta"; o plano vale até o fim do período
+  pago e o evento fica na trilha de auditoria (tabela `eventos_de_pagamento`).
+- **Estorno ou contestação:** o sistema **não revoga** o acesso. Chega um e-mail para
+  `PROCESSOVIVO_PAGAMENTO_AVISO_EMAIL`; decida no `/admin` (Assinaturas → cancelar, se for o caso).
+- **Aviso perdido (a conta pagou e o plano não renovou):** `/admin` → Assinaturas → **Reconciliar
+  cobranças** (ou o botão da linha), ou, no terminal do contêiner:
+
+  ```bash
+  node dist/main/cli.js pagamento reconciliar
+  node dist/main/cli.js pagamento reconciliar --workspace 0123456789abcdef
+  ```
+
+  Consulta o Mercado Pago, corrige o que divergir e imprime só contagens. É seguro repetir: um
+  pagamento nunca renova duas vezes.
+- **Conta de chave de API** (sem e-mail) não assina online: a liberação dela continua manual, pelo
+  workspace (ver a seção do Drive).
+
+---
+
 ## Endpoints
 
 | Método | Rota | Auth | O que faz |

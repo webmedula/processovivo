@@ -3,12 +3,13 @@ import { z } from 'zod';
 import type { LocalizadorDeWorkspace } from '../../../application/services/LocalizadorDeWorkspace.js';
 import type { ServicoAssinaturas } from '../../../application/services/ServicoAssinaturas.js';
 import type { ServicoChavesApi } from '../../../application/services/ServicoChavesApi.js';
+import type { ServicoPagamentos } from '../../../application/services/ServicoPagamentos.js';
 import type {
   MudancasNoPlano,
   ServicoPlanos,
 } from '../../../application/services/ServicoPlanos.js';
 import { RECURSOS } from '../../../domain/entities/Plano.js';
-import type { RecursoDoPlano } from '../../../domain/entities/Plano.js';
+import type { CicloDoPlano, RecursoDoPlano } from '../../../domain/entities/Plano.js';
 import type { RepositorioAssinaturas } from '../../../domain/ports/RepositorioAssinaturas.js';
 import type { RepositorioUsuarios } from '../../../domain/ports/RepositorioUsuarios.js';
 import { VERSAO } from '../../../infrastructure/config/versao.js';
@@ -30,6 +31,9 @@ export const ROTA_ADMIN_CHAVE_REVOGAR = '/admin/api/chaves/:identificador/revoga
 export const ROTA_ADMIN_PLANOS = '/admin/api/planos';
 export const ROTA_ADMIN_PLANO = '/admin/api/planos/:codigo';
 export const ROTA_ADMIN_REGRAS = '/admin/api/regras';
+/** Cobrança recorrente (v0.44.0): o ambiente do gateway e a reconciliação. */
+export const ROTA_ADMIN_PAGAMENTO = '/admin/api/pagamento';
+export const ROTA_ADMIN_PAGAMENTO_RECONCILIAR = '/admin/api/pagamento/reconciliar';
 
 /** Toda rota administrativa, na ordem em que faz sentido ler — para `rotasPublicas`. */
 export const ROTAS_ADMIN: readonly string[] = [
@@ -46,6 +50,8 @@ export const ROTAS_ADMIN: readonly string[] = [
   ROTA_ADMIN_PLANOS,
   ROTA_ADMIN_PLANO,
   ROTA_ADMIN_REGRAS,
+  ROTA_ADMIN_PAGAMENTO,
+  ROTA_ADMIN_PAGAMENTO_RECONCILIAR,
 ];
 
 const corpoLiberar = z.object({
@@ -80,6 +86,7 @@ const corpoCriarPlano = z.object({
   disponivelParaContratacao: z.boolean(),
   precoMensalCentavos: precoEmCentavos,
   ordem: z.number().int().optional(),
+  ciclo: z.string().optional(),
 });
 
 const corpoAlterarPlano = z.object({
@@ -89,7 +96,10 @@ const corpoAlterarPlano = z.object({
   disponivelParaContratacao: z.boolean().optional(),
   precoMensalCentavos: precoEmCentavos.optional(),
   ordem: z.number().int().optional(),
+  ciclo: z.string().optional(),
 });
+
+const corpoReconciliar = z.object({ workspace: z.string().trim().min(1).max(40).optional() });
 
 const corpoRegras = z.object({
   diasDeTeste: z.number().int(),
@@ -112,6 +122,10 @@ export interface OpcoesRotasAdmin {
   readonly chavesApi: ServicoChavesApi;
   /** Confere o workspace informado por ID (conta de chave de API). */
   readonly localizador: LocalizadorDeWorkspace;
+  /** Cobrança recorrente (v0.44.0); `undefined` = desligada. */
+  readonly pagamentos?: ServicoPagamentos | undefined;
+  /** O servidor está em produção (NODE_ENV)? Só para avisar de token de TESTE em produção. */
+  readonly emProducao?: boolean;
 }
 
 /**
@@ -166,6 +180,8 @@ export function rotasDeAdmin(opcoes: OpcoesRotasAdmin): FastifyPluginAsync {
       servidor.post(ROTA_ADMIN_PLANOS, desligada);
       servidor.put(ROTA_ADMIN_PLANO, desligada);
       servidor.put(ROTA_ADMIN_REGRAS, desligada);
+      servidor.get(ROTA_ADMIN_PAGAMENTO, desligada);
+      servidor.post(ROTA_ADMIN_PAGAMENTO_RECONCILIAR, desligada);
       return;
     }
 
@@ -198,6 +214,11 @@ export function rotasDeAdmin(opcoes: OpcoesRotasAdmin): FastifyPluginAsync {
       ]);
       const nomes = new Map(catalogo.map((p) => [p.codigo, p.nome]));
       const agora = new Date();
+      // Cobrança recorrente: a mais recente de cada workspace (as listadas em ordem de criação).
+      const cobrancas = new Map<string, Awaited<ReturnType<ServicoPagamentos['cobrancaDe']>>>();
+      for (const c of (await opcoes.pagamentos?.todasAsCobrancas()) ?? []) {
+        cobrancas.set(c.workspace, c);
+      }
 
       const assinaturas = await Promise.all(
         todas.map(async (a) => {
@@ -213,6 +234,12 @@ export function rotasDeAdmin(opcoes: OpcoesRotasAdmin): FastifyPluginAsync {
             venceEm: a.venceEm.toISOString(),
             ehTeste: a.ehTeste,
             observacao: a.observacao ?? null,
+            // Origem da liberação: `mercadopago` quando há recorrência no gateway, senão `manual`.
+            // Só metadado de cobrança: nunca dado de cartão, CPF, nome ou e-mail do pagador.
+            origem: cobrancas.has(a.workspace) ? 'gateway' : 'manual',
+            pagamento: cobrancas.has(a.workspace)
+              ? pagamentoParaAdmin(cobrancas.get(a.workspace)!)
+              : null,
           };
         }),
       );
@@ -391,6 +418,8 @@ export function rotasDeAdmin(opcoes: OpcoesRotasAdmin): FastifyPluginAsync {
         disponivelParaContratacao: d.disponivelParaContratacao,
         precoMensalCentavos: d.precoMensalCentavos,
         ...(d.ordem !== undefined ? { ordem: d.ordem } : {}),
+        // Valor desconhecido passa daqui e é recusado, com nome, em `validarPlano`.
+        ...(d.ciclo !== undefined ? { ciclo: d.ciclo as CicloDoPlano } : {}),
       });
       void resposta.code(201);
       return plano;
@@ -418,6 +447,7 @@ export function rotasDeAdmin(opcoes: OpcoesRotasAdmin): FastifyPluginAsync {
             ? { precoMensalCentavos: d.precoMensalCentavos }
             : {}),
           ...(d.ordem !== undefined ? { ordem: d.ordem } : {}),
+          ...(d.ciclo !== undefined ? { ciclo: d.ciclo as CicloDoPlano } : {}),
         };
         return opcoes.planos.atualizar(req.params.codigo, mudancas);
       },
@@ -427,5 +457,61 @@ export function rotasDeAdmin(opcoes: OpcoesRotasAdmin): FastifyPluginAsync {
       const d = corpoRegras.parse(req.body);
       return opcoes.planos.definirRegras(d);
     });
+
+    /**
+     * O ambiente da cobrança recorrente, para o painel mostrar "TESTE" em destaque. Com token de teste
+     * em servidor de produção o aviso vem junto (o arranque só o aceita com
+     * `PROCESSOVIVO_PAGAMENTO_PERMITIR_TESTE=true`, e o operador precisa ver que é isso que está valendo).
+     */
+    servidor.get(ROTA_ADMIN_PAGAMENTO, async () => {
+      const p = opcoes.pagamentos;
+      if (!p) return { habilitado: false };
+      const teste = p.ambiente === 'teste' || p.ambiente === 'falso';
+      return {
+        habilitado: true,
+        gateway: p.nomeDoGateway,
+        ambiente: p.ambiente,
+        modoDeTeste: teste,
+        aviso: teste
+          ? opcoes.emProducao
+            ? 'ATENÇÃO: o servidor está em PRODUÇÃO com credenciais de TESTE. Nenhum pagamento é real.'
+            : 'Modo de TESTE: nenhum pagamento é real.'
+          : null,
+      };
+    });
+
+    /** Consulta o gateway e corrige divergências (aviso perdido). Sem corpo = todas as contas. */
+    servidor.post<{ Body: unknown }>(ROTA_ADMIN_PAGAMENTO_RECONCILIAR, async (req, resposta) => {
+      const p = opcoes.pagamentos;
+      if (!p) {
+        void resposta.code(404);
+        return {
+          erro: 'PAGAMENTO_DESLIGADO',
+          mensagem: 'A cobrança recorrente não está habilitada neste servidor.',
+        };
+      }
+      const d = corpoReconciliar.parse(req.body ?? {});
+      const workspace =
+        d.workspace !== undefined ? await opcoes.localizador.confirmar(d.workspace) : undefined;
+      return p.reconciliar(workspace !== undefined ? { workspace } : {});
+    });
+  };
+}
+
+function pagamentoParaAdmin(
+  c: NonNullable<Awaited<ReturnType<ServicoPagamentos['cobrancaDe']>>>,
+): Record<string, unknown> {
+  return {
+    gateway: c.gateway,
+    gatewayId: c.gatewayId ?? null,
+    estadoNoGateway: c.estado,
+    plano: c.plano,
+    ciclo: c.ciclo,
+    valorEmCentavos: c.valorEmCentavos,
+    proximaCobranca: c.proximaCobranca?.toISOString() ?? null,
+    meio: c.meio ?? null,
+    ultimoPagamento: c.ultimoPagamento ?? null,
+    ultimoPagamentoEm: c.ultimoPagamentoEm?.toISOString() ?? null,
+    renovacaoCanceladaEm: c.renovacaoCanceladaEm?.toISOString() ?? null,
   };
 }

@@ -6,6 +6,9 @@ import { GuardaDePecas } from '../../src/application/services/GuardaDePecas.js';
 import { ServicoLeitor } from '../../src/application/services/ServicoLeitor.js';
 import { ServicoPasta } from '../../src/application/services/ServicoPasta.js';
 import { ServicoDrive } from '../../src/application/services/ServicoDrive.js';
+import { ServicoPagamentos } from '../../src/application/services/ServicoPagamentos.js';
+import { RepositorioPagamentosSqlite } from '../../src/infrastructure/persistencia/sqlite/RepositorioPagamentosSqlite.js';
+import type { GatewayDePagamento } from '../../src/domain/ports/GatewayDePagamento.js';
 import { fonteDePecasDaPasta } from '../../src/application/services/fonteDePecasDaPasta.js';
 import { EstadosDeConexao } from '../../src/application/politicas/estadosDeConexao.js';
 import { RepositorioDoDriveSqlite } from '../../src/infrastructure/persistencia/sqlite/RepositorioDoDriveSqlite.js';
@@ -115,6 +118,16 @@ export class NotificadorEspiao implements Notificador {
 }
 
 export interface OpcoesAplicacaoDeTeste {
+  /**
+   * Liga a cobrança recorrente (v0.44.0) com o gateway dado (em geral o `GatewayFalso`). Sem isto,
+   * `pagamentos` fica indefinido: as rotas de checkout não existem e o webhook responde 404.
+   */
+  readonly pagamentos?: {
+    readonly gateway: GatewayDePagamento;
+    readonly urlBase?: string;
+    readonly emailDoOperador?: string;
+    readonly gerarReferencia?: () => string;
+  };
   /** Fonte da vigilância por OAB. Sem ela, `vigilancia` fica indefinida. */
   readonly buscaOab?: BuscaPorOabComPeriodo;
   readonly notificador?: Notificador;
@@ -467,6 +480,26 @@ export function aplicacaoDeTeste(
         })
       : undefined;
 
+  const pagamentos = opcoes.pagamentos
+    ? new ServicoPagamentos({
+        gateway: opcoes.pagamentos.gateway,
+        repositorio: new RepositorioPagamentosSqlite(db),
+        planos: repositorioPlanos,
+        assinaturas,
+        usuarios,
+        logger: loggerSilencioso,
+        notificador: opcoes.notificador ?? new NotificadorEspiao(),
+        urlBase: opcoes.pagamentos.urlBase ?? 'https://app.exemplo.test',
+        ...(opcoes.pagamentos.emailDoOperador
+          ? { emailDoOperador: opcoes.pagamentos.emailDoOperador }
+          : {}),
+        ...(opcoes.agora ? { agora: opcoes.agora } : {}),
+        ...(opcoes.pagamentos.gerarReferencia
+          ? { gerarReferencia: opcoes.pagamentos.gerarReferencia }
+          : {}),
+      })
+    : undefined;
+
   return {
     buscarProcessoPorNumero: new BuscarProcessoPorNumero(orquestrador),
     buscarProcessosPorOab: new BuscarProcessosPorOab(orquestrador),
@@ -482,6 +515,7 @@ export function aplicacaoDeTeste(
     leitor,
     pasta,
     drive,
+    pagamentos,
     agendadorLeitor: undefined,
     agendadorLimpezaLeitor: undefined,
     assinaturas,

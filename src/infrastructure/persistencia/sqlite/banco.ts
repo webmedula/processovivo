@@ -334,6 +334,59 @@ const ESQUEMA = [
      dias_de_carencia  INTEGER NOT NULL
    )`,
 
+  // Cobrança recorrente pelo gateway de pagamento (v0.44.0). TABELAS NOVAS: `assinaturas` não muda,
+  // porque a regra de acesso (vigência, carência, `exigir`) continua sendo só das datas dela — o
+  // gateway apenas CHAMA o mesmo `liberar` do fluxo manual quando um pagamento é aprovado.
+  //
+  // `referencia` é o `external_reference` enviado ao gateway: um identificador ALEATÓRIO e opaco que
+  // a gente gera e liga ao workspace aqui. Nunca o e-mail nem o id do workspace em claro. Nenhum dado
+  // de cartão, CPF, nome ou e-mail do pagador é gravado: só id, status, valor, datas e o tipo do meio.
+  `CREATE TABLE IF NOT EXISTS cobrancas_recorrentes (
+     referencia            TEXT PRIMARY KEY,
+     workspace             TEXT NOT NULL,
+     plano                 TEXT NOT NULL,
+     ciclo                 TEXT NOT NULL,
+     valor_centavos        INTEGER NOT NULL,
+     gateway               TEXT NOT NULL,
+     gateway_id            TEXT,
+     estado                TEXT NOT NULL,
+     proxima_cobranca      TEXT,
+     metodo                TEXT,
+     ultimo_pagamento_em   TEXT,
+     ultimo_pagamento      TEXT,
+     renovacao_cancelada_em TEXT,
+     criada_em             TEXT NOT NULL,
+     atualizada_em         TEXT NOT NULL
+   )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_cobrancas_gateway_id
+     ON cobrancas_recorrentes(gateway_id) WHERE gateway_id IS NOT NULL`,
+  `CREATE INDEX IF NOT EXISTS idx_cobrancas_workspace ON cobrancas_recorrentes(workspace)`,
+
+  // Pagamentos já processados. A chave primária É a idempotência: o mesmo evento chegando duas ou
+  // três vezes (o gateway repete, e entrega fora de ordem) tenta inserir a mesma chave e perde, e só
+  // quem insere renova o plano.
+  `CREATE TABLE IF NOT EXISTS pagamentos_processados (
+     chave          TEXT PRIMARY KEY,
+     referencia     TEXT NOT NULL,
+     workspace      TEXT NOT NULL,
+     resultado      TEXT NOT NULL,
+     valor_centavos INTEGER NOT NULL,
+     ocorrido_em    TEXT,
+     registrado_em  TEXT NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_pagamentos_referencia ON pagamentos_processados(referencia)`,
+
+  // Trilha de auditoria da cobrança: o que aconteceu e quando, sem dado pessoal nem do meio de pagamento.
+  `CREATE TABLE IF NOT EXISTS eventos_de_pagamento (
+     id          INTEGER PRIMARY KEY AUTOINCREMENT,
+     workspace   TEXT,
+     referencia  TEXT,
+     tipo        TEXT NOT NULL,
+     detalhe     TEXT,
+     criado_em   TEXT NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_eventos_pagamento_ref ON eventos_de_pagamento(referencia)`,
+
   // Jobs do leitor de peças (v0.30.0): um pedido de PDF combinado por linha.
   //
   // Colunas só para o que se FILTRA (dono, estado, quando retomar, quando
@@ -749,6 +802,9 @@ const COLUNAS_ACRESCENTADAS: ReadonlyArray<{
   { tabela: 'acompanhamentos', coluna: 'cumprido_ate', tipo: 'TEXT' },
   { tabela: 'acompanhamentos', coluna: 'cumprido_em', tipo: 'TEXT' },
   { tabela: 'acompanhamentos', coluna: 'cumprido_por', tipo: 'TEXT' },
+  // v0.44.0: o ciclo do plano. Padrão seguro `mensal` para toda linha já gravada (sem retrocarga: o
+  // valor padrão É a verdade de todo plano anterior).
+  { tabela: 'planos', coluna: 'ciclo', tipo: "TEXT NOT NULL DEFAULT 'mensal'" },
 ];
 
 function migrarColunas(db: DatabaseSync): void {

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { PREFIXO_DO_TOKEN_DE_TESTE } from '../adapters/pagamento/mercadoPago.constantes.js';
 import type { NivelLog } from '../../domain/ports/Logger.js';
 import type { NivelDeRaciocinio } from '../adapters/modelo/TransporteOpenRouter.js';
 import { ehApelidoOuVariante } from '../adapters/modelo/endpointsZdr.js';
@@ -256,6 +257,22 @@ const schema = z.object({
   PROCESSOVIVO_DRIVE_MAX_SIMULTANEOS: inteiroPositivo(2),
   // Pausa entre uma peça e outra do mesmo envio. Sem rajada: uma peça por vez.
   PROCESSOVIVO_DRIVE_PAUSA_ENTRE_PECAS_MS: z.coerce.number().int().min(0).default(400),
+
+  // --- Cobrança recorrente pelo gateway de pagamento (v0.44.0) ----------------------------------
+  // Nasce DESLIGADO: desligado = nenhuma rota de checkout e o webhook responde 404. Ligado, o
+  // arranque exige as credenciais (fail-closed) e nunca as imprime.
+  PROCESSOVIVO_PAGAMENTO_HABILITADO: booleano.default('false'),
+  // `mercadopago` (padrão) ou `falso` (só desenvolvimento: recusado em NODE_ENV=production).
+  PROCESSOVIVO_PAGAMENTO_GATEWAY: z.enum(['mercadopago', 'falso']).default('mercadopago'),
+  // Nomes nativos do Mercado Pago. Exigidos SÓ com o recurso habilitado. Nunca vão a log, resposta ou erro.
+  MERCADOPAGO_ACCESS_TOKEN: z.string().default(''),
+  MERCADOPAGO_WEBHOOK_SECRET: z.string().default(''),
+  // Token de TESTE em produção é quase sempre engano: só com isto em `true` o arranque aceita.
+  PROCESSOVIVO_PAGAMENTO_PERMITIR_TESTE: booleano.default('false'),
+  // Quem recebe o aviso de estorno e contestação (opcional; sem ele, só log).
+  PROCESSOVIVO_PAGAMENTO_AVISO_EMAIL: z.string().default(''),
+  // Endereço dos Termos de Uso (a tela de assinatura linka para ele; sem a variável, o texto sai sem link).
+  PROCESSOVIVO_TERMOS_URL: z.string().default(''),
 });
 
 export interface Config {
@@ -379,6 +396,20 @@ export interface Config {
     readonly maxSimultaneos: number;
     readonly pausaEntrePecasMs: number;
   };
+  readonly pagamento: {
+    readonly habilitado: boolean;
+    readonly gateway: 'mercadopago' | 'falso';
+    /** Vazios com o recurso desligado (e com o gateway falso). Nunca vão a log, resposta ou erro. */
+    readonly accessToken: string;
+    readonly segredoDoWebhook: string;
+    readonly emailDoOperador: string;
+    /** O servidor roda com `NODE_ENV=production`? Só para o /admin avisar de token de TESTE. */
+    readonly emProducao: boolean;
+    /** `PROCESSOVIVO_TERMOS_URL`, só se for http(s); senão vazio. */
+    readonly urlDosTermos: string;
+    /** `PROCESSOVIVO_URL_BASE` sem a barra final; vazio com o recurso desligado. */
+    readonly urlBase: string;
+  };
   readonly admin: {
     /** Vazio quando a área administrativa está desligada (as duas variáveis vazias). */
     readonly usuario: string;
@@ -470,6 +501,7 @@ export function carregarConfig(fonte: NodeJS.ProcessEnv = process.env): Config {
   const env = resultado.data;
   validarConfiguracaoDaIa(env);
   validarConfiguracaoDoDrive(env);
+  validarConfiguracaoDoPagamento(env, fonte['NODE_ENV'] === 'production');
   // Validada mesmo com a IA desligada: erro de digitação aparece no deploy, não no dia de ligar.
   lerWorkspacesLiberados(env.PROCESSOVIVO_IA_WORKSPACES_LIBERADOS);
   return {
@@ -596,6 +628,26 @@ export function carregarConfig(fonte: NodeJS.ProcessEnv = process.env): Config {
       maxSimultaneos: env.PROCESSOVIVO_DRIVE_MAX_SIMULTANEOS,
       pausaEntrePecasMs: env.PROCESSOVIVO_DRIVE_PAUSA_ENTRE_PECAS_MS,
     },
+    pagamento: {
+      habilitado: env.PROCESSOVIVO_PAGAMENTO_HABILITADO,
+      gateway: env.PROCESSOVIVO_PAGAMENTO_GATEWAY,
+      accessToken:
+        env.PROCESSOVIVO_PAGAMENTO_HABILITADO && env.PROCESSOVIVO_PAGAMENTO_GATEWAY === 'mercadopago'
+          ? env.MERCADOPAGO_ACCESS_TOKEN.trim()
+          : '',
+      segredoDoWebhook:
+        env.PROCESSOVIVO_PAGAMENTO_HABILITADO && env.PROCESSOVIVO_PAGAMENTO_GATEWAY === 'mercadopago'
+          ? env.MERCADOPAGO_WEBHOOK_SECRET.trim()
+          : '',
+      emailDoOperador: env.PROCESSOVIVO_PAGAMENTO_AVISO_EMAIL.trim(),
+      emProducao: fonte['NODE_ENV'] === 'production',
+      urlDosTermos: /^https?:\/\//i.test(env.PROCESSOVIVO_TERMOS_URL.trim())
+        ? env.PROCESSOVIVO_TERMOS_URL.trim()
+        : '',
+      urlBase: env.PROCESSOVIVO_PAGAMENTO_HABILITADO
+        ? env.PROCESSOVIVO_URL_BASE.trim().replace(/\/+$/, '')
+        : '',
+    },
     admin: {
       usuario: env.PROCESSOVIVO_ADMIN_USUARIO.trim(),
       senha: env.PROCESSOVIVO_ADMIN_SENHA,
@@ -626,6 +678,68 @@ function validarConfiguracaoDaIa(env: z.infer<typeof schema>): void {
     throw new Error(
       'Configuração inválida:\n  - PROCESSOVIVO_IA_MODELO: use o id de um modelo real (sem "~" nem ":")',
     );
+  }
+}
+
+/**
+ * Com a cobrança recorrente habilitada, o arranque exige tudo o que ela precisa — e diz o que falta,
+ * sem nunca trazer o valor de nenhuma credencial. Fail-closed: cobrança ligada sem credencial só
+ * mostraria erro na primeira assinatura de um cliente, e valor de exemplo passa por qualquer checagem
+ * de presença.
+ *
+ * Token de TESTE em produção é recusado (a cobrança "funcionaria" e ninguém pagaria de verdade) a não
+ * ser que `PROCESSOVIVO_PAGAMENTO_PERMITIR_TESTE=true` o torne proposital. O gateway `falso` nunca
+ * sobe em produção.
+ */
+function validarConfiguracaoDoPagamento(
+  env: z.infer<typeof schema>,
+  emProducao: boolean,
+): void {
+  if (!env.PROCESSOVIVO_PAGAMENTO_HABILITADO) return;
+  const problemas: string[] = [];
+  const base = env.PROCESSOVIVO_URL_BASE.trim().replace(/\/+$/, '');
+  if (base === '') {
+    problemas.push(
+      'PROCESSOVIVO_URL_BASE: obrigatória com PROCESSOVIVO_PAGAMENTO_HABILITADO=true ' +
+        '(o retorno do checkout e o aviso do gateway apontam para ela)',
+    );
+  } else if (
+    !/^https:\/\//i.test(base) &&
+    !/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(base)
+  ) {
+    problemas.push('PROCESSOVIVO_URL_BASE: o gateway só aceita endereço em https (ou localhost)');
+  }
+  if (env.PROCESSOVIVO_PAGAMENTO_GATEWAY === 'falso') {
+    if (emProducao) {
+      problemas.push(
+        'PROCESSOVIVO_PAGAMENTO_GATEWAY: "falso" é só para desenvolvimento e não sobe em produção',
+      );
+    }
+  } else {
+    const token = env.MERCADOPAGO_ACCESS_TOKEN.trim();
+    const segredo = env.MERCADOPAGO_WEBHOOK_SECRET.trim();
+    if (token === '') {
+      problemas.push('MERCADOPAGO_ACCESS_TOKEN: obrigatório com PROCESSOVIVO_PAGAMENTO_HABILITADO=true');
+    } else if (pareceValorDeExemplo(token)) {
+      problemas.push('MERCADOPAGO_ACCESS_TOKEN: parece um valor de exemplo; coloque o token real');
+    } else if (
+      emProducao &&
+      token.startsWith(PREFIXO_DO_TOKEN_DE_TESTE) &&
+      !env.PROCESSOVIVO_PAGAMENTO_PERMITIR_TESTE
+    ) {
+      problemas.push(
+        'MERCADOPAGO_ACCESS_TOKEN: é um token de TESTE e o servidor está em produção; use o de ' +
+          'produção, ou defina PROCESSOVIVO_PAGAMENTO_PERMITIR_TESTE=true se for proposital',
+      );
+    }
+    if (segredo === '') {
+      problemas.push('MERCADOPAGO_WEBHOOK_SECRET: obrigatória com PROCESSOVIVO_PAGAMENTO_HABILITADO=true');
+    } else if (pareceValorDeExemplo(segredo)) {
+      problemas.push('MERCADOPAGO_WEBHOOK_SECRET: parece um valor de exemplo; coloque a chave real');
+    }
+  }
+  if (problemas.length > 0) {
+    throw new Error(`Configuração inválida:\n${problemas.map((p) => `  - ${p}`).join('\n')}`);
   }
 }
 

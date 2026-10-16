@@ -6,6 +6,12 @@ import { GuardaDePecas } from '../../application/services/GuardaDePecas.js';
 import { ServicoLeitor } from '../../application/services/ServicoLeitor.js';
 import { ServicoPasta } from '../../application/services/ServicoPasta.js';
 import { ServicoDrive } from '../../application/services/ServicoDrive.js';
+import { ServicoPagamentos } from '../../application/services/ServicoPagamentos.js';
+import { GatewayFalso } from '../../infrastructure/adapters/pagamento/GatewayFalso.js';
+import { MercadoPagoAdapter } from '../../infrastructure/adapters/pagamento/MercadoPagoAdapter.js';
+import { TransporteComHttpClient as TransporteDoGatewayDePagamento } from '../../infrastructure/adapters/pagamento/TransporteDoGateway.js';
+import { RepositorioPagamentosSqlite } from '../../infrastructure/persistencia/sqlite/RepositorioPagamentosSqlite.js';
+import type { GatewayDePagamento } from '../../domain/ports/GatewayDePagamento.js';
 import { fonteDePecasDaPasta } from '../../application/services/fonteDePecasDaPasta.js';
 import { EstadosDeConexao } from '../../application/politicas/estadosDeConexao.js';
 import { GoogleDriveAdapter } from '../../infrastructure/adapters/drive/GoogleDriveAdapter.js';
@@ -141,6 +147,12 @@ export interface Aplicacao {
    * rotas respondem 501 e a tela não mostra nada.
    */
   readonly drive: ServicoDrive | undefined;
+  /**
+   * Cobrança recorrente pelo gateway de pagamento (v0.44.0). `undefined` com
+   * `PROCESSOVIVO_PAGAMENTO_HABILITADO=false` (o padrão): não há rota de checkout, o webhook
+   * responde 404 e a tela não mostra o botão "Assinar".
+   */
+  readonly pagamentos: ServicoPagamentos | undefined;
   /** Executor da fila do leitor (a cada minuto) e limpeza por prazo (a cada hora). */
   readonly agendadorLeitor: Agendador | undefined;
   readonly agendadorLimpezaLeitor: Agendador | undefined;
@@ -552,6 +564,15 @@ export function montarAplicacao(config: Config): Aplicacao {
     leitor,
     pasta,
     drive,
+    pagamentos: montarPagamentos(
+      config,
+      db,
+      logger,
+      assinaturas,
+      repositorioPlanos,
+      usuarios,
+      notificador,
+    ),
     agendadorLeitor,
     agendadorLimpezaLeitor,
     calendario,
@@ -585,6 +606,58 @@ export function montarAplicacao(config: Config): Aplicacao {
       db.close();
     },
   };
+}
+
+/**
+ * A cobrança recorrente (v0.44.0) — ou nada (desligada por padrão). A configuração já foi validada
+ * no arranque (`carregarConfig`): com o recurso ligado há URL base e credenciais reais.
+ *
+ * UM gateway e UM `HttpClient` para o processo inteiro. A porta é a única coisa que o resto do
+ * sistema conhece; só aqui se faz `new` do adapter.
+ */
+function montarPagamentos(
+  config: Config,
+  db: ReturnType<typeof abrirBanco>,
+  logger: Logger,
+  assinaturas: ServicoAssinaturas,
+  planos: RepositorioPlanosSqlite,
+  usuarios: RepositorioUsuarios,
+  notificador: Notificador,
+): ServicoPagamentos | undefined {
+  if (!config.pagamento.habilitado) return undefined;
+  const gateway: GatewayDePagamento =
+    config.pagamento.gateway === 'falso'
+      ? new GatewayFalso()
+      : new MercadoPagoAdapter({
+          accessToken: config.pagamento.accessToken,
+          segredoDoWebhook: config.pagamento.segredoDoWebhook,
+          transporte: new TransporteDoGatewayDePagamento(
+            new HttpClient({ tentativas: 1 }),
+            'mercadopago',
+          ),
+        });
+  logger.info('cobrança recorrente habilitada', {
+    gateway: gateway.nome,
+    ambiente: gateway.ambiente,
+  });
+  if (gateway.ambiente === 'teste') {
+    logger.warn('cobrança recorrente em modo TESTE: nenhum pagamento é real', {
+      gateway: gateway.nome,
+    });
+  }
+  return new ServicoPagamentos({
+    gateway,
+    repositorio: new RepositorioPagamentosSqlite(db),
+    planos,
+    assinaturas,
+    usuarios,
+    logger,
+    notificador,
+    urlBase: config.pagamento.urlBase,
+    ...(config.pagamento.emailDoOperador
+      ? { emailDoOperador: config.pagamento.emailDoOperador }
+      : {}),
+  });
 }
 
 /**

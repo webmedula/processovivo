@@ -7,6 +7,10 @@ import {
   EntradaNaoAnalisavelError,
   PrazoNaoCalculavelError,
   DriveRecusadoError,
+  AssinaturaDeWebhookInvalidaError,
+  GatewayDePagamentoIndisponivelError,
+  GatewayDePagamentoRecusouError,
+  PagamentoRecusadoError,
   ChaveApiNaoEncontradaError,
   PlanoJaExisteError,
   CredenciaisInvalidasError,
@@ -169,6 +173,46 @@ export function mapearErro(erro: unknown): RespostaDeErro {
     return {
       status: status[erro.motivo],
       corpo: { erro: erro.codigo, mensagem: erro.message, detalhes: { motivo: erro.motivo } },
+    };
+  }
+
+  // Cobrança recorrente (v0.44.0). O webhook inválido é 401 SEM dizer por quê (o motivo vai ao log);
+  // o resto traz `motivo` para a tela escolher a frase. Nada daqui chamou o gateway, exceto os dois
+  // últimos ramos, e nenhum repete texto do gateway.
+  if (erro instanceof AssinaturaDeWebhookInvalidaError) {
+    return { status: 401, corpo: { erro: erro.codigo, mensagem: erro.message } };
+  }
+  if (erro instanceof PagamentoRecusadoError) {
+    const status: Record<PagamentoRecusadoError['motivo'], number> = {
+      plano_sem_preco: 422,
+      plano_nao_vendavel: 422,
+      ciclo_nao_suportado: 422,
+      conta_sem_email: 403,
+      ja_assinante: 409,
+      sem_recorrencia: 409,
+      plano_desconhecido: 400,
+    };
+    return {
+      status: status[erro.motivo],
+      corpo: { erro: erro.codigo, mensagem: erro.message, detalhes: { motivo: erro.motivo } },
+    };
+  }
+  if (erro instanceof GatewayDePagamentoIndisponivelError) {
+    return {
+      status: 503,
+      corpo: {
+        erro: erro.codigo,
+        mensagem: 'O serviço de pagamento está indisponível no momento. Tente novamente em instantes.',
+      },
+    };
+  }
+  if (erro instanceof GatewayDePagamentoRecusouError) {
+    return {
+      status: 502,
+      corpo: {
+        erro: erro.codigo,
+        mensagem: 'O serviço de pagamento não aceitou o pedido. Tente novamente mais tarde.',
+      },
     };
   }
 

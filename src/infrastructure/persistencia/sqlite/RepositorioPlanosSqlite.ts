@@ -1,5 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite';
-import { ehRecurso } from '../../../domain/entities/Plano.js';
+import { ehCiclo, ehRecurso } from '../../../domain/entities/Plano.js';
 import type { Plano, RecursoDoPlano } from '../../../domain/entities/Plano.js';
 import { REGRAS_PADRAO } from '../../../domain/entities/RegrasDeAssinatura.js';
 import type { RegrasDeAssinatura } from '../../../domain/entities/RegrasDeAssinatura.js';
@@ -16,6 +16,7 @@ interface LinhaPlano {
   disponivel: number;
   preco_mensal_centavos: number | null;
   ordem: number;
+  ciclo: string | null;
 }
 
 function lerRecursos(json: string): RecursoDoPlano[] {
@@ -41,6 +42,8 @@ function paraDominio(l: LinhaPlano): Plano {
     disponivelParaContratacao: l.disponivel === 1,
     precoMensalCentavos: l.preco_mensal_centavos,
     ordem: l.ordem,
+    // Linha sem o ciclo (anterior à v0.44.0) ou com valor que o código não conhece = mensal.
+    ...(l.ciclo && ehCiclo(l.ciclo) && l.ciclo !== 'mensal' ? { ciclo: l.ciclo } : {}),
   };
 }
 
@@ -65,15 +68,16 @@ export class RepositorioPlanosSqlite implements RepositorioPlanos {
     this.db
       .prepare(
         `INSERT INTO planos
-           (codigo, nome, resumo, recursos, disponivel, preco_mensal_centavos, ordem)
-         VALUES (?, ?, ?, ?, ?, ?, ?)
+           (codigo, nome, resumo, recursos, disponivel, preco_mensal_centavos, ordem, ciclo)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (codigo) DO UPDATE SET
            nome                  = excluded.nome,
            resumo                = excluded.resumo,
            recursos              = excluded.recursos,
            disponivel            = excluded.disponivel,
            preco_mensal_centavos = excluded.preco_mensal_centavos,
-           ordem                 = excluded.ordem`,
+           ordem                 = excluded.ordem,
+           ciclo                 = excluded.ciclo`,
       )
       .run(
         p.codigo,
@@ -83,6 +87,7 @@ export class RepositorioPlanosSqlite implements RepositorioPlanos {
         p.disponivelParaContratacao ? 1 : 0,
         p.precoMensalCentavos,
         p.ordem,
+        p.ciclo ?? 'mensal',
       );
   }
 }

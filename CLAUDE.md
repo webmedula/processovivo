@@ -86,7 +86,8 @@ src/
 │   │                            #   destinatarioDaComunicacao (paraOUsuario),
 │   │                            #   AnaliseDoAto + vocabularioDaAnalise (IA),
 │   │                            #   prazoEmDias (calculadora, exceção v0.39.0) + atoDoDiario,
-│   │                            #   DestinoDePecas + nomeDoArquivoNoDrive (Drive, v0.42.0)
+│   │                            #   DestinoDePecas + nomeDoArquivoNoDrive (Drive, v0.42.0),
+│   │                            #   Pagamento (vocabulário de cobrança; ciclo em Plano, v0.44.0)
 │   ├── errors/                  # hierarquia de DomainError
 │   ├── ports/                   # ProcessoProvider, RepositorioAcompanhamentos, Cache…
 │   └── usecases/                # BuscarProcessoPorNumero, BuscarProcessosPorOab
@@ -103,11 +104,13 @@ src/
 │                                #   ServicoAnaliseDoAto (IA, por botão),
 │                                #   ServicoAvisoDoPrazo (aviso no calendário, v0.39.0),
 │                                #   ServicoResumoDoProcesso (resumo por IA, por botão, v0.40.0),
-│                                #   ServicoDrive + fonteDePecasDaPasta (envio ao Google Drive, v0.42.0)
+│                                #   ServicoDrive + fonteDePecasDaPasta (envio ao Google Drive, v0.42.0),
+│                                #   ServicoPagamentos (cobrança recorrente atrás da porta GatewayDePagamento, v0.44.0)
 ├── infrastructure/
 │   ├── adapters/
 │   │   ├── modelo/              # OpenRouter: transporte (ZDR), lista ZDR 24 h, analisador
 │   │   ├── drive/               # GoogleDriveAdapter (REST, sem SDK) + transporte injetável
+│   │   ├── pagamento/           # MercadoPagoAdapter (REST, sem SDK) + validação do webhook + GatewayFalso
 │   │   ├── datajud/             # adapter + mapper + schemas + aliases
 │   │   ├── djen/                # adapter + mapper + limpeza de HTML
 │   │   ├── mni/                 # adapter + envelope SOAP + mapper + MTOM
@@ -233,6 +236,9 @@ interface ProcessoProvider {
 | `AcompanhamentoNaoEncontradoError` | pediu algo sobre processo que ESTE workspace não acompanha | 404; mesma resposta para "não existe" e "é de outra conta" |
 | `EntradaNaoAnalisavelError` | a análise por IA não se aplica: `sem_plano` (403), `segredo_de_justica` (403), `texto_insuficiente` / `texto_indisponivel` (422), `limite_de_uso` (429), `ato_nao_encontrado` (409) | corpo com `detalhes.motivo`; NENHUM chamou o modelo |
 | `AnaliseNaoEncontradaError` | avaliar análise que não existe PARA ESTE workspace | 404; mesma resposta para "não existe" e "é de outra conta" |
+| `PagamentoRecusadoError` | a cobrança não se aplica: `plano_sem_preco` / `plano_nao_vendavel` / `ciclo_nao_suportado` (422), `conta_sem_email` (403, conta de chave de API), `ja_assinante` / `sem_recorrencia` (409), `plano_desconhecido` (400) | corpo com `detalhes.motivo`; NENHUM chamou o gateway |
+| `AssinaturaDeWebhookInvalidaError` | o aviso do gateway não se prova dele: assinatura ausente, malformada, adulterada, de outro recurso ou velha (> 5 min) | 401 SEM dizer o motivo (vai ao log); NADA é gravado nem consultado |
+| `GatewayDePagamentoIndisponivelError` / `GatewayDePagamentoRecusouError` | rede, timeout, 429, 5xx do gateway / 4xx definitivo ou resposta fora do contrato | 503 / 502 na API; no webhook, indisponível sobe (o gateway repete) e recusa vira 200 (repetir não adianta); nenhum carrega token, corpo ou dado do pagador |
 | `ZdrIndisponivelError` / `SemProvedorQueAtendaError` | o OpenRouter não achou provedor ZDR (passo da política de dados) / não achou por outro passo | são `ProviderIndisponivelError`; NUNCA repetir a chamada sem ZDR |
 | `AtoDaProvidenciaInvalidoError` | "marcar como cumprido" apontou para ato que saiu do retrato ou que não pede providência | 409; a tela recarrega e a pessoa decide de novo |
 | `PrazoNaoCalculavelError` | o aviso de prazo a partir da análise não se aplica: `sem_prazo_na_analise`, `ato_fora_do_diario`, `tipo_necessario` (422) ou `ato_nao_encontrado` (409) | corpo com `detalhes.motivo`; NENHUM chamou o modelo e nada foi criado |
@@ -316,6 +322,7 @@ npm run cli -- assinatura liberar ana@escritorio.com.br pecas 12 --obs "Pix 22/0
 npm run cli -- assinatura liberar --workspace <id> pecas 60   # conta de CHAVE de API (sem e-mail); em produção: node dist/main/cli.js …
 npm run cli -- assinatura cancelar ana@escritorio.com.br
 npm run cli -- assinatura avisar            # o mesmo que o agendador roda
+npm run cli -- pagamento reconciliar [--workspace <id>]   # confere o gateway e corrige aviso perdido (v0.44.0)
 
 npm run build && node scripts/ia-avaliacoes.mjs                         # avaliações da análise por IA (v0.38.0), só leitura
 node scripts/sonda-ia-ato.mjs --listar-modelos-zdr=deepseek               # provedores ZDR do modelo (lê a lista do OpenRouter)
@@ -455,8 +462,9 @@ Rota que dispensa autenticação precisa entrar em `rotasPublicas` ao registrar 
 plugin de autenticação: hoje `/health`, `/ready`, o console, as fontes do
 console (`/ui/fontes/:arquivo`), `/v1/contas`, `/v1/sessoes`,
 `/v1/senha/recuperar` e `/v1/senha/redefinir` (e as rotas `/admin`, que têm
-autenticação própria, e o feed do calendário `/calendario/feed/:arquivo`, que
-se autentica pelo token no próprio caminho). As quatro últimas
+autenticação própria, o feed do calendário `/calendario/feed/:arquivo`, que
+se autentica pelo token no próprio caminho, e o webhook do gateway de pagamento
+`/v1/pagamentos/webhook/mercadopago`, que se autentica pela assinatura do próprio aviso). As quatro últimas
 são públicas por necessidade — são as rotas de quem ainda não tem, ou acabou de
 perder, como se autenticar. Pedir chave nelas seria pedir a chave a quem perdeu
 a chave.
@@ -850,6 +858,53 @@ Não são detalhes — moldam o código.
   do ambiente (lista vazia = comportamento de sempre) e, ao abrir ao público,
   apague a variável, `lerWorkspacesLiberados`, `workspacesLiberados`
   e este item.
+- **Cobrança recorrente atrás de uma PORTA, o webhook como única fonte de verdade e o acesso sempre das
+  datas** (v0.44.0, parte 1 do Mercado Pago: assinatura recorrente por CARTÃO; Pix e boleto avulsos são a
+  parte 2). (1) **Porta `GatewayDePagamento`** (`domain/ports`): criar assinatura (devolve a URL do
+  checkout HOSPEDADO), consultar assinatura/cobrança/pagamento, listar as parcelas, cancelar a
+  renovação, validar o aviso — e um gancho opcional `criarCobrancaAvulsa` (parte 2) que nenhum adapter
+  implementa. O resto do sistema só a conhece; só o composition root faz `new MercadoPagoAdapter`.
+  `GatewayFalso` (sem rede) serve a teste e desenvolvimento e NÃO sobe em produção. (2) **O sistema nunca
+  recebe nem guarda dado de cartão**: o fluxo é "assinatura sem plano, pagamento pendente"
+  (`POST /preapproval` com `status: "pending"`), o comprador paga na página do gateway, e o corpo da
+  criação não tem campo de cartão. O e-mail da conta vai ao gateway (que o exige) e NÃO é gravado; as
+  tabelas `cobrancas_recorrentes`, `pagamentos_processados` e `eventos_de_pagamento` guardam só id,
+  estado, valor, datas e o TIPO do meio — há teste que falha se aparecer coluna de cartão, CPF, nome ou
+  e-mail. O vínculo com o workspace é o `external_reference`: 24 bytes aleatórios, de uso único, nunca
+  o e-mail nem o id do workspace. (3) **O webhook (`POST /v1/pagamentos/webhook/mercadopago`, pública) é
+  só um despertador**: a assinatura do aviso (`x-signature` = `ts=<s>,v1=<hex>`; texto
+  `id:<data.id>;request-id:<x-request-id>;ts:<ts>;`; HMAC-SHA256 hex; tempo constante; ±300 s; `data.id`
+  da query, sem minúsculas) é a fórmula do SDK oficial e inválida = 401 sem gravar nada; o CORPO nunca é
+  fonte — o id serve para CONSULTAR o gateway, e só a consulta muda o estado. Responde 200 em até 15 s
+  (o gateway espera 22; o resto segue em segundo plano). Falha do gateway sobe como 503 e o gateway
+  repete; recusa da consulta (id que não existe) vira 200. (4) **Um caminho só para dar acesso**:
+  pagamento aprovado chama `ServicoAssinaturas.liberar` — o MESMO do `assinatura liberar` manual, com
+  plano e meses do que foi contratado (nada aqui calcula vencimento). **Idempotente**: o pagamento é
+  registrado com chave única (`pg:<pagamento>`; as recusas da mesma parcela são `cob:<parcela>`) ANTES de
+  renovar e só quem registra renova; se a renovação falhar, o registro é desfeito para o aviso repetido
+  tentar de novo. Fora de ordem funciona: estorno antes da aprovação ocupa a chave e a aprovação depois
+  não renova pagamento devolvido. (5) **O acesso é das datas, não do gateway**: cancelar a renovação,
+  recusa de cartão e pausa NÃO derrubam o plano (ele vale até o fim do período já pago; a carência e os
+  avisos de vencimento seguem); recusa avisa a conta por e-mail (uma vez por parcela, sem dado do
+  cartão); cancelamento/pausa PELO GATEWAY avisa que nada mais renova; **estorno e contestação NÃO
+  revogam sozinhos**: registram, avisam o operador (`PROCESSOVIVO_PAGAMENTO_AVISO_EMAIL`, só log sem ele)
+  e esperam a decisão manual no /admin. `DELETE /v1/assinatura/recorrencia` encerra a renovação e deixa
+  o evento na trilha de auditoria (arrependimento de 7 dias é tratado fora do sistema). (6) **Preço é do
+  plano**: plano sem preço não se contrata (botão ausente, rota 422), assim como plano pausado e ciclo
+  não vendável (`CICLOS_VENDAVEIS`, hoje só `mensal`); o valor da cobrança sai SEMPRE do plano no
+  servidor (preço mensal × meses do ciclo), nunca do cliente. O ciclo é coluna nova em `planos`
+  (`mensal` por padrão, migração aditiva). Conta de CHAVE de API (sem e-mail) não assina online
+  (`conta_sem_email`, 403). (7) **Desligada por padrão** (`PROCESSOVIVO_PAGAMENTO_HABILITADO=false`):
+  nenhuma rota de checkout, o webhook responde 404 e a tela não mostra nada. Ligada, o arranque exige
+  `MERCADOPAGO_ACCESS_TOKEN`, `MERCADOPAGO_WEBHOOK_SECRET` (barrados por `pareceValorDeExemplo`) e
+  `PROCESSOVIVO_URL_BASE` em https, sem nunca ecoar valor. O token define o ambiente (`TEST-` = teste);
+  token de teste em produção só com `PROCESSOVIVO_PAGAMENTO_PERMITIR_TESTE=true`, e o /admin mostra
+  "TESTE" em destaque. (8) **Reconciliação sem agendador**: `pagamento reconciliar` (CLI) e o botão do
+  /admin consultam cada recorrência aberta e as parcelas dela e corrigem aviso perdido, pelo mesmo
+  caminho idempotente. (9) **Tudo o que é "jeito do Mercado Pago" mora em
+  `adapters/pagamento/mercadoPago.constantes.ts`** (caminhos, status, tópicos, tolerância, prefixo do
+  token): itens marcados `CONFIRMAR` vieram de documentação lida de segunda mão e se ajustam ali, num
+  lugar só. Tela em `ui/pagamento.ts` (`window.__pvPagamento`); `script.ts` não cresceu.
 - **Assinar uma conta de chave de API é pelo workspace, e nada mais muda** (v0.42.1). Chave não tem
   e-mail: `assinatura liberar|ver --workspace <id>` (CLI) e `/admin/api/workspaces/:workspace/assinatura`
   (admin) usam o MESMO `ServicoAssinaturas.liberar/resumo` — só o identificador difere, e nunca os dois
@@ -1790,8 +1845,8 @@ teste e carência** (v0.28.0), **visual novo a partir do logo** (v0.29.0),
 **ajustes dos advogados: Atualizações por processo, peças no topo, providência em 10 dias** (v0.32.1),
 **Pasta digital: backend (v0.33.0) e tela (v0.33.1) — peça aberta ao clique, guarda por peça, montar pasta completa, baixar marcadas**,
 **ato (movimentação) de cada peça na lista da Pasta, com descrição** (v0.33.2) **e o número da movimentação calculado pela posição do ato, com aviso de atos bloqueados** (v0.34.0; a 0.33.3 havia removido o número errado da 0.33.2), **calibração do número com o Projudi feita pelo advogado: exato quando provado, faixa ou estimado quando não** (v0.35.0), **página inicial: Últimas atualizações mostra só o trecho do texto e o trilho de peças baixadas não estoura a largura** (v0.35.1), **Pasta: número da movimentação no lugar do índice; página inicial: "detectado há N dias" e cartão "pede providência"** (v0.35.2), **Pasta: lista em altura total com avisos compactados** (v0.35.3), **Pasta: todas as movimentações na lista, inclusive as sem peça, com lacuna de numeração provada e lista mais larga** (v0.36.0), **página inicial: tabela de últimas atualizações, uma linha por processo, com filtros que contam no lugar dos cartões; histórico de peças baixadas dentro da Pasta** (v0.37.0), **tabela sem "+N anteriores", "Detectado" enxuto e descrição do ato sem repetição na exibição** (v0.37.1), **classe legível e agrupada no filtro, última movimentação sem repetição e carteira sem rodapé redundante** (v0.37.2), **Atualizações lista todos os processos acompanhados, período como filtro opcional e verificação por conta** (v0.37.3), **Atualizações abre em "Pedem providência", com a lista completa a um clique** (v0.37.4), **intimação do Diário pede providência por 30 dias ou até "cumprido", marca por ato, correção da avalanche de novidades e reparo só com dry-run** (v0.37.5), **conferência com o Projudi: sonda de diagnóstico só de leitura, linha do ato da providência, "Detectado" legível e intimação a outro destinatário** (v0.37.6), **"Analisar com IA": por botão, texto redigido, citação verificada, ZDR falhando fechado, desligada por padrão e só no plano IA** (v0.38.0; sonda de IA v1.2.0 e `ia-avaliacoes.mjs` v1.0.0), **exceção de teste fechado da IA por variável (`PROCESSOVIVO_IA_WORKSPACES_LIBERADOS`), a remover antes de abrir ao público** (v0.38.1), **log da análise por IA com status HTTP, passo e funil do roteamento** (v0.38.2), **análise por IA: rodízio por provedor depois de 429/5xx, sem `allow_fallbacks`** (v0.38.3), **análise por IA: formato da resposta em texto, sem `require_parameters` nem `response_format`, ZDR e lista intactas** (v0.38.4), **análise por IA: ações possíveis como providência sem citação, rejeição de ação que copia o trecho-chave e rodapé sem o nome do modelo** (v0.38.5), **IA como secretária, Etapa 1: prazo escrito no ato, calculadora de prazo (exceção registrada) e "Criar aviso no calendário" com prévia e confirmação** (v0.39.0), **IA como secretária, Etapa 2 (só o servidor): resumo do processo por IA, por clique, com verificação item a item e a contagem das providências do sistema que a IA não citou** (v0.40.0), **tela do resumo do processo: botão na capa, painel com estados, link do ato à linha do tempo e correção do prazo sem opção pré-marcada** (v0.40.1), **Atualizações: busca pelo número do processo, que respeita os filtros e diz quantos casam fora deles** (v0.41.0),
-**tela do processo sem os blocos "Pede providência" e "Última movimentação", Partes logo abaixo das peças** (v0.41.1), **Google Drive: conectar a conta do advogado e salvar as peças da Pasta digital numa pasta "Processo Vivo", por botão, escopo `drive.file`, desligado por padrão, planos Peças e IA** (v0.42.0), **Drive: o retorno do OAuth usa o workspace do `state` assinado e a conta de chave de API também conecta** (v0.42.1), **testes estáveis no CI e a volta do Google sem corrida no console** (v0.42.2), **Atualizações: situação como texto e caixa "Cumprido" como único controle, com aviso para desfazer** (v0.43.0),
-Dockerfile multi-stage, CI, 2554 testes.
+**tela do processo sem os blocos "Pede providência" e "Última movimentação", Partes logo abaixo das peças** (v0.41.1), **Google Drive: conectar a conta do advogado e salvar as peças da Pasta digital numa pasta "Processo Vivo", por botão, escopo `drive.file`, desligado por padrão, planos Peças e IA** (v0.42.0), **Drive: o retorno do OAuth usa o workspace do `state` assinado e a conta de chave de API também conecta** (v0.42.1), **testes estáveis no CI e a volta do Google sem corrida no console** (v0.42.2), **Atualizações: situação como texto e caixa "Cumprido" como único controle, com aviso para desfazer** (v0.43.0), **cobrança recorrente pelo Mercado Pago, parte 1: assinatura por cartão atrás da porta de pagamento, webhook idempotente, reconciliação e ciclo no plano** (v0.44.0),
+Dockerfile multi-stage, CI, 2697 testes.
 
 **Pasta digital (v0.33.0, backend):** `GET /v1/processos/:numero/pasta` (lista +
 estado de cada peça + intervalos de página + totais SEM filtro + procedência
@@ -1914,11 +1969,11 @@ pendurado em evento nenhum.
 modelado e fora de venda), teste de 14 dias no plano Peças para conta nova,
 carência de 7 dias, avisos por e-mail em três etapas e liberação manual pelo
 comando `assinatura` do CLI. (Desde a v0.28.0, planos, teste e carência são
-editáveis no painel; esses são os valores iniciais.) Gateway de pagamento **não** entra ainda: com zero
-assinantes, o Pix com liberação à mão ensina o domínio antes de apostar num
-provedor, e o gateway depois é um adapter atrás de uma porta.
+editáveis no painel; esses são os valores iniciais.) O gateway entrou na v0.44.0 como adapter atrás de
+uma porta (ver "Cobrança recorrente" em §8); a liberação manual (Pix por fora) continua funcionando
+exatamente como antes.
 
-**Não implementado (decisão consciente do MVP):** gateway de pagamento, convite de
+**Não implementado (decisão consciente do MVP):** Pix e boleto avulsos por período (parte 2 do gateway; a porta já tem o gancho), assinatura online para conta de chave de API, convite de
 membros para um mesmo escritório, crawler real, **cópia de backup fora do VPS**
 (as cópias automáticas ficam no mesmo volume do banco — protegem contra erro de
 operação, não contra perder o volume; o procedimento manual está em DEPLOY.md),
