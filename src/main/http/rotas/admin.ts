@@ -1,5 +1,6 @@
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
+import type { LocalizadorDeWorkspace } from '../../../application/services/LocalizadorDeWorkspace.js';
 import type { ServicoAssinaturas } from '../../../application/services/ServicoAssinaturas.js';
 import type { ServicoChavesApi } from '../../../application/services/ServicoChavesApi.js';
 import type {
@@ -19,6 +20,10 @@ export const ROTA_ADMIN_ASSINATURAS = '/admin/api/assinaturas';
 export const ROTA_ADMIN_ASSINATURA_POR_EMAIL = '/admin/api/assinaturas/:email';
 export const ROTA_ADMIN_ASSINATURA_LIBERAR = '/admin/api/assinaturas/:email/liberar';
 export const ROTA_ADMIN_ASSINATURA_CANCELAR = '/admin/api/assinaturas/:email/cancelar';
+/** Por workspace (conta de chave de API não tem e-mail): ver `LocalizadorDeWorkspace`. */
+export const ROTA_ADMIN_ASSINATURA_POR_WORKSPACE = '/admin/api/workspaces/:workspace/assinatura';
+export const ROTA_ADMIN_ASSINATURA_LIBERAR_POR_WORKSPACE =
+  '/admin/api/workspaces/:workspace/assinatura/liberar';
 export const ROTA_ADMIN_ASSINATURAS_AVISAR = '/admin/api/assinaturas/avisar';
 export const ROTA_ADMIN_CHAVES = '/admin/api/chaves';
 export const ROTA_ADMIN_CHAVE_REVOGAR = '/admin/api/chaves/:identificador/revogar';
@@ -33,6 +38,8 @@ export const ROTAS_ADMIN: readonly string[] = [
   ROTA_ADMIN_ASSINATURA_POR_EMAIL,
   ROTA_ADMIN_ASSINATURA_LIBERAR,
   ROTA_ADMIN_ASSINATURA_CANCELAR,
+  ROTA_ADMIN_ASSINATURA_POR_WORKSPACE,
+  ROTA_ADMIN_ASSINATURA_LIBERAR_POR_WORKSPACE,
   ROTA_ADMIN_ASSINATURAS_AVISAR,
   ROTA_ADMIN_CHAVES,
   ROTA_ADMIN_CHAVE_REVOGAR,
@@ -103,6 +110,8 @@ export interface OpcoesRotasAdmin {
   readonly repositorioAssinaturas: RepositorioAssinaturas;
   readonly usuarios: RepositorioUsuarios;
   readonly chavesApi: ServicoChavesApi;
+  /** Confere o workspace informado por ID (conta de chave de API). */
+  readonly localizador: LocalizadorDeWorkspace;
 }
 
 /**
@@ -146,6 +155,8 @@ export function rotasDeAdmin(opcoes: OpcoesRotasAdmin): FastifyPluginAsync {
       servidor.get(ROTA_ADMIN_ASSINATURAS, desligada);
       servidor.get(ROTA_ADMIN_ASSINATURA_POR_EMAIL, desligada);
       servidor.post(ROTA_ADMIN_ASSINATURA_LIBERAR, desligada);
+      servidor.get(ROTA_ADMIN_ASSINATURA_POR_WORKSPACE, desligada);
+      servidor.post(ROTA_ADMIN_ASSINATURA_LIBERAR_POR_WORKSPACE, desligada);
       servidor.post(ROTA_ADMIN_ASSINATURA_CANCELAR, desligada);
       servidor.post(ROTA_ADMIN_ASSINATURAS_AVISAR, desligada);
       servidor.get(ROTA_ADMIN_CHAVES, desligada);
@@ -243,6 +254,42 @@ export function rotasDeAdmin(opcoes: OpcoesRotasAdmin): FastifyPluginAsync {
         void resposta.code(201);
         return {
           email: req.params.email,
+          workspace: ws,
+          plano: a.plano,
+          nomeDoPlano: plano.nome,
+          venceEm: a.venceEm.toISOString(),
+        };
+      },
+    );
+
+    /**
+     * Assinatura de um workspace pelo ID — o caminho da conta de chave de API, que não tem
+     * e-mail. É o mesmo `liberar`/`resumo` do serviço: só muda o identificador. Id malformado
+     * é 400 e id que não é de conta nem de chave ativa é 404, sem gravar nada.
+     */
+    servidor.get<{ Params: { workspace: string } }>(
+      ROTA_ADMIN_ASSINATURA_POR_WORKSPACE,
+      async (req) => {
+        const ws = await opcoes.localizador.confirmar(req.params.workspace);
+        const resumo = await opcoes.assinaturas.resumo(ws);
+        return { workspace: ws, assinatura: resumo ?? null };
+      },
+    );
+
+    servidor.post<{ Params: { workspace: string }; Body: unknown }>(
+      ROTA_ADMIN_ASSINATURA_LIBERAR_POR_WORKSPACE,
+      async (req, resposta) => {
+        const dados = corpoLiberar.parse(req.body);
+        const ws = await opcoes.localizador.confirmar(req.params.workspace);
+        const a = await opcoes.assinaturas.liberar({
+          workspace: ws,
+          plano: dados.plano,
+          meses: dados.meses,
+          ...(dados.observacao !== undefined ? { observacao: dados.observacao } : {}),
+        });
+        const plano = await opcoes.planos.porCodigo(a.plano);
+        void resposta.code(201);
+        return {
           workspace: ws,
           plano: a.plano,
           nomeDoPlano: plano.nome,

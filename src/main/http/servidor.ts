@@ -5,7 +5,8 @@ import type { FastifyInstance } from 'fastify';
 import type { Config } from '../../infrastructure/config/env.js';
 import { VERSAO } from '../../infrastructure/config/versao.js';
 import type { Aplicacao } from '../factories/makeProcessoSearchService.js';
-import { validarChavesDeApi } from './chaves.js';
+import { LocalizadorDeWorkspace } from '../../application/services/LocalizadorDeWorkspace.js';
+import { validarChavesDeApi, workspaceDaChave } from './chaves.js';
 import { validarConfiguracaoAdmin } from './adminAuth.js';
 import { mapearErro } from './erros.js';
 import autenticacao from './plugins/autenticacao.js';
@@ -168,6 +169,11 @@ export function construirServidor(app: Aplicacao, config: Config): FastifyInstan
       repositorioAssinaturas: app.repositorioAssinaturas,
       usuarios: app.usuarios,
       chavesApi: app.chavesApi,
+      localizador: new LocalizadorDeWorkspace({
+        usuarios: app.usuarios,
+        chavesApi: app.chavesApi,
+        workspacesDeChavesDoEnv: config.http.chavesDeApi.map(workspaceDaChave),
+      }),
     }),
   );
 

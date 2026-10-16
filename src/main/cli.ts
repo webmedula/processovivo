@@ -17,6 +17,8 @@ import {
 } from '../infrastructure/persistencia/reparoDeNovidades.js';
 import type { RegistroDoReparo } from '../infrastructure/persistencia/reparoDeNovidades.js';
 import { abrirBanco } from '../infrastructure/persistencia/sqlite/banco.js';
+import { LocalizadorDeWorkspace } from '../application/services/LocalizadorDeWorkspace.js';
+import { workspaceDaChave } from './http/chaves.js';
 import { montarAplicacao } from './factories/makeProcessoSearchService.js';
 
 /**
@@ -41,8 +43,9 @@ Processo Vivo — consulta de processos judiciais
   npm run cli -- saude
   npm run cli -- backup [--manter 7]
   npm run cli -- email <destinatario>
-  npm run cli -- assinatura ver [email]
+  npm run cli -- assinatura ver [email | --workspace <id>]
   npm run cli -- assinatura liberar <email> <plano> <meses> [--obs "Pix 22/09"]
+  npm run cli -- assinatura liberar --workspace <id> <plano> <meses> [--obs "..."]
   npm run cli -- assinatura cancelar <email> [--obs "pediu por e-mail"]
   npm run cli -- assinatura avisar
   npm run cli -- novidades reparar [--aplicar] [--desfazer <arquivo>]
@@ -57,6 +60,10 @@ Exemplos:
   npm run cli -- email eu@meudominio.com.br
   npm run cli -- assinatura ver
   npm run cli -- assinatura liberar ana@escritorio.com.br pecas 12 --obs "Pix 22/09"
+  npm run cli -- assinatura liberar --workspace 0123456789abcdef pecas 60 --obs "chave do operador"
+
+Conta de chave de API não tem e-mail: use --workspace (o id aparece em /admin → Chaves de API).
+E-mail e --workspace nunca vêm juntos.
 
 O comando "pecas" lê a credencial do ambiente, NÃO do banco:
   MNI_ID_CONSULTANTE     CPF do advogado (só dígitos)
@@ -81,6 +88,7 @@ async function main(): Promise<number> {
       manter: { type: 'string' },
       capturar: { type: 'string' },
       obs: { type: 'string' },
+      workspace: { type: 'string' },
       aplicar: { type: 'boolean', default: false },
       desfazer: { type: 'string' },
       help: { type: 'boolean', short: 'h', default: false },
@@ -351,10 +359,54 @@ async function main(): Promise<number> {
         return achado?.usuario.workspace;
       }
 
+      /**
+       * `--workspace <id>` é a alternativa ao e-mail para a conta de CHAVE de API (que não tem
+       * e-mail). Nunca os dois, nunca nenhum; o id tem de ser de conta, chave ativa ou chave do
+       * `.env` — senão nada é gravado. Só muda o identificador: a regra de plano é a mesma.
+       */
+      async function alvoDa(
+        email: string | undefined,
+      ): Promise<
+        | { readonly ok: true; readonly ws: string; readonly rotulo: string }
+        | { readonly ok: false; readonly codigo: number }
+      > {
+        if (email && values.workspace !== undefined) {
+          console.error('Informe o e-mail OU --workspace, não os dois.');
+          return { ok: false, codigo: 1 };
+        }
+        if (values.workspace !== undefined) {
+          const localizador = new LocalizadorDeWorkspace({
+            usuarios: app.usuarios,
+            chavesApi: app.chavesApi,
+            workspacesDeChavesDoEnv: config.http.chavesDeApi.map(workspaceDaChave),
+          });
+          try {
+            const ws = await localizador.confirmar(values.workspace);
+            return { ok: true, ws, rotulo: `workspace ${ws}` };
+          } catch (erro) {
+            if (erro instanceof DomainError) {
+              console.error(erro.message);
+              return { ok: false, codigo: 2 };
+            }
+            throw erro;
+          }
+        }
+        if (!email) {
+          console.error('Informe o e-mail da conta ou --workspace <id>.');
+          return { ok: false, codigo: 1 };
+        }
+        const ws = await workspaceDe(email);
+        if (!ws) {
+          console.error(`Nenhuma conta com o e-mail ${email}.`);
+          return { ok: false, codigo: 2 };
+        }
+        return { ok: true, ws, rotulo: email };
+      }
+
       if (acao === 'ver') {
         const email = args[1];
 
-        if (!email) {
+        if (!email && values.workspace === undefined) {
           const todas = await app.repositorioAssinaturas.todas();
           if (todas.length === 0) {
             console.log('Nenhuma assinatura cadastrada.');
@@ -374,17 +426,15 @@ async function main(): Promise<number> {
           return 0;
         }
 
-        const ws = await workspaceDe(email);
-        if (!ws) {
-          console.error(`Nenhuma conta com o e-mail ${email}.`);
-          return 2;
-        }
+        const alvo = await alvoDa(email);
+        if (!alvo.ok) return alvo.codigo;
+        const { ws } = alvo;
         const resumo = await app.assinaturas.resumo(ws);
         if (!resumo) {
-          console.log(`${email} não tem assinatura (workspace ${ws}).`);
+          console.log(`${alvo.rotulo} não tem assinatura (workspace ${ws}).`);
           return 0;
         }
-        console.log(`conta ......... ${email}`);
+        console.log(`conta ......... ${email ?? '(chave de API, sem e-mail)'}`);
         console.log(`workspace ..... ${ws}`);
         console.log(
           `plano ......... ${resumo.nomeDoPlano}${resumo.ehTeste ? ' (teste)' : ''}`,
@@ -397,11 +447,21 @@ async function main(): Promise<number> {
       }
 
       if (acao === 'liberar') {
-        const [, email, plano, meses] = args;
-        if (!email || !plano || !meses) {
+        // Com --workspace não há e-mail: os posicionais são <plano> <meses>. Um terceiro
+        // posicional ali é o e-mail sobrando — erro, nunca "escolha um dos dois".
+        const porWorkspace = values.workspace !== undefined;
+        const email = porWorkspace ? undefined : args[1];
+        const plano = porWorkspace ? args[1] : args[2];
+        const meses = porWorkspace ? args[2] : args[3];
+        if (porWorkspace && args.length > 3) {
+          console.error('Informe o e-mail OU --workspace, não os dois.');
+          return 1;
+        }
+        if ((!email && !porWorkspace) || !plano || !meses) {
           const codigos = (await app.planos.listar()).map((p) => p.codigo);
           console.error(
             'Uso: assinatura liberar <email> <plano> <meses>\n' +
+              '  ou: assinatura liberar --workspace <id> <plano> <meses>\n' +
               `Planos: ${codigos.join(', ')}`,
           );
           return 1;
@@ -423,11 +483,9 @@ async function main(): Promise<number> {
           );
         }
 
-        const ws = await workspaceDe(email);
-        if (!ws) {
-          console.error(`Nenhuma conta com o e-mail ${email}.`);
-          return 2;
-        }
+        const alvo = await alvoDa(email);
+        if (!alvo.ok) return alvo.codigo;
+        const ws = alvo.ws;
         const a = await app.assinaturas.liberar({
           workspace: ws,
           plano,
@@ -435,8 +493,16 @@ async function main(): Promise<number> {
           ...(values.obs ? { observacao: values.obs } : {}),
         });
         console.log(
-          `${email}: plano ${detalhes.nome}, vence em ${formatarData(a.venceEm)}.`,
+          `${alvo.rotulo}: plano ${detalhes.nome}, vence em ${formatarData(a.venceEm)}.`,
         );
+        if (porWorkspace) {
+          // Assinatura de chave de API passa a valer de verdade: vencida a carência, o workspace
+          // é barrado em TUDO (402), e não há e-mail de aviso porque não há conta. Anote a data.
+          console.log(
+            'ATENÇÃO: este workspace não tem e-mail, então NÃO recebe aviso de vencimento. ' +
+              'Depois do vencimento e da carência o acesso é bloqueado (402). Anote a data.',
+          );
+        }
         return 0;
       }
 

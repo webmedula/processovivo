@@ -607,8 +607,30 @@ Drive** (e deixe **Peças do processo** marcado: o Drive envia o que a Pasta dig
 O plano Acompanhamento não tem o recurso. Conta **sem assinatura** (chave de API) também não: a
 regra de plano é a mesma para quem entra por cookie e por chave. Conta de chave só usa o Drive se o
 workspace dela (o identificador de 16 caracteres da chave) tiver uma assinatura de plano Peças ou IA.
-A liberação de assinatura pelo `/admin` e pelo CLI é por **e-mail de conta**, e uma chave não tem
-e-mail: ver a nota sobre isso na entrega da v0.42.1.
+Uma chave não tem e-mail, então a liberação é **pelo workspace** (v0.42.1):
+
+**Onde está o id do workspace:** `/admin` → **Chaves de API** → coluna **Workspace** (16
+caracteres hexadecimais; selecione e copie). Na aba **Assinaturas**, a linha de uma chave que já tem
+plano mostra o mesmo id ao lado de "(sem conta — chave de API)". Chave do arquivo de configuração
+(`PROCESSOVIVO_API_KEYS`) não aparece na lista: o id dela é o `workspace` que `node dist/main/cli.js
+assinatura ver` (sem argumento) mostra quando ela já tem assinatura, ou o da chave emitida no
+`/admin`, que é o caminho recomendado.
+
+**Liberar, em produção** (no terminal do contêiner; troque o id, o plano e os meses; o id abaixo é
+sintético):
+
+```bash
+node dist/main/cli.js assinatura liberar --workspace 0123456789abcdef pecas 60 --obs "chave do operador"
+node dist/main/cli.js assinatura ver --workspace 0123456789abcdef
+```
+
+Ou, no `/admin` → **Assinaturas** → campo **Workspace** (deixe o e-mail vazio) → **Liberar /
+renovar**. Nunca os dois campos juntos. O id precisa ser de uma conta, de uma chave emitida e não
+revogada ou de uma chave do `.env`; senão nada é gravado.
+
+**Cuidado com o vencimento:** assinatura de chave **vence como qualquer outra**. Passada a
+carência, o workspace é barrado em tudo (402), inclusive consulta e acompanhamento, e **não sai
+e-mail de aviso** (não há conta). Use `60` meses e anote a data que o comando imprime.
 **O plano IA continua fora de venda** — o recurso novo não muda isso.
 
 O retorno do Google (`/v1/drive/retorno`) é uma navegação do navegador, sem `x-api-key` nem cookie:

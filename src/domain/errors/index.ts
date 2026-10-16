@@ -339,6 +339,23 @@ export class AssinaturaInativaError extends DomainError {
 }
 
 /**
+ * O workspace informado à mão (CLI/admin) não serve para liberar assinatura: forma errada
+ * (`malformado`) ou nenhuma conta, chave ativa ou chave do `.env` com esse id (`inexistente`).
+ * Nada é gravado. A mensagem não repete o valor digitado.
+ */
+export class WorkspaceInvalidoError extends DomainError {
+  readonly codigo = 'WORKSPACE_INVALIDO';
+
+  constructor(readonly motivo: 'malformado' | 'inexistente') {
+    super(
+      motivo === 'malformado'
+        ? 'Workspace malformado: use o identificador de 16 (chave) ou 32 (conta) caracteres hexadecimais.'
+        : 'Nenhuma conta nem chave de API ativa tem esse workspace.',
+    );
+  }
+}
+
+/**
  * Código de plano que não existe.
  *
  * Só aparece por erro de digitação no comando de liberação ou por banco

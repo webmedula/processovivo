@@ -37,6 +37,24 @@ Conta de chave continua precisando de uma assinatura de plano Peças ou IA para 
 (`temRecursoSemExcecao`, sem a exceção do "workspace sem assinatura passa livre"). Não há exceção
 por tipo de autenticação.
 
+### Assinatura de uma conta de chave de API: `--workspace <id>`
+
+Chave de API não tem e-mail, e todo comando de liberação achava a conta por e-mail: não havia como
+dar o plano Peças/IA (e, com ele, o Drive) a uma conta de chave. Agora:
+
+- **CLI:** `assinatura liberar --workspace <id> <plano> <meses>` e `assinatura ver --workspace <id>`.
+  E-mail e `--workspace` juntos, ou nenhum dos dois, é erro claro e não grava nada.
+- **Admin:** `GET /admin/api/workspaces/:workspace/assinatura` e
+  `POST /admin/api/workspaces/:workspace/assinatura/liberar`, e o campo **Workspace** em
+  `/admin` → Assinaturas. A aba **Chaves de API** passou a mostrar a coluna **Workspace**.
+- **O id é conferido** (`LocalizadorDeWorkspace`): 16 hex (chave) ou 32 hex (conta) e tem de ser de
+  uma conta, de uma chave emitida e não revogada ou de uma chave do `.env`. Malformado = 400,
+  inexistente = 404 (`WORKSPACE_INVALIDO`, sem repetir o valor digitado); nada é gravado.
+- **Nenhuma regra de plano mudou.** É a mesma `liberar`/`resumo`, só com outro identificador. Plano
+  Peças/IA inclui todos os recursos que existem hoje; o plano Acompanhamento continua sem o Drive.
+- **Atenção:** a assinatura de uma chave vence como qualquer outra. Passada a carência, o
+  workspace é barrado em tudo (402) e não sai aviso (não há e-mail). O comando avisa disso.
+
 ### Projeto
 
 - `npm run check` agora inclui `npm run build` (o build de produção não tem a lib DOM e já falhou
@@ -47,7 +65,9 @@ por tipo de autenticação.
 
 State com workspace conecta sem cookie nem chave; state reutilizado, adulterado e inventado
 recusados; cookie de outro workspace recusado; fluxo completo da conta de chave (iniciar, retorno,
-"conectado", desconectar); regressão da conta com cookie.
+"conectado", desconectar); regressão da conta com cookie. Liberar e ver por workspace (CLI de verdade
+com banco temporário e rota admin), os dois identificadores, nenhum, id malformado, inexistente e de
+chave revogada, `salvarNoDrive` só depois da liberação, e a liberação por e-mail como antes.
 
 ---
 
