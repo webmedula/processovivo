@@ -121,7 +121,6 @@ describe.skipIf(sem)('Google Drive — no navegador', { timeout: 90_000 }, () =>
     const { url } = await drive.iniciarConexao(WS);
     const estado = new URL(url).searchParams.get('state') as string;
     const r = await drive.concluirConexao({
-      workspace: WS,
       codigo: CODIGO_DO_GOOGLE,
       estado,
     });

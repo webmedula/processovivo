@@ -24,7 +24,7 @@ import { rotasDeVigilancia } from './rotas/vigilancias.js';
 import { rotasDePecas } from './rotas/pecas.js';
 import { rotasDoLeitor } from './rotas/leitor.js';
 import { rotasDaPasta } from './rotas/pasta.js';
-import { rotasDoDrive } from './rotas/drive.js';
+import { ROTA_DRIVE_RETORNO, rotasDoDrive } from './rotas/drive.js';
 import { rotasDoPainel } from './rotas/painel.js';
 import { rotasDaAnaliseIA } from './rotas/analiseIA.js';
 import { rotasDoResumoIA } from './rotas/resumoIA.js';
@@ -128,6 +128,8 @@ export function construirServidor(app: Aplicacao, config: Config): FastifyInstan
       // O feed ICS se autentica pelo PRÓPRIO token, na URL: o Google Agenda e o
       // Outlook não mandam cookie nem chave de API. Sem token válido, 404.
       ROTA_FEED_PUBLICO,
+      // Volta do Google: navegação sem cookie nem chave; autentica-se pelo `state` assinado.
+      ROTA_DRIVE_RETORNO,
       ...ROTAS_ADMIN,
     ],
   });

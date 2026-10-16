@@ -84,6 +84,17 @@ describe('ServicoDrive — conexão', () => {
     expect(criacao?.detalhe?.['idConhecido']).toBeUndefined();
   });
 
+  it('o dono da conexão é o workspace DO STATE: sem sessão nenhuma, os tokens vão para ele', async () => {
+    const c = montarCenario([peca(1)]);
+    const { url } = await c.servico.iniciarConexao(WS);
+    const estado = new URL(url).searchParams.get('state') as string;
+    expect(
+      (await c.servico.concluirConexao({ codigo: CODIGO_DO_GOOGLE, estado })).ok,
+    ).toBe(true);
+    expect((await c.servico.visao(WS)).estado).toBe('conectado');
+    expect((await c.servico.visao('ws-b')).estado).toBe('desconectado');
+  });
+
   it('state de outro workspace, reutilizado, expirado ou inventado: recusado e o Google NÃO é chamado', async () => {
     const c = montarCenario([peca(1)]);
     const { url } = await c.servico.iniciarConexao(WS);
@@ -91,15 +102,13 @@ describe('ServicoDrive — conexão', () => {
 
     // De outra conta.
     expect(
-      await c.servico.concluirConexao({ workspace: 'ws-b', codigo: 'x', estado }),
+      await c.servico.concluirConexao({ workspaceDaSessao: 'ws-b', codigo: 'x', estado }),
     ).toEqual({
       ok: false,
       motivo: 'estado_invalido',
     });
     // Inventado.
-    expect(
-      await c.servico.concluirConexao({ workspace: WS, codigo: 'x', estado: 'a.b' }),
-    ).toEqual({
+    expect(await c.servico.concluirConexao({ codigo: 'x', estado: 'a.b' })).toEqual({
       ok: false,
       motivo: 'estado_invalido',
     });
@@ -109,15 +118,12 @@ describe('ServicoDrive — conexão', () => {
     expect(
       (
         await c.servico.concluirConexao({
-          workspace: WS,
           codigo: CODIGO_DO_GOOGLE,
           estado,
         })
       ).ok,
     ).toBe(true);
-    expect(
-      await c.servico.concluirConexao({ workspace: WS, codigo: 'x', estado }),
-    ).toEqual({
+    expect(await c.servico.concluirConexao({ codigo: 'x', estado })).toEqual({
       ok: false,
       motivo: 'estado_invalido',
     });
@@ -128,9 +134,7 @@ describe('ServicoDrive — conexão', () => {
       'state',
     ) as string;
     c.relogio.avancar(11 * 60_000);
-    expect(
-      await c.servico.concluirConexao({ workspace: WS, codigo: 'x', estado: novo }),
-    ).toEqual({
+    expect(await c.servico.concluirConexao({ codigo: 'x', estado: novo })).toEqual({
       ok: false,
       motivo: 'estado_invalido',
     });
@@ -142,9 +146,7 @@ describe('ServicoDrive — conexão', () => {
     c.destino.escopoConcedido = false;
     const { url } = await c.servico.iniciarConexao(WS);
     const estado = new URL(url).searchParams.get('state') as string;
-    expect(
-      await c.servico.concluirConexao({ workspace: WS, codigo: 'x', estado }),
-    ).toEqual({
+    expect(await c.servico.concluirConexao({ codigo: 'x', estado })).toEqual({
       ok: false,
       motivo: 'escopo_negado',
     });
@@ -156,10 +158,8 @@ describe('ServicoDrive — conexão', () => {
     const c = montarCenario([peca(1)]);
     const { url } = await c.servico.iniciarConexao(WS);
     const estado = new URL(url).searchParams.get('state') as string;
-    c.servico.descartarConexao(WS, estado);
-    expect(
-      await c.servico.concluirConexao({ workspace: WS, codigo: 'x', estado }),
-    ).toEqual({
+    c.servico.descartarConexao(estado);
+    expect(await c.servico.concluirConexao({ codigo: 'x', estado })).toEqual({
       ok: false,
       motivo: 'estado_invalido',
     });
@@ -171,9 +171,7 @@ describe('ServicoDrive — conexão', () => {
     const { url } = await c.servico.iniciarConexao(WS);
     const estado = new URL(url).searchParams.get('state') as string;
     c.plano = false;
-    expect(
-      await c.servico.concluirConexao({ workspace: WS, codigo: 'x', estado }),
-    ).toEqual({
+    expect(await c.servico.concluirConexao({ codigo: 'x', estado })).toEqual({
       ok: false,
       motivo: 'sem_plano',
     });

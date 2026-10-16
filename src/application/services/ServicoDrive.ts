@@ -341,14 +341,18 @@ export class ServicoDrive {
    * conferidos AQUI; nada deles vai a log.
    */
   async concluirConexao(entrada: {
-    readonly workspace: string;
     readonly codigo: string;
     readonly estado: string;
+    /** Workspace da sessão por cookie que fez a navegação, se houver. Chave de API não vem aqui. */
+    readonly workspaceDaSessao?: string;
   }): Promise<ResultadoDaConexao> {
-    const { workspace } = entrada;
+    let workspace: string;
     let verificador: string;
     try {
-      verificador = this.estados.consumir(entrada.estado, workspace).verificador;
+      ({ workspace, verificador } = this.estados.consumir(
+        entrada.estado,
+        entrada.workspaceDaSessao,
+      ));
     } catch (erro) {
       if (erro instanceof EstadoDeConexaoRecusado) {
         this.logger.warn('retorno do Drive recusado', { motivo: erro.motivo });
@@ -390,9 +394,9 @@ export class ServicoDrive {
    * O advogado recusou na tela do Google (ou a volta veio sem código): só GASTA o `state` — ele
    * não pode ficar valendo —, sem chamar o Google. Nunca lança.
    */
-  descartarConexao(workspace: string, estado: string): void {
+  descartarConexao(estado: string, workspaceDaSessao?: string): void {
     try {
-      this.estados.consumir(estado, workspace);
+      this.estados.consumir(estado, workspaceDaSessao);
     } catch {
       // Já usado, vencido ou de outra conta: não há nada a gastar.
     }

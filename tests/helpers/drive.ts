@@ -452,7 +452,6 @@ export function montarCenario(
       const { url } = await cenario.servico.iniciarConexao(workspace);
       const estado = new URL(url).searchParams.get('state') as string;
       const r = await cenario.servico.concluirConexao({
-        workspace,
         codigo: CODIGO_DO_GOOGLE,
         estado,
       });

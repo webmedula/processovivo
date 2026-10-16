@@ -59,6 +59,12 @@ describe('state do OAuth do Drive', () => {
     expect(recusa(() => estados.consumir(estado, 'ws-a'))).toBe('usado');
   });
 
+  it('o workspace vem da parte assinada: consumir sem esperado devolve o dono do state', () => {
+    const { estados } = montar();
+    const { estado } = estados.emitir('ws-a');
+    expect(estados.consumir(estado).workspace).toBe('ws-a');
+  });
+
   it('state de outro workspace é recusado, e NÃO é gasto (não dá para sabotar a conexão alheia)', () => {
     const { estados } = montar();
     const { estado } = estados.emitir('ws-a');

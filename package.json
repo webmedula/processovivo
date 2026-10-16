@@ -1,6 +1,6 @@
 {
   "name": "processovivo",
-  "version": "0.42.0",
+  "version": "0.42.1",
   "private": true,
   "description": "SaaS de consulta e acompanhamento de processos judiciais nos tribunais brasileiros",
   "type": "module",
@@ -27,7 +27,7 @@
     "lint:fix": "eslint . --fix",
     "format": "prettier --write \"**/*.{ts,json,md}\"",
     "format:check": "prettier --check \"**/*.{ts,json,md}\"",
-    "check": "npm run typecheck && npm run lint && npm run test"
+    "check": "npm run typecheck && npm run lint && npm run test && npm run build"
   },
   "dependencies": {
     "@fastify/cors": "^10.1.0",

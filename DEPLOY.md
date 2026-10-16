@@ -429,8 +429,8 @@ não bater, a cópia é apagada e o erro vai para o log. Backup que ninguém abr
 Para tirar uma cópia na hora, fora do horário:
 
 ```bash
-npm run cli -- backup
-npm run cli -- backup --manter 14
+node dist/main/cli.js backup
+node dist/main/cli.js backup --manter 14
 ```
 
 ### O limite honesto: isso não é backup ainda
@@ -604,8 +604,16 @@ retrocarga o acrescenta uma vez aos planos já gravados). Para dar a uma conta:
 `/admin` → **Assinaturas** → procure o e-mail → **Liberar plano** → escolha **Peças** (ou IA).
 Para dar a um plano que você criou: `/admin` → **Planos** → editar → marque **Salvar no Google
 Drive** (e deixe **Peças do processo** marcado: o Drive envia o que a Pasta digital guarda).
-O plano Acompanhamento não tem o recurso. Conta **sem assinatura** (chave de API) também não.
+O plano Acompanhamento não tem o recurso. Conta **sem assinatura** (chave de API) também não: a
+regra de plano é a mesma para quem entra por cookie e por chave. Conta de chave só usa o Drive se o
+workspace dela (o identificador de 16 caracteres da chave) tiver uma assinatura de plano Peças ou IA.
+A liberação de assinatura pelo `/admin` e pelo CLI é por **e-mail de conta**, e uma chave não tem
+e-mail: ver a nota sobre isso na entrega da v0.42.1.
 **O plano IA continua fora de venda** — o recurso novo não muda isso.
+
+O retorno do Google (`/v1/drive/retorno`) é uma navegação do navegador, sem `x-api-key` nem cookie:
+o dono da conexão sai do `state` assinado, emitido por `POST /v1/drive/conexao` (esse sim
+autenticado). Por isso a conexão também se completa para conta de chave de API.
 
 ---
 
@@ -624,7 +632,7 @@ O plano Acompanhamento não tem o recurso. Conta **sem assinatura** (chave de AP
 | POST | `/v1/senha/redefinir` | não | troca a senha pelo link e já entra |
 | GET | `/v1/drive` | sim | Google Drive: `{habilitado:false}` se desligado; senão o estado da conexão |
 | POST | `/v1/drive/conexao` | sim | devolve o endereço de autorização do Google |
-| GET | `/v1/drive/retorno` | sim (sessão) | volta do Google; **sempre** redireciona para a tela, sem token |
+| GET | `/v1/drive/retorno` | não — o `state` assinado manda | volta do Google (navegação, sem cookie nem chave); **sempre** redireciona para a tela, sem token |
 | DELETE | `/v1/drive` | sim | desconecta (revoga e apaga a autorização) |
 | POST | `/v1/processos/:numero/pasta/drive` | sim | salva peças no Drive (só chaves de peças da pasta); 202 + id |
 | GET/DELETE | `/v1/drive/jobs/:id` | sim | progresso / cancelar o envio |
@@ -772,7 +780,7 @@ dados sumiram.
 ### 1. Tire um backup antes de qualquer coisa
 
 ```bash
-npm run cli -- backup
+node dist/main/cli.js backup
 ```
 
 Ou, se preferir, apenas confirme que a cópia automática de hoje está lá em
