@@ -143,12 +143,14 @@ function montarPainel(){
               '<button class="bt bt2" id="pasta-todas">Todas</button>'+
               '<button class="bt bt2" id="pasta-nenhuma">Nenhuma</button>'+
               '<button class="bt" id="pasta-baixar-pdf" disabled>Baixar PDF</button>'+
+              '<button class="bt bt2" id="pasta-drive-bt" hidden>Salvar todas no Drive</button>'+
             '</div>'+
             '<div class="chips" id="pasta-atalhos" role="group" aria-label="Marcar peças por tipo ou ver só as movimentações sem peça"></div>'+
             '<div class="contagem" id="pasta-contagem" aria-live="polite"></div>'+
           '</div>'+
         '</div>'+
         '<div id="pasta-baixar-caixa"></div>'+
+        '<div id="pasta-drive-caixa"></div>'+
         '<div class="itens" id="pasta-itens" role="listbox" aria-multiselectable="true" '+
           'aria-label="Peças e movimentações, na ordem dos autos"></div>'+
       '</section>'+
@@ -222,6 +224,7 @@ function ligarEventos(){
   });
   $('pasta-nenhuma').addEventListener('click',function(){st.sel={};desenharLista()});
   $('pasta-baixar-pdf').addEventListener('click',pedirPreviaDaSelecao);
+  if(window.__pvDrive)window.__pvDrive.ligarPasta({numero:function(){return st.numero},marcadas:marcadas});// ui/drive.ts
   var itens=$('pasta-itens');
   itens.addEventListener('click',aoClicarNaLista);
   itens.addEventListener('keydown',aoTeclarNaLista);
@@ -557,6 +560,7 @@ function desenharLista(){
   var bp=$('pasta-baixar-pdf');
   bp.textContent='Baixar PDF ('+n+')';
   bp.disabled=!n||!!st.baixando;
+  if(window.__pvDrive)window.__pvDrive.selecaoMudou();// ui/drive.ts
   desenharAtalhos();
 }
 

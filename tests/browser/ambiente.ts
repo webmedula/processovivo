@@ -4,6 +4,8 @@ import { NumeroCNJ } from '../../src/domain/entities/NumeroCNJ.js';
 import { carregarConfig } from '../../src/infrastructure/config/env.js';
 import type { Aplicacao } from '../../src/main/factories/makeProcessoSearchService.js';
 import { construirServidor } from '../../src/main/http/servidor.js';
+import { workspaceDaChave } from '../../src/main/http/chaves.js';
+import type { DestinoExternoDePecas } from '../../src/domain/ports/DestinoExternoDePecas.js';
 import { aplicacaoDeTeste } from '../helpers/aplicacao.js';
 import { ProviderFalso, umProcesso } from '../helpers/fabricas.js';
 import {
@@ -117,7 +119,15 @@ export interface Ambiente {
  * — o que se mede aqui é a tela e o NÚMERO de lotes que o tribunal recebe.
  */
 export async function iniciar(
-  opcoes: { pecasExtras?: number; atosSemPeca?: boolean } = {},
+  opcoes: {
+    pecasExtras?: number;
+    atosSemPeca?: boolean;
+    /**
+     * Liga o envio ao Google Drive (v0.42.0) com um destino DUBLÊ. O Drive exige assinatura com o
+     * recurso `salvarNoDrive`, então a conta do teste ganha o `plano` (padrão: `pecas`).
+     */
+    drive?: { destino: DestinoExternoDePecas; plano?: string };
+  } = {},
 ): Promise<Ambiente> {
   const pasta = pastaTemporaria();
   const todas = await pecasDoTeste();
@@ -184,8 +194,25 @@ export async function iniciar(
       provedorDePecas: provedor,
       leitor: { pasta: pasta.caminho, executarSozinho: true },
       pasta: { debounceMs: 400 },
+      ...(opcoes.drive
+        ? {
+            comAssinaturas: true,
+            drive: {
+              destino: opcoes.drive.destino,
+              // O envio espera a Pasta entregar a peça: tempo de verdade, curtíssimo.
+              esperar: (ms: number) => new Promise<void>((r) => setTimeout(r, Math.min(ms, 5))),
+            },
+          }
+        : {}),
     },
   );
+  if (opcoes.drive) {
+    await app.assinaturas.liberar({
+      workspace: workspaceDaChave(CHAVE),
+      plano: opcoes.drive.plano ?? 'pecas',
+      meses: 1,
+    });
+  }
   const servidor = construirServidor(
     app,
     carregarConfig({

@@ -6,6 +6,7 @@ import {
   AtoDaProvidenciaInvalidoError,
   EntradaNaoAnalisavelError,
   PrazoNaoCalculavelError,
+  DriveRecusadoError,
   ChaveApiNaoEncontradaError,
   PlanoJaExisteError,
   CredenciaisInvalidasError,
@@ -147,6 +148,26 @@ export function mapearErro(erro: unknown): RespostaDeErro {
         mensagem: erro.message,
         detalhes: { motivo: erro.motivo },
       },
+    };
+  }
+
+  // Google Drive (v0.42.0): o corpo traz `motivo` para a tela escolher a frase. A mensagem é do
+  // sistema (nunca do Google). Nenhum desses casos, exceto os que nascem do retorno, chamou o Google.
+  if (erro instanceof DriveRecusadoError) {
+    const status: Record<DriveRecusadoError['motivo'], number> = {
+      sem_plano: 403,
+      nao_conectado: 409,
+      precisa_reconectar: 409,
+      estado_invalido: 400,
+      conexao_recusada: 400,
+      job_em_andamento: 409,
+      limite_global: 429,
+      job_nao_encontrado: 404,
+      nada_para_enviar: 409,
+    };
+    return {
+      status: status[erro.motivo],
+      corpo: { erro: erro.codigo, mensagem: erro.message, detalhes: { motivo: erro.motivo } },
     };
   }
 

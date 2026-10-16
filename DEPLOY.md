@@ -552,6 +552,63 @@ mexendo no banco. Resolva antes de haver cliente.
 
 ---
 
+## Google Drive: salvar as peças na pasta do advogado (v0.42.0)
+
+O botão **Salvar no Drive**, na Pasta digital, grava as peças do processo no Google Drive do
+advogado: uma pasta **Processo Vivo** e, dentro dela, uma subpasta por processo (o nome é o
+número). Nasce **desligado**; você liga quando o Google estiver configurado.
+
+**O que o sistema pede ao Google, e só isso:** o escopo `drive.file` — acesso apenas aos
+arquivos e pastas que o próprio Processo Vivo criou. Ele **não lista, não lê, não apaga, não
+renomeia e não compartilha** nada do Drive do advogado. Peça sob sigilo e processo em segredo
+de justiça **não vão** para o Drive. Nada é enviado sem o clique.
+
+### 1. No Google Cloud (uma vez)
+
+1. Em <https://console.cloud.google.com>, crie um projeto (ou use um que já tenha) e ative a
+   **Google Drive API** (APIs e serviços → Biblioteca).
+2. **Tela de consentimento OAuth** (Google Auth Platform): tipo **Externo**; nome do app e
+   e-mail de suporte; domínio autorizado `processovivo.com.br`; endereços da política de
+   privacidade e dos termos. Em **Escopos**, adicione **somente**
+   `https://www.googleapis.com/auth/drive.file`.
+3. **Credenciais → Criar credenciais → ID do cliente OAuth → Aplicativo da Web.** Em
+   **URIs de redirecionamento autorizados**, cole **exatamente**:
+   `https://app.processovivo.com.br/v1/drive/retorno` (o valor de `PROCESSOVIVO_URL_BASE` +
+   `/v1/drive/retorno`, sem barra no fim e sem espaço). Copie o **ID do cliente** e o
+   **Segredo do cliente**.
+4. **Enquanto o app está em "Teste"**: só entram as contas Google cadastradas em **Usuários de
+   teste** (até 100), e a autorização **vence em 7 dias** — o advogado precisará reconectar a
+   cada semana. Serve para validar. Para o uso real, **publique o app** (Público-alvo →
+   Publicar). O escopo `drive.file` **não é restrito** nem sensível, então em geral não exige a
+   verificação pesada do Google (só a marca: nome, logo e a política de privacidade no ar).
+
+### 2. No Easypanel (aba Environment)
+
+```text
+PROCESSOVIVO_DRIVE_HABILITADO=true
+GOOGLE_CLIENT_ID=<o ID do cliente que o Google mostrou>
+GOOGLE_CLIENT_SECRET=<o segredo do cliente que o Google mostrou>
+PROCESSOVIVO_URL_BASE=https://app.processovivo.com.br
+PROCESSOVIVO_CREDENCIAL_CHAVE=<a chave do cofre, que já existe>
+```
+
+Os dois últimos já existem na instalação; não troque a chave do cofre. Se faltar qualquer uma, ou
+se o ID/segredo parecer texto de exemplo, **o serviço recusa subir** e diz qual variável falta
+(nunca mostra o valor). Para **desligar**, volte `PROCESSOVIVO_DRIVE_HABILITADO=false` e faça o
+deploy: o cartão e o botão somem e as rotas respondem 501; nada é apagado.
+
+### 3. Dar o recurso a uma conta (/admin)
+
+O recurso se chama **Salvar no Google Drive** e já vem nos planos **Peças** e **IA** (a
+retrocarga o acrescenta uma vez aos planos já gravados). Para dar a uma conta:
+`/admin` → **Assinaturas** → procure o e-mail → **Liberar plano** → escolha **Peças** (ou IA).
+Para dar a um plano que você criou: `/admin` → **Planos** → editar → marque **Salvar no Google
+Drive** (e deixe **Peças do processo** marcado: o Drive envia o que a Pasta digital guarda).
+O plano Acompanhamento não tem o recurso. Conta **sem assinatura** (chave de API) também não.
+**O plano IA continua fora de venda** — o recurso novo não muda isso.
+
+---
+
 ## Endpoints
 
 | Método | Rota | Auth | O que faz |
@@ -565,6 +622,12 @@ mexendo no banco. Resolva antes de haver cliente.
 | GET | `/v1/senha/recuperar` | não | esta instalação manda e-mail? `{"disponivel":…}` |
 | POST | `/v1/senha/recuperar` | não | pede o link; responde **sempre** 202 |
 | POST | `/v1/senha/redefinir` | não | troca a senha pelo link e já entra |
+| GET | `/v1/drive` | sim | Google Drive: `{habilitado:false}` se desligado; senão o estado da conexão |
+| POST | `/v1/drive/conexao` | sim | devolve o endereço de autorização do Google |
+| GET | `/v1/drive/retorno` | sim (sessão) | volta do Google; **sempre** redireciona para a tela, sem token |
+| DELETE | `/v1/drive` | sim | desconecta (revoga e apaga a autorização) |
+| POST | `/v1/processos/:numero/pasta/drive` | sim | salva peças no Drive (só chaves de peças da pasta); 202 + id |
+| GET/DELETE | `/v1/drive/jobs/:id` | sim | progresso / cancelar o envio |
 
 Query opcional na carteira: `?ordenarPor=DISTRIBUICAO` (padrão:
 `ULTIMA_MOVIMENTACAO`).

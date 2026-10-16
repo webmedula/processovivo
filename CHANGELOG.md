@@ -9,6 +9,78 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.42.0] — 2026-10-16
+
+**Salvar as peças no Google Drive do advogado.** Na Pasta digital, o botão **"Salvar no Drive"**
+grava as peças numa pasta **"Processo Vivo"** do Drive dele, com uma subpasta por processo (o nome é
+o número). O advogado conecta a conta uma vez, em "Meus acessos". **Nasce desligado**
+(`PROCESSOVIVO_DRIVE_HABILITADO=false`): o dono liga quando o Google estiver configurado (passo a
+passo no `DEPLOY.md`). Nenhum dado real, token ou segredo entra no repositório, nos logs ou aqui.
+
+### As regras (decisões do dono)
+
+- **Escopo único: `drive.file`.** O sistema só enxerga a pasta e os arquivos que ele mesmo criou.
+  Não há variável para pedir mais, e há teste que falha se outro escopo aparecer no código.
+- **Sentido único.** O sistema grava. Não lista o Drive, não procura pasta pelo nome, não lê de
+  volta, não apaga, não renomeia, não compartilha. A única leitura é "o que EU criei ainda existe?".
+- **Sigilo fica fora.** Peça com `nivelSigilo > 0` e processo em segredo de justiça não vão para o
+  Drive (zero chamadas), como na Pasta digital. O resultado diz quantas ficaram de fora.
+- **Só por botão.** Nenhum envio automático. Sem o recurso no plano, ou com o recurso desligado,
+  nenhuma chamada ao Google.
+- **Planos Peças e IA** (recurso novo `salvarNoDrive`; retrocarga única nos dois planos já
+  gravados). O plano IA continua fora de venda: `analiseIa` segue `implementado: false`.
+
+### Adicionado
+
+- **Conexão OAuth 2.0** (código de autorização, no servidor): `state` assinado, de uso único,
+  10 minutos, amarrado ao workspace; PKCE (S256); `access_type=offline` + `prompt=consent`. O
+  retorno (`GET /v1/drive/retorno`) nunca mostra token, nunca o põe em URL e redireciona para a tela
+  com mensagem curta. Sem a permissão da pasta (consentimento granular) a conexão é recusada.
+- **Tokens no cofre** AES-256-GCM existente, por workspace; renovação sob demanda, uma por vez.
+- **Envio em segundo plano**, uma peça por vez, com progresso, cancelamento, um envio por conta e
+  teto global (`PROCESSOVIVO_DRIVE_MAX_SIMULTANEOS`, padrão 2). Backoff limitado em 429/5xx,
+  respeitando `Retry-After` (até 60 s). Upload simples até 5 MiB; resumível em pedaços de 8 MiB.
+- **Idempotência** por (workspace, processo, peça), com hash: não duplica; conteúdo novo atualiza o
+  mesmo arquivo; arquivo apagado pelo advogado conta como "removida no Drive" e só é reenviado por
+  clique. Pasta raiz ou do processo apagada é recriada uma vez, com aviso.
+- **Nome do arquivo:** `NNNN - Rótulo - dd-mm-aaaa.pdf` (número do ato como a Pasta o mostra; peça
+  convertida leva o marcador de conversão; nomes iguais ganham `(2)`).
+- **Rotas:** `GET /v1/drive`, `POST /v1/drive/conexao`, `GET /v1/drive/retorno`, `DELETE /v1/drive`,
+  `POST /v1/processos/:numero/pasta/drive`, `GET` e `DELETE /v1/drive/jobs/:id`. Nenhuma aceita
+  texto, nome de arquivo ou conteúdo do cliente: só chaves de peças da pasta daquele workspace.
+- **Tela** (`ui/drive.ts`): cartão "Google Drive" em "Meus acessos" (desconectado, conectado,
+  precisa reconectar, sem plano; nada com o recurso desligado) e botão na Pasta digital, com
+  progresso, Cancelar, `aria-live` discreto e resumo ("12 enviadas · 3 já estavam · 2 sigilosas
+  ficaram de fora · 1 falhou"). `script.ts` não cresceu.
+- **Configuração:** `PROCESSOVIVO_DRIVE_HABILITADO`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`,
+  `PROCESSOVIVO_DRIVE_MAX_SIMULTANEOS`, `PROCESSOVIVO_DRIVE_PAUSA_ENTRE_PECAS_MS`. Ligado, o
+  arranque exige as chaves (barradas se parecerem exemplo), `PROCESSOVIVO_URL_BASE` em https e o
+  cofre — e diz qual falta, sem mostrar valor. O endereço de retorno é
+  `PROCESSOVIVO_URL_BASE` + `/v1/drive/retorno`.
+- Três tabelas aditivas: `conexoes_drive`, `pastas_no_drive`, `pecas_no_drive`.
+- `docs/drive-pecas-especificacao-v1.0.0.md`.
+
+### Alterado
+
+- `HttpClient.requisitar`: requisição genérica com cabeçalhos na resposta (o Drive precisa de
+  `Location` e `Retry-After`). Sem dependência nova (nada de `googleapis`).
+- `ServicoPasta.estadoDaPeca`: o estado de uma peça, sem montar a lista toda.
+- `tests/domain/Assinatura.spec.ts`: a lista de recursos ganhou `salvarNoDrive` (o teste existe
+  para fixar essa lista e pedir a pergunta "os planos já gravados recebem?", respondida em
+  `banco.ts`). Os testes que travam a venda do plano IA continuam como estavam.
+
+### Decisões que divergem do que se esperava (e por quê)
+
+- O job do envio é **em memória**, e não na `FilaDeJobs`: aquela fila é do leitor (grava índice e
+  páginas de PDF) e não serve a um envio por peça. Redeploy o perde; clicar de novo continua de
+  onde parou, porque a idempotência faz as peças já enviadas virarem "já estavam".
+- A rota por processo é `POST /v1/processos/:numero/pasta/drive`, na convenção das demais rotas da
+  Pasta (`/v1/processos/:numero/pasta/…`).
+- Conta **sem assinatura** (chave de API) não usa o Drive — como a análise por IA: o Drive usa a
+  conta Google da pessoa, e chave de API não tem conta.
+
+---
+
 ## [0.41.1] — 2026-10-15
 
 Tela do processo mais limpa (decisão do dono). Os blocos **"Pede providência (últimos

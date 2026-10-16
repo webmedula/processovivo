@@ -880,3 +880,118 @@ export class AnaliseNaoEncontradaError extends DomainError {
     super('Essa análise não foi encontrada.');
   }
 }
+
+// ---------------------------------------------------------------------------
+// Google Drive (v0.42.0). O resto do sistema fala de "destino externo de peças";
+// só o adapter sabe que é o Google.
+
+/** Por que uma ação do Drive foi recusada ANTES de qualquer chamada ao Google. */
+export type MotivoDeDriveRecusado =
+  | 'sem_plano'
+  | 'nao_conectado'
+  | 'precisa_reconectar'
+  | 'estado_invalido'
+  | 'conexao_recusada'
+  | 'job_em_andamento'
+  | 'limite_global'
+  | 'job_nao_encontrado'
+  | 'nada_para_enviar';
+
+/**
+ * O Drive não pode ser usado agora, e a razão é da conta ou do pedido, não de falha:
+ * a tela mostra a frase própria de cada `motivo`. Nenhum desses casos chamou o Google
+ * (exceto `conexao_recusada` e `estado_invalido`, que nascem DEPOIS do retorno dele).
+ */
+export class DriveRecusadoError extends DomainError {
+  readonly codigo = 'DRIVE_RECUSADO';
+
+  constructor(
+    readonly motivo: MotivoDeDriveRecusado,
+    mensagem: string,
+  ) {
+    super(mensagem);
+  }
+}
+
+/**
+ * A autorização do advogado não vale mais: ele a revogou no Google, ela expirou
+ * (`invalid_grant`) ou ele não marcou a permissão da pasta na tela de consentimento.
+ * A saída é reconectar — nunca insistir.
+ */
+export class AutorizacaoDoDestinoRevogadaError extends DomainError {
+  readonly codigo = 'AUTORIZACAO_DO_DESTINO_REVOGADA';
+
+  constructor(
+    readonly motivo: 'revogada' | 'escopo_negado',
+    mensagem: string,
+  ) {
+    super(mensagem);
+  }
+}
+
+/** O Drive do advogado está cheio (`storageQuotaExceeded`): o lote para e ele é orientado. */
+export class DestinoSemEspacoError extends DomainError {
+  readonly codigo = 'DESTINO_SEM_ESPACO';
+
+  constructor() {
+    super('O Google Drive está sem espaço livre.');
+  }
+}
+
+/** O Google pediu para esperar (429, `userRateLimitExceeded`). `esperarMs` vem de `Retry-After`. */
+export class DestinoLimitouError extends DomainError {
+  readonly codigo = 'DESTINO_LIMITOU';
+
+  constructor(readonly esperarMs: number | undefined) {
+    super('O Google Drive limitou o uso por agora.');
+  }
+}
+
+/** Rede, timeout ou 5xx do Google. É transitório; o serviço repete um número limitado de vezes. */
+export class DestinoIndisponivelError extends DomainError {
+  readonly codigo = 'DESTINO_INDISPONIVEL';
+
+  constructor(readonly status: number | undefined) {
+    super('O Google Drive não respondeu.');
+  }
+}
+
+/** O Google respondeu e recusou o pedido (4xx que não é nenhum dos acima). Sem texto do Google. */
+export class DestinoRecusouError extends DomainError {
+  readonly codigo = 'DESTINO_RECUSOU';
+
+  constructor(readonly status: number) {
+    super(`O Google Drive recusou o pedido (HTTP ${status}).`);
+  }
+}
+
+/** O arquivo que o sistema criou foi apagado ou está na lixeira. Reenviar só por clique. */
+export class ArquivoRemovidoNoDestinoError extends DomainError {
+  readonly codigo = 'ARQUIVO_REMOVIDO_NO_DESTINO';
+
+  constructor() {
+    super('O arquivo foi removido do Google Drive.');
+  }
+}
+
+/** A pasta (raiz ou do processo) foi apagada ou está na lixeira. */
+export class PastaRemovidaNoDestinoError extends DomainError {
+  readonly codigo = 'PASTA_REMOVIDA_NO_DESTINO';
+
+  constructor() {
+    super('A pasta foi removida do Google Drive.');
+  }
+}
+
+/**
+ * O destino respondeu 401: o token de acesso venceu (relógio, renovação perdida). Não é
+ * revogação — quem chama renova UMA vez e repete; só se a renovação der `invalid_grant`
+ * é que a conexão vira "precisa reconectar".
+ */
+export class AutorizacaoDoDestinoVencidaError extends DomainError {
+  readonly codigo = 'AUTORIZACAO_DO_DESTINO_VENCIDA';
+
+  constructor() {
+    super('A autorização do Google Drive venceu.');
+  }
+}

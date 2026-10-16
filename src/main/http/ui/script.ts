@@ -1315,7 +1315,7 @@ function verCredenciais(){
       '<div id="c-msg"></div></div>';
 
     alvo.innerHTML=h;
-    ligarCredenciais();
+    ligarCredenciais();if(window.__pvDrive)window.__pvDrive.cartao(alvo);// ui/drive.ts
   }).catch(function(e){
     // 501 significa servidor sem cofre configurado — a instrução vem do próprio
     // erro, e é para quem opera, não para o advogado.

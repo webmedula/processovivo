@@ -85,13 +85,15 @@ src/
 │   │                            #   tipoDaComunicacao + estadoDaPasta/lerProvidencia (cumprido),
 │   │                            #   destinatarioDaComunicacao (paraOUsuario),
 │   │                            #   AnaliseDoAto + vocabularioDaAnalise (IA),
-│   │                            #   prazoEmDias (calculadora, exceção v0.39.0) + atoDoDiario
+│   │                            #   prazoEmDias (calculadora, exceção v0.39.0) + atoDoDiario,
+│   │                            #   DestinoDePecas + nomeDoArquivoNoDrive (Drive, v0.42.0)
 │   ├── errors/                  # hierarquia de DomainError
 │   ├── ports/                   # ProcessoProvider, RepositorioAcompanhamentos, Cache…
 │   └── usecases/                # BuscarProcessoPorNumero, BuscarProcessosPorOab
 ├── application/
 │   ├── politicas/               # redigirParaIA, verificarAnalise, entradaDoModelo,
-│   │                            #   limiteDeAnalises (política PURA da análise por IA)
+│   │                            #   limiteDeAnalises (política PURA da análise por IA),
+│   │                            #   estadosDeConexao (`state` + PKCE do OAuth do Drive)
 │   └── services/                # ProcessoSearchService, ServicoAcompanhamento,
 │                                #   ServicoVigilanciaOab, ServicoNotificacao,
 │                                #   ServicoPecas, ServicoContas,
@@ -100,10 +102,12 @@ src/
 │                                #   ServicoCalendario (+ ingestaoDoCalendario),
 │                                #   ServicoAnaliseDoAto (IA, por botão),
 │                                #   ServicoAvisoDoPrazo (aviso no calendário, v0.39.0),
-│                                #   ServicoResumoDoProcesso (resumo por IA, por botão, v0.40.0)
+│                                #   ServicoResumoDoProcesso (resumo por IA, por botão, v0.40.0),
+│                                #   ServicoDrive + fonteDePecasDaPasta (envio ao Google Drive, v0.42.0)
 ├── infrastructure/
 │   ├── adapters/
 │   │   ├── modelo/              # OpenRouter: transporte (ZDR), lista ZDR 24 h, analisador
+│   │   ├── drive/               # GoogleDriveAdapter (REST, sem SDK) + transporte injetável
 │   │   ├── datajud/             # adapter + mapper + schemas + aliases
 │   │   ├── djen/                # adapter + mapper + limpeza de HTML
 │   │   ├── mni/                 # adapter + envelope SOAP + mapper + MTOM
@@ -231,6 +235,10 @@ interface ProcessoProvider {
 | `ZdrIndisponivelError` / `SemProvedorQueAtendaError` | o OpenRouter não achou provedor ZDR (passo da política de dados) / não achou por outro passo | são `ProviderIndisponivelError`; NUNCA repetir a chamada sem ZDR |
 | `AtoDaProvidenciaInvalidoError` | "marcar como cumprido" apontou para ato que saiu do retrato ou que não pede providência | 409; a tela recarrega e a pessoa decide de novo |
 | `PrazoNaoCalculavelError` | o aviso de prazo a partir da análise não se aplica: `sem_prazo_na_analise`, `ato_fora_do_diario`, `tipo_necessario` (422) ou `ato_nao_encontrado` (409) | corpo com `detalhes.motivo`; NENHUM chamou o modelo e nada foi criado |
+| `DriveRecusadoError` | o Drive não pode ser usado agora: `sem_plano` (403), `nao_conectado` / `precisa_reconectar` / `job_em_andamento` / `nada_para_enviar` (409), `estado_invalido` / `conexao_recusada` (400), `limite_global` (429), `job_nao_encontrado` (404, igual para "não existe" e "é de outra conta") | corpo com `detalhes.motivo`; a mensagem é do sistema, nunca do Google; **zero** chamadas ao Google |
+| `AutorizacaoDoDestinoRevogadaError` / `AutorizacaoDoDestinoVencidaError` | `invalid_grant` ou permissão da pasta negada (reconectar) / `401` (renova UMA vez e repete) | a conexão vira `precisa_reconectar`; nunca insistir |
+| `DestinoSemEspacoError` / `DestinoLimitouError` / `DestinoIndisponivelError` / `DestinoRecusouError` | Drive cheio / 429 (com `Retry-After`) / rede, timeout, 5xx / outro 4xx | cheio e limite PARAM o lote; 429 e 5xx repetem com backoff limitado; 4xx falha só a peça |
+| `ArquivoRemovidoNoDestinoError` / `PastaRemovidaNoDestinoError` | o advogado apagou o arquivo / a pasta no Drive | arquivo: "removida no Drive", NÃO reenvia sozinho; pasta: recriada UMA vez |
 
 **A distinção que sustenta o produto:** "esse processo não existe" ≠ "não
 consegui ver esse processo". Colapsar as duas coisas faz o sistema dizer ao
@@ -777,8 +785,9 @@ Não são detalhes — moldam o código.
   manda texto a um terceiro e custa dinheiro por chamada. Quem decide é
   `ServicoAssinaturas.temRecursoSemExcecao`, que devolve `false` sem assinatura,
   com assinatura vencida além da carência ou com plano sem o recurso, e é
-  usada SÓ por `ServicoAnaliseDoAto`. Os outros recursos continuam com `exigir()`
-  e a regra acima. Não generalize a exceção.
+  usada SÓ por `ServicoAnaliseDoAto` **e, desde a v0.42.0, pelo Drive** (`salvarNoDrive` + `pecas`,
+  porque o Drive usa a conta Google da pessoa e chave de API não tem conta). Os outros recursos
+  continuam com `exigir()` e a regra acima. Não generalize a exceção.
 - **Ações possíveis da análise por IA são providência, sem citação; o rodapé não mostra o modelo**
   (v0.38.5). `acoes_possiveis` = `{ acao }` (Zod strict, sem `trecho`): infinitivo ou imperativo curto,
   dizendo QUEM faz O QUÊ, nunca cópia ou paráfrase do `trecho_chave`; sem providência clara = lista vazia
@@ -1332,6 +1341,50 @@ Não são detalhes — moldam o código.
   botão no lugar (sem redesenhar, o foco fica no rádio) e só o clique em "Calcular" pede a prévia. A
   escolha DA PESSOA volta marcada se o painel for redesenhado; Cancelar e reabrir voltam ao estado
   limpo. Ato que já diz o tipo calcula direto, sem rádio. O servidor continua recusando `tipo_necessario`.
+- **Google Drive: escopo `drive.file` ÚNICO, sentido ÚNICO, sigilo fora, só por botão, tokens no
+  cofre, desligado por padrão, planos Peças e IA** (v0.42.0, decisões do dono; especificação
+  `docs/drive-pecas-especificacao-v1.0.0.md`). (1) **Escopo único, nunca mais amplo:**
+  `https://www.googleapis.com/auth/drive.file`, constante em `GoogleDriveAdapter` (`ESCOPO_DO_DRIVE`) e
+  sem variável de ambiente — o sistema só enxerga o que ele mesmo criou, e há teste que falha se outro
+  escopo aparecer em `src/`. O consentimento granular é conferido: sem a permissão da pasta a conexão é
+  recusada. (2) **Sentido único:** o sistema grava. Não lista, não busca pasta pelo nome (o escopo não
+  deixa, e procurar duplicaria — os ids ficam guardados), não lê de volta, não apaga, não renomeia, não
+  compartilha; a porta `DestinoExternoDePecas` nem oferece esses verbos. A única leitura é "o que EU
+  criei ainda existe?", pelo id guardado. (3) **Sigilo fica fora:** peça com `nivelSigilo > 0` e processo
+  em segredo de justiça NUNCA chegam ao Drive (zero chamadas), como na Pasta digital; o resultado conta
+  quantas ficaram de fora. (4) **Só por botão:** nenhum agendador, serviço ou CLI chama
+  `ServicoDrive.iniciarEnvio` (há teste de grafo). Sem plano, ou com o recurso desligado, **nenhuma
+  chamada ao Google** — inclusive `GET /v1/drive`, que nunca fala com o Google. (5) **Tokens no cofre
+  existente** (`RepositorioDoDriveSqlite` cifra com o MESMO AES-256-GCM das credenciais de tribunal, por
+  workspace); nunca em log, resposta, erro ou CHANGELOG — nenhum erro do adapter carrega texto do Google
+  (só `reason` e status), e o retorno OAuth nunca põe código ou token em URL (o log de acesso guarda só o
+  caminho). Renovação sob demanda, UMA por vez por workspace. O `state` é assinado, de uso único, com
+  validade de 10 min e amarrado ao workspace; o retorno exige sessão (cookie `SameSite=Lax` vai em
+  navegação de topo). (6) **Idempotência por (workspace, processo, peça)** com hash SHA-256: igual =
+  "já estava"; hash novo = atualiza o MESMO arquivo; arquivo apagado pelo advogado (404/`trashed`) NÃO é
+  reenviado sozinho — "removida no Drive", e reenviar é outro clique. Peça que já foi enviada e saiu da
+  guarda de 24 h NÃO volta ao tribunal só para comparar hash: confere-se só se o arquivo existe.
+  (7) **Sem consulta nova ao tribunal além da que a Pasta já faz:** peça sem registro e fora da guarda é
+  pedida por `ServicoPasta.solicitar` (debounce, fila, pausa de 3 s, disjuntor) e só porque o advogado
+  clicou; credencial do tribunal ausente/recusada ou bloqueio PARAM o lote, sem retry. (8) **Uma peça por
+  vez, backoff LIMITADO:** 4 tentativas, `Retry-After` respeitado até 60 s (acima disso o lote para),
+  3 falhas seguidas do Drive encerram o lote, Drive cheio o encerra na hora; um envio por workspace e
+  `PROCESSOVIVO_DRIVE_MAX_SIMULTANEOS` no servidor inteiro. O job é em MEMÓRIA (não usa `FilaDeJobs`, que
+  é do leitor e guarda índice de PDF): redeploy o perde, e clicar de novo continua de onde parou porque a
+  idempotência faz as já enviadas virarem "já estavam". (9) **Desligado por padrão**
+  (`PROCESSOVIVO_DRIVE_HABILITADO=false`); ligado, o arranque exige `GOOGLE_CLIENT_ID`,
+  `GOOGLE_CLIENT_SECRET` (barrados por `pareceValorDeExemplo`), `PROCESSOVIVO_URL_BASE` em https (o
+  retorno é ela + `/v1/drive/retorno`) e `PROCESSOVIVO_CREDENCIAL_CHAVE`, sem nunca ecoar valor; sem a
+  Pasta digital (qpdf) o Drive não sobe. Sem o SDK `googleapis`: REST com `HttpClient.requisitar`
+  (cabeçalhos na resposta, `tentativas: 1` — a política de repetição é nossa). (10) **Plano:** recurso
+  `salvarNoDrive` nos planos Peças e IA (retrocarga UMA vez, só nesses dois códigos, marca em `estado`);
+  plano criado pelo painel não o ganha sozinho; `analiseIa` segue `implementado: false`, então o plano IA
+  continua fora de venda. (11) **Tela** (`ui/drive.ts`, `window.__pvDrive`): cartão em "Meus acessos"
+  (desconectado, conectado, precisa reconectar, sem plano, e nada com o recurso desligado) e botão
+  "Salvar no Drive" na Pasta, que diz o número ("Salvar no Drive (N)" / "Salvar todas no Drive"), com
+  progresso, Cancelar e resumo ("12 enviadas · 3 já estavam · 2 sigilosas ficaram de fora · 1 falhou").
+  Toda frase é fixa na tela; `script.ts` não cresceu. Nome do arquivo: `NNNN - Rótulo - dd-mm-aaaa.pdf`
+  (`nomeDoArquivoNoDrive`), com o número do ato COMO A PASTA O MOSTRA — nunca "oficial".
 - **Encerramento se decide pelo ato MAIS RECENTE, nunca pelo histórico.**
   Processo arquivado e depois desarquivado tem os dois atos nos autos; procurar
   "existe arquivamento" marcaria como encerrada a pasta que voltou a correr — e
@@ -1693,8 +1746,8 @@ teste e carência** (v0.28.0), **visual novo a partir do logo** (v0.29.0),
 **ajustes dos advogados: Atualizações por processo, peças no topo, providência em 10 dias** (v0.32.1),
 **Pasta digital: backend (v0.33.0) e tela (v0.33.1) — peça aberta ao clique, guarda por peça, montar pasta completa, baixar marcadas**,
 **ato (movimentação) de cada peça na lista da Pasta, com descrição** (v0.33.2) **e o número da movimentação calculado pela posição do ato, com aviso de atos bloqueados** (v0.34.0; a 0.33.3 havia removido o número errado da 0.33.2), **calibração do número com o Projudi feita pelo advogado: exato quando provado, faixa ou estimado quando não** (v0.35.0), **página inicial: Últimas atualizações mostra só o trecho do texto e o trilho de peças baixadas não estoura a largura** (v0.35.1), **Pasta: número da movimentação no lugar do índice; página inicial: "detectado há N dias" e cartão "pede providência"** (v0.35.2), **Pasta: lista em altura total com avisos compactados** (v0.35.3), **Pasta: todas as movimentações na lista, inclusive as sem peça, com lacuna de numeração provada e lista mais larga** (v0.36.0), **página inicial: tabela de últimas atualizações, uma linha por processo, com filtros que contam no lugar dos cartões; histórico de peças baixadas dentro da Pasta** (v0.37.0), **tabela sem "+N anteriores", "Detectado" enxuto e descrição do ato sem repetição na exibição** (v0.37.1), **classe legível e agrupada no filtro, última movimentação sem repetição e carteira sem rodapé redundante** (v0.37.2), **Atualizações lista todos os processos acompanhados, período como filtro opcional e verificação por conta** (v0.37.3), **Atualizações abre em "Pedem providência", com a lista completa a um clique** (v0.37.4), **intimação do Diário pede providência por 30 dias ou até "cumprido", marca por ato, correção da avalanche de novidades e reparo só com dry-run** (v0.37.5), **conferência com o Projudi: sonda de diagnóstico só de leitura, linha do ato da providência, "Detectado" legível e intimação a outro destinatário** (v0.37.6), **"Analisar com IA": por botão, texto redigido, citação verificada, ZDR falhando fechado, desligada por padrão e só no plano IA** (v0.38.0; sonda de IA v1.2.0 e `ia-avaliacoes.mjs` v1.0.0), **exceção de teste fechado da IA por variável (`PROCESSOVIVO_IA_WORKSPACES_LIBERADOS`), a remover antes de abrir ao público** (v0.38.1), **log da análise por IA com status HTTP, passo e funil do roteamento** (v0.38.2), **análise por IA: rodízio por provedor depois de 429/5xx, sem `allow_fallbacks`** (v0.38.3), **análise por IA: formato da resposta em texto, sem `require_parameters` nem `response_format`, ZDR e lista intactas** (v0.38.4), **análise por IA: ações possíveis como providência sem citação, rejeição de ação que copia o trecho-chave e rodapé sem o nome do modelo** (v0.38.5), **IA como secretária, Etapa 1: prazo escrito no ato, calculadora de prazo (exceção registrada) e "Criar aviso no calendário" com prévia e confirmação** (v0.39.0), **IA como secretária, Etapa 2 (só o servidor): resumo do processo por IA, por clique, com verificação item a item e a contagem das providências do sistema que a IA não citou** (v0.40.0), **tela do resumo do processo: botão na capa, painel com estados, link do ato à linha do tempo e correção do prazo sem opção pré-marcada** (v0.40.1), **Atualizações: busca pelo número do processo, que respeita os filtros e diz quantos casam fora deles** (v0.41.0),
-**tela do processo sem os blocos "Pede providência" e "Última movimentação", Partes logo abaixo das peças** (v0.41.1),
-Dockerfile multi-stage, CI, 2306 testes.
+**tela do processo sem os blocos "Pede providência" e "Última movimentação", Partes logo abaixo das peças** (v0.41.1), **Google Drive: conectar a conta do advogado e salvar as peças da Pasta digital numa pasta "Processo Vivo", por botão, escopo `drive.file`, desligado por padrão, planos Peças e IA** (v0.42.0),
+Dockerfile multi-stage, CI, 2515 testes.
 
 **Pasta digital (v0.33.0, backend):** `GET /v1/processos/:numero/pasta` (lista +
 estado de cada peça + intervalos de página + totais SEM filtro + procedência

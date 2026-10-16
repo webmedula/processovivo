@@ -7,6 +7,7 @@ import {
 import {
   PLANOS_INICIAIS,
   RECURSOS,
+  RECURSOS_PADRAO_DE_PLANO_NOVO,
   menorPlanoCom,
   planoInclui,
   planosAVenda,
@@ -301,6 +302,25 @@ describe('Assinatura', () => {
   });
 });
 
+describe('Plano — salvarNoDrive (v0.42.0)', () => {
+  it('entra nos planos Peças e IA da semente — e no Acompanhamento NÃO', () => {
+    expect(planoInicial('pecas').recursos).toContain('salvarNoDrive');
+    expect(planoInicial('ia').recursos).toContain('salvarNoDrive');
+    expect(planoInicial('acompanhamento').recursos).not.toContain('salvarNoDrive');
+  });
+
+  it('o plano IA continua impossível de pôr à venda: a trava é do analiseIa, e segue de pé', () => {
+    expect(() => validarPlano({ ...planoInicial('ia'), disponivelParaContratacao: true })).toThrow(
+      PlanoInvalidoError,
+    );
+    expect(planoInicial('ia').disponivelParaContratacao).toBe(false);
+  });
+
+  it('plano novo criado pelo painel NÃO ganha o recurso sozinho: o operador marca', () => {
+    expect(RECURSOS_PADRAO_DE_PLANO_NOVO).not.toContain('salvarNoDrive');
+  });
+});
+
 describe('Plano — recursos (v0.32.0)', () => {
   it('a lista de recursos é esta, nesta ordem', () => {
     /*
@@ -314,6 +334,10 @@ describe('Plano — recursos (v0.32.0)', () => {
       ['calendario', true],
       ['pecas', true],
       ['analiseIa', false],
+      // v0.42.0: o envio ao Google Drive existe (`true`); quem o liga é a variável
+      // PROCESSOVIVO_DRIVE_HABILITADO (desligada por padrão). A trava da VENDA do plano IA
+      // continua sendo `analiseIa` — o recurso novo não a destrava.
+      ['salvarNoDrive', true],
     ]);
   });
 

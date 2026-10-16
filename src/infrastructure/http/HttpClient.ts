@@ -38,6 +38,27 @@ export interface RespostaHttpBinaria {
 }
 
 /**
+ * Resposta COMPLETA: status, cabeçalhos e corpo em bytes (v0.42.0).
+ *
+ * Nasceu do Google Drive: o upload resumível devolve o endereço da sessão em `Location`,
+ * e `Retry-After` do 429 é o que diz quanto esperar. Nenhum dos dois cabe em
+ * `RespostaHttp`, que só carrega o corpo. Os nomes dos cabeçalhos vêm em minúsculas.
+ */
+export interface RespostaHttpCompleta {
+  readonly status: number;
+  readonly ok: boolean;
+  readonly headers: Readonly<Record<string, string>>;
+  readonly bytes: Uint8Array;
+}
+
+export interface PedidoHttp {
+  readonly metodo: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+  readonly url: string;
+  readonly headers?: Readonly<Record<string, string>>;
+  readonly corpo?: string | Uint8Array;
+}
+
+/**
  * Ajustes por requisição, sobrepondo os padrões do cliente.
  *
  * Existe porque nem toda chamada merece a mesma política. Uma consulta de
@@ -50,14 +71,20 @@ export interface OpcoesRequisicao {
 }
 
 export class HttpTimeoutError extends Error {
-  constructor(readonly url: string, readonly timeoutMs: number) {
+  constructor(
+    readonly url: string,
+    readonly timeoutMs: number,
+  ) {
     super(`Timeout de ${timeoutMs}ms ao chamar ${url}`);
     this.name = 'HttpTimeoutError';
   }
 }
 
 export class HttpRedeError extends Error {
-  constructor(readonly url: string, causa: unknown) {
+  constructor(
+    readonly url: string,
+    causa: unknown,
+  ) {
     super(`Falha de rede ao chamar ${url}: ${descrever(causa)}`, { cause: causa });
     this.name = 'HttpRedeError';
   }
@@ -125,6 +152,40 @@ export class HttpClient {
       },
       opcoes,
     );
+  }
+
+  /**
+   * Requisição genérica, com cabeçalhos na resposta (v0.42.0).
+   *
+   * Quem a usa decide a política de repetição: passe `tentativas: 1` quando o chamador
+   * tem a própria (o Drive respeita `Retry-After`, e o retry cego do cliente o ignoraria).
+   */
+  async requisitar(
+    pedido: PedidoHttp,
+    opcoes?: OpcoesRequisicao,
+  ): Promise<RespostaHttpCompleta> {
+    const init: RequestInit = {
+      method: pedido.metodo,
+      // Sem seguir redirecionamento: o `308 Resume Incomplete` do upload resumível do Google NÃO é
+      // um redirecionamento, e uma resposta 3xx aqui é sempre dado para o chamador decidir.
+      redirect: 'manual',
+      headers: { ...this.headersPadrao, ...pedido.headers },
+      ...(pedido.corpo !== undefined
+        ? { body: pedido.corpo as NonNullable<RequestInit['body']> }
+        : {}),
+    };
+    return this.comRetry(pedido.url, init, opcoes, async (resposta) => {
+      const headers: Record<string, string> = {};
+      resposta.headers.forEach((valor, nome) => {
+        headers[nome.toLowerCase()] = valor;
+      });
+      return {
+        status: resposta.status,
+        ok: resposta.ok,
+        headers,
+        bytes: new Uint8Array(await resposta.arrayBuffer()),
+      };
+    });
   }
 
   async get(
