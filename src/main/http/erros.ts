@@ -191,6 +191,8 @@ export function mapearErro(erro: unknown): RespostaDeErro {
       ja_assinante: 409,
       sem_recorrencia: 409,
       plano_desconhecido: 400,
+      termos_nao_aceitos: 422,
+      plano_ja_vigente: 409,
     };
     return {
       status: status[erro.motivo],

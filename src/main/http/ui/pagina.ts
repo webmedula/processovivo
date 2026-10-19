@@ -12,6 +12,7 @@ import { ESTILOS_ANALISE_IA, SCRIPT_ANALISE_IA } from './analiseIA.js';
 import { ESTILOS_RESUMO_IA, SCRIPT_RESUMO_IA } from './resumoIA.js';
 import { ESTILOS_DRIVE, SCRIPT_DRIVE } from './drive.js';
 import { ESTILOS_PAGAMENTO, SCRIPT_PAGAMENTO } from './pagamento.js';
+import { SCRIPT_PLANO_ESCOLHIDO } from './planoEscolhido.js';
 
 /**
  * Ícones da navegação: traço, sem preenchimento, na cor do texto
@@ -123,6 +124,7 @@ export function paginaConsole(versao: string): string {
 <script>${SCRIPT_RESUMO_IA}</script>
 <script>${SCRIPT_DRIVE}</script>
 <script>${SCRIPT_PAGAMENTO}</script>
+<script>${SCRIPT_PLANO_ESCOLHIDO}</script>
 <script>${SCRIPT_ATUALIZACOES}</script>
 </body>
 </html>`;

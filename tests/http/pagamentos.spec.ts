@@ -34,7 +34,7 @@ async function contaComCheckout(email = 'ana@exemplo.test'): Promise<{
     method: 'POST',
     url: '/v1/assinatura/checkout',
     headers: { cookie: conta.cookie },
-    payload: { plano: 'pecas' },
+    payload: { plano: 'pecas', aceiteTermos: true },
   });
   expect(r.statusCode).toBe(200);
   const pedido = c.gateway.pedidos.at(-1)!;
@@ -115,7 +115,7 @@ describe('cobrança recorrente — checkout', () => {
       method: 'POST',
       url: '/v1/assinatura/checkout',
       headers: { cookie: conta.cookie },
-      payload: { plano: 'pecas' },
+      payload: { plano: 'pecas', aceiteTermos: true },
     });
     expect(r.statusCode).toBe(422);
     expect(json(r)['detalhes'].motivo).toBe('plano_sem_preco');
@@ -153,7 +153,7 @@ describe('cobrança recorrente — checkout', () => {
       method: 'POST',
       url: '/v1/assinatura/checkout',
       headers: h,
-      payload: { plano: 'pecas' },
+      payload: { plano: 'pecas', aceiteTermos: true },
     });
     expect(json(r)['detalhes'].motivo).toBe('plano_nao_vendavel');
     await precificar(c, 'pecas', 4990, true);
@@ -162,7 +162,7 @@ describe('cobrança recorrente — checkout', () => {
       method: 'POST',
       url: '/v1/assinatura/checkout',
       headers: h,
-      payload: { plano: 'pecas' },
+      payload: { plano: 'pecas', aceiteTermos: true },
     });
     expect(r.statusCode).toBe(422);
     expect(json(r)['detalhes'].motivo).toBe('ciclo_nao_suportado');
@@ -187,7 +187,7 @@ describe('cobrança recorrente — checkout', () => {
       method: 'POST',
       url: '/v1/assinatura/checkout',
       headers: h,
-      payload: { plano: 'pecas', valor: 1, email: 'x@y.z' },
+      payload: { plano: 'pecas', aceiteTermos: true, valor: 1, email: 'x@y.z' },
     });
     expect(ruim.statusCode).toBe(400);
     expect(c.gateway.pedidos).toHaveLength(0);
@@ -196,7 +196,7 @@ describe('cobrança recorrente — checkout', () => {
       method: 'POST',
       url: '/v1/assinatura/checkout',
       headers: h,
-      payload: { plano: 'pecas' },
+      payload: { plano: 'pecas', aceiteTermos: true },
     });
     expect(r.statusCode).toBe(200);
     expect(json(r)).toEqual({
@@ -252,7 +252,7 @@ describe('cobrança recorrente — checkout', () => {
         method: 'POST',
         url: '/v1/assinatura/checkout',
         headers: { cookie: conta.cookie },
-        payload: { plano: 'pecas' },
+        payload: { plano: 'pecas', aceiteTermos: true },
       });
     }
     const [r1, r2] = gw.pedidos.map((p) => p.referencia);
@@ -268,12 +268,102 @@ describe('cobrança recorrente — checkout', () => {
       method: 'POST',
       url: '/v1/assinatura/checkout',
       headers: { 'x-api-key': CHAVE_DE_API },
-      payload: { plano: 'pecas' },
+      payload: { plano: 'pecas', aceiteTermos: true },
     });
     expect(r.statusCode).toBe(403);
     expect(json(r)['detalhes'].motivo).toBe('conta_sem_email');
     expect(json(r)['mensagem']).toMatch(/e-mail/);
     expect(c.gateway.pedidos).toHaveLength(0);
+  });
+
+  it('SEM o aceite dos Termos o checkout é recusado (422) e nada nasce: nem cobrança, nem aceite, nem chamada ao gateway', async () => {
+    c = montarCenarioDePagamento();
+    await precificar(c, 'pecas', 4990);
+    const conta = await cadastrar(c, 'ana@exemplo.test');
+    for (const payload of [
+      { plano: 'pecas' },
+      { plano: 'pecas', aceiteTermos: false },
+    ]) {
+      const r = await c.servidor.inject({
+        method: 'POST',
+        url: '/v1/assinatura/checkout',
+        headers: { cookie: conta.cookie },
+        payload,
+      });
+      expect(r.statusCode).toBe(422);
+      expect(json(r)['detalhes'].motivo).toBe('termos_nao_aceitos');
+      expect(json(r)['mensagem']).toMatch(/Termos/);
+    }
+    // `aceiteTermos` que não é booleano nem passa da validação do corpo.
+    const torto = await c.servidor.inject({
+      method: 'POST',
+      url: '/v1/assinatura/checkout',
+      headers: { cookie: conta.cookie },
+      payload: { plano: 'pecas', aceiteTermos: 'sim' },
+    });
+    expect(torto.statusCode).toBe(400);
+    expect(c.gateway.pedidos).toHaveLength(0);
+    expect(await c.app.pagamentos!.cobrancaDe(conta.workspace)).toBeUndefined();
+    expect(await c.app.pagamentos!.aceitesDe(conta.workspace)).toEqual([]);
+  });
+
+  it('com o aceite, grava versão, plano e data ligados ao workspace — e nenhum dado pessoal', async () => {
+    c = montarCenarioDePagamento();
+    await precificar(c, 'pecas', 4990);
+    const conta = await cadastrar(c, 'ana@exemplo.test');
+    const r = await c.servidor.inject({
+      method: 'POST',
+      url: '/v1/assinatura/checkout',
+      headers: { cookie: conta.cookie },
+      payload: { plano: 'pecas', aceiteTermos: true },
+    });
+    expect(r.statusCode).toBe(200);
+    const aceites = await c.app.pagamentos!.aceitesDe(conta.workspace);
+    expect(aceites).toEqual([
+      { workspace: conta.workspace, versao: '1.1', plano: 'pecas', aceitoEm: c.relogio.agora },
+    ]);
+    expect(JSON.stringify(aceites)).not.toMatch(/ana@|127\.0\.0\.1/);
+  });
+
+  it('plano pago e vigente por liberação manual (Pix) do MESMO plano não abre checkout; o teste não conta', async () => {
+    c = montarCenarioDePagamento({ comAssinaturas: true });
+    await precificar(c, 'pecas', 4990);
+    await precificar(c, 'acompanhamento', 1990);
+    const conta = await cadastrar(c, 'ana@exemplo.test');
+    const pedir = (plano: string) =>
+      c.servidor.inject({
+        method: 'POST',
+        url: '/v1/assinatura/checkout',
+        headers: { cookie: conta.cookie },
+        payload: { plano, aceiteTermos: true },
+      });
+    // Em teste (a conta nova está no plano do teste): assina normalmente.
+    const emTeste = (await c.app.repositorioAssinaturas.porWorkspace(conta.workspace))!;
+    expect(emTeste.ehTeste).toBe(true);
+    await c.app.assinaturas.liberar({ workspace: conta.workspace, plano: 'pecas', meses: 2 });
+    const vigente = await pedir('pecas');
+    expect(vigente.statusCode).toBe(409);
+    expect(json(vigente)['detalhes'].motivo).toBe('plano_ja_vigente');
+    expect(c.gateway.pedidos).toHaveLength(0);
+    expect(await c.app.pagamentos!.aceitesDe(conta.workspace)).toEqual([]);
+    // Outro plano (sem renovação automática) não é o mesmo plano vigente: segue.
+    expect((await pedir('acompanhamento')).statusCode).toBe(200);
+  });
+
+  it('o teste de 14 dias não é assinatura ativa: a conta nova assina o plano do teste', async () => {
+    c = montarCenarioDePagamento({ comAssinaturas: true });
+    await precificar(c, 'pecas', 4990);
+    const conta = await cadastrar(c, 'ana@exemplo.test');
+    const teste = (await c.app.repositorioAssinaturas.porWorkspace(conta.workspace))!;
+    expect(teste.plano).toBe('pecas');
+    expect(teste.ehTeste).toBe(true);
+    const r = await c.servidor.inject({
+      method: 'POST',
+      url: '/v1/assinatura/checkout',
+      headers: { cookie: conta.cookie },
+      payload: { plano: 'pecas', aceiteTermos: true },
+    });
+    expect(r.statusCode).toBe(200);
   });
 
   it('exige autenticação (sem cookie nem chave, 401)', async () => {
@@ -282,7 +372,7 @@ describe('cobrança recorrente — checkout', () => {
     const r = await c.servidor.inject({
       method: 'POST',
       url: '/v1/assinatura/checkout',
-      payload: { plano: 'pecas' },
+      payload: { plano: 'pecas', aceiteTermos: true },
     });
     expect(r.statusCode).toBe(401);
   });
@@ -297,7 +387,7 @@ describe('cobrança recorrente — checkout', () => {
       method: 'POST',
       url: '/v1/assinatura/checkout',
       headers: h,
-      payload: { plano: 'pecas' },
+      payload: { plano: 'pecas', aceiteTermos: true },
     });
     expect(r.statusCode).toBe(503);
     expect(r.body).not.toMatch(/falha simulada/);
@@ -309,7 +399,7 @@ describe('cobrança recorrente — checkout', () => {
       method: 'POST',
       url: '/v1/assinatura/checkout',
       headers: h,
-      payload: { plano: 'pecas' },
+      payload: { plano: 'pecas', aceiteTermos: true },
     });
     expect(de_novo.statusCode).toBe(200);
   });
@@ -358,10 +448,23 @@ describe('cobrança recorrente — checkout', () => {
       method: 'POST',
       url: '/v1/assinatura/checkout',
       headers: { cookie: conta.cookie },
-      payload: { plano: 'pecas' },
+      payload: { plano: 'pecas', aceiteTermos: true },
     });
     expect(r.statusCode).toBe(409);
     expect(json(r)['detalhes'].motivo).toBe('ja_assinante');
+
+    // De QUALQUER plano: um segundo checkout geraria uma segunda cobrança recorrente em paralelo.
+    await precificar(c, 'acompanhamento', 1990);
+    const outro = await c.servidor.inject({
+      method: 'POST',
+      url: '/v1/assinatura/checkout',
+      headers: { cookie: conta.cookie },
+      payload: { plano: 'acompanhamento', aceiteTermos: true },
+    });
+    expect(outro.statusCode).toBe(409);
+    expect(json(outro)['detalhes'].motivo).toBe('ja_assinante');
+    expect(json(outro)['mensagem']).toMatch(/cancele a renovação atual primeiro/);
+    expect(c.gateway.pedidos).toHaveLength(1);
   });
 });
 

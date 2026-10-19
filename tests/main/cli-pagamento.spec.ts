@@ -60,6 +60,7 @@ describe('CLI — pagamento reconciliar', () => {
       PROCESSOVIVO_PAGAMENTO_GATEWAY: 'falso',
       PROCESSOVIVO_PAGAMENTO_AMBIENTE: 'teste',
       PROCESSOVIVO_URL_BASE: 'https://app.exemplo.test',
+      PROCESSOVIVO_TERMOS_VERSAO: '1.1',
     };
     const r = await cli('reconciliar');
     expect(r.codigo).toBe(0);

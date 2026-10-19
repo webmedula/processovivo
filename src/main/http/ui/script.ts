@@ -2349,7 +2349,7 @@ if(tokenRecuperacao){
   carregarEu().then(function(entrou){
     if(entrou){iniciar();return}
     try{estado.chave=localStorage.getItem(CH)||''}catch(e){}
-    if(estado.chave)iniciar(); else telaEntrada('entrar');
+    if(estado.chave)iniciar(); else telaEntrada((window.__pvPlano&&window.__pvPlano.modoInicial())||'entrar');// ui/planoEscolhido.ts
   });
 }
 })();

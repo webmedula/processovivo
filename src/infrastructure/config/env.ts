@@ -277,6 +277,10 @@ const schema = z.object({
   PROCESSOVIVO_PAGAMENTO_AVISO_EMAIL: z.string().default(''),
   // Endereço dos Termos de Uso (a tela de assinatura linka para ele; sem a variável, o texto sai sem link).
   PROCESSOVIVO_TERMOS_URL: z.string().default(''),
+  /** Versão dos Termos que o aceite do checkout registra (v0.45.0). Obrigatória com o pagamento ligado. */
+  PROCESSOVIVO_TERMOS_VERSAO: z.string().default(''),
+  /** Origem do site de vendas, a única que o CORS de `GET /v1/planos` libera (v0.45.0). Vazio = sem CORS. */
+  PROCESSOVIVO_SITE_URL: z.string().default(''),
 });
 
 export interface Config {
@@ -367,6 +371,8 @@ export interface Config {
     readonly cookieSeguro: boolean;
     readonly urlBase: string;
     readonly corsOrigins: readonly string[];
+    /** `PROCESSOVIVO_SITE_URL` normalizada para ORIGEM (`https://host[:porta]`); vazio = sem CORS. */
+    readonly siteUrl: string;
   };
   readonly telas: {
     readonly novidadesJanelaDias: number;
@@ -411,6 +417,8 @@ export interface Config {
     readonly emailDoOperador: string;
     /** O servidor roda com `NODE_ENV=production`? Só para o /admin avisar de token de TESTE. */
     readonly emProducao: boolean;
+    /** `PROCESSOVIVO_TERMOS_VERSAO`; obrigatória (e não vazia) com o recurso ligado. */
+    readonly versaoDosTermos: string;
     /** `PROCESSOVIVO_TERMOS_URL`, só se for http(s); senão vazio. */
     readonly urlDosTermos: string;
     /** `PROCESSOVIVO_URL_BASE` sem a barra final; vazio com o recurso desligado. */
@@ -600,6 +608,7 @@ export function carregarConfig(fonte: NodeJS.ProcessEnv = process.env): Config {
       cookieSeguro: env.COOKIE_SECURE,
       urlBase: env.PROCESSOVIVO_URL_BASE.trim().replace(/\/+$/, ''),
       corsOrigins: listaSeparadaPorVirgula(env.CORS_ORIGINS),
+      siteUrl: origemDoSite(env.PROCESSOVIVO_SITE_URL),
     },
     telas: {
       novidadesJanelaDias: env.NOVIDADES_JANELA_DIAS,
@@ -650,6 +659,7 @@ export function carregarConfig(fonte: NodeJS.ProcessEnv = process.env): Config {
           : '',
       emailDoOperador: env.PROCESSOVIVO_PAGAMENTO_AVISO_EMAIL.trim(),
       emProducao: fonte['NODE_ENV'] === 'production',
+      versaoDosTermos: env.PROCESSOVIVO_TERMOS_VERSAO.trim(),
       urlDosTermos: /^https?:\/\//i.test(env.PROCESSOVIVO_TERMOS_URL.trim())
         ? env.PROCESSOVIVO_TERMOS_URL.trim()
         : '',
@@ -739,6 +749,17 @@ function validarConfiguracaoDoPagamento(
     problemas.push(
       'PROCESSOVIVO_PAGAMENTO_AMBIENTE: "teste" com o servidor em produção; use producao, ' +
         'ou defina PROCESSOVIVO_PAGAMENTO_PERMITIR_TESTE=true se for proposital',
+    );
+  }
+  const versaoDosTermos = env.PROCESSOVIVO_TERMOS_VERSAO.trim();
+  if (versaoDosTermos === '') {
+    problemas.push(
+      'PROCESSOVIVO_TERMOS_VERSAO: obrigatória com PROCESSOVIVO_PAGAMENTO_HABILITADO=true ' +
+        '(a versão dos Termos que o cliente aceita antes de pagar; ex.: 1.1)',
+    );
+  } else if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,19}$/.test(versaoDosTermos)) {
+    problemas.push(
+      'PROCESSOVIVO_TERMOS_VERSAO: use até 20 caracteres entre letras, números, ponto, hífen e sublinhado',
     );
   }
   if (env.PROCESSOVIVO_PAGAMENTO_GATEWAY === 'falso') {
@@ -851,6 +872,38 @@ function lerWorkspacesLiberados(valor: string): string[] {
     );
   }
   return [...new Set(itens)];
+}
+
+/**
+ * A ORIGEM do site de vendas (`https://host[:porta]`) — a única que o CORS de `GET /v1/planos` libera.
+ * Vazio = sem CORS. Valor torto derruba o arranque: um CORS "quase certo" ou um `*` abriria a rota
+ * para quem não deve, e o erro só apareceria no site. A mensagem diz o problema, não ecoa o valor.
+ */
+function origemDoSite(valor: string): string {
+  const bruto = valor.trim();
+  if (bruto === '') return '';
+  let url: URL;
+  try {
+    url = new URL(bruto);
+  } catch {
+    throw new Error(
+      'Configuração inválida:\n  - PROCESSOVIVO_SITE_URL: não é um endereço; use a origem do site (ex.: https://www.seusite.com.br)',
+    );
+  }
+  const local = url.hostname === 'localhost' || url.hostname === '127.0.0.1';
+  const protocoloOk = url.protocol === 'https:' || (url.protocol === 'http:' && local);
+  const soOrigem =
+    (url.pathname === '/' || url.pathname === '') &&
+    url.search === '' &&
+    url.hash === '' &&
+    url.username === '' &&
+    url.password === '';
+  if (!protocoloOk || !soOrigem || !/^[a-z0-9.-]+$/.test(url.hostname)) {
+    throw new Error(
+      'Configuração inválida:\n  - PROCESSOVIVO_SITE_URL: use só a origem em https, sem caminho (ex.: https://www.seusite.com.br)',
+    );
+  }
+  return url.origin;
 }
 
 function listaSeparadaPorVirgula(valor: string): string[] {

@@ -45,7 +45,20 @@ export interface EventoDePagamento {
   readonly criadoEm: Date;
 }
 
+/**
+ * O aceite dos Termos que antecede um checkout (v0.45.0). Ligado ao WORKSPACE, com a versão dos Termos, o
+ * plano e a data: nada de e-mail, IP ou nome — o suficiente para provar QUE e QUANDO se aceitou O QUÊ.
+ */
+export interface AceiteDeTermos {
+  readonly workspace: string;
+  readonly versao: string;
+  readonly plano: CodigoPlano;
+  readonly aceitoEm: Date;
+}
+
 export interface RepositorioPagamentos {
+  registrarAceiteDeTermos(aceite: AceiteDeTermos): Promise<void>;
+  aceitesDe(workspace: string): Promise<readonly AceiteDeTermos[]>;
   criar(cobranca: CobrancaRecorrente): Promise<void>;
   porReferencia(referencia: string): Promise<CobrancaRecorrente | undefined>;
   porGatewayId(gatewayId: string): Promise<CobrancaRecorrente | undefined>;

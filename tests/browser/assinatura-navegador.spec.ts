@@ -194,19 +194,60 @@ describe.skipIf(sem)('Assinatura online, no navegador', { timeout: 90_000 }, () 
     expect(await page.getByRole('button', { name: /Assinar/ }).count()).toBe(0);
   });
 
-  it('clicar em "Assinar" cria o checkout e leva à página HOSPEDADA do gateway (o pedido leva só o código do plano)', async () => {
+  /** "Assinar" abre a confirmação; o aceite habilita "Continuar para o pagamento". */
+  async function abrirConfirmacao(): Promise<void> {
+    await cartao().getByRole('button', { name: 'Assinar o plano Peças' }).click();
+    await page.getByRole('group', { name: 'Confirmar assinatura' }).waitFor();
+  }
+
+  it('"Assinar" NÃO cobra: abre a confirmação (valor, ciclo, frase, Termos, aviso de teste) com o aceite DESMARCADO e o botão desabilitado', async () => {
+    await abrir({ termos: true });
+    await cartao().waitFor();
+    await abrirConfirmacao();
+    expect(cenario.gateway.pedidos).toHaveLength(0);
+    const painel = page.getByRole('group', { name: 'Confirmar assinatura' });
+    const texto = await painel.innerText();
+    expect(texto).toContain('Peças');
+    expect(texto).toMatch(/R\$\s49,90 por mês/);
+    expect(texto).toContain('Renovação automática. Você pode cancelar quando quiser.');
+    expect(texto).toContain('Ambiente de teste, nenhuma cobrança real.');
+    const termos = painel.getByRole('link', { name: 'Termos de Uso' });
+    expect(await termos.getAttribute('href')).toBe('https://exemplo.test/termos');
+    const aceite = painel.getByRole('checkbox');
+    expect(await aceite.isChecked()).toBe(false);
+    const continuar = painel.getByRole('button', { name: 'Continuar para o pagamento' });
+    expect(await continuar.isDisabled()).toBe(true);
+    // O foco vai para o título da confirmação.
+    expect(await page.evaluate(() => document.activeElement?.id)).toBe('pgto-conf-t');
+    await aceite.check();
+    expect(await continuar.isEnabled()).toBe(true);
+    await aceite.uncheck();
+    expect(await continuar.isDisabled()).toBe(true);
+    // "Voltar" desfaz sem pedir nada ao servidor.
+    await painel.getByRole('button', { name: 'Voltar' }).click();
+    await cartao().getByRole('button', { name: 'Assinar o plano Peças' }).waitFor();
+    expect(cenario.gateway.pedidos).toHaveLength(0);
+  });
+
+  it('com o aceite, "Continuar para o pagamento" cria o checkout e leva à página HOSPEDADA do gateway (o pedido leva só o plano e o aceite)', async () => {
     await abrir();
     await cartao().waitFor();
+    await abrirConfirmacao();
+    await page.getByRole('checkbox').check();
     const pedido = page.waitForRequest(
       (r) => r.url().endsWith('/v1/assinatura/checkout') && r.method() === 'POST',
     );
-    await cartao().getByRole('button', { name: 'Assinar o plano Peças' }).click();
-    expect(JSON.parse((await pedido).postData() ?? '{}')).toEqual({ plano: 'pecas' });
+    await page.getByRole('button', { name: 'Continuar para o pagamento' }).click();
+    expect(JSON.parse((await pedido).postData() ?? '{}')).toEqual({
+      plano: 'pecas',
+      aceiteTermos: true,
+    });
     await page.waitForURL(
       /pagamento-falso\.exemplo\.invalid\/checkout\/fake-assinatura-1/,
     );
     expect(cenario.gateway.pedidos).toHaveLength(1);
     expect(cenario.gateway.pedidos[0]!.valorEmCentavos).toBe(4990);
+    expect(await cenario.app.pagamentos!.aceitesDe(workspace)).toHaveLength(1);
     expect(dialogos).toEqual([]);
   });
 
@@ -214,7 +255,9 @@ describe.skipIf(sem)('Assinatura online, no navegador', { timeout: 90_000 }, () 
     await abrir();
     await cartao().waitFor();
     cenario.gateway.falharProximaChamada = 'indisponivel';
-    await cartao().getByRole('button', { name: 'Assinar o plano Peças' }).click();
+    await abrirConfirmacao();
+    await page.getByRole('checkbox').check();
+    await page.getByRole('button', { name: 'Continuar para o pagamento' }).click();
     const erro = page.locator('.pgto-erro[role="alert"]');
     await erro.waitFor();
     expect((await erro.innerText()).trim()).toBe(
@@ -222,7 +265,7 @@ describe.skipIf(sem)('Assinatura online, no navegador', { timeout: 90_000 }, () 
     );
     expect(page.url()).toContain(url);
     expect(
-      await cartao().getByRole('button', { name: 'Assinar o plano Peças' }).isEnabled(),
+      await page.getByRole('button', { name: 'Continuar para o pagamento' }).isEnabled(),
     ).toBe(true);
   });
 
@@ -255,7 +298,7 @@ describe.skipIf(sem)('Assinatura online, no navegador', { timeout: 90_000 }, () 
       const x = await fetch('/v1/assinatura/checkout', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ plano: 'pecas' }),
+        body: JSON.stringify({ plano: 'pecas', aceiteTermos: true }),
       });
       return x.status;
     });
@@ -281,7 +324,7 @@ describe.skipIf(sem)('Assinatura online, no navegador', { timeout: 90_000 }, () 
       fetch('/v1/assinatura/checkout', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ plano: 'pecas' }),
+        body: JSON.stringify({ plano: 'pecas', aceiteTermos: true }),
       }),
     );
     await ativarRenovacao();
@@ -301,7 +344,7 @@ describe.skipIf(sem)('Assinatura online, no navegador', { timeout: 90_000 }, () 
       fetch('/v1/assinatura/checkout', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ plano: 'pecas' }),
+        body: JSON.stringify({ plano: 'pecas', aceiteTermos: true }),
       }),
     );
     await ativarRenovacao();
@@ -358,7 +401,7 @@ describe.skipIf(sem)('Assinatura online, no navegador', { timeout: 90_000 }, () 
         fetch('/v1/assinatura/checkout', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ plano: 'pecas' }),
+          body: JSON.stringify({ plano: 'pecas', aceiteTermos: true }),
         }),
       );
       await ativarRenovacao();
@@ -367,6 +410,23 @@ describe.skipIf(sem)('Assinatura online, no navegador', { timeout: 90_000 }, () 
       await page.getByRole('button', { name: 'Cancelar renovação automática' }).click();
       m = await medir();
       expect(m.sw).toBeLessThanOrEqual(m.cw);
+    });
+
+    it(`a confirmação não rola na horizontal em ${largura}px; caixa e botões de 44px`, async () => {
+      await abrir({ largura, termos: true });
+      await cartao().waitFor();
+      await abrirConfirmacao();
+      const m = await page.evaluate(() => ({
+        sw: document.documentElement.scrollWidth,
+        cw: document.documentElement.clientWidth,
+      }));
+      expect(m.sw).toBeLessThanOrEqual(m.cw);
+      const continuar = (await page
+        .getByRole('button', { name: 'Continuar para o pagamento' })
+        .boundingBox())!;
+      expect(continuar.height).toBeGreaterThanOrEqual(44);
+      const rotulo = (await page.locator('.pgto-aceite').boundingBox())!;
+      expect(rotulo.height).toBeGreaterThanOrEqual(44);
     });
   }
 
@@ -394,7 +454,7 @@ describe.skipIf(sem)('Assinatura online, no navegador', { timeout: 90_000 }, () 
         fetch('/v1/assinatura/checkout', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ plano: 'pecas' }),
+          body: JSON.stringify({ plano: 'pecas', aceiteTermos: true }),
         }),
       );
       await page.locator('#nav-processos').click();
@@ -412,7 +472,31 @@ describe.skipIf(sem)('Assinatura online, no navegador', { timeout: 90_000 }, () 
       await page.getByText('Renovação automática ativa').waitFor();
       expect(await rodar(), 'ativa').toBe('');
       await page.getByRole('button', { name: 'Cancelar renovação automática' }).click();
-      expect(await rodar(), 'confirmação').toBe('');
+      expect(await rodar(), 'cancelar').toBe('');
+      await page.getByRole('button', { name: 'Voltar' }).click();
+    });
+
+    it(`axe sem violações na confirmação de assinatura (tema ${escuro ? 'escuro' : 'claro'})`, async () => {
+      await abrir({ escuro, termos: true });
+      await cartao().waitFor();
+      await abrirConfirmacao();
+      await page.addScriptTag({
+        content: (AxeBuilder as unknown as { source: string }).source,
+      });
+      const rodar = async (): Promise<string> => {
+        const r = await page.evaluate(() =>
+          (window as unknown as AxeNaPagina).axe.run(
+            document.querySelector('#pv-pagamento')!,
+            { rules: { 'color-contrast': { enabled: true } } },
+          ),
+        );
+        return r.violations
+          .map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(' | ')}`)
+          .join('\n');
+      };
+      expect(await rodar(), 'desmarcada').toBe('');
+      await page.getByRole('checkbox').check();
+      expect(await rodar(), 'marcada').toBe('');
     });
   }
 

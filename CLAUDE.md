@@ -138,7 +138,7 @@ src/
         ├── erros.ts             # DomainError → status HTTP
         ├── plugins/             # autenticação: sessão (cookie) OU chave de API
         ├── ui/                  # console web (HTML como string, sem build)
-        └── rotas/               # processos, contas, saúde, interface, leitor, calendário
+        └── rotas/               # processos, contas, saúde, interface, leitor, calendário, planosPublicos
 tests/                           # espelha src/, + http/, integration/, helpers/
 ```
 
@@ -236,7 +236,7 @@ interface ProcessoProvider {
 | `AcompanhamentoNaoEncontradoError` | pediu algo sobre processo que ESTE workspace não acompanha | 404; mesma resposta para "não existe" e "é de outra conta" |
 | `EntradaNaoAnalisavelError` | a análise por IA não se aplica: `sem_plano` (403), `segredo_de_justica` (403), `texto_insuficiente` / `texto_indisponivel` (422), `limite_de_uso` (429), `ato_nao_encontrado` (409) | corpo com `detalhes.motivo`; NENHUM chamou o modelo |
 | `AnaliseNaoEncontradaError` | avaliar análise que não existe PARA ESTE workspace | 404; mesma resposta para "não existe" e "é de outra conta" |
-| `PagamentoRecusadoError` | a cobrança não se aplica: `plano_sem_preco` / `plano_nao_vendavel` / `ciclo_nao_suportado` (422), `conta_sem_email` (403, conta de chave de API), `ja_assinante` / `sem_recorrencia` (409), `plano_desconhecido` (400) | corpo com `detalhes.motivo`; NENHUM chamou o gateway |
+| `PagamentoRecusadoError` | a cobrança não se aplica: `plano_sem_preco` / `plano_nao_vendavel` / `ciclo_nao_suportado` / `termos_nao_aceitos` (422), `conta_sem_email` (403, conta de chave de API), `ja_assinante` / `plano_ja_vigente` / `sem_recorrencia` (409), `plano_desconhecido` (400) | corpo com `detalhes.motivo`; NENHUM chamou o gateway |
 | `AssinaturaDeWebhookInvalidaError` | o aviso do gateway não se prova dele: assinatura ausente, malformada, adulterada, de outro recurso ou velha (> 5 min) | 401 SEM dizer o motivo (vai ao log); NADA é gravado nem consultado |
 | `GatewayDePagamentoIndisponivelError` / `GatewayDePagamentoRecusouError` | rede, timeout, 429, 5xx do gateway / 4xx definitivo ou resposta fora do contrato | 503 / 502 na API; no webhook, indisponível sobe (o gateway repete) e recusa vira 200 (repetir não adianta); nenhum carrega token, corpo ou dado do pagador |
 | `ZdrIndisponivelError` / `SemProvedorQueAtendaError` | o OpenRouter não achou provedor ZDR (passo da política de dados) / não achou por outro passo | são `ProviderIndisponivelError`; NUNCA repetir a chamada sem ZDR |
@@ -461,7 +461,7 @@ rota e 500 na outra.
 Rota que dispensa autenticação precisa entrar em `rotasPublicas` ao registrar o
 plugin de autenticação: hoje `/health`, `/ready`, o console, as fontes do
 console (`/ui/fontes/:arquivo`), `/v1/contas`, `/v1/sessoes`,
-`/v1/senha/recuperar` e `/v1/senha/redefinir` (e as rotas `/admin`, que têm
+`/v1/senha/recuperar` e `/v1/senha/redefinir`, `/v1/planos` (a vitrine do site de vendas, v0.45.0) (e as rotas `/admin`, que têm
 autenticação própria, o feed do calendário `/calendario/feed/:arquivo`, que
 se autentica pelo token no próprio caminho, e o webhook do gateway de pagamento
 `/v1/pagamentos/webhook/mercadopago`, que se autentica pela assinatura do próprio aviso). As quatro últimas
@@ -907,6 +907,37 @@ Não são detalhes — moldam o código.
   `adapters/pagamento/mercadoPago.constantes.ts`** (caminhos, status, tópicos, tolerância, prefixo do
   token): itens marcados `CONFIRMAR` vieram de documentação lida de segunda mão e se ajustam ali, num
   lugar só. Tela em `ui/pagamento.ts` (`window.__pvPagamento`); `script.ts` não cresceu.
+- **Página de vendas: vitrine pública, plano escolhido atravessando o cadastro e aceite dos Termos obrigatório**
+  (v0.45.0; o site `processovivo.com.br` é estático, fica em outro servidor e só MOSTRA planos; cadastro, login,
+  confirmação e pagamento são do app). (1) **`GET /v1/planos` é pública** (em `rotasPublicas`) e devolve SÓ o que
+  o site já mostraria: `slug` (o `codigo` do plano), `nome`, `resumo`, `recursos` (nomes legíveis), `preco`
+  (`{valorCentavos, ciclo}` ou `null`), `assinavel` (a MESMA `motivoDeNaoContratar` do checkout) e, no topo,
+  `pagamentoDisponivel`. Nenhum id de banco, contagem, ordem ou configuração; plano fora de venda não aparece e
+  plano sem preço aparece SEM preço e sem "Assinar agora" (vitrine vazia antes do /admin ter preço seria pior).
+  Cache de 60 s e balde de limite de taxa próprio por IP. (2) **CORS manual e só nesta rota**: `PROCESSOVIVO_SITE_URL`
+  (a ORIGEM do site, https, sem caminho; valor torto derruba o arranque) é a única origem liberada, só `GET`, sem
+  credenciais, `Vary: Origin` sempre, e vazio = nenhum cabeçalho. NÃO se usa `CORS_ORIGINS` para isso: ele é
+  global e abriria a API inteira. O site nunca envia nem recebe cookie ou chave do app. (3) **O plano escolhido
+  atravessa o cadastro sem rota nem tabela nova** (`ui/planoEscolhido.ts`, `window.__pvPlano`): o site aponta para
+  a RAIZ (`/?plano=<slug>&conta=1`, e `&assinar=1` no "Assinar agora"); o parâmetro é lido UMA vez e sai da barra
+  (`replaceState`, como o `?recuperar=`); só um slug no formato do catálogo (`^[a-z][a-z0-9-]{1,29}$`, até 30)
+  é guardado, no `sessionStorage` por 30 min com reserva em memória — nunca `localStorage`, nunca o servidor
+  (antes do login não há sessão nem workspace; guardar lá seria superfície nova numa rota pública). Depois de
+  entrar, o plano é conferido contra `GET /v1/planos` (assinável, pagamento ligado); qualquer outro valor cai no
+  fluxo normal em silêncio, e o plano nunca é destino de redirecionamento. Conta de chave de API descarta o plano.
+  (4) **`assinar=1` NUNCA cobra sozinho:** só vale com plano válido, e abre a confirmação (`__pvPagamento.preparar`);
+  sem ele o plano só é DESTACADO ("Plano escolhido", por texto) em "Minha conta". (5) **Um caminho só para assinar:**
+  o botão "Assinar" do cartão e o plano do site abrem a MESMA confirmação (valor, ciclo, a frase da renovação,
+  Termos, caixa de aceite DESMARCADA, aviso de teste), e `POST /v1/assinatura/checkout` exige `aceiteTermos: true`
+  para TODO checkout: sem ele, 422 `termos_nao_aceitos` e nada é criado (nem cobrança, nem aceite, nem chamada
+  ao gateway). O aceite é gravado pelo servidor, dentro do checkout, em `aceites_termos` (workspace, versão, plano,
+  data — sem e-mail, sem IP), e a versão vem de `PROCESSOVIVO_TERMOS_VERSAO`, obrigatória com a cobrança ligada.
+  (6) **Quem já assina não abre outro checkout:** qualquer recorrência autorizada, de QUALQUER plano, é barrada
+  (`ja_assinante`: "para trocar de plano, cancele a renovação atual primeiro" — a troca de plano não existe), e
+  plano pago e vigente do mesmo plano por liberação manual é `plano_ja_vigente`; o teste de 14 dias não conta.
+  (7) **O trecho do site** (`site/planos-v0.45.0.html`, um arquivo, sem dependência externa) insere texto da rede
+  SÓ por `textContent`, valida o formato do slug, nunca inventa preço (falha ou demora = mensagem neutra e um
+  botão) e não traz o rodapé legal. Webhook, adapter, reconciliação e as regras de plano não mudaram.
 - **Assinar uma conta de chave de API é pelo workspace, e nada mais muda** (v0.42.1). Chave não tem
   e-mail: `assinatura liberar|ver --workspace <id>` (CLI) e `/admin/api/workspaces/:workspace/assinatura`
   (admin) usam o MESMO `ServicoAssinaturas.liberar/resumo` — só o identificador difere, e nunca os dois
@@ -1848,7 +1879,8 @@ teste e carência** (v0.28.0), **visual novo a partir do logo** (v0.29.0),
 **Pasta digital: backend (v0.33.0) e tela (v0.33.1) — peça aberta ao clique, guarda por peça, montar pasta completa, baixar marcadas**,
 **ato (movimentação) de cada peça na lista da Pasta, com descrição** (v0.33.2) **e o número da movimentação calculado pela posição do ato, com aviso de atos bloqueados** (v0.34.0; a 0.33.3 havia removido o número errado da 0.33.2), **calibração do número com o Projudi feita pelo advogado: exato quando provado, faixa ou estimado quando não** (v0.35.0), **página inicial: Últimas atualizações mostra só o trecho do texto e o trilho de peças baixadas não estoura a largura** (v0.35.1), **Pasta: número da movimentação no lugar do índice; página inicial: "detectado há N dias" e cartão "pede providência"** (v0.35.2), **Pasta: lista em altura total com avisos compactados** (v0.35.3), **Pasta: todas as movimentações na lista, inclusive as sem peça, com lacuna de numeração provada e lista mais larga** (v0.36.0), **página inicial: tabela de últimas atualizações, uma linha por processo, com filtros que contam no lugar dos cartões; histórico de peças baixadas dentro da Pasta** (v0.37.0), **tabela sem "+N anteriores", "Detectado" enxuto e descrição do ato sem repetição na exibição** (v0.37.1), **classe legível e agrupada no filtro, última movimentação sem repetição e carteira sem rodapé redundante** (v0.37.2), **Atualizações lista todos os processos acompanhados, período como filtro opcional e verificação por conta** (v0.37.3), **Atualizações abre em "Pedem providência", com a lista completa a um clique** (v0.37.4), **intimação do Diário pede providência por 30 dias ou até "cumprido", marca por ato, correção da avalanche de novidades e reparo só com dry-run** (v0.37.5), **conferência com o Projudi: sonda de diagnóstico só de leitura, linha do ato da providência, "Detectado" legível e intimação a outro destinatário** (v0.37.6), **"Analisar com IA": por botão, texto redigido, citação verificada, ZDR falhando fechado, desligada por padrão e só no plano IA** (v0.38.0; sonda de IA v1.2.0 e `ia-avaliacoes.mjs` v1.0.0), **exceção de teste fechado da IA por variável (`PROCESSOVIVO_IA_WORKSPACES_LIBERADOS`), a remover antes de abrir ao público** (v0.38.1), **log da análise por IA com status HTTP, passo e funil do roteamento** (v0.38.2), **análise por IA: rodízio por provedor depois de 429/5xx, sem `allow_fallbacks`** (v0.38.3), **análise por IA: formato da resposta em texto, sem `require_parameters` nem `response_format`, ZDR e lista intactas** (v0.38.4), **análise por IA: ações possíveis como providência sem citação, rejeição de ação que copia o trecho-chave e rodapé sem o nome do modelo** (v0.38.5), **IA como secretária, Etapa 1: prazo escrito no ato, calculadora de prazo (exceção registrada) e "Criar aviso no calendário" com prévia e confirmação** (v0.39.0), **IA como secretária, Etapa 2 (só o servidor): resumo do processo por IA, por clique, com verificação item a item e a contagem das providências do sistema que a IA não citou** (v0.40.0), **tela do resumo do processo: botão na capa, painel com estados, link do ato à linha do tempo e correção do prazo sem opção pré-marcada** (v0.40.1), **Atualizações: busca pelo número do processo, que respeita os filtros e diz quantos casam fora deles** (v0.41.0),
 **tela do processo sem os blocos "Pede providência" e "Última movimentação", Partes logo abaixo das peças** (v0.41.1), **Google Drive: conectar a conta do advogado e salvar as peças da Pasta digital numa pasta "Processo Vivo", por botão, escopo `drive.file`, desligado por padrão, planos Peças e IA** (v0.42.0), **Drive: o retorno do OAuth usa o workspace do `state` assinado e a conta de chave de API também conecta** (v0.42.1), **testes estáveis no CI e a volta do Google sem corrida no console** (v0.42.2), **Atualizações: situação como texto e caixa "Cumprido" como único controle, com aviso para desfazer** (v0.43.0), **cobrança recorrente pelo Mercado Pago, parte 1: assinatura por cartão atrás da porta de pagamento, webhook idempotente, reconciliação e ciclo no plano** (v0.44.0), **ambiente do pagamento declarado em `PROCESSOVIVO_PAGAMENTO_AMBIENTE`, não deduzido do token** (v0.44.1),
-Dockerfile multi-stage, CI, 2697 testes.
+**página de vendas: vitrine pública `GET /v1/planos`, plano escolhido atravessando cadastro e login, confirmação de assinatura com aceite dos Termos obrigatório e trecho para o site** (v0.45.0),
+Dockerfile multi-stage, CI, 2792 testes.
 
 **Pasta digital (v0.33.0, backend):** `GET /v1/processos/:numero/pasta` (lista +
 estado de cada peça + intervalos de página + totais SEM filtro + procedência

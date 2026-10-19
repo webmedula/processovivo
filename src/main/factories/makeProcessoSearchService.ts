@@ -656,6 +656,7 @@ function montarPagamentos(
     logger,
     notificador,
     urlBase: config.pagamento.urlBase,
+    versaoDosTermos: config.pagamento.versaoDosTermos,
     ...(config.pagamento.emailDoOperador
       ? { emailDoOperador: config.pagamento.emailDoOperador }
       : {}),

@@ -112,7 +112,7 @@ describe('/admin — cobrança recorrente', () => {
       method: 'POST',
       url: '/v1/assinatura/checkout',
       headers: { cookie: paga.cookie },
-      payload: { plano: 'pecas' },
+      payload: { plano: 'pecas', aceiteTermos: true },
     });
     await c.app.assinaturas.liberar({
       workspace: manual.workspace,
@@ -159,7 +159,7 @@ describe('/admin — cobrança recorrente', () => {
       method: 'POST',
       url: '/v1/assinatura/checkout',
       headers: { cookie: conta.cookie },
-      payload: { plano: 'pecas' },
+      payload: { plano: 'pecas', aceiteTermos: true },
     });
     c.gateway.definirEstado('fake-assinatura-1', 'autorizada');
     c.gateway.registrarPagamento(

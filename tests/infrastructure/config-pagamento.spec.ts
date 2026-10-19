@@ -8,6 +8,7 @@ const BOM = {
   MERCADOPAGO_ACCESS_TOKEN: 'APP_USR-token-sintetico-0000',
   MERCADOPAGO_WEBHOOK_SECRET: 'segredo-sintetico-do-webhook',
   PROCESSOVIVO_URL_BASE: 'https://app.exemplo.test',
+  PROCESSOVIVO_TERMOS_VERSAO: '1.1',
 };
 
 function mensagemDe(env: Record<string, string>): string {
@@ -58,6 +59,7 @@ describe('configuração da cobrança recorrente (v0.44.0)', () => {
     expect(msg).toMatch(/PROCESSOVIVO_PAGAMENTO_AMBIENTE: obrigatória/);
     expect(msg).toMatch(/MERCADOPAGO_ACCESS_TOKEN: obrigatório/);
     expect(msg).toMatch(/MERCADOPAGO_WEBHOOK_SECRET: obrigatória/);
+    expect(msg).toMatch(/PROCESSOVIVO_TERMOS_VERSAO: obrigatória/);
     expect(msg).toMatch(/PROCESSOVIVO_URL_BASE: obrigatória/);
   });
 
@@ -147,6 +149,7 @@ describe('configuração da cobrança recorrente (v0.44.0)', () => {
       PROCESSOVIVO_PAGAMENTO_GATEWAY: 'falso',
       PROCESSOVIVO_PAGAMENTO_AMBIENTE: 'teste',
       PROCESSOVIVO_URL_BASE: 'https://app.exemplo.test',
+      PROCESSOVIVO_TERMOS_VERSAO: '1.1',
     } as NodeJS.ProcessEnv);
     expect(c.pagamento.gateway).toBe('falso');
     expect(c.pagamento.accessToken).toBe('');
@@ -163,5 +166,50 @@ describe('configuração da cobrança recorrente (v0.44.0)', () => {
         PROCESSOVIVO_TERMOS_URL: 'javascript:alert(1)',
       } as NodeJS.ProcessEnv).pagamento.urlDosTermos,
     ).toBe('');
+  });
+
+  it('v0.45.0: a versão dos Termos é OBRIGATÓRIA com o pagamento ligado e vai à configuração', () => {
+    const { PROCESSOVIVO_TERMOS_VERSAO: _v, ...semVersao } = BOM;
+    expect(mensagemDe(semVersao)).toMatch(/PROCESSOVIVO_TERMOS_VERSAO: obrigatória/);
+    expect(mensagemDe({ ...BOM, PROCESSOVIVO_TERMOS_VERSAO: '   ' })).toMatch(
+      /PROCESSOVIVO_TERMOS_VERSAO: obrigatória/,
+    );
+    expect(mensagemDe({ ...BOM, PROCESSOVIVO_TERMOS_VERSAO: 'v 1.1; DROP' })).toMatch(
+      /PROCESSOVIVO_TERMOS_VERSAO: use até 20 caracteres/,
+    );
+    expect(carregarConfig({ ...BOM, PROCESSOVIVO_TERMOS_VERSAO: ' 1.2 ' } as NodeJS.ProcessEnv).pagamento.versaoDosTermos).toBe('1.2');
+  });
+
+  it('v0.45.0: com o pagamento desligado a versão dos Termos não é exigida', () => {
+    expect(mensagemDe({})).toBe('');
+  });
+});
+
+describe('PROCESSOVIVO_SITE_URL (v0.45.0)', () => {
+  it('vazio (padrão) = sem CORS', () => {
+    expect(carregarConfig({} as NodeJS.ProcessEnv).http.siteUrl).toBe('');
+  });
+
+  it('normaliza para a ORIGEM: sem barra final, em minúsculas', () => {
+    const c = carregarConfig({ PROCESSOVIVO_SITE_URL: ' https://WWW.Exemplo.test/ ' } as NodeJS.ProcessEnv);
+    expect(c.http.siteUrl).toBe('https://www.exemplo.test');
+    const porta = carregarConfig({ PROCESSOVIVO_SITE_URL: 'http://localhost:8080' } as NodeJS.ProcessEnv);
+    expect(porta.http.siteUrl).toBe('http://localhost:8080');
+  });
+
+  it('valor torto derruba o arranque, sem ecoar o valor: curinga, caminho, http fora de localhost, credencial', () => {
+    for (const ruim of [
+      '*',
+      'https://*.exemplo.test',
+      'https://exemplo.test/planos',
+      'https://exemplo.test/?a=1',
+      'http://exemplo.test',
+      'https://usuario:senha@exemplo.test',
+      'nao-e-url',
+    ]) {
+      const msg = mensagemDe({ PROCESSOVIVO_SITE_URL: ruim });
+      expect(msg, ruim).toMatch(/PROCESSOVIVO_SITE_URL/);
+      expect(msg, ruim).not.toContain(ruim === '*' ? 'zzz' : ruim);
+    }
   });
 });
