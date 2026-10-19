@@ -680,7 +680,13 @@ MERCADOPAGO_WEBHOOK_SECRET=<a assinatura secreta que o painel mostrou>
 PROCESSOVIVO_URL_BASE=https://app.processovivo.com.br
 PROCESSOVIVO_PAGAMENTO_AVISO_EMAIL=<seu e-mail, para estorno e contestação>
 PROCESSOVIVO_TERMOS_URL=<o endereço dos Termos de Uso, se já houver>
+PROCESSOVIVO_TERMOS_VERSAO=<a versão dos Termos que o cliente aceita antes de pagar; em produção: 1.1>
 ```
+
+**Desde a 0.45.0 `PROCESSOVIVO_TERMOS_VERSAO` é obrigatória** com a cobrança ligada (o serviço recusa subir sem
+ela e diz qual variável falta). Todo checkout exige o aceite dos Termos: a tela de confirmação tem uma caixa
+desmarcada, e o servidor grava (tabela `aceites_termos`) a versão, o plano e a data, ligados ao workspace —
+sem e-mail e sem IP. Quando publicar os novos Termos, troque a variável para `1.2` e faça o redeploy.
 
 Se faltar a credencial, ou se ela parecer texto de exemplo, **o serviço recusa subir** e diz qual
 variável falta (nunca mostra o valor). O ambiente é o que **você declara** em `PROCESSOVIVO_PAGAMENTO_AMBIENTE` (`teste` ou `producao`), nunca o
@@ -736,6 +742,7 @@ plano há o campo **Ciclo de renovação**; hoje só `mensal` é vendável.
 | GET | `/v1/advogados/:uf/:oab/processos` | sim | carteira do advogado |
 | POST | `/v1/contas` | não | cria a conta e já entra (cadastro aberto) |
 | POST | `/v1/sessoes` | não | entrar; `DELETE` sai |
+| GET | `/v1/planos` | não | vitrine do site de vendas: planos à venda e `pagamentoDisponivel`; CORS só para `PROCESSOVIVO_SITE_URL` |
 | GET | `/v1/senha/recuperar` | não | esta instalação manda e-mail? `{"disponivel":…}` |
 | POST | `/v1/senha/recuperar` | não | pede o link; responde **sempre** 202 |
 | POST | `/v1/senha/redefinir` | não | troca a senha pelo link e já entra |

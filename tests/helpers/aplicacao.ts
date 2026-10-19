@@ -490,6 +490,7 @@ export function aplicacaoDeTeste(
         logger: loggerSilencioso,
         notificador: opcoes.notificador ?? new NotificadorEspiao(),
         urlBase: opcoes.pagamentos.urlBase ?? 'https://app.exemplo.test',
+        versaoDosTermos: '1.1',
         ...(opcoes.pagamentos.emailDoOperador
           ? { emailDoOperador: opcoes.pagamentos.emailDoOperador }
           : {}),

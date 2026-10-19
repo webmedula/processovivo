@@ -32,8 +32,15 @@ function workspaceDe(requisicao: FastifyRequest): string {
   return ws;
 }
 
-/** `.strict()`: nada além do código do plano. Preço, valor e e-mail NUNCA vêm do cliente. */
-const corpoDoCheckout = z.object({ plano: z.string().trim().min(1).max(30) }).strict();
+/**
+ * `.strict()`: nada além do código do plano e do aceite. Preço, valor e e-mail NUNCA vêm do cliente.
+ * `aceiteTermos` é OBRIGATÓRIO (v0.45.0) mas não é exigido pelo schema: ausente ou `false` chega ao
+ * serviço e vira `termos_nao_aceitos` (422, com `detalhes.motivo`) — um erro claro, igual aos outros
+ * motivos de recusa, e não um 400 genérico de validação.
+ */
+const corpoDoCheckout = z
+  .object({ plano: z.string().trim().min(1).max(30), aceiteTermos: z.boolean().optional() })
+  .strict();
 
 const texto = (v: unknown): string | undefined =>
   typeof v === 'string' && v !== '' ? v : typeof v === 'number' ? String(v) : undefined;
@@ -78,8 +85,12 @@ export function rotasDePagamentos(
         },
       },
       async (req) => {
-        const { plano } = corpoDoCheckout.parse(req.body);
-        return pagamentos.iniciarCheckout({ workspace: workspaceDe(req), plano });
+        const { plano, aceiteTermos } = corpoDoCheckout.parse(req.body);
+        return pagamentos.iniciarCheckout({
+          workspace: workspaceDe(req),
+          plano,
+          ...(aceiteTermos !== undefined ? { aceiteTermos } : {}),
+        });
       },
     );
 

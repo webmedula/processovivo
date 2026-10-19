@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Planos — Processo Vivo</title>
+<!--
+  PLANOS DO SITE — Processo Vivo v0.45.0
+
+  Um arquivo só (HTML + CSS + JS), sem dependência externa, para colar numa página do site.
+
+  COMO USAR
+  1. Copie tudo entre "INÍCIO DO TRECHO" e "FIM DO TRECHO" (o <style>, a <section> e o <script>) e
+     cole na página de planos do site, no ponto em que os planos devem aparecer.
+  2. Se o site tiver o próprio <head>/<body>, NÃO copie esta moldura (doctype, <html>, <head>, <body>):
+     ela só existe para abrir o arquivo sozinho no navegador e conferir.
+  3. O endereço do app fica na constante APP_URL, no começo do <script>.
+
+  COMO FUNCIONA
+  - Busca GET {APP_URL}/v1/planos (rota pública do app; o preço é cadastrado só no /admin do app).
+  - Cada plano vira um cartão. "Testar 14 dias grátis" abre o cadastro no app com o plano escolhido;
+    "Assinar agora" (só com pagamento ligado e plano com preço) abre a confirmação da assinatura
+    logo depois do cadastro/login. O site NUNCA processa pagamento nem toca em dado de cartão.
+  - Se a rota falhar ou demorar, aparece uma mensagem neutra e um único botão "Testar grátis".
+    Preço nunca é inventado.
+  - Todo texto vindo da rede entra por textContent: nenhum HTML é montado a partir de texto externo.
+
+  RODAPÉ LEGAL
+  Este trecho NÃO traz o rodapé legal (razão social, CNPJ, endereço). Ele entra no rodapé do SITE,
+  logo depois desta seção — ver o comentário "RODAPÉ LEGAL ENTRA AQUI" no fim do trecho.
+-->
+<style>
+  /* Moldura de pré-visualização: ignore ao colar no site. */
+  body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: #f4f6f9; color: #0b192c; }
+  @media (prefers-color-scheme: dark) { body { background: #0b1220; color: #e8edf5; } }
+</style>
+</head>
+<body>
+
+<!-- ===================== INÍCIO DO TRECHO ===================== -->
+<style>
+  #pv-planos {
+    --pv-fundo: #ffffff;
+    --pv-texto: #0b192c;
+    --pv-suave: #46566b;
+    --pv-linha: #c9d3df;
+    --pv-acento: #0a58ca;
+    --pv-acento-texto: #ffffff;
+    --pv-destaque: #e7f0ff;
+    box-sizing: border-box;
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 32px 16px;
+    color: var(--pv-texto);
+    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    #pv-planos {
+      --pv-fundo: #111b2e;
+      --pv-texto: #e8edf5;
+      --pv-suave: #b4c0d0;
+      --pv-linha: #34445c;
+      --pv-acento: #7fb2ff;
+      --pv-acento-texto: #07111f;
+      --pv-destaque: #16253f;
+    }
+  }
+  #pv-planos *, #pv-planos *::before, #pv-planos *::after { box-sizing: border-box; }
+  #pv-planos h2 { margin: 0 0 4px; font-size: 1.75rem; line-height: 1.2; }
+  #pv-planos .pv-sub { margin: 0 0 24px; color: var(--pv-suave); }
+  #pv-planos .pv-lista {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+    gap: 16px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  #pv-planos .pv-cartao {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-width: 0;
+    padding: 20px;
+    background: var(--pv-fundo);
+    border: 1px solid var(--pv-linha);
+    border-radius: 12px;
+    overflow-wrap: anywhere;
+  }
+  #pv-planos .pv-nome { margin: 0; font-size: 1.25rem; }
+  #pv-planos .pv-preco { margin: 0; font-size: 1.6rem; font-weight: 700; }
+  #pv-planos .pv-preco small { font-size: 0.9rem; font-weight: 400; color: var(--pv-suave); }
+  #pv-planos .pv-resumo { margin: 0; color: var(--pv-suave); }
+  #pv-planos .pv-recursos { margin: 0; padding-left: 1.2em; }
+  #pv-planos .pv-recursos li { margin: 2px 0; }
+  #pv-planos .pv-acoes { display: flex; flex-direction: column; gap: 8px; margin-top: auto; }
+  #pv-planos .pv-nota { margin: 0; font-size: 0.85rem; color: var(--pv-suave); }
+  #pv-planos .pv-botao {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px;
+    padding: 10px 16px;
+    border: 2px solid var(--pv-acento);
+    border-radius: 8px;
+    font: inherit;
+    font-weight: 700;
+    text-align: center;
+    text-decoration: none;
+    background: var(--pv-acento);
+    color: var(--pv-acento-texto);
+  }
+  #pv-planos .pv-botao.pv-secundario { background: transparent; color: var(--pv-acento); }
+  #pv-planos .pv-botao:hover { filter: brightness(1.08); }
+  #pv-planos .pv-botao:focus-visible { outline: 3px solid var(--pv-texto); outline-offset: 3px; }
+  #pv-planos .pv-estado { margin: 0 0 16px; padding: 14px 16px; background: var(--pv-destaque); border-radius: 8px; }
+  @media (prefers-reduced-motion: reduce) { #pv-planos * { transition: none !important; } }
+</style>
+
+<section id="pv-planos" aria-labelledby="pv-planos-titulo">
+  <h2 id="pv-planos-titulo">Planos</h2>
+  <p class="pv-sub">Comece com 14 dias grátis. O cadastro e o pagamento acontecem no aplicativo do Processo Vivo.</p>
+  <p class="pv-estado" id="pv-planos-estado" role="status">Carregando os planos…</p>
+  <ul class="pv-lista" id="pv-planos-lista" aria-label="Planos disponíveis"></ul>
+  <div id="pv-planos-alternativa"></div>
+  <!--
+    RODAPÉ LEGAL ENTRA AQUI (ou no rodapé do site): razão social, CNPJ e endereço.
+    Este arquivo não traz esses dados de propósito — preencha no site.
+  -->
+</section>
+
+<script>
+(function () {
+  'use strict';
+
+  // O endereço do app. É a ÚNICA coisa a ajustar neste arquivo. Sem barra no final.
+  var APP_URL = 'https://app.processovivo.com.br';
+
+  var TEMPO_LIMITE_MS = 8000;
+  var FORMATO_DO_SLUG = /^[a-z][a-z0-9-]{1,29}$/;
+  var POR_CICLO = { mensal: 'mês', trimestral: 'trimestre', anual: 'ano' };
+  var RENOVACAO = 'Renovação automática. Você pode cancelar quando quiser.';
+
+  var estado = document.getElementById('pv-planos-estado');
+  var lista = document.getElementById('pv-planos-lista');
+  var alternativa = document.getElementById('pv-planos-alternativa');
+  if (!estado || !lista || !alternativa) return;
+
+  function el(tag, classe, texto) {
+    var e = document.createElement(tag);
+    if (classe) e.className = classe;
+    if (texto !== undefined) e.textContent = texto; // SEMPRE textContent: dado da rede nunca vira HTML
+    return e;
+  }
+
+  function link(texto, href, secundario) {
+    var a = el('a', 'pv-botao' + (secundario ? ' pv-secundario' : ''), texto);
+    a.setAttribute('href', href);
+    return a;
+  }
+
+  // O destino é sempre o app; o slug (validado) é o único dado de fora que entra na URL.
+  function urlDoApp(slug, assinar) {
+    var q = [];
+    if (slug) q.push('plano=' + encodeURIComponent(slug));
+    if (assinar) q.push('assinar=1');
+    q.push('conta=1');
+    return APP_URL + '/?' + q.join('&');
+  }
+
+  function reais(centavos) {
+    try {
+      return (centavos / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+    } catch (e) {
+      return 'R$ ' + (centavos / 100).toFixed(2).replace('.', ',');
+    }
+  }
+
+  function texto(v, max) {
+    return typeof v === 'string' && v.length > 0 ? v.slice(0, max) : '';
+  }
+
+  // Aceita só o que tem a forma esperada; o resto é descartado sem barulho.
+  function planoValido(p) {
+    if (!p || typeof p !== 'object') return null;
+    if (typeof p.slug !== 'string' || !FORMATO_DO_SLUG.test(p.slug)) return null;
+    var nome = texto(p.nome, 60);
+    if (!nome) return null;
+    var preco = null;
+    if (p.preco && typeof p.preco === 'object' && typeof p.preco.valorCentavos === 'number' &&
+        isFinite(p.preco.valorCentavos) && p.preco.valorCentavos > 0 && typeof p.preco.ciclo === 'string') {
+      preco = { valorCentavos: p.preco.valorCentavos, ciclo: p.preco.ciclo };
+    }
+    var recursos = [];
+    if (Array.isArray(p.recursos)) {
+      for (var i = 0; i < p.recursos.length && recursos.length < 12; i++) {
+        var r = texto(p.recursos[i], 80);
+        if (r) recursos.push(r);
+      }
+    }
+    return { slug: p.slug, nome: nome, resumo: texto(p.resumo, 300), recursos: recursos, preco: preco, assinavel: p.assinavel === true };
+  }
+
+  function desenharCartao(plano, pagamentoDisponivel) {
+    var li = el('li', 'pv-cartao');
+    li.appendChild(el('h3', 'pv-nome', plano.nome));
+
+    var preco = el('p', 'pv-preco');
+    if (plano.preco) {
+      preco.appendChild(document.createTextNode(reais(plano.preco.valorCentavos) + ' '));
+      preco.appendChild(el('small', '', 'por ' + (POR_CICLO[plano.preco.ciclo] || 'período')));
+    } else {
+      // Nunca um preço inventado.
+      preco.appendChild(el('small', '', 'Valor sob consulta'));
+    }
+    li.appendChild(preco);
+
+    if (plano.resumo) li.appendChild(el('p', 'pv-resumo', plano.resumo));
+    if (plano.recursos.length > 0) {
+      var ul = el('ul', 'pv-recursos');
+      for (var i = 0; i < plano.recursos.length; i++) ul.appendChild(el('li', '', plano.recursos[i]));
+      li.appendChild(ul);
+    }
+
+    var acoes = el('div', 'pv-acoes');
+    var podeAssinar = pagamentoDisponivel && plano.assinavel && plano.preco !== null;
+    // Plano sem preço: o app ignora o parâmetro, então o cadastro abre sem plano.
+    acoes.appendChild(link('Testar 14 dias grátis', urlDoApp(plano.preco ? plano.slug : '', false), podeAssinar));
+    if (podeAssinar) {
+      var assinar = link('Assinar agora', urlDoApp(plano.slug, true), false);
+      assinar.setAttribute('aria-label', 'Assinar agora o plano ' + plano.nome);
+      acoes.insertBefore(assinar, acoes.firstChild);
+      acoes.appendChild(el('p', 'pv-nota', RENOVACAO));
+    }
+    li.appendChild(acoes);
+    return li;
+  }
+
+  // Falha, demora ou resposta sem plano nenhum: mensagem neutra e UM botão. Nada de preço.
+  function alternativaSemPlanos() {
+    estado.textContent = 'Não foi possível carregar os planos agora. Você pode começar o teste grátis e ver os planos dentro do aplicativo.';
+    lista.textContent = '';
+    alternativa.textContent = '';
+    alternativa.appendChild(link('Testar grátis', urlDoApp('', false), false));
+  }
+
+  function desenhar(corpo) {
+    var vindos = corpo && Array.isArray(corpo.planos) ? corpo.planos : [];
+    var planos = [];
+    for (var i = 0; i < vindos.length && planos.length < 6; i++) {
+      var p = planoValido(vindos[i]);
+      if (p) planos.push(p);
+    }
+    if (planos.length === 0) { alternativaSemPlanos(); return; }
+    var pagamento = !!corpo && corpo.pagamentoDisponivel === true;
+    lista.textContent = '';
+    for (var j = 0; j < planos.length; j++) lista.appendChild(desenharCartao(planos[j], pagamento));
+    estado.hidden = true;
+  }
+
+  var controle = typeof AbortController === 'function' ? new AbortController() : null;
+  var prazo = setTimeout(function () { if (controle) controle.abort(); }, TEMPO_LIMITE_MS);
+  // Sem cookie e sem cabeçalho do app: o site não envia nem recebe credencial.
+  fetch(APP_URL + '/v1/planos', {
+    method: 'GET',
+    credentials: 'omit',
+    mode: 'cors',
+    headers: { accept: 'application/json' },
+    signal: controle ? controle.signal : undefined
+  }).then(function (r) {
+    if (!r.ok) throw new Error('status');
+    return r.json();
+  }).then(function (corpo) {
+    clearTimeout(prazo);
+    desenhar(corpo);
+  }).catch(function () {
+    clearTimeout(prazo);
+    alternativaSemPlanos();
+  });
+})();
+</script>
+<!-- ====================== FIM DO TRECHO ====================== -->
+
+</body>
+</html>

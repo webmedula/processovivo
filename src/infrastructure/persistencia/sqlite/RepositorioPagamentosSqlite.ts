@@ -6,6 +6,7 @@ import type {
 } from '../../../domain/entities/Pagamento.js';
 import type { CicloDoPlano } from '../../../domain/entities/Plano.js';
 import type {
+  AceiteDeTermos,
   CobrancaRecorrente,
   EventoDePagamento,
   PagamentoProcessado,
@@ -90,6 +91,29 @@ const iso = (d: Date | undefined): string | null => (d ? d.toISOString() : null)
  */
 export class RepositorioPagamentosSqlite implements RepositorioPagamentos {
   constructor(private readonly db: DatabaseSync) {}
+
+  async registrarAceiteDeTermos(a: AceiteDeTermos): Promise<void> {
+    this.db
+      .prepare('INSERT INTO aceites_termos (workspace, versao, plano, aceito_em) VALUES (?, ?, ?, ?)')
+      .run(a.workspace, a.versao, a.plano, a.aceitoEm.toISOString());
+  }
+
+  async aceitesDe(workspace: string): Promise<readonly AceiteDeTermos[]> {
+    const linhas = this.db
+      .prepare('SELECT * FROM aceites_termos WHERE workspace = ? ORDER BY id ASC')
+      .all(workspace) as unknown as Array<{
+      workspace: string;
+      versao: string;
+      plano: string;
+      aceito_em: string;
+    }>;
+    return linhas.map((l) => ({
+      workspace: l.workspace,
+      versao: l.versao,
+      plano: l.plano,
+      aceitoEm: new Date(l.aceito_em),
+    }));
+  }
 
   async criar(c: CobrancaRecorrente): Promise<void> {
     this.db

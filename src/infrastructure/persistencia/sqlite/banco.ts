@@ -387,6 +387,17 @@ const ESQUEMA = [
    )`,
   `CREATE INDEX IF NOT EXISTS idx_eventos_pagamento_ref ON eventos_de_pagamento(referencia)`,
 
+  // Aceite dos Termos antes do checkout (v0.45.0). TABELA NOVA, só dado de auditoria: workspace, versão
+  // dos Termos, plano e data. Sem e-mail, sem IP, sem nome — o workspace já é o vínculo com a conta.
+  `CREATE TABLE IF NOT EXISTS aceites_termos (
+     id          INTEGER PRIMARY KEY AUTOINCREMENT,
+     workspace   TEXT NOT NULL,
+     versao      TEXT NOT NULL,
+     plano       TEXT NOT NULL,
+     aceito_em   TEXT NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_aceites_termos_workspace ON aceites_termos(workspace)`,
+
   // Jobs do leitor de peças (v0.30.0): um pedido de PDF combinado por linha.
   //
   // Colunas só para o que se FILTRA (dono, estado, quando retomar, quando

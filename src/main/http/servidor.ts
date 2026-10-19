@@ -30,6 +30,7 @@ import { rotasDoPainel } from './rotas/painel.js';
 import { rotasDaAnaliseIA } from './rotas/analiseIA.js';
 import { rotasDoResumoIA } from './rotas/resumoIA.js';
 import { ROTA_FEED_PUBLICO, rotasDoCalendario } from './rotas/calendario.js';
+import { ROTA_PLANOS_PUBLICOS, rotasDePlanosPublicos } from './rotas/planosPublicos.js';
 import { rotasDeAssinaturas } from './rotas/assinaturas.js';
 import { ROTA_WEBHOOK_DE_PAGAMENTO, rotasDePagamentos } from './rotas/pagamentos.js';
 import { ROTAS_ADMIN, rotasDeAdmin } from './rotas/admin.js';
@@ -135,6 +136,8 @@ export function construirServidor(app: Aplicacao, config: Config): FastifyInstan
       // O aviso do gateway de pagamento: sem cookie e sem chave. Quem o autentica é a assinatura do
       // próprio aviso (`x-signature`); inválida = 401. Desligado o recurso, a rota nem existe (404).
       ROTA_WEBHOOK_DE_PAGAMENTO,
+      // A vitrine do site de vendas: só planos à venda e preço de vitrine, sem conta nem chave.
+      ROTA_PLANOS_PUBLICOS,
       ...ROTAS_ADMIN,
     ],
   });
@@ -167,6 +170,12 @@ export function construirServidor(app: Aplicacao, config: Config): FastifyInstan
     rotasDeAssinaturas(app.assinaturas, app.planos, {
       pagamentos: app.pagamentos,
       urlDosTermos: config.pagamento.urlDosTermos,
+    }),
+  );
+  void servidor.register(
+    rotasDePlanosPublicos(app.planos, {
+      pagamentoDisponivel: app.pagamentos !== undefined,
+      siteUrl: config.http.siteUrl,
     }),
   );
   void servidor.register(rotasDePagamentos(app.pagamentos, log));

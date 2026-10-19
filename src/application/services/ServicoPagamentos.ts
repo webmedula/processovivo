@@ -21,6 +21,7 @@ import type { Logger } from '../../domain/ports/Logger.js';
 import type { Notificador } from '../../domain/ports/Notificador.js';
 import type { RepositorioPagamentos } from '../../domain/ports/RepositorioPagamentos.js';
 import type {
+  AceiteDeTermos,
   CobrancaRecorrente,
   EventoDePagamento,
 } from '../../domain/ports/RepositorioPagamentos.js';
@@ -44,6 +45,8 @@ export interface OpcoesServicoPagamentos {
   readonly usuarios: RepositorioUsuarios;
   readonly logger: Logger;
   readonly notificador?: Notificador;
+  /** `PROCESSOVIVO_TERMOS_VERSAO`: a versão dos Termos que o aceite do checkout registra. */
+  readonly versaoDosTermos: string;
   /** `PROCESSOVIVO_URL_BASE`: de onde saem a URL de retorno e a de notificação. */
   readonly urlBase: string;
   /** Quem recebe o aviso de estorno e contestação. Sem ele, o aviso só vai para o log. */
@@ -102,9 +105,13 @@ const FRASE_DO_MOTIVO: Readonly<Record<MotivoDePagamentoRecusado, string>> = {
   plano_nao_vendavel: 'Este plano não está à venda.',
   ciclo_nao_suportado: 'Este plano tem um ciclo de renovação que ainda não pode ser contratado pelo site.',
   conta_sem_email: 'Esta conta não tem e-mail cadastrado; a assinatura online exige uma conta com e-mail.',
-  ja_assinante: 'Já existe uma assinatura com renovação automática ativa nesta conta.',
+  ja_assinante:
+    'Já existe uma assinatura com renovação automática ativa nesta conta. ' +
+    'Para trocar de plano, cancele a renovação atual primeiro.',
   sem_recorrencia: 'Não há renovação automática para cancelar.',
   plano_desconhecido: 'Plano não encontrado.',
+  termos_nao_aceitos: 'Para continuar, aceite os Termos de Uso.',
+  plano_ja_vigente: 'Este plano já está vigente nesta conta.',
 };
 
 const mascara = (id: string): string => (id.length > 8 ? `${id.slice(0, 4)}…${id.slice(-4)}` : '…');
@@ -140,6 +147,7 @@ export class ServicoPagamentos {
   private readonly logger: Logger;
   private readonly notificador: Notificador | undefined;
   private readonly urlBase: string;
+  private readonly versaoDosTermos: string;
   private readonly emailDoOperador: string | undefined;
   private readonly agora: () => Date;
   private readonly gerarReferencia: () => string;
@@ -153,6 +161,7 @@ export class ServicoPagamentos {
     this.logger = opcoes.logger;
     this.notificador = opcoes.notificador;
     this.urlBase = opcoes.urlBase.replace(/\/+$/, '');
+    this.versaoDosTermos = opcoes.versaoDosTermos;
     this.emailDoOperador = opcoes.emailDoOperador;
     this.agora = opcoes.agora ?? ((): Date => new Date());
     this.gerarReferencia = opcoes.gerarReferencia ?? ((): string => randomBytes(24).toString('hex'));
@@ -187,6 +196,11 @@ export class ServicoPagamentos {
     return this.repo.maisRecenteDoWorkspace(workspace);
   }
 
+  /** Os aceites dos Termos do workspace (auditoria): versão, plano e data; nenhum dado pessoal. */
+  async aceitesDe(workspace: string): Promise<readonly AceiteDeTermos[]> {
+    return this.repo.aceitesDe(workspace);
+  }
+
   async eventosDe(referencia: string): Promise<readonly EventoDePagamento[]> {
     return this.repo.eventosDe(referencia);
   }
@@ -207,6 +221,8 @@ export class ServicoPagamentos {
   async iniciarCheckout(opcoes: {
     readonly workspace: string;
     readonly plano: string;
+    /** Obrigatório (v0.45.0): sem `true` nada é gravado nem enviado ao gateway. */
+    readonly aceiteTermos?: boolean;
   }): Promise<{ readonly urlDeCheckout: string }> {
     const plano = await this.planos.porCodigo(opcoes.plano);
     if (!plano) throw this.recusa('plano_desconhecido');
@@ -216,14 +232,33 @@ export class ServicoPagamentos {
     const conta = await this.usuarios.porWorkspace(opcoes.workspace);
     if (!conta) throw this.recusa('conta_sem_email');
 
+    // Qualquer recorrência autorizada, de QUALQUER plano: um segundo checkout geraria uma segunda
+    // cobrança recorrente em paralelo. A troca de plano não existe nesta versão.
     const atual = await this.repo.maisRecenteDoWorkspace(opcoes.workspace);
     if (atual?.estado === 'autorizada') throw this.recusa('ja_assinante');
+
+    // Plano pago e vigente (liberação manual, Pix) do MESMO plano não abre checkout. O teste de 14 dias
+    // não é assinatura ativa; carência e vencida também podem assinar (é a renovação).
+    const vigente = await this.assinaturas.resumo(opcoes.workspace);
+    if (vigente && vigente.status === 'ativa' && !vigente.ehTeste && vigente.plano === plano.codigo) {
+      throw this.recusa('plano_ja_vigente');
+    }
+
+    // Por último entre as recusas, e ANTES de gravar ou chamar o gateway: sem o aceite não nasce nada.
+    if (opcoes.aceiteTermos !== true) throw this.recusa('termos_nao_aceitos');
 
     const valor = valorDoCicloEmCentavos(plano);
     if (valor === null) throw this.recusa('plano_sem_preco');
     const ciclo = cicloDoPlano(plano);
     const referencia = this.gerarReferencia();
     const agora = this.agora();
+
+    await this.repo.registrarAceiteDeTermos({
+      workspace: opcoes.workspace,
+      versao: this.versaoDosTermos,
+      plano: plano.codigo,
+      aceitoEm: agora,
+    });
 
     // Grava ANTES de chamar o gateway: se o aviso do gateway chegar antes da nossa resposta, a
     // referência já existe e liga o aviso ao workspace.

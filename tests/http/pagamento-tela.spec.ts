@@ -36,16 +36,18 @@ describe('tela da assinatura online', () => {
     ]);
   });
 
-  it('o pedido de checkout leva SÓ o código do plano: preço, valor e e-mail nunca saem da tela', () => {
-    expect(SCRIPT_PAGAMENTO).toContain("body:{plano:b.getAttribute('data-assinar')}");
+  it('o pedido de checkout leva SÓ o código do plano e o aceite: preço, valor e e-mail nunca saem da tela', () => {
+    expect(SCRIPT_PAGAMENTO).toContain('body:{plano:codigo,aceiteTermos:true}');
     // (as chaves `plano_sem_preco` e `conta_sem_email` são MOTIVOS de recusa, não campos do pedido)
     expect(SCRIPT_PAGAMENTO).not.toMatch(/\bvalor:|\bpreco:|\bemail:|payer/i);
   });
 
   it('o sistema nunca vê cartão: nenhum campo de número, validade ou código de segurança', () => {
-    expect(SCRIPT_PAGAMENTO).not.toMatch(
-      /<input|card_?number|cvv|cvc|security|validade|numero do cart/i,
-    );
+    // O único campo da tela é a caixa de aceite dos Termos (v0.45.0).
+    const campos = SCRIPT_PAGAMENTO.match(/<input[^>]*>/g) ?? [];
+    expect(campos).toHaveLength(1);
+    expect(campos[0]).toContain('type="checkbox"');
+    expect(SCRIPT_PAGAMENTO).not.toMatch(/card_?number|cvv|cvc|security|validade|numero do cart/i);
   });
 
   it('só segue para o endereço do gateway se for https', () => {
@@ -76,6 +78,21 @@ describe('tela da assinatura online', () => {
     }
     // O texto do servidor nunca vai à tela: `e.message` não é lido.
     expect(SCRIPT_PAGAMENTO).not.toContain('e.message');
+  });
+
+  it('a confirmação: caixa de aceite nasce DESMARCADA, o botão nasce desabilitado e o clique confere o aceite', () => {
+    expect(SCRIPT_PAGAMENTO).toContain('var termosAceitos=false;');
+    expect(SCRIPT_PAGAMENTO).toContain("(termosAceitos?' checked':'')");
+    expect(SCRIPT_PAGAMENTO).toContain("(termosAceitos?'':' disabled')");
+    expect(SCRIPT_PAGAMENTO).toContain('if(!termosAceitos||!confirmar)return;');
+    // O botão "Assinar" da lista NÃO chama o checkout: abre a confirmação.
+    expect(SCRIPT_PAGAMENTO).toContain("abrirConfirmacao(b.getAttribute('data-assinar'))");
+    expect(SCRIPT_PAGAMENTO.match(/\/v1\/assinatura\/checkout/g)).toHaveLength(1);
+    expect(SCRIPT_PAGAMENTO).toContain('Ambiente de teste, nenhuma cobrança real.');
+    expect(SCRIPT_PAGAMENTO).toContain('Continuar para o pagamento');
+    expect(SCRIPT_PAGAMENTO).toContain('Para trocar de plano, cancele a renovação atual primeiro.');
+    // Destaque por TEXTO, não só por cor.
+    expect(SCRIPT_PAGAMENTO).toContain('Plano escolhido');
   });
 
   it('nada fala em prazo (o produto não anuncia contagem de prazo na cobrança)', () => {

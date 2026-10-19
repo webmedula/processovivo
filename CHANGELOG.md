@@ -9,6 +9,48 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.45.0] — 2026-10-19
+
+**Página de vendas: a ponte entre o site (planos) e o app (cadastro, confirmação e pagamento).**
+
+- **Rota pública `GET /v1/planos`** (sem cookie e sem chave): só planos à venda, com `slug`, `nome`, `resumo`,
+  `recursos` (nomes legíveis), `preco` (`{ valorCentavos, ciclo }` ou `null`) e `assinavel`, mais
+  `pagamentoDisponivel` (`false` com a cobrança desligada). Nenhum id de banco, contagem ou configuração.
+  Plano sem preço aparece **sem preço e sem "Assinar agora"**. Cache de 60 s e balde de limite de taxa próprio
+  (120/min por IP). **CORS manual só nesta rota**, só para a origem de `PROCESSOVIVO_SITE_URL`, só `GET`, sem
+  credenciais, `Vary: Origin` sempre; vazio (padrão) = sem CORS. `CORS_ORIGINS` (global) não mudou.
+- **O plano escolhido no site atravessa cadastro e login.** O site aponta para a RAIZ do app:
+  `/?plano=<slug>&conta=1` (teste grátis) e `/?plano=<slug>&assinar=1&conta=1` (assinar agora). O parâmetro é
+  lido uma vez e sai da barra de endereço; só um slug no formato do catálogo é guardado, no `sessionStorage` por
+  30 minutos (memória de reserva; nunca `localStorage`); depois de entrar, é conferido contra `GET /v1/planos`.
+  Qualquer outro valor é ignorado em silêncio, e o plano nunca é destino de redirecionamento. Sem `assinar=1` a
+  pessoa entra no teste normalmente e o plano fica destacado ("Plano escolhido") em "Minha conta"; com
+  `assinar=1` abre a confirmação — **nunca cobra sozinho**. `conta=1` abre direto o cadastro.
+- **Tela de confirmação de assinatura** (valor, ciclo, "Renovação automática. Você pode cancelar quando
+  quiser.", link dos Termos, caixa de aceite DESMARCADA; "Continuar para o pagamento" só habilita com o aceite;
+  "Ambiente de teste, nenhuma cobrança real." no teste). O botão "Assinar" do cartão de "Minha conta" usa a
+  MESMA tela, em vez de chamar o checkout direto.
+- **`POST /v1/assinatura/checkout` passa a exigir `aceiteTermos: true`.** Sem ele: 422 `termos_nao_aceitos` e
+  nada é criado (nem cobrança, nem aceite, nem chamada ao Mercado Pago). O servidor grava o aceite na tabela
+  nova `aceites_termos` (workspace, versão, plano, data; sem e-mail e sem IP; `CREATE TABLE IF NOT EXISTS`,
+  nenhuma tabela existente muda).
+- **Nova variável `PROCESSOVIVO_TERMOS_VERSAO`**: obrigatória com a cobrança habilitada (fail-closed).
+  Em produção: `1.1`; passa a `1.2` quando os novos Termos saírem. **Atenção ao atualizar:** quem já usa a
+  cobrança precisa defini-la antes do deploy, senão o serviço não sobe.
+- **Nova variável `PROCESSOVIVO_SITE_URL`** (opcional): a origem do site de vendas.
+- **Assinatura já em curso não abre outro checkout:** qualquer recorrência autorizada (de qualquer plano) segue
+  barrada (`ja_assinante`, agora com "Para trocar de plano, cancele a renovação atual primeiro."), e plano
+  pago e vigente do MESMO plano por liberação manual (Pix) é barrado com `plano_ja_vigente` (409). O teste de
+  14 dias não conta como assinatura ativa. A troca de plano continua fora de escopo.
+- **Trecho do site:** `site/planos-v0.45.0.html` (HTML + CSS + JS em um arquivo, sem dependência externa) para
+  colar no site; texto da rede só por `textContent`; falha ou demora cai numa mensagem neutra com um botão.
+- Webhook, adapter do Mercado Pago, reconciliação, regras de plano e `exigir()`, carência, teste de 14 dias,
+  fluxo manual, IA, Drive, peças e calendário: **não mudaram**.
+- Testes: vitrine pública (CORS, limite, campos), configuração, aceite obrigatório, plano vigente, tela de
+  confirmação e plano escolhido no Chromium (cadastro, login, valores inválidos, chave de API, pagamento
+  desligado), e o trecho do site (falha, tempo esgotado, dado malicioso, axe, 6 larguras, claro e escuro).
+  Testes da 0.44 ajustados ao aceite obrigatório: ver a lista no PR.
+
 ## [0.44.1] — 2026-10-19
 
 **O ambiente do pagamento passa a ser declarado, não deduzido do token.** O Mercado Pago emite credenciais
