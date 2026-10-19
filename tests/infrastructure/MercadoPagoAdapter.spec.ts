@@ -6,7 +6,6 @@ import {
 } from '../../src/domain/errors/index.js';
 import {
   MercadoPagoAdapter,
-  ambienteDoToken,
 } from '../../src/infrastructure/adapters/pagamento/MercadoPagoAdapter.js';
 import type {
   PedidoDoGateway,
@@ -44,12 +43,14 @@ const ok = (corpo: unknown, status = 200): RespostaDoGateway => ({
 function adapter(
   respostas: Array<RespostaDoGateway | Error>,
   token = TOKEN,
+  ambiente: 'teste' | 'producao' = 'producao',
 ): { gw: MercadoPagoAdapter; transporte: TransporteGravado } {
   const transporte = new TransporteGravado(respostas);
   return {
     transporte,
     gw: new MercadoPagoAdapter({
       accessToken: token,
+      ambiente,
       segredoDoWebhook: SEGREDO,
       transporte,
       clock: { agora: () => AGORA, monotonico: () => 0 },
@@ -70,10 +71,9 @@ const PEDIDO = {
 };
 
 describe('MercadoPagoAdapter — ambiente', () => {
-  it('o token define o ambiente: TEST- é teste, o resto é produção', () => {
-    expect(ambienteDoToken('TEST-1234')).toBe('teste');
-    expect(ambienteDoToken('APP_USR-1234')).toBe('producao');
-    expect(adapter([], 'TEST-x').gw.ambiente).toBe('teste');
+  it('o ambiente é o declarado, não o do prefixo do token (APP_USR- também é de teste)', () => {
+    expect(adapter([], 'APP_USR-x', 'teste').gw.ambiente).toBe('teste');
+    expect(adapter([], 'TEST-x', 'producao').gw.ambiente).toBe('producao');
   });
 });
 

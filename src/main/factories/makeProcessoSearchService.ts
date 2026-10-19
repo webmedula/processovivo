@@ -631,6 +631,8 @@ function montarPagamentos(
       : new MercadoPagoAdapter({
           accessToken: config.pagamento.accessToken,
           segredoDoWebhook: config.pagamento.segredoDoWebhook,
+          // Validado no arranque: com o recurso ligado nunca é nulo.
+          ambiente: config.pagamento.ambiente ?? 'producao',
           transporte: new TransporteDoGatewayDePagamento(
             new HttpClient({ tentativas: 1 }),
             'mercadopago',

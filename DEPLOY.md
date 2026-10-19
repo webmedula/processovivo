@@ -674,7 +674,8 @@ a próxima versão. Só o ciclo **mensal** pode ser contratado pelo site; o camp
 
 ```text
 PROCESSOVIVO_PAGAMENTO_HABILITADO=true
-MERCADOPAGO_ACCESS_TOKEN=<o token da aplicação; começa por TEST- no ambiente de teste>
+PROCESSOVIVO_PAGAMENTO_AMBIENTE=<teste ou producao; obrigatória, sem padrão>
+MERCADOPAGO_ACCESS_TOKEN=<o token da aplicação; o prefixo NÃO diz se é teste (também vem como APP_USR-)>
 MERCADOPAGO_WEBHOOK_SECRET=<a assinatura secreta que o painel mostrou>
 PROCESSOVIVO_URL_BASE=https://app.processovivo.com.br
 PROCESSOVIVO_PAGAMENTO_AVISO_EMAIL=<seu e-mail, para estorno e contestação>
@@ -682,10 +683,12 @@ PROCESSOVIVO_TERMOS_URL=<o endereço dos Termos de Uso, se já houver>
 ```
 
 Se faltar a credencial, ou se ela parecer texto de exemplo, **o serviço recusa subir** e diz qual
-variável falta (nunca mostra o valor). **Token de TESTE em servidor de produção também é recusado**,
-a não ser que você ponha `PROCESSOVIVO_PAGAMENTO_PERMITIR_TESTE=true` (para testar de propósito no
-servidor de verdade). Com isso ligado, o `/admin` mostra **TESTE** em destaque na aba Assinaturas e na
-aba Planos, e a tela da conta diz "MODO DE TESTE".
+variável falta (nunca mostra o valor). O ambiente é o que **você declara** em `PROCESSOVIVO_PAGAMENTO_AMBIENTE` (`teste` ou `producao`), nunca o
+prefixo do token: o Mercado Pago passou a emitir credencial de teste com `APP_USR-`. A variável é
+obrigatória e não tem padrão. Token `TEST-` com `producao` também é recusado. **Ambiente `teste` em servidor
+de produção é recusado**, a não ser que você ponha `PROCESSOVIVO_PAGAMENTO_PERMITIR_TESTE=true` (para testar
+de propósito no servidor de verdade). Em `teste`, o `/admin` mostra **TESTE** em destaque na aba Assinaturas
+e na aba Planos, e a tela da conta diz "MODO DE TESTE".
 
 Para **desligar**, volte `PROCESSOVIVO_PAGAMENTO_HABILITADO=false` e faça o deploy: o botão some, as
 rotas de checkout deixam de existir e o webhook responde 404. Nada é apagado; quem já assinou continua

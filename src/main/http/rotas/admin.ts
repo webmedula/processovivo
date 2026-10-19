@@ -459,7 +459,7 @@ export function rotasDeAdmin(opcoes: OpcoesRotasAdmin): FastifyPluginAsync {
     });
 
     /**
-     * O ambiente da cobrança recorrente, para o painel mostrar "TESTE" em destaque. Com token de teste
+     * O ambiente da cobrança recorrente, para o painel mostrar "TESTE" em destaque. Com ambiente `teste`
      * em servidor de produção o aviso vem junto (o arranque só o aceita com
      * `PROCESSOVIVO_PAGAMENTO_PERMITIR_TESTE=true`, e o operador precisa ver que é isso que está valendo).
      */
@@ -474,7 +474,7 @@ export function rotasDeAdmin(opcoes: OpcoesRotasAdmin): FastifyPluginAsync {
         modoDeTeste: teste,
         aviso: teste
           ? opcoes.emProducao
-            ? 'ATENÇÃO: o servidor está em PRODUÇÃO com credenciais de TESTE. Nenhum pagamento é real.'
+            ? 'ATENÇÃO: o servidor está em PRODUÇÃO com a cobrança em ambiente de TESTE. Nenhum pagamento é real.'
             : 'Modo de TESTE: nenhum pagamento é real.'
           : null,
       };

@@ -23,7 +23,6 @@ import {
   ESTADO_DA_ASSINATURA,
   MEIO_DO_PAGAMENTO,
   MOEDA,
-  PREFIXO_DO_TOKEN_DE_TESTE,
   RESULTADO_DO_PAGAMENTO,
   STATUS_AO_CRIAR,
   STATUS_PARA_CANCELAR,
@@ -37,11 +36,6 @@ import { validarAssinaturaDoWebhook } from './validacaoDeWebhook.js';
 import { MESES_POR_CICLO } from '../../../domain/entities/Plano.js';
 
 export const NOME_MERCADO_PAGO = 'mercadopago';
-
-/** O token define o ambiente (credencial de teste começa por `TEST-`). */
-export function ambienteDoToken(token: string): AmbienteDoGateway {
-  return token.startsWith(PREFIXO_DO_TOKEN_DE_TESTE) ? 'teste' : 'producao';
-}
 
 /*
  * Os esquemas leem SÓ o que o sistema usa. Campo a mais (nome, e-mail, CPF, final de cartão do
@@ -91,6 +85,8 @@ export interface OpcoesMercadoPagoAdapter {
   readonly accessToken: string;
   /** `MERCADOPAGO_WEBHOOK_SECRET`. Idem. */
   readonly segredoDoWebhook: string;
+  /** Declarado em `PROCESSOVIVO_PAGAMENTO_AMBIENTE`; o prefixo do token NÃO o identifica. */
+  readonly ambiente: 'teste' | 'producao';
   readonly transporte: TransporteDoGateway;
   readonly clock?: Clock;
   readonly baseDaApi?: string;
@@ -128,7 +124,7 @@ export class MercadoPagoAdapter implements GatewayDePagamento {
   private readonly esperar: (tentativa: number) => Promise<void>;
 
   constructor(private readonly opcoes: OpcoesMercadoPagoAdapter) {
-    this.ambiente = ambienteDoToken(opcoes.accessToken);
+    this.ambiente = opcoes.ambiente;
     this.clock = opcoes.clock ?? clockDoSistema;
     this.base = (opcoes.baseDaApi ?? BASE_DA_API).replace(/\/+$/, '');
     this.esperar = opcoes.esperar ?? esperaPadrao;

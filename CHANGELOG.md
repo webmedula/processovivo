@@ -9,6 +9,22 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.44.1] — 2026-10-19
+
+**O ambiente do pagamento passa a ser declarado, não deduzido do token.** O Mercado Pago emite credenciais
+de teste com prefixo `APP_USR-`, igual às de produção; o prefixo `TEST-` deixou de identificar o ambiente.
+
+- **Nova variável `PROCESSOVIVO_PAGAMENTO_AMBIENTE`** (`teste` | `producao`): obrigatória com
+  `PROCESSOVIVO_PAGAMENTO_HABILITADO=true` e **sem valor padrão** (fail-closed). Ausente ou inválida, o
+  arranque recusa e diz qual variável, sem imprimir segredo.
+- **/admin e log** mostram o ambiente a partir da variável, com "TESTE" em destaque; a trava de teste em
+  produção (`PROCESSOVIVO_PAGAMENTO_PERMITIR_TESTE`) olha a variável, não o prefixo do token.
+- **Token `TEST-` com `producao` não sobe** (contradição que o prefixo prova).
+- `ambienteDoToken` saiu; `MercadoPagoAdapter` recebe o ambiente nas opções.
+- **Atenção ao atualizar:** quem já usa a cobrança precisa definir `PROCESSOVIVO_PAGAMENTO_AMBIENTE` antes
+  do deploy, senão o serviço não sobe.
+- Testes, `.env.example`, `DEPLOY.md` e `CLAUDE.md` atualizados.
+
 ## [0.44.0] — 2026-10-20
 
 **Cobrança recorrente pelo Mercado Pago, parte 1: assinatura por cartão atrás de uma porta de pagamento.**
