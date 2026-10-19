@@ -100,7 +100,7 @@ describe('/admin — cobrança recorrente', () => {
     const prod = json(
       await c.servidor.inject({ method: 'GET', url: '/admin/api/pagamento', headers: H }),
     );
-    expect(prod['aviso']).toMatch(/PRODUÇÃO com credenciais de TESTE/);
+    expect(prod['aviso']).toMatch(/PRODUÇÃO com a cobrança em ambiente de TESTE/);
   });
 
   it('a lista de assinaturas diz a ORIGEM: manual ou gateway, com estado, id e último pagamento (sem dado pessoal)', async () => {

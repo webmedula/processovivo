@@ -58,6 +58,7 @@ describe('CLI — pagamento reconciliar', () => {
       ...ambiente,
       PROCESSOVIVO_PAGAMENTO_HABILITADO: 'true',
       PROCESSOVIVO_PAGAMENTO_GATEWAY: 'falso',
+      PROCESSOVIVO_PAGAMENTO_AMBIENTE: 'teste',
       PROCESSOVIVO_URL_BASE: 'https://app.exemplo.test',
     };
     const r = await cli('reconciliar');

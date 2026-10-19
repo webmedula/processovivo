@@ -267,7 +267,11 @@ const schema = z.object({
   // Nomes nativos do Mercado Pago. Exigidos SÓ com o recurso habilitado. Nunca vão a log, resposta ou erro.
   MERCADOPAGO_ACCESS_TOKEN: z.string().default(''),
   MERCADOPAGO_WEBHOOK_SECRET: z.string().default(''),
-  // Token de TESTE em produção é quase sempre engano: só com isto em `true` o arranque aceita.
+  // O ambiente do gateway é DECLARADO, nunca deduzido do token: o Mercado Pago emite credencial de
+  // teste com prefixo `APP_USR-`, igual à de produção. Obrigatória com o pagamento habilitado, SEM
+  // valor padrão (fail-closed). Opcional no esquema só para a mensagem de erro dizer o que falta.
+  PROCESSOVIVO_PAGAMENTO_AMBIENTE: z.string().default(''),
+  // Ambiente de TESTE em produção é quase sempre engano: só com isto em `true` o arranque aceita.
   PROCESSOVIVO_PAGAMENTO_PERMITIR_TESTE: booleano.default('false'),
   // Quem recebe o aviso de estorno e contestação (opcional; sem ele, só log).
   PROCESSOVIVO_PAGAMENTO_AVISO_EMAIL: z.string().default(''),
@@ -399,6 +403,8 @@ export interface Config {
   readonly pagamento: {
     readonly habilitado: boolean;
     readonly gateway: 'mercadopago' | 'falso';
+    /** `PROCESSOVIVO_PAGAMENTO_AMBIENTE`; `null` com o recurso desligado. */
+    readonly ambiente: 'teste' | 'producao' | null;
     /** Vazios com o recurso desligado (e com o gateway falso). Nunca vão a log, resposta ou erro. */
     readonly accessToken: string;
     readonly segredoDoWebhook: string;
@@ -631,6 +637,9 @@ export function carregarConfig(fonte: NodeJS.ProcessEnv = process.env): Config {
     pagamento: {
       habilitado: env.PROCESSOVIVO_PAGAMENTO_HABILITADO,
       gateway: env.PROCESSOVIVO_PAGAMENTO_GATEWAY,
+      ambiente: env.PROCESSOVIVO_PAGAMENTO_HABILITADO
+        ? lerAmbienteDoPagamento(env.PROCESSOVIVO_PAGAMENTO_AMBIENTE)
+        : null,
       accessToken:
         env.PROCESSOVIVO_PAGAMENTO_HABILITADO && env.PROCESSOVIVO_PAGAMENTO_GATEWAY === 'mercadopago'
           ? env.MERCADOPAGO_ACCESS_TOKEN.trim()
@@ -687,10 +696,19 @@ function validarConfiguracaoDaIa(env: z.infer<typeof schema>): void {
  * mostraria erro na primeira assinatura de um cliente, e valor de exemplo passa por qualquer checagem
  * de presença.
  *
- * Token de TESTE em produção é recusado (a cobrança "funcionaria" e ninguém pagaria de verdade) a não
- * ser que `PROCESSOVIVO_PAGAMENTO_PERMITIR_TESTE=true` o torne proposital. O gateway `falso` nunca
- * sobe em produção.
+ * O ambiente vem de `PROCESSOVIVO_PAGAMENTO_AMBIENTE` (`teste` | `producao`), obrigatório e sem padrão:
+ * o prefixo do token não o identifica (o Mercado Pago emite credencial de teste com `APP_USR-`). Só a
+ * contradição que o prefixo PROVA é checada: `TEST-` com `producao` não sobe.
+ *
+ * Ambiente `teste` em servidor de produção é recusado (a cobrança "funcionaria" e ninguém pagaria de
+ * verdade) a não ser que `PROCESSOVIVO_PAGAMENTO_PERMITIR_TESTE=true` o torne proposital. O gateway
+ * `falso` nunca sobe em produção.
  */
+function lerAmbienteDoPagamento(valor: string): 'teste' | 'producao' | null {
+  const v = valor.trim().toLowerCase();
+  return v === 'teste' || v === 'producao' ? v : null;
+}
+
 function validarConfiguracaoDoPagamento(
   env: z.infer<typeof schema>,
   emProducao: boolean,
@@ -709,6 +727,20 @@ function validarConfiguracaoDoPagamento(
   ) {
     problemas.push('PROCESSOVIVO_URL_BASE: o gateway só aceita endereço em https (ou localhost)');
   }
+  const ambiente = lerAmbienteDoPagamento(env.PROCESSOVIVO_PAGAMENTO_AMBIENTE);
+  if (env.PROCESSOVIVO_PAGAMENTO_AMBIENTE.trim() === '') {
+    problemas.push(
+      'PROCESSOVIVO_PAGAMENTO_AMBIENTE: obrigatória com PROCESSOVIVO_PAGAMENTO_HABILITADO=true ' +
+        '(valores: teste ou producao; não há padrão)',
+    );
+  } else if (ambiente === null) {
+    problemas.push('PROCESSOVIVO_PAGAMENTO_AMBIENTE: valor inválido; use teste ou producao');
+  } else if (ambiente === 'teste' && emProducao && !env.PROCESSOVIVO_PAGAMENTO_PERMITIR_TESTE) {
+    problemas.push(
+      'PROCESSOVIVO_PAGAMENTO_AMBIENTE: "teste" com o servidor em produção; use producao, ' +
+        'ou defina PROCESSOVIVO_PAGAMENTO_PERMITIR_TESTE=true se for proposital',
+    );
+  }
   if (env.PROCESSOVIVO_PAGAMENTO_GATEWAY === 'falso') {
     if (emProducao) {
       problemas.push(
@@ -722,14 +754,10 @@ function validarConfiguracaoDoPagamento(
       problemas.push('MERCADOPAGO_ACCESS_TOKEN: obrigatório com PROCESSOVIVO_PAGAMENTO_HABILITADO=true');
     } else if (pareceValorDeExemplo(token)) {
       problemas.push('MERCADOPAGO_ACCESS_TOKEN: parece um valor de exemplo; coloque o token real');
-    } else if (
-      emProducao &&
-      token.startsWith(PREFIXO_DO_TOKEN_DE_TESTE) &&
-      !env.PROCESSOVIVO_PAGAMENTO_PERMITIR_TESTE
-    ) {
+    } else if (ambiente === 'producao' && token.startsWith(PREFIXO_DO_TOKEN_DE_TESTE)) {
       problemas.push(
-        'MERCADOPAGO_ACCESS_TOKEN: é um token de TESTE e o servidor está em produção; use o de ' +
-          'produção, ou defina PROCESSOVIVO_PAGAMENTO_PERMITIR_TESTE=true se for proposital',
+        'MERCADOPAGO_ACCESS_TOKEN: começa por TEST-, que é credencial de teste, mas ' +
+          'PROCESSOVIVO_PAGAMENTO_AMBIENTE=producao; corrija um dos dois',
       );
     }
     if (segredo === '') {

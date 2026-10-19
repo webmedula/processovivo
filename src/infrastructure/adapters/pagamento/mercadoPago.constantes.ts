@@ -80,7 +80,10 @@ export const TOPICO_DO_AVISO: Readonly<Record<string, TopicoDeWebhook>> = Object
 /** Segundos de diferença aceitos entre o `ts` do aviso e o relógio do servidor (o mesmo do SDK oficial). */
 export const TOLERANCIA_DO_AVISO_SEGUNDOS = 300;
 
-/** Prefixo das credenciais de TESTE. CONFIRMAR: se o token de teste do vendedor de teste também o usa. */
+/**
+ * Prefixo antigo das credenciais de TESTE. NÃO identifica o ambiente: o Mercado Pago passou a emitir
+ * credencial de teste com `APP_USR-` (v0.44.1). Serve só para recusar a contradição `TEST-` + `producao`.
+ */
 export const PREFIXO_DO_TOKEN_DE_TESTE = 'TEST-';
 
 /** Leituras (GET) repetem até este número de tentativas; a criação e o cancelamento NUNCA repetem sozinhos. */

@@ -4,6 +4,7 @@ import { carregarConfig } from '../../src/infrastructure/config/env.js';
 // Valores SINTÉTICOS: nenhum é credencial de verdade.
 const BOM = {
   PROCESSOVIVO_PAGAMENTO_HABILITADO: 'true',
+  PROCESSOVIVO_PAGAMENTO_AMBIENTE: 'producao',
   MERCADOPAGO_ACCESS_TOKEN: 'APP_USR-token-sintetico-0000',
   MERCADOPAGO_WEBHOOK_SECRET: 'segredo-sintetico-do-webhook',
   PROCESSOVIVO_URL_BASE: 'https://app.exemplo.test',
@@ -54,6 +55,7 @@ describe('configuração da cobrança recorrente (v0.44.0)', () => {
 
   it('FAIL-CLOSED: habilitada sem credencial, não sobe — e diz o que falta, sem imprimir segredo', () => {
     const msg = mensagemDe({ PROCESSOVIVO_PAGAMENTO_HABILITADO: 'true' });
+    expect(msg).toMatch(/PROCESSOVIVO_PAGAMENTO_AMBIENTE: obrigatória/);
     expect(msg).toMatch(/MERCADOPAGO_ACCESS_TOKEN: obrigatório/);
     expect(msg).toMatch(/MERCADOPAGO_WEBHOOK_SECRET: obrigatória/);
     expect(msg).toMatch(/PROCESSOVIVO_URL_BASE: obrigatória/);
@@ -87,19 +89,46 @@ describe('configuração da cobrança recorrente (v0.44.0)', () => {
     );
   });
 
-  it('token de TESTE em produção é recusado, a não ser que seja proposital', () => {
+  it('o ambiente é obrigatório e sem padrão: ausente ou inválido não sobe, sem imprimir segredo', () => {
+    const { PROCESSOVIVO_PAGAMENTO_AMBIENTE: _a, ...semAmbiente } = BOM;
+    const ausente = mensagemDe(semAmbiente);
+    expect(ausente).toMatch(/PROCESSOVIVO_PAGAMENTO_AMBIENTE: obrigatória/);
+    expect(ausente).not.toContain(BOM.MERCADOPAGO_ACCESS_TOKEN);
+    expect(mensagemDe({ ...BOM, PROCESSOVIVO_PAGAMENTO_AMBIENTE: 'sandbox' })).toMatch(
+      /AMBIENTE: valor inválido/,
+    );
+    expect(mensagemDe({ ...BOM, PROCESSOVIVO_PAGAMENTO_AMBIENTE: 'teste' })).toBe('');
+  });
+
+  it('desligada, a variável de ambiente não é exigida', () => {
+    expect(carregarConfig({} as NodeJS.ProcessEnv).pagamento.ambiente).toBeNull();
+  });
+
+  it('ambiente de TESTE em produção é recusado, a não ser que seja proposital — o prefixo do token é irrelevante', () => {
     const teste = {
       ...BOM,
-      MERCADOPAGO_ACCESS_TOKEN: 'TEST-token-sintetico-0000',
+      PROCESSOVIVO_PAGAMENTO_AMBIENTE: 'teste',
+      MERCADOPAGO_ACCESS_TOKEN: 'APP_USR-token-sintetico-0000',
       NODE_ENV: 'production',
     };
-    expect(mensagemDe(teste)).toMatch(/token de TESTE/);
-    expect(mensagemDe({ ...teste, PROCESSOVIVO_PAGAMENTO_PERMITIR_TESTE: 'true' })).toBe(
-      '',
-    );
-    // Fora de produção, token de teste é o esperado.
+    expect(mensagemDe(teste)).toMatch(/"teste" com o servidor em produção/);
+    expect(mensagemDe({ ...teste, PROCESSOVIVO_PAGAMENTO_PERMITIR_TESTE: 'true' })).toBe('');
+    // Fora de produção, teste é o esperado.
+    expect(mensagemDe({ ...teste, NODE_ENV: 'development' })).toBe('');
+    // Em produção declarada, token APP_USR- passa (é o caso real de produção).
+    expect(mensagemDe({ ...BOM, NODE_ENV: 'production' })).toBe('');
+  });
+
+  it('token TEST- com ambiente producao não sobe', () => {
+    const msg = mensagemDe({ ...BOM, MERCADOPAGO_ACCESS_TOKEN: 'TEST-token-sintetico-0000' });
+    expect(msg).toMatch(/começa por TEST-.*AMBIENTE=producao/);
+    expect(msg).not.toContain('TEST-token-sintetico-0000');
     expect(
-      mensagemDe({ ...BOM, MERCADOPAGO_ACCESS_TOKEN: 'TEST-token-sintetico-0000' }),
+      mensagemDe({
+        ...BOM,
+        PROCESSOVIVO_PAGAMENTO_AMBIENTE: 'teste',
+        MERCADOPAGO_ACCESS_TOKEN: 'TEST-token-sintetico-0000',
+      }),
     ).toBe('');
   });
 
@@ -108,6 +137,7 @@ describe('configuração da cobrança recorrente (v0.44.0)', () => {
       mensagemDe({
         PROCESSOVIVO_PAGAMENTO_HABILITADO: 'true',
         PROCESSOVIVO_PAGAMENTO_GATEWAY: 'falso',
+        PROCESSOVIVO_PAGAMENTO_AMBIENTE: 'teste',
         PROCESSOVIVO_URL_BASE: 'https://app.exemplo.test',
         NODE_ENV: 'production',
       }),
@@ -115,6 +145,7 @@ describe('configuração da cobrança recorrente (v0.44.0)', () => {
     const c = carregarConfig({
       PROCESSOVIVO_PAGAMENTO_HABILITADO: 'true',
       PROCESSOVIVO_PAGAMENTO_GATEWAY: 'falso',
+      PROCESSOVIVO_PAGAMENTO_AMBIENTE: 'teste',
       PROCESSOVIVO_URL_BASE: 'https://app.exemplo.test',
     } as NodeJS.ProcessEnv);
     expect(c.pagamento.gateway).toBe('falso');
