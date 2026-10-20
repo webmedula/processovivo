@@ -2,7 +2,7 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { chromium } from 'playwright-core';
-import type { Browser, BrowserContext, Page } from 'playwright-core';
+import type { Browser, BrowserContext, Locator, Page } from 'playwright-core';
 import AxeBuilder from 'axe-core';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { CHAVE, CHROMIUM } from './ambiente.js';
@@ -169,6 +169,13 @@ describe.skipIf(sem)('Centro de custos, no navegador', { timeout: 120_000 }, () 
     await page.locator('#cust-f-salvar').click();
     await page.waitForSelector('#cust-form', { state: 'detached' });
   }
+
+  /*
+   * v0.49.1: as ações são ícones com nome acessível fixo ("Editar lançamento"), sem a descrição do lançamento;
+   * a linha da tabela é que identifica de qual se fala. Antes os testes achavam o botão por "Editar: <descrição>".
+   */
+  const acao = (nome: string, texto: string): Locator =>
+    page.locator('#cust-lista tbody tr').filter({ hasText: texto }).getByRole('button', { name: nome });
 
   const totais = async (): Promise<Record<string, string>> =>
     page.evaluate(() => {
@@ -370,7 +377,7 @@ describe.skipIf(sem)('Centro de custos, no navegador', { timeout: 120_000 }, () 
     expect(JSON.stringify(t)).not.toContain('-');
     expect(await linhasDeRecebimento()).toHaveLength(3);
 
-    await page.getByRole('button', { name: 'Editar: 12/10/2026' }).click();
+    await acao('Editar recebimento', '12/10/2026').click();
     expect(await page.locator('#cust-f-valor').inputValue()).toBe('12,34');
     await page.locator('#cust-f-valor').fill('2,00');
     await page.locator('#cust-f-salvar').click();
@@ -456,7 +463,7 @@ describe.skipIf(sem)('Centro de custos, no navegador', { timeout: 120_000 }, () 
     await abrirDetalhe();
     await abrirPainel();
     await lancar({ descricao: 'Despesa original', valor: '10,00', cobrar: true });
-    await page.getByRole('button', { name: 'Editar: Despesa original' }).click();
+    await acao('Editar lançamento', 'Despesa original').click();
     expect(await page.locator('#cust-f-valor').inputValue()).toBe('10,00');
     expect(await page.locator('#cust-f-reemb').isChecked()).toBe(true);
     await page.locator('#cust-f-desc').fill('Despesa corrigida');
@@ -479,7 +486,7 @@ describe.skipIf(sem)('Centro de custos, no navegador', { timeout: 120_000 }, () 
     await lancar({ descricao: 'Despesa a cancelar', valor: '80,00', cobrar: true });
     await lancar({ descricao: 'Despesa que fica', valor: '20,00', cobrar: true });
 
-    await page.getByRole('button', { name: 'Cancelar: Despesa a cancelar' }).click();
+    await acao('Cancelar lançamento', 'Despesa a cancelar').click();
     expect(await page.locator('#cust-lista').innerText()).toContain('Motivo (opcional)');
     expect(await page.evaluate(() => document.activeElement?.className)).toContain(
       'cust-motivo',
@@ -493,7 +500,7 @@ describe.skipIf(sem)('Centro de custos, no navegador', { timeout: 120_000 }, () 
 
     await page.clock.install();
     await page.clock.pauseAt(new Date(Date.now() + 60_000));
-    await page.getByRole('button', { name: 'Cancelar: Despesa a cancelar' }).click();
+    await acao('Cancelar lançamento', 'Despesa a cancelar').click();
     await page.locator('.cust-motivo').fill('Lançado no processo errado');
     await page.getByRole('button', { name: 'Confirmar cancelamento' }).click();
     await page.waitForFunction(() =>
@@ -523,7 +530,7 @@ describe.skipIf(sem)('Centro de custos, no navegador', { timeout: 120_000 }, () 
     expect((await app.custos.listar(WS, numero)).lancamentos).toHaveLength(2);
 
     // Sem desfazer, o aviso some sozinho em 6 s e o foco não fica no vazio.
-    await page.getByRole('button', { name: 'Cancelar: Despesa a cancelar' }).click();
+    await acao('Cancelar lançamento', 'Despesa a cancelar').click();
     await page.getByRole('button', { name: 'Confirmar cancelamento' }).click();
     await page.waitForFunction(() =>
       document.querySelector('#cust-aviso')?.textContent?.includes('Cancelado.'),
@@ -550,12 +557,12 @@ describe.skipIf(sem)('Centro de custos, no navegador', { timeout: 120_000 }, () 
       observacao: 'Recebimento errado',
     });
 
-    await page.getByRole('button', { name: 'Cancelar: Vai cancelar' }).click();
+    await acao('Cancelar lançamento', 'Vai cancelar').click();
     await page.getByRole('button', { name: 'Confirmar cancelamento' }).click();
     await page.waitForFunction(() =>
       document.querySelector('#cust-aviso')?.textContent?.includes('Cancelado.'),
     );
-    await page.getByRole('button', { name: 'Cancelar: 10/10/2026' }).click();
+    await acao('Cancelar recebimento', '10/10/2026').click();
     await page.locator('.cust-motivo').fill('Valor errado');
     await page.getByRole('button', { name: 'Confirmar cancelamento' }).click();
     await page.waitForFunction(() =>
@@ -588,14 +595,14 @@ describe.skipIf(sem)('Centro de custos, no navegador', { timeout: 120_000 }, () 
     expect(await totais()).toEqual(antes);
     expect(await page.locator('.cust-escondidos').count()).toBe(0);
 
-    await riscada.getByRole('button', { name: 'Reativar: Vai cancelar' }).click();
+    await riscada.getByRole('button', { name: 'Reativar lançamento' }).click();
     await page.waitForFunction(
       () => document.querySelectorAll('#cust-lista .cust-cancelado').length === 1,
     );
     expect((await totais())['Total de despesas']).toBe('R$ 40,00');
     await page
       .locator('#cust-lista .cust-tab-rec')
-      .getByRole('button', { name: 'Reativar: 10/10/2026' })
+      .getByRole('button', { name: 'Reativar recebimento' })
       .click();
     await page.waitForFunction(
       () => document.querySelectorAll('#cust-lista .cust-cancelado').length === 0,
@@ -607,11 +614,11 @@ describe.skipIf(sem)('Centro de custos, no navegador', { timeout: 120_000 }, () 
     await abrirDetalhe();
     await abrirPainel();
     await lancar({ descricao: 'Despesa com história', valor: '100,00', cobrar: true });
-    await page.getByRole('button', { name: 'Editar: Despesa com história' }).click();
+    await acao('Editar lançamento', 'Despesa com história').click();
     await page.locator('#cust-f-valor').fill('125,50');
     await page.locator('#cust-f-salvar').click();
     await page.waitForSelector('#cust-form', { state: 'detached' });
-    await page.getByRole('button', { name: 'Cancelar: Despesa com história' }).click();
+    await acao('Cancelar lançamento', 'Despesa com história').click();
     await page.locator('.cust-motivo').fill('Engano');
     await page.getByRole('button', { name: 'Confirmar cancelamento' }).click();
     await page.waitForFunction(() =>
@@ -622,7 +629,7 @@ describe.skipIf(sem)('Centro de custos, no navegador', { timeout: 120_000 }, () 
       () => document.querySelectorAll('#cust-lista .cust-tab tbody tr').length === 1,
     );
 
-    await page.getByRole('button', { name: 'Histórico: Despesa com história' }).click();
+    await acao('Histórico do lançamento', 'Despesa com história').click();
     await page.waitForSelector('#cust-hist-lista, .cust-hist-lista');
     expect(await page.evaluate(() => document.activeElement?.id)).toBe(
       'cust-hist-painel',
@@ -645,7 +652,7 @@ describe.skipIf(sem)('Centro de custos, no navegador', { timeout: 120_000 }, () 
     expect(
       await page.evaluate(() => document.activeElement?.getAttribute('data-cust')),
     ).toBe('historico');
-    await page.getByRole('button', { name: 'Histórico: Despesa com história' }).click();
+    await acao('Histórico do lançamento', 'Despesa com história').click();
     await page.waitForSelector('#cust-hist-painel');
     await page.keyboard.press('Escape');
     expect(await page.locator('#cust-hist-painel').count()).toBe(0);
@@ -663,7 +670,7 @@ describe.skipIf(sem)('Centro de custos, no navegador', { timeout: 120_000 }, () 
       cobrar: true,
     });
     await lancar({ descricao: 'Cancelada no PDF', valor: '7,77' });
-    await page.getByRole('button', { name: 'Cancelar: Cancelada no PDF' }).click();
+    await acao('Cancelar lançamento', 'Cancelada no PDF').click();
     await page.getByRole('button', { name: 'Confirmar cancelamento' }).click();
     await page.waitForFunction(() =>
       document.querySelector('#cust-aviso')?.textContent?.includes('Cancelado.'),
@@ -793,7 +800,7 @@ describe.skipIf(sem)('Centro de custos, no navegador', { timeout: 120_000 }, () 
       });
       await lancar({ descricao: 'Outro', valor: '1,00', categoria: 'Depósito judicial' });
       await receber({ valor: '1.000.000,00', observacao: 'O'.repeat(150) });
-      await page.getByRole('button', { name: /^Histórico: D/ }).click();
+      await page.getByRole('button', { name: 'Histórico do lançamento' }).first().click();
       await page.locator('#cust-novo').click();
       const m = await page.evaluate(() => ({
         sw: document.documentElement.scrollWidth,
@@ -834,14 +841,14 @@ describe.skipIf(sem)('Centro de custos, no navegador', { timeout: 120_000 }, () 
         categoria: 'Fiança criminal',
       });
       await receber({ valor: '50,00', observacao: 'Pix' });
-      await page.getByRole('button', { name: 'Cancelar: Segunda despesa' }).click();
+      await acao('Cancelar lançamento', 'Segunda despesa').click();
       await page.getByRole('button', { name: 'Confirmar cancelamento' }).click();
       await page.waitForFunction(() =>
         document.querySelector('#cust-aviso')?.textContent?.includes('Cancelado.'),
       );
       await page.locator('#cust-f-mostrar-canc').check();
       await page.waitForSelector('#cust-lista .cust-cancelado');
-      await page.getByRole('button', { name: 'Histórico: Primeira despesa' }).click();
+      await acao('Histórico do lançamento', 'Primeira despesa').click();
       await page.waitForSelector('.cust-hist-lista');
       await page.locator('#cust-novo').click();
       await page.locator('#cust-f-cat').selectOption({ label: 'Nova subcategoria…' });
@@ -926,7 +933,7 @@ describe.skipIf(sem)('Centro de custos, no navegador', { timeout: 120_000 }, () 
       perigo,
     );
     await page
-      .getByRole('button', { name: /^Cancelar: / })
+      .getByRole('button', { name: 'Cancelar lançamento' })
       .first()
       .click();
     await page.locator('.cust-motivo').fill(perigo);
@@ -937,7 +944,7 @@ describe.skipIf(sem)('Centro de custos, no navegador', { timeout: 120_000 }, () 
     await page.locator('#cust-f-mostrar-canc').check();
     await page.waitForSelector('#cust-lista .cust-cancelado');
     await page
-      .getByRole('button', { name: /^Histórico: / })
+      .getByRole('button', { name: 'Histórico do lançamento' })
       .first()
       .click();
     await page.waitForSelector('.cust-hist-lista');

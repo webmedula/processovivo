@@ -9,6 +9,33 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.49.1] — 2026-10-21
+
+**Painel de Custos do processo, só apresentação:** colunas da tabela de lançamentos, ações em ícones com dica e grade do
+formulário. Regras de custos, totais, recebimentos, depósitos, cancelamento, histórico, comprovantes, PDF, CSV, API, banco,
+a tela "Custos" por cliente, Atualizações, Pasta e planos **não mudaram**; sem migração e sem dependência nova.
+
+- **Tabela de lançamentos:** Data (6,5 rem) e Valor sem quebra de linha — o valor à direita, com algarismos tabulares —;
+  Pago por, Cobrar do cliente e Ações com largura de conteúdo; **Subcategoria numa linha só**, com reticências e o texto
+  inteiro em `title` e no nome acessível (o corte é só visual); **Descrição** com o que sobra, até duas linhas e só então
+  reticências (texto inteiro em `title`). Em 1366 e 1920 px (e 1280 px) um lançamento típico ocupa uma linha. De **900 a
+  1439 px** as colunas estreitas encolhem e, abaixo de 1280 px, a letra e as margens também e a Subcategoria pode ir a duas
+  linhas — em 1024 px a tabela agora cabe sem rolagem (antes a lista já virava cartões em 1100 px). O limite dos cartões
+  passou de 1099 para 899 px. Larguras medidas antes e depois estão no relatório da PR.
+- **Ações como ícones** (mesma ordem de sempre): Editar (lápis), Cancelar lançamento (círculo cortado — não é lixeira,
+  porque o sistema cancela e não apaga), Anexar comprovante (clipe, com **selo de contagem** que não muda o tamanho do
+  botão) e Histórico (relógio); "Reativar" (seta) nos cancelados. Cada um é um `<button type="button">` de 28×28 px com
+  `aria-label` próprio ("Editar lançamento", "Cancelar lançamento", "Anexar comprovante" / "Anexar comprovante (2
+  anexados)", "Histórico do lançamento"; nos recebimentos, "…recebimento"). **Dica** ao passar o mouse e ao focar pelo
+  teclado, com o texto da ação, `role="tooltip"` ligada por `aria-describedby`, que **fecha com Esc** sem fechar o painel —
+  é a **mesma dica da caixa "Cumprido"** (`__pvProvidencia.comDica` / `ligar`, em `ui/providencia.ts`), sem segundo desenho.
+  Em tela estreita (cartões, abaixo de 900 px) **o texto da ação aparece ao lado do ícone** (Editar, Cancelar, Comprovante,
+  Histórico, Reativar), porque sem mouse não há dica; a dica fica escondida ali.
+- **Formulário** ("Novo lançamento", edição e recebimento) em **grade CSS** de quatro faixas: rótulos, caixas e altura dos
+  controles alinhados na mesma linha (o "Valor (R$)" deixou de ficar mais baixo que "Data do gasto" e "Descrição"); a
+  prévia do valor em reais cai abaixo da caixa, em altura reservada, sem empurrar os vizinhos; em tela estreita, uma coluna.
+  Campos, validações, máscara do valor, conversão em centavos e ordem do Tab não mudaram.
+
 ## [0.49.0] — 2026-10-21
 
 **Centro de custos, ampliação 2 de 2 (itens 4 e 7):** a tela **Custos** por cliente (com PDF consolidado e

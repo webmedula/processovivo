@@ -1944,6 +1944,23 @@ Não são detalhes — moldam o código.
   explica o caminho em "Meus acessos" (onde mora o cartão do Drive), com frases fixas — nunca texto do servidor ou do Google.
   Telas: `ui/custosPorCliente.ts` (`window.__pvCustosCliente`, aba `custos` do menu, logo depois de "Calendário") e `ui/custos.ts`
   (comprovantes, CSV, `avisoAoParar`, `abrirPainelDe`); `script.ts` não cresceu (só linhas já existentes ganharam código).
+- **Painel de Custos: ações em ÍCONES com dica e nome acessível, texto visível nos cartões, colunas de conteúdo e grade no formulário**
+  (v0.49.1, decisões do dono; só apresentação — nenhuma regra, rota, total, PDF ou CSV mudou). (1) **Cada ação é um `<button
+  type="button">` de verdade** (28×28 px, alvo ≥ 24) com `aria-label` próprio e SEM repetir a descrição do lançamento (a linha da
+  tabela já a dá): "Editar lançamento", "Cancelar lançamento", "Anexar comprovante" / "Anexar comprovante (N anexados)",
+  "Histórico do lançamento" ("…recebimento" na outra tabela; "Reativar …" nos cancelados). O ícone de cancelar é um círculo
+  cortado, **nunca lixeira**: o sistema cancela e guarda, não apaga. O selo de contagem do clipe é `aria-hidden` e não muda o
+  tamanho do botão. Quem acha o botão no código continua achando por `data-cust`/`data-id`/`data-tipo`. (2) **A dica é UMA só
+  no console:** `__pvProvidencia.comDica` / `ligar` (`ui/providencia.ts`), a mesma da caixa "Cumprido" — `role="tooltip"`,
+  `aria-describedby`, aparece com mouse e foco, Esc a fecha **sem fechar o painel** (o 2º Esc volta a fechar o que fechava), não
+  recebe o mouse e não depende de `title`. Quem precisar de dica em controle novo usa `comDica`; não se desenha outra. (3) **Sem
+  mouse não há dica:** abaixo de 900 px (a lista vira cartões) o texto da ação aparece ao lado do ícone e a dica some. (4) **Colunas
+  de conteúdo:** data, valor, pago por, cobrar e ações em largura de conteúdo e SEM quebra; Subcategoria numa linha com reticências
+  (texto inteiro no DOM, em `title` e no nome acessível — o corte é visual); Descrição até 2 linhas e só então reticências, com
+  `title`. De 900 a 1439 px as colunas estreitas encolhem; a Subcategoria só vai a 2 linhas abaixo de 1280 px. Teste de
+  navegador: `tests/browser/custos-layout-navegador.spec.ts`. (5) **O formulário é uma grade CSS** (`.cust-campos`, quatro faixas;
+  campo comum = 1, `cust-grande` = 2) com início alinhado: rótulo, caixa e altura iguais na linha; o texto de apoio (prévia do
+  valor) mora ABAIXO da caixa em altura reservada. A ordem do DOM e do Tab não muda.
 - **O calendário LÊ datas; não calcula prazo** (v0.32.0; **exceção registrada na v0.39.0: o aviso
   a partir da análise por IA, item acima — fora dele a regra segue valendo**). Evento detectado só
   nasce de data EXPLÍCITA no texto do andamento, colada a um gatilho na mesma
@@ -2039,7 +2056,7 @@ teste e carência** (v0.28.0), **visual novo a partir do logo** (v0.29.0),
 **tela do processo sem os blocos "Pede providência" e "Última movimentação", Partes logo abaixo das peças** (v0.41.1), **Google Drive: conectar a conta do advogado e salvar as peças da Pasta digital numa pasta "Processo Vivo", por botão, escopo `drive.file`, desligado por padrão, planos Peças e IA** (v0.42.0), **Drive: o retorno do OAuth usa o workspace do `state` assinado e a conta de chave de API também conecta** (v0.42.1), **testes estáveis no CI e a volta do Google sem corrida no console** (v0.42.2), **Atualizações: situação como texto e caixa "Cumprido" como único controle, com aviso para desfazer** (v0.43.0), **cobrança recorrente pelo Mercado Pago, parte 1: assinatura por cartão atrás da porta de pagamento, webhook idempotente, reconciliação e ciclo no plano** (v0.44.0), **ambiente do pagamento declarado em `PROCESSOVIVO_PAGAMENTO_AMBIENTE`, não deduzido do token** (v0.44.1),
 **página de vendas: vitrine pública `GET /v1/planos`, plano escolhido atravessando cadastro e login, confirmação de assinatura com aceite dos Termos obrigatório e trecho para o site** (v0.45.0), **recusa do gateway com motivo de lista fechada, log saneado, 422/503 em JSON e a última falha no /admin** (v0.45.1), **tabela de Atualizações mais limpa: Atualização em uma linha, datas estreitas e coluna "Cumprido" só com a caixa e a dica** (v0.46.0),
 **tabela de Atualizações: caixa "Cumprido" na coluna Ações, Partes mais larga, sem o selo "outro destinatário" na linha e sem a frase fixa sob o filtro** (v0.46.1),
-**centro de custos do processo: lançamentos manuais por processo, categorias próprias, totais no servidor, caixa "Ressarcido" e prestação de contas em PDF para o cliente** (v0.47.0), **custos: recebimentos do cliente com saldo e crédito, quem pagou, depósitos fora das despesas, cancelar com histórico e catálogo Grupo › Subcategoria** (v0.48.0), **custos por cliente: tela no menu, PDF consolidado, CSV, comprovantes no Google Drive do advogado e aviso ao deixar de acompanhar** (v0.49.0),
+**centro de custos do processo: lançamentos manuais por processo, categorias próprias, totais no servidor, caixa "Ressarcido" e prestação de contas em PDF para o cliente** (v0.47.0), **custos: recebimentos do cliente com saldo e crédito, quem pagou, depósitos fora das despesas, cancelar com histórico e catálogo Grupo › Subcategoria** (v0.48.0), **custos por cliente: tela no menu, PDF consolidado, CSV, comprovantes no Google Drive do advogado e aviso ao deixar de acompanhar** (v0.49.0), **painel de Custos: colunas de conteúdo, ações em ícones com dica e formulário em grade** (v0.49.1),
 Dockerfile multi-stage, CI, 2961 testes.
 
 **Pasta digital (v0.33.0, backend):** `GET /v1/processos/:numero/pasta` (lista +

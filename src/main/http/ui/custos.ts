@@ -141,9 +141,32 @@ function subHtml(s){
     (s.quantidade===1?'lançamento':'lançamentos')+'</span><span class="cust-sub-v">'+reaisDeCentavos(s.totalCentavos)+'</span></li>';
 }
 
-function acoesHtml(tipo,x,rotulo){
+/* Ícones das ações (v0.49.1): o mesmo traço do clipe e do resto do console (24x24, 1.8, sem biblioteca nova). */
+function icone(caminhos){
+  return '<svg class="cust-ic" aria-hidden="true" focusable="false" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'+caminhos+'</svg>';
+}
+var ICONE_EDITAR=icone('<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>');
+var ICONE_CANCELAR=icone('<circle cx="12" cy="12" r="9"/><path d="m5.6 5.6 12.8 12.8"/>');
+var ICONE_ANEXAR=icone('<path d="m21.4 11-9.2 9.2a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5"/>');
+var ICONE_HISTORICO=icone('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>');
+var ICONE_REATIVAR=icone('<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>');
+
+/* Uma ação em ícone: botão de verdade, nome acessível próprio (sem repetir a descrição do lançamento: a linha da
+   tabela já a dá), dica com o texto da ação — a MESMA dica do "Cumprido" (window.__pvProvidencia.comDica) — e o
+   texto curto ao lado do ícone só nos cartões (sem mouse não há dica). data-cust/data-id/data-tipo são o que o
+   ouvinte delegado lê; o selo de contagem do clipe não muda o tamanho do botão. */
+function botaoIcone(acao,tipo,x,ic,nome,texto,dica,extra,selo){
+  var id=esc(x.id);
+  var did='cust-d-'+acao+'-'+tipo.charAt(0)+'-'+id;
+  var bt='<button type="button" class="bt bt2 cust-ib" data-cust="'+acao+'" data-tipo="'+tipo+'" data-id="'+id+'" aria-label="'+esc(nome)+'" aria-describedby="'+did+'"'+(extra||'')+'>'+
+    ic+'<span class="cust-ib-t">'+texto+'</span>'+(selo?'<span class="cust-ib-n" aria-hidden="true">'+selo+'</span>':'')+'</button>';
+  return window.__pvProvidencia.comDica(bt,did,dica);
+}
+
+function acoesHtml(tipo,x){
   var id=esc(x.id);
   var conf=S.confirmando;
+  var coisa=tipo==='recebimento'?'recebimento':'lançamento';
   if(conf&&conf.tipo===tipo&&conf.id===x.id){
     return '<span class="cust-conf" role="group" aria-label="Confirmar cancelamento">'+
       '<label class="cust-motivo-l" for="cust-motivo-'+id+'">Motivo (opcional)</label>'+
@@ -153,16 +176,18 @@ function acoesHtml(tipo,x,rotulo){
   }
   var h='';
   if(x.cancelado){
-    h+='<button type="button" class="bt bt2 cust-mini" data-cust="reativar" data-tipo="'+tipo+'" data-id="'+id+'" aria-label="Reativar: '+rotulo+'">Reativar</button>';
+    h+=botaoIcone('reativar',tipo,x,ICONE_REATIVAR,'Reativar '+coisa,'Reativar','Reativar');
   }else{
-    h+='<button type="button" class="bt bt2 cust-mini" data-cust="editar" data-tipo="'+tipo+'" data-id="'+id+'" aria-label="Editar: '+rotulo+'">Editar</button>'+
-      '<button type="button" class="bt bt2 cust-mini" data-cust="cancelar" data-tipo="'+tipo+'" data-id="'+id+'" aria-label="Cancelar: '+rotulo+'">Cancelar</button>';
+    h+=botaoIcone('editar',tipo,x,ICONE_EDITAR,'Editar '+coisa,'Editar','Editar')+
+      botaoIcone('cancelar',tipo,x,ICONE_CANCELAR,'Cancelar '+coisa,'Cancelar','Cancelar '+coisa);
     if(tipo==='lancamento'){
-      var cheio=((x.comprovantes||[]).length>=S.dados.limites.comprovantesPorLancamento);
-      h+='<button type="button" class="bt bt2 cust-mini" data-cust="anexar" data-id="'+id+'" aria-label="Anexar comprovante: '+rotulo+'"'+(cheio?' disabled title="Este lançamento já tem '+S.dados.limites.comprovantesPorLancamento+' comprovantes."':'')+'>Anexar comprovante</button>';
+      var n=(x.comprovantes||[]).length;
+      var cheio=(n>=S.dados.limites.comprovantesPorLancamento);
+      var nome=n?'Anexar comprovante ('+n+(n===1?' anexado)':' anexados)'):'Anexar comprovante';
+      h+=botaoIcone('anexar',tipo,x,ICONE_ANEXAR,nome,'Comprovante',cheio?'Este lançamento já tem '+S.dados.limites.comprovantesPorLancamento+' comprovantes.':'Anexar comprovante',cheio?' disabled':'',n?String(n):'');
     }
   }
-  return h+'<button type="button" class="bt bt2 cust-mini" data-cust="historico" data-tipo="'+tipo+'" data-id="'+id+'" aria-label="Histórico: '+rotulo+'">Histórico</button>';
+  return h+botaoIcone('historico',tipo,x,ICONE_HISTORICO,'Histórico do '+coisa,'Histórico','Histórico');
 }
 
 function comprovantesHtml(l){
@@ -195,16 +220,15 @@ function marcaDeCancelado(x){
 
 function linhaHtml(l){
   var id=esc(l.id);
-  var rotulo=esc(l.descricao);
   var cobrar=l.pagoPor==='cliente'?'<span class="cust-nd" aria-label="Não se aplica">—</span>':(l.reembolsavel?'Sim':'Não');
   return '<tr data-id="'+id+'"'+(l.cancelado?' class="cust-cancelado"':'')+'>'+
     '<td data-rotulo="Data">'+esc(dataBr(l.data))+'</td>'+
-    '<td data-rotulo="Descrição" class="cust-desc">'+esc(l.descricao)+marcaDeCancelado(l)+comprovantesHtml(l)+'</td>'+
-    '<td data-rotulo="Subcategoria">'+esc(nomeDaCategoria(l.categoria))+'</td>'+
+    '<td data-rotulo="Descrição" class="cust-desc"><span class="cust-desc-t" title="'+esc(l.descricao)+'">'+esc(l.descricao)+'</span>'+marcaDeCancelado(l)+comprovantesHtml(l)+'</td>'+
+    '<td data-rotulo="Subcategoria"><span class="cust-sub-t" title="'+esc(nomeDaCategoria(l.categoria))+'">'+esc(nomeDaCategoria(l.categoria))+'</span></td>'+
     '<td data-rotulo="Valor" class="cust-val">'+reaisDeCentavos(l.valorCentavos)+'</td>'+
     '<td data-rotulo="Pago por">'+(l.pagoPor==='cliente'?'Cliente':'Escritório')+'</td>'+
     '<td data-rotulo="Cobrar do cliente">'+cobrar+'</td>'+
-    '<td data-rotulo="Ações" class="cust-acoes">'+acoesHtml('lancamento',l,rotulo)+'</td></tr>';
+    '<td data-rotulo="Ações" class="cust-acoes">'+acoesHtml('lancamento',l)+'</td></tr>';
 }
 
 function tabelaDeLancamentos(titulo,lista){
@@ -218,9 +242,9 @@ function linhaDoRecebimento(r){
   var id=esc(r.id);
   return '<tr data-id="'+id+'"'+(r.cancelado?' class="cust-cancelado"':'')+'>'+
     '<td data-rotulo="Data">'+esc(dataBr(r.data))+'</td>'+
-    '<td data-rotulo="Observação" class="cust-desc">'+(r.observacao?esc(r.observacao):'<span class="cust-nd">—</span>')+marcaDeCancelado(r)+'</td>'+
+    '<td data-rotulo="Observação" class="cust-desc">'+(r.observacao?'<span class="cust-desc-t" title="'+esc(r.observacao)+'">'+esc(r.observacao)+'</span>':'<span class="cust-nd">—</span>')+marcaDeCancelado(r)+'</td>'+
     '<td data-rotulo="Valor" class="cust-val">'+reaisDeCentavos(r.valorCentavos)+'</td>'+
-    '<td data-rotulo="Ações" class="cust-acoes">'+acoesHtml('recebimento',r,esc(dataBr(r.data)))+'</td></tr>';
+    '<td data-rotulo="Ações" class="cust-acoes">'+acoesHtml('recebimento',r)+'</td></tr>';
 }
 
 function listaHtml(){
@@ -417,6 +441,7 @@ function montarRaiz(){
     raiz=document.createElement('div');
     raiz.id='cust-raiz';
     capa.insertAdjacentElement('afterend',raiz);
+    window.__pvProvidencia.ligar(raiz);
   }
   raiz.innerHTML=esqueleto();
   pintarDados();pintarFormulario();pintarHistorico();
@@ -989,8 +1014,16 @@ document.addEventListener('focusout',function(ev){
 document.addEventListener('submit',function(ev){
   if(ev.target&&ev.target.id==='cust-form'){ev.preventDefault();if(S&&S.rascunho)salvar()}
 });
+/* Esc com a dica de um ícone aberta fecha SÓ a dica (o ouvinte de ligar() já a fechou quando este roda, por isso
+   o estado de antes é guardado na captura); o segundo Esc volta a fazer o que fazia. */
+var escSoFechouADica=false;
+document.addEventListener('keydown',function(ev){
+  var w=ev.key==='Escape'&&ev.target&&ev.target.closest?ev.target.closest('.sit-dica-wrap'):null;
+  escSoFechouADica=!!(w&&w.querySelector('.cust-ib')&&!w.classList.contains('sit-dica-fechada'));
+},true);
 document.addEventListener('keydown',function(ev){
   if(ev.key!=='Escape'||!S||!S.aberto)return;
+  if(escSoFechouADica){escSoFechouADica=false;return}
   var p=ev.target&&ev.target.closest?ev.target.closest('#cust-painel'):null;
   if(!p)return;
   if(ev.target.closest&&ev.target.closest('#cust-aviso')){ev.preventDefault();limparAviso();return}
@@ -1033,13 +1066,22 @@ export const ESTILOS_CUSTOS = `
 .cust-barra{margin:12px 0 6px}
 .cust-mini{min-height:32px;padding:0 12px;font-size:13px}
 .cust-form{margin:10px 0;padding:12px;background:var(--papel);border:1px solid var(--linha);border-radius:var(--r)}
-.cust-campos{display:flex;flex-wrap:wrap;gap:10px 12px;align-items:flex-end;margin:8px 0}
-.cust-campo{flex:1 1 150px;min-width:0}
-.cust-campo.cust-grande{flex:2 1 260px}
+/* Grade do formulário (v0.49.1): quatro faixas iguais; campo comum ocupa uma, o "grande" duas. Começo alinhado
+   (align-items:start) — rótulo, caixa e altura do controle são os mesmos em toda a linha, e o texto de apoio
+   (a prévia do valor) cai ABAIXO da caixa, em altura reservada, sem empurrar o vizinho. A ordem do DOM (e do Tab)
+   não muda. */
+.cust-campos{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px 12px;align-items:start;margin:8px 0}
+.cust-campo{grid-column:span 1;min-width:0}
+.cust-campo.cust-grande{grid-column:span 2}
+.cust-campo input,.cust-campo select{display:block;width:100%;min-height:44px;box-sizing:border-box}
+.cust-campo label{line-height:1.3;min-height:1.3em}
+.cust-campos>.cust-marca{grid-column:span 1}
+.cust-campos>.cust-nota{grid-column:span 3;align-self:center;margin:0}
+.cust-campo>.bt{margin-top:calc(1.3em + 4px)}
 .cust-campo label{display:block;font-size:12px;color:var(--tinta2);margin-bottom:4px;font-weight:600}
 .cust-marca{display:inline-flex;align-items:center;gap:8px;min-height:44px;cursor:pointer;font-weight:600}
 .cust-marca input{width:20px;height:20px;margin:0;accent-color:var(--acento)}
-.cust-previa{display:block;margin-top:4px;font-size:12.5px;color:var(--tinta2);min-height:1.2em}
+.cust-previa{display:block;margin-top:4px;font-size:12.5px;line-height:1.3;color:var(--tinta2);min-height:1.3em}
 .cust-previa-ruim{color:var(--erro)}
 .cust-erro,.cust-msg{color:var(--erro);font-size:13px}
 .cust-erro:empty,.cust-msg:empty{display:none}
@@ -1050,19 +1092,36 @@ export const ESTILOS_CUSTOS = `
 .cust-lista{margin:8px 0;min-width:0}
 .cust-vazio{margin:6px 0;color:var(--tinta2)}
 .cust-tab{width:100%;border-collapse:collapse;table-layout:fixed}
-.cust-tab th{font-size:11.5px;text-align:left;color:var(--tinta2);padding:6px 8px;border-bottom:1px solid var(--linha);font-weight:700}
-.cust-tab td{padding:8px;border-bottom:1px solid var(--linha);vertical-align:top;min-width:0;overflow-wrap:anywhere}
-.cust-tab th:nth-child(1){width:86px}.cust-tab th:nth-child(3){width:128px}.cust-tab th:nth-child(4){width:108px}
-.cust-tab th:nth-child(5){width:84px}.cust-tab th:nth-child(6){width:84px}.cust-tab th:nth-child(7){width:176px}
-.cust-tab-rec th:nth-child(1){width:86px}.cust-tab-rec th:nth-child(3){width:108px}.cust-tab-rec th:nth-child(4){width:176px}
+.cust-tab th{font-size:11.5px;text-align:left;color:var(--tinta2);padding:6px 8px;border-bottom:1px solid var(--linha);font-weight:700;vertical-align:bottom}
+.cust-tab td{padding:8px;border-bottom:1px solid var(--linha);vertical-align:middle;min-width:0;overflow-wrap:anywhere}
+/* Colunas (v0.49.1). As estreitas têm largura de CONTEÚDO em rem e nunca quebram (data, valor, quem pagou, cobrar,
+   ações); a Subcategoria fica numa linha só, com reticências e o texto inteiro no title e no nome acessível (o corte
+   é visual: o texto continua no DOM); a Descrição fica com o que sobra, até 2 linhas, e só então reticências. */
+.cust-tab th:nth-child(1){width:6.5rem}.cust-tab th:nth-child(3){width:25%}.cust-tab th:nth-child(4){width:7.5rem}
+.cust-tab th:nth-child(5){width:5.5rem}.cust-tab th:nth-child(6){width:5rem}.cust-tab th:nth-child(7){width:8.5rem}
+.cust-tab-rec th:nth-child(1){width:6.5rem}.cust-tab-rec th:nth-child(3){width:7.5rem}.cust-tab-rec th:nth-child(4){width:8.5rem}
+.cust-tab td:nth-child(1),.cust-tab td.cust-val,.cust-tab td:nth-child(5),.cust-tab td:nth-child(6){white-space:nowrap}
+.cust-sub-t{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cust-desc-t{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden;overflow-wrap:break-word}
 .cust-tab .cust-val{text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
 .cust-cancelado td{color:var(--tinta2)}
 .cust-cancelado td.cust-desc,.cust-cancelado td.cust-val{text-decoration:line-through}
 .cust-canc{display:block;font-size:12px;font-weight:700;color:var(--erro);text-decoration:none}
 .cust-em{display:block;font-size:12px;color:var(--tinta2)}
 .cust-nd{color:var(--tinta2)}
-.cust-acoes{display:flex;flex-wrap:wrap;gap:6px}
+.cust-tab td.cust-acoes{white-space:nowrap}
+.cust-acoes{display:flex;flex-wrap:nowrap;gap:4px}
+/* Ação em ícone: 28x28 (alvo mínimo de 24), sem texto no desktop; o selo do clipe flutua no canto e não muda o tamanho. */
+button.cust-ib{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:6px;width:28px;height:28px;min-height:0;padding:0;font-size:13px}
+.cust-ib:focus-visible{outline:2px solid var(--acento);outline-offset:1px}
+.cust-ib:disabled{opacity:.5;cursor:not-allowed}
+.cust-ib-t{display:none}
+.cust-ib-n{position:absolute;top:-5px;right:-5px;min-width:15px;height:15px;padding:0 3px;border-radius:8px;background:var(--acento);color:var(--papel);
+  font-size:10px;font-weight:700;line-height:15px;text-align:center;font-variant-numeric:tabular-nums}
+.cust-acoes .sit-dica-wrap{flex:none}
+.cust-acoes .sit-dica{max-width:min(200px,calc(100vw - 48px))}
 .cust-conf{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.cust-tab .cust-conf{flex-direction:column;align-items:stretch;white-space:normal}
 .cust-perigo{color:var(--erro);border-color:var(--erro)}
 .cust-credito{border-color:var(--verde-tinta)}
 .cust-pago{border:0;margin:8px 0;padding:0;display:flex;flex-wrap:wrap;gap:4px 16px;align-items:center}
@@ -1083,19 +1142,42 @@ export const ESTILOS_CUSTOS = `
 .cust-hist-lista li{margin:6px 0}
 .cust-hist-lista ul{margin:2px 0 0;padding-left:18px}
 .cust-pdf{margin-top:14px;padding-top:6px;border-top:1px solid var(--linha)}
-/* Abaixo de 1100 px a lista vira cartões: a tabela de 7 colunas não cabe ao lado da lateral. */
-@media (max-width:1099px){
+/* Entre 900 e 1439 px (lateral + painel) as colunas estreitas encolhem; abaixo de 1280 a letra e as margens também, e
+   a Subcategoria pode ir a duas linhas. A Descrição fica com o resto. */
+@media (min-width:900px) and (max-width:1439px){
+  .cust-tab th:nth-child(1){width:6rem}.cust-tab th:nth-child(3){width:17%}.cust-tab th:nth-child(4){width:6.75rem}
+  .cust-tab th:nth-child(5){width:4.5rem}.cust-tab th:nth-child(6){width:3.5rem}.cust-tab th:nth-child(7){width:7.5rem}
+  .cust-tab-rec th:nth-child(3){width:6.75rem}.cust-tab-rec th:nth-child(4){width:7.5rem}
+}
+@media (min-width:900px) and (max-width:1279px){
+  .cust-tab th:nth-child(1){width:5rem}.cust-tab th:nth-child(3){width:15%}.cust-tab th:nth-child(4){width:5.75rem}
+  .cust-tab th{padding:6px 4px;font-size:11px}
+  .cust-tab td{padding:6px 4px;font-size:12.5px}
+  .cust-sub-t{white-space:normal;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2}
+}
+/* Abaixo de 900 px a lista vira cartões: com a lateral, a tabela de 7 colunas não cabe. Sem mouse não há dica, então
+   o texto da ação aparece ao lado do ícone (Editar, Cancelar, Comprovante, Histórico, Reativar). */
+@media (max-width:899px){
   .cust-tab,.cust-tab tbody,.cust-tab tr,.cust-tab td{display:block;width:100%}
   .cust-tab thead{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
   .cust-tab tr{background:var(--papel);border:1px solid var(--linha);border-radius:var(--r);padding:8px 12px;margin:0 0 10px}
-  .cust-tab td{display:flex;flex-wrap:wrap;gap:4px 12px;justify-content:space-between;align-items:center;border-bottom:0;padding:4px 0}
+  .cust-tab td{display:flex;flex-wrap:wrap;gap:4px 12px;justify-content:space-between;align-items:center;border-bottom:0;padding:4px 0;white-space:normal}
   .cust-tab td::before{content:attr(data-rotulo);font-size:11.5px;font-weight:700;color:var(--tinta2);flex:none}
   .cust-tab .cust-val{text-align:left}
   .cust-tab td.cust-desc{display:block}
   .cust-tab td.cust-desc::before{display:block;margin-bottom:2px}
   .cust-tab td.cust-acoes{justify-content:flex-start;padding-top:8px}
   .cust-tab td.cust-acoes::before{display:none}
+  .cust-acoes{flex-wrap:wrap;gap:6px}
+  .cust-sub-t,.cust-desc-t{display:block;white-space:normal;overflow:visible;-webkit-line-clamp:unset;line-clamp:unset}
+  button.cust-ib{width:auto;min-height:44px;padding:0 12px}
+  .cust-ib-t{display:inline}
+  .cust-ib-n{top:2px;right:2px}
+  .cust-acoes .sit-dica{display:none}
   .cust-mini{min-height:44px}
+  .cust-campos{grid-template-columns:1fr}
+  .cust-campo,.cust-campo.cust-grande,.cust-campos>.cust-marca,.cust-campos>.cust-nota{grid-column:auto}
+  .cust-campo>.bt{margin-top:0}
 }
 @media (max-width:480px){.cust{padding:12px}.cust-tot{flex-basis:calc(50% - 6px)}}
 `;
