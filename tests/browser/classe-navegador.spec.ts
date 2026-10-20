@@ -179,50 +179,37 @@ describe.skipIf(sem)(
       await page.waitForSelector('.nvt-tabela');
     }
 
+    /*
+     * Reescrito na 0.49.2 (linha compacta, decisão do dono): a Classe é UMA linha com reticências — não mais duas linhas
+     * de palavras inteiras — e abaixo de 1600 px deixa de ser coluna e vira a linha de baixo da célula do Tribunal. O que
+     * continua valendo: o texto inteiro está no DOM (nada some) e o `title` diz a classe toda.
+     */
     for (const largura of [1920, 1366, 1280]) {
-      it(`em ${largura}px a coluna Classe não corta palavra no meio, cabe em 2 linhas e tem title`, async () => {
+      it(`em ${largura}px a Classe é uma linha com reticências, o texto inteiro no DOM e o title completo`, async () => {
         await abrirAtualizacoes(largura);
-        const medidas = await page.evaluate(() =>
-          Array.from(document.querySelectorAll<HTMLElement>('.c-classe .nvt-classe')).map(
-            (el) => {
-              const cs = getComputedStyle(el);
-              const linha = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.4;
-              // Cada palavra, medida sozinha com a mesma fonte: tem de caber na coluna.
-              const sonda = document.createElement('span');
-              sonda.style.cssText =
-                'position:absolute;visibility:hidden;white-space:nowrap;font:' + cs.font;
-              document.body.appendChild(sonda);
-              const palavras = (el.textContent ?? '').split(/\s+/).filter(Boolean);
-              const maior = Math.max(
-                ...palavras.map((p) => {
-                  sonda.textContent = p;
-                  return sonda.getBoundingClientRect().width;
-                }),
-              );
-              sonda.remove();
-              return {
-                texto: el.textContent ?? '',
-                title: el.getAttribute('title') ?? '',
-                largura: el.clientWidth,
-                maiorPalavra: maior,
-                linhas: Math.round(el.scrollHeight / linha),
-                cortado: el.scrollHeight > el.clientHeight + 1,
-              };
-            },
-          ),
+        const alvo =
+          largura >= 1600 ? '.c-classe .nvt-classe' : '.c-trib .nvt-classe-mini';
+        const medidas = await page.evaluate(
+          (sel) =>
+            Array.from(document.querySelectorAll<HTMLElement>(sel)).map((el) => ({
+              texto: el.textContent ?? '',
+              title: el.getAttribute('title') ?? '',
+              reticencias: getComputedStyle(el).textOverflow,
+              umaLinha: getComputedStyle(el).whiteSpace === 'nowrap',
+              visivel: el.getBoundingClientRect().width > 0,
+            })),
+          alvo,
         );
         expect(medidas).toHaveLength(4);
         for (const m of medidas) {
-          expect(m.maiorPalavra, m.texto).toBeLessThanOrEqual(m.largura);
+          expect(m.visivel, m.texto).toBe(true);
+          expect(m.umaLinha, m.texto).toBe(true);
+          expect(m.reticencias, m.texto).toBe('ellipsis');
           expect(m.title, m.texto).not.toBe('');
         }
-        // A classe do exemplo do dono: duas linhas, palavras inteiras, sem reticências.
-        const comum = medidas.filter((m) => m.texto === 'Procedimento Comum Cível');
-        expect(comum).toHaveLength(2);
-        for (const m of comum) {
-          expect(m.cortado).toBe(false);
-          expect(m.linhas).toBeLessThanOrEqual(2);
-        }
+        expect(
+          medidas.filter((m) => m.texto === 'Procedimento Comum Cível'),
+        ).toHaveLength(2);
       });
     }
 

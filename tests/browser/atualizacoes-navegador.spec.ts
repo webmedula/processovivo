@@ -237,7 +237,9 @@ describe.skipIf(sem)(
         'Atualização',
         'Tribunal',
         'Classe',
-        'Data do ato',
+        // v0.49.2: o rótulo visível é "Data" (o nome inteiro não cabe numa linha); "Data do ato" fica no
+        // aria-label e no title do botão de ordenar (conferido no teste de ordenação).
+        'Data',
         'Detectado',
         'Ações',
       ]);
@@ -272,8 +274,9 @@ describe.skipIf(sem)(
       expect(await l.locator('.c-partes').innerText()).toBe(
         'Autora Sintética × Empresa Fictícia Ltda',
       );
-      expect(await l.locator('.c-trib').innerText()).toBe('TJGO');
-      expect(await l.locator('.c-classe').innerText()).toBe('Procedimento Comum Cível');
+      // v0.49.2: abaixo de 1600 px a classe vira uma linha sob o tribunal (a coluna Classe some).
+      expect((await l.locator('.c-trib').innerText()).split('\n')[0]).toBe('TJGO');
+      expect(await l.locator('.c-classe').textContent()).toBe('Procedimento Comum Cível');
       expect(await l.locator('.c-atu .nvt-tit').textContent()).toBe('Sentença');
       // As duas datas aparecem separadas, em colunas rotuladas, e não se confundem.
       expect(await l.locator('.c-data').getAttribute('data-rotulo')).toBe('Data do ato');
@@ -481,12 +484,16 @@ describe.skipIf(sem)(
             dentro: itens.every(
               (b) => b.left >= cel.left - 0.5 && b.right <= cel.right + 0.5,
             ),
-            mesmaLinha: new Set(itens.map((b) => Math.round(b.top + b.height / 2))).size,
+            // v0.49.2: o centro vertical das 4 peças difere no máximo 1 px (o <input> de 13 px num rótulo de 28 px cai em meio pixel).
+            mesmaLinha:
+              Math.max(...itens.map((b) => b.top + b.height / 2)) -
+                Math.min(...itens.map((b) => b.top + b.height / 2)) <=
+              1,
             alinhados: xs.size,
           };
         });
         // Reescrito na 0.46.1: antes eram só 2 botões; agora a caixa (linha com providência) vem antes deles.
-        expect(m).toEqual({ texto: '', dentro: true, mesmaLinha: 1, alinhados: 1 });
+        expect(m).toEqual({ texto: '', dentro: true, mesmaLinha: true, alinhados: 1 });
         await ctx.close();
       }
     });
@@ -494,11 +501,15 @@ describe.skipIf(sem)(
     // 0.46.1: a coluna "Cumprido" saiu e Partes ganhou a largura dela. Medido antes (0.46.0) → depois, com dados
     // sintéticos: Partes 169→315 / 111→180 / 102→166 / 83→136 px; Atualização 413→332 / 214→208 / 183→178 / 135→135 px
     // (1920/1366/1280/1024). Os pisos abaixo deixam folga de ~5 px para arredondamento; a Atualização tem teto só em 1920.
+    // 0.49.2 (linha compacta): a Atualização ganhou largura (a linha do ato é uma só) e as colunas de conteúdo (Processo,
+    // datas, Ações) ficaram fixas; Partes cede em 1366/1280/1024, onde ela quebra em até 2 linhas e corta com reticências.
+    // Medido (1920/1366/1280/1024): Partes 274/117/107/93 px; Atualização 478/347/271/96 px. Os números antigos de
+    // Atualização (teto de 340 em 1920) guardavam o desenho anterior e foram trocados por pisos.
     for (const [largura, atuMin, atuMax, partesMin, dataMax] of [
-      [1920, 300, 340, 280, 104],
-      [1366, 195, 400, 170, 104],
-      [1280, 170, 400, 155, 104],
-      [1024, 125, 400, 125, 88],
+      [1920, 440, 600, 250, 104],
+      [1366, 300, 450, 105, 104],
+      [1280, 240, 400, 95, 104],
+      [1024, 85, 400, 80, 88],
     ] as const) {
       it(`${largura}px: "Data do ato" e "Detectado" ficam estreitas e SEM quebra de linha; Partes ganha largura (≥ ${partesMin}) e Atualização fica entre ${atuMin} e ${atuMax} px`, async () => {
         const numero = numeroValido(3101);
@@ -876,7 +887,9 @@ describe.skipIf(sem)(
         (await page.locator('.c-atu .nvt-tit').allTextContents()).map((t) =>
           t.replace('Ato ', ''),
         );
-      const cab = (nome: string) => page.locator('th', { hasText: nome });
+      // v0.49.2: o cabeçalho mostra "Data"; o nome completo "Data do ato" está no aria-label do botão.
+      const cab = (nome: string) =>
+        page.locator('th', { hasText: nome === 'Data do ato' ? 'Data' : nome });
       expect(await ordem()).toEqual(['30', '10', '20', '40']);
       for (const n of ['Processo', 'Tribunal', 'Data do ato', 'Detectado']) {
         expect(await cab(n).getAttribute('aria-sort')).toBe('none');
@@ -1020,8 +1033,16 @@ describe.skipIf(sem)(
       expect(await linhas().count()).toBe(2);
       const sem = linhas().nth(1); // primeiro quem tem atualização detectada
       expect(await sem.locator('.nvt-num').textContent()).toContain('7002');
-      expect(await sem.locator('.c-atu').innerText()).toContain(
-        'Última movimentação conhecida · sem atualização detectada',
+      // v0.49.2: o texto visível é "Sem atualização detectada"; "Última movimentação conhecida" vai no title e em
+      // texto para leitor de tela (uma linha só, sem empurrar a altura da linha).
+      expect(await sem.locator('.c-atu .nvt-sem').textContent()).toContain(
+        'Última movimentação conhecida · Sem atualização detectada',
+      );
+      expect(await sem.locator('.c-atu .nvt-sem').innerText()).toContain(
+        'Sem atualização detectada',
+      );
+      expect(await sem.locator('.c-atu .nvt-sem').getAttribute('title')).toContain(
+        'Última movimentação conhecida',
       );
       // Mesma regra de descrição: a repetição some só na exibição.
       expect(await sem.locator('.c-atu .nvt-tit').textContent()).toBe(

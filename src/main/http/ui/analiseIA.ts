@@ -89,13 +89,19 @@ function ligar(callbacks){
 
 function aberto(n){return !!(E[n]&&E[n].aberto)}
 
-/* O botão da linha. Sem IA ligada ou sem chave do ato, não há botão. */
+/* Faísca (v0.49.2): o mesmo traço dos outros ícones da fileira de Ações (18 px, 2, sem biblioteca). */
+var ICO_IA='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M9.9 15.5A2 2 0 0 0 8.5 14.1l-6.1-1.6a.5.5 0 0 1 0-1L8.5 9.9a2 2 0 0 0 1.4-1.4l1.6-6.1a.5.5 0 0 1 1 0l1.6 6.1a2 2 0 0 0 1.4 1.4l6.1 1.6a.5.5 0 0 1 0 1l-6.1 1.6a2 2 0 0 0-1.4 1.4l-1.6 6.1a.5.5 0 0 1-1 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/></svg>';
+
+/* O botão da linha. Sem IA ligada ou sem chave do ato, não há botão. Desde a v0.49.2 é um ÍCONE na fileira de Ações,
+   com a dica comum do console (__pvProvidencia.comDica) e o nome acessível "Analisar com IA"; o texto só aparece nos
+   cartões (sem mouse não há dica). Estados: não há desabilitado nem carregando no botão — ele existe ou não existe
+   (IA desligada, ou ato sem chave); o aberto/fechado do painel é aria-expanded, e o carregamento mora no painel. */
 function botao(num,chave){
   var n=digitos(num);
   if(!habilitada()||!chave)return '';
-  return '<button type="button" class="nov-btn pvia-btn" data-acao="ia" data-num="'+esc(num)+'" data-chave="'+esc(chave)+
-    '" data-foco="ia-'+esc(n)+'" aria-expanded="'+(aberto(n)?'true':'false')+'" aria-controls="pvia-'+esc(n)+
-    '" title="Gera um resumo do ato por IA. Apoio à leitura: confira sempre no ato.">Analisar com IA</button>';
+  return window.__pvProvidencia.comDica('<button type="button" class="nvt-ic pvia-btn" data-acao="ia" data-num="'+esc(num)+'" data-chave="'+esc(chave)+
+    '" data-foco="ia-'+esc(n)+'" aria-label="Analisar com IA" aria-describedby="dica-ia-'+esc(n)+'" aria-expanded="'+(aberto(n)?'true':'false')+'" aria-controls="pvia-'+esc(n)+
+    '">'+ICO_IA+'<span class="pvia-btn-t">Analisar com IA</span></button>','dica-ia-'+n,'Analisar com IA');
 }
 
 function seloIA(d){
@@ -422,9 +428,8 @@ window.__pvAnaliseIA={carregar:carregar,habilitada:habilitada,ligar:ligar,botao:
 `;
 
 export const ESTILOS_ANALISE_IA = `
-.pvia-btn{display:block;margin-top:6px;max-width:100%;white-space:normal;text-align:center;line-height:1.2;
-  min-height:30px;padding:4px 8px;font-size:12px}
-.pvia-btn[aria-expanded="true"]{background:var(--acento-bg);border-color:var(--acento)}
+.pvia-btn-t{display:none}
+.pvia-btn[aria-expanded="true"]{background:var(--acento-bg);border-color:var(--acento);color:var(--acento)}
 .nvt-tabela tr.pvia-linha td{padding:0 8px 14px;border-top:0}
 .nvt-tabela tbody tr.nvt-linha:hover + tr.pvia-linha td,.nvt-tabela tbody tr.pvia-linha:hover td{background:transparent}
 .pvia{min-width:0;max-width:100%;background:var(--papel2);border:1px solid var(--linha);border-left:4px solid var(--acento);
@@ -461,6 +466,7 @@ export const ESTILOS_ANALISE_IA = `
   .nvt-tabela tr.pvia-linha{display:block;margin:-4px 0 10px}
   .nvt-tabela tr.pvia-linha td{display:block;padding:0}
   .nvt-tabela tr.pvia-linha td::before{content:none}
-  .pvia-btn,.pvia .nov-btn{min-height:44px}
+  .pvia .nov-btn{min-height:44px}
+  .pvia-btn-t{display:inline}
 }
 `;
