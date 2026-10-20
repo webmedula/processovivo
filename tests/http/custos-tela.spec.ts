@@ -80,10 +80,44 @@ describe('tela do centro de custos — o contrato do arquivo', () => {
       'r.nomeNova',
       's.nome',
       'c.nome',
+      'x.motivoDoCancelamento',
+      'r.observacao',
+      'e.motivo',
+      'h.titulo',
     ]) {
       const cru = new RegExp(`\\+\\s*${campo.replace('.', '\\.')}\\s*\\+`);
       expect(cru.test(SCRIPT_CUSTOS), campo).toBe(false);
     }
+  });
+
+  it('a tela da 0.48.0: sem "Ressarcido" por lançamento e sem exclusão; com recebimentos, cancelar e histórico', () => {
+    // A caixa "Ressarcido" e o "Excluído. Desfazer" (que recriava o registro) saíram.
+    expect(SCRIPT_CUSTOS).not.toContain('ressarcimento');
+    expect(SCRIPT_CUSTOS).not.toContain('Excluído');
+    expect(SCRIPT_CUSTOS).not.toMatch(
+      /method:\s*'DELETE'\}\)\.then\(function\(\)\{\s*S\.confirmando/,
+    );
+    for (const frase of [
+      'Recebimentos do cliente',
+      'Registrar recebimento',
+      'Crédito do cliente',
+      'Mostrar cancelados',
+      'Cancelado. Desfazer',
+      'Histórico',
+      'Depósitos e garantias não entram no total de despesas.',
+      'Pago por',
+    ]) {
+      expect(
+        SCRIPT_CUSTOS.replace(
+          '<span>Cancelado.</span> <button',
+          'Cancelado. Desfazer<button',
+        ),
+      ).toContain(frase);
+    }
+    // A única chamada DELETE da tela é a que REATIVA (…/cancelamento).
+    const deletes = SCRIPT_CUSTOS.match(/method:'DELETE'/g) ?? [];
+    expect(deletes).toHaveLength(1);
+    expect(SCRIPT_CUSTOS).toContain("+'/cancelamento',{method:'DELETE'}");
   });
 
   it('nenhuma frase fala em prazo', () => {
