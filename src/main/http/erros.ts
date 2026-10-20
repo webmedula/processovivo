@@ -1,4 +1,5 @@
 import { ZodError } from 'zod';
+import type { MotivoDoGateway } from '../../domain/errors/index.js';
 import {
   AcompanhamentoNaoEncontradoError,
   AssinaturaInativaError,
@@ -57,6 +58,15 @@ export interface RespostaDeErro {
     readonly detalhes?: unknown;
   };
 }
+
+/** A frase de cada motivo da falha do gateway (v0.45.1). Nossa, nunca do gateway. */
+const FRASE_DO_GATEWAY: Readonly<Record<MotivoDoGateway, string>> = {
+  email_pagador: 'O Mercado Pago não aceitou o e-mail desta conta como pagador.',
+  credencial: 'O serviço de pagamento está com um problema de configuração do nosso lado.',
+  parametro_invalido: 'O Mercado Pago não aceitou os dados do pedido de pagamento.',
+  indisponivel: 'O serviço de pagamento está indisponível no momento. Tente novamente em instantes.',
+  desconhecido: 'O Mercado Pago recusou o pedido por um motivo que não foi possível identificar.',
+};
 
 /**
  * Tradução de erro de domínio para status HTTP.
@@ -199,21 +209,27 @@ export function mapearErro(erro: unknown): RespostaDeErro {
       corpo: { erro: erro.codigo, mensagem: erro.message, detalhes: { motivo: erro.motivo } },
     };
   }
+  // v0.45.1: sempre JSON e sempre com um motivo de lista fechada. 422 = o gateway RECUSOU o pedido;
+  // 503 = o gateway está fora do ar. Nunca 502: o proxy do Easypanel troca 502/504 (e às vezes 503) por uma
+  // página HTML e esconde o JSON — a tela, por isso, também sabe agir só com o status. A mensagem é nossa:
+  // o texto do gateway pode ecoar o e-mail do pagador e nunca sai daqui.
   if (erro instanceof GatewayDePagamentoIndisponivelError) {
     return {
       status: 503,
       corpo: {
         erro: erro.codigo,
-        mensagem: 'O serviço de pagamento está indisponível no momento. Tente novamente em instantes.',
+        mensagem: FRASE_DO_GATEWAY['indisponivel'],
+        detalhes: { situacao: 'gateway_indisponivel', motivo: 'indisponivel' },
       },
     };
   }
   if (erro instanceof GatewayDePagamentoRecusouError) {
     return {
-      status: 502,
+      status: 422,
       corpo: {
         erro: erro.codigo,
-        mensagem: 'O serviço de pagamento não aceitou o pedido. Tente novamente mais tarde.',
+        mensagem: FRASE_DO_GATEWAY[erro.motivoDoGateway],
+        detalhes: { situacao: 'gateway_recusou', motivo: erro.motivoDoGateway },
       },
     };
   }

@@ -87,11 +87,27 @@ function render(){
 function carregarPagamento(){
   return api('/admin/api/pagamento').then(function(r){estado.pagamento=r}).catch(function(){estado.pagamento={habilitado:false}});
 }
+var ROTULO_DA_FALHA_DO_GATEWAY={
+  email_pagador:'o Mercado Pago recusou o e-mail do pagador',
+  credencial:'o Mercado Pago recusou a credencial (token)',
+  parametro_invalido:'o Mercado Pago recusou algum campo do pedido (veja o log)',
+  indisponivel:'o Mercado Pago está fora do ar, lento ou limitando',
+  desconhecido:'recusa sem motivo identificável (veja o log: "gateway de pagamento recusou o pedido")'};
 function bannerDoAmbiente(){
   var p=estado.pagamento;
-  if(!p||!p.habilitado||!p.modoDeTeste)return '';
-  return '<div class="aviso" role="status" style="margin-bottom:12px;border-color:var(--erro)">'+
-    '<strong style="color:var(--erro)">TESTE</strong> — '+esc(p.aviso||'Nenhum pagamento é real.')+'</div>';
+  if(!p||!p.habilitado)return '';
+  var h='';
+  if(p.modoDeTeste){
+    h+='<div class="aviso" role="status" style="margin-bottom:12px;border-color:var(--erro)">'+
+      '<strong style="color:var(--erro)">TESTE</strong> — '+esc(p.aviso||'Nenhum pagamento é real.')+'</div>';
+  }
+  var f=p.ultimaFalha;
+  if(f){
+    h+='<div class="aviso" role="status" style="margin-bottom:12px"><strong>Última falha do gateway:</strong> '+
+      esc(dt(f.em))+' · '+esc(f.operacao)+' · '+(f.status!==null?'HTTP '+esc(f.status):'sem resposta')+
+      (f.codigo?' · código '+esc(f.codigo):'')+' · '+esc(ROTULO_DA_FALHA_DO_GATEWAY[f.motivo]||f.motivo)+'</div>';
+  }
+  return h;
 }
 var ROTULO_DO_ESTADO_DO_GATEWAY={pendente:'aguardando pagamento',autorizada:'renovação automática ativa',
   pausada:'pausada',cancelada:'renovação encerrada'};

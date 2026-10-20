@@ -162,8 +162,9 @@ describe.skipIf(sem)('Plano escolhido no site, no navegador', { timeout: 90_000 
     await criarConta();
     await page.locator('#nav-conta').waitFor({ state: 'visible' });
     // Segue na aba inicial: nenhuma confirmação.
-    expect(await page.locator('#nav-novidades').getAttribute('class')).toMatch(
-      /on|ativo|atual/,
+    // Espera o console marcar a aba ativa (antes disso o atributo `class` ainda não existe).
+    await page.waitForFunction(() =>
+      /on|ativo|atual/.test(document.getElementById('nav-novidades')?.className ?? ''),
     );
     expect(await painel().count()).toBe(0);
     await page.locator('#nav-conta').click();

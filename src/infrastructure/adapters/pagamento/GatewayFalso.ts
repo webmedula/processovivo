@@ -12,6 +12,7 @@ import {
   GatewayDePagamentoIndisponivelError,
   GatewayDePagamentoRecusouError,
 } from '../../../domain/errors/index.js';
+import type { MotivoDoGateway } from '../../../domain/errors/index.js';
 import type { Clock } from '../../../domain/ports/Clock.js';
 import { clockDoSistema } from '../../../domain/ports/Clock.js';
 import type { GatewayDePagamento } from '../../../domain/ports/GatewayDePagamento.js';
@@ -43,6 +44,8 @@ export class GatewayFalso implements GatewayDePagamento {
   consultas = 0;
   /** Faz a PRÓXIMA chamada de rede falhar, uma vez (teste do caminho de indisponibilidade). */
   falharProximaChamada: 'indisponivel' | 'recusou' | undefined;
+  /** O motivo da PRÓXIMA recusa simulada (v0.45.1). */
+  motivoDaRecusa: MotivoDoGateway = 'desconhecido';
 
   private readonly assinaturas = new Map<string, AssinaturaFalsa>();
   private readonly pagamentos = new Map<string, PagamentoNoGateway>();
@@ -191,7 +194,16 @@ export class GatewayFalso implements GatewayDePagamento {
       throw new GatewayDePagamentoIndisponivelError(this.nome, 'falha simulada');
     }
     if (falha === 'recusou') {
-      throw new GatewayDePagamentoRecusouError(this.nome, 400, 'recusa simulada');
+      throw new GatewayDePagamentoRecusouError(this.nome, 400, 'recusa simulada', {
+        motivoDoGateway: this.motivoDaRecusa,
+        diagnostico: {
+          operacao: 'simulada',
+          status: 400,
+          erro: 'bad_request',
+          causas: [{ codigo: '123', descricao: 'recusa simulada' }],
+          camposEnviados: [],
+        },
+      });
     }
   }
 }

@@ -727,6 +727,13 @@ plano há o campo **Ciclo de renovação**; hoje só `mensal` é vendável.
 
   Consulta o Mercado Pago, corrige o que divergir e imprime só contagens. É seguro repetir: um
   pagamento nunca renova duas vezes.
+- **O Mercado Pago recusou o pedido (v0.45.1):** a tela diz o motivo em português e o `/admin` mostra, no alto
+  da aba Assinaturas, a **última falha do gateway** (data, operação, status, código e motivo). O detalhe fica no
+  log do contêiner, na linha **"gateway de pagamento recusou o pedido"** (nível `warn`): traz o status, o `error`, a
+  `message`, o `code` e a `description` de cada causa e os nomes dos campos enviados — sem token, sem e-mail em claro
+  e sem valores. Motivos: `email_pagador`, `credencial`, `parametro_invalido`, `indisponivel`, `desconhecido`.
+  Com credencial de **teste**, o e-mail do pagador precisa ser de um usuário de teste do Mercado Pago (do mesmo
+  país e diferente do e-mail do vendedor).
 - **Conta de chave de API** (sem e-mail) não assina online: a liberação dela continua manual, pelo
   workspace (ver a seção do Drive).
 

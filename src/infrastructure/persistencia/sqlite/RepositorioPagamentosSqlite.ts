@@ -83,6 +83,16 @@ function paraPagamento(l: LinhaPagamento): PagamentoProcessado {
   };
 }
 
+function paraEvento(l: LinhaEvento): EventoDePagamento {
+  return {
+    ...(l.workspace ? { workspace: l.workspace } : {}),
+    ...(l.referencia ? { referencia: l.referencia } : {}),
+    tipo: l.tipo,
+    ...(l.detalhe ? { detalhe: l.detalhe } : {}),
+    criadoEm: new Date(l.criado_em),
+  };
+}
+
 const iso = (d: Date | undefined): string | null => (d ? d.toISOString() : null);
 
 /**
@@ -242,17 +252,18 @@ export class RepositorioPagamentosSqlite implements RepositorioPagamentos {
       .run(e.workspace ?? null, e.referencia ?? null, e.tipo, e.detalhe ?? null, e.criadoEm.toISOString());
   }
 
+  async ultimoEventoDoTipo(tipo: string): Promise<EventoDePagamento | undefined> {
+    const l = this.db
+      .prepare('SELECT * FROM eventos_de_pagamento WHERE tipo = ? ORDER BY id DESC LIMIT 1')
+      .get(tipo) as unknown as LinhaEvento | undefined;
+    return l ? paraEvento(l) : undefined;
+  }
+
   async eventosDe(referencia: string): Promise<readonly EventoDePagamento[]> {
     const linhas = this.db
       .prepare('SELECT * FROM eventos_de_pagamento WHERE referencia = ? ORDER BY id ASC')
       .all(referencia) as unknown as LinhaEvento[];
-    return linhas.map((l) => ({
-      ...(l.workspace ? { workspace: l.workspace } : {}),
-      ...(l.referencia ? { referencia: l.referencia } : {}),
-      tipo: l.tipo,
-      ...(l.detalhe ? { detalhe: l.detalhe } : {}),
-      criadoEm: new Date(l.criado_em),
-    }));
+    return linhas.map(paraEvento);
   }
 
   private valores(c: CobrancaRecorrente): Array<string | number | null> {

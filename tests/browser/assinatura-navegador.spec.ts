@@ -251,6 +251,58 @@ describe.skipIf(sem)('Assinatura online, no navegador', { timeout: 90_000 }, () 
     expect(dialogos).toEqual([]);
   });
 
+  const FRASES_DA_FALHA: Array<['email_pagador' | 'credencial' | 'parametro_invalido' | 'desconhecido', RegExp]> = [
+    ['email_pagador', /não aceitou o e-mail da sua conta como pagador/],
+    ['credencial', /problema de configuração do nosso lado/],
+    ['parametro_invalido', /Não conseguimos montar o pedido de pagamento/],
+    ['desconhecido', /motivo que não conseguimos identificar/],
+  ];
+  for (const [motivo, frase] of FRASES_DA_FALHA) {
+    it(`recusa do Mercado Pago (${motivo}): a confirmação fica, com a frase própria desse motivo e o botão de volta`, async () => {
+      await abrir();
+      await cartao().waitFor();
+      cenario.gateway.falharProximaChamada = 'recusou';
+      cenario.gateway.motivoDaRecusa = motivo;
+      await abrirConfirmacao();
+      await page.getByRole('checkbox').check();
+      await page.getByRole('button', { name: 'Continuar para o pagamento' }).click();
+      const erro = page.locator('.pgto-erro[role="alert"]');
+      await erro.waitFor();
+      expect(await erro.innerText()).toMatch(frase);
+      expect(page.url()).toContain(url);
+      expect(
+        await page.getByRole('button', { name: 'Continuar para o pagamento' }).isEnabled(),
+      ).toBe(true);
+    });
+  }
+
+  it('gateway fora do ar (503 em JSON) e proxy que troca o corpo por HTML (502/503/504) mostram a mesma frase de indisponível', async () => {
+    await abrir();
+    await cartao().waitFor();
+    cenario.gateway.falharProximaChamada = 'indisponivel';
+    await abrirConfirmacao();
+    await page.getByRole('checkbox').check();
+    await page.getByRole('button', { name: 'Continuar para o pagamento' }).click();
+    const erro = page.locator('.pgto-erro[role="alert"]');
+    await erro.waitFor();
+    expect(await erro.innerText()).toMatch(/fora do ar ou lento agora/);
+
+    // O Easypanel devolve uma página HTML no lugar do JSON: só o status chega à tela.
+    for (const status of [502, 503, 504]) {
+      await page.route('**/v1/assinatura/checkout', (r) =>
+        r.fulfill({ status, contentType: 'text/html', body: '<html>Service Unavailable</html>' }),
+      );
+      await page.getByRole('button', { name: 'Continuar para o pagamento' }).click();
+      await page.waitForFunction(
+        () => !(document.getElementById('pgto-continuar') as HTMLButtonElement | null)?.disabled,
+      );
+      expect(await page.locator('.pgto-erro[role="alert"]').innerText(), String(status)).toMatch(
+        /fora do ar ou lento agora/,
+      );
+      await page.unroute('**/v1/assinatura/checkout');
+    }
+  });
+
   it('erro do servidor no checkout: frase fixa na tela, o botão volta e nada é redirecionado', async () => {
     await abrir();
     await cartao().waitFor();
@@ -260,8 +312,9 @@ describe.skipIf(sem)('Assinatura online, no navegador', { timeout: 90_000 }, () 
     await page.getByRole('button', { name: 'Continuar para o pagamento' }).click();
     const erro = page.locator('.pgto-erro[role="alert"]');
     await erro.waitFor();
+    // v0.45.1: a falha do gateway tem frase por motivo; fora do ar = "indisponivel".
     expect((await erro.innerText()).trim()).toBe(
-      'Não foi possível concluir agora. Tente de novo em instantes.',
+      'O Mercado Pago está fora do ar ou lento agora. Tente de novo em instantes.',
     );
     expect(page.url()).toContain(url);
     expect(

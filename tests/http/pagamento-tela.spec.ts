@@ -95,6 +95,18 @@ describe('tela da assinatura online', () => {
     expect(SCRIPT_PAGAMENTO).toContain('Plano escolhido');
   });
 
+  it('v0.45.1: uma frase NOSSA para cada motivo de falha do gateway, e o status sozinho (proxy com HTML) vale como indisponível', () => {
+    for (const motivo of ['email_pagador', 'credencial', 'parametro_invalido', 'indisponivel', 'desconhecido']) {
+      expect(SCRIPT_PAGAMENTO).toContain(`${motivo}:'`);
+    }
+    expect(SCRIPT_PAGAMENTO).toContain(
+      "if(!motivo&&e&&(e.status===502||e.status===503||e.status===504))motivo='indisponivel';",
+    );
+    expect(SCRIPT_PAGAMENTO).toContain('Fale com a gente');
+    // As frases não citam o gateway por dentro: nada de código de erro, e-mail ou endereço.
+    expect(SCRIPT_PAGAMENTO).not.toContain('bad_request');
+  });
+
   it('nada fala em prazo (o produto não anuncia contagem de prazo na cobrança)', () => {
     const textos = SCRIPT_PAGAMENTO.match(/'[^'\n]*'/g) ?? [];
     expect(textos.filter((t) => /prazo/i.test(t))).toEqual([]);

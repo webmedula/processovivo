@@ -89,3 +89,46 @@ export const PREFIXO_DO_TOKEN_DE_TESTE = 'TEST-';
 /** Leituras (GET) repetem até este número de tentativas; a criação e o cancelamento NUNCA repetem sozinhos. */
 export const TENTATIVAS_DE_LEITURA = 3;
 export const TIMEOUT_DO_GATEWAY_MS = 15_000;
+
+/*
+ * Como a RECUSA (4xx) do Mercado Pago vira um motivo de lista fechada (v0.45.1). Tudo em minúsculas, para
+ * comparar com o texto do gateway já em minúsculas. Só NOMES DE CAMPO do contrato e FRASES inteiras
+ * conhecidas — palavra solta ("email", "invalid") aparece em erro de qualquer tipo e levaria a conselho errado.
+ * Quando o Mercado Pago mudar o texto, o motivo cai em `desconhecido` e o log traz o texto saneado: ajusta-se AQUI.
+ */
+export const CAMPOS_DO_PEDIDO = {
+  /** Campo do e-mail do pagador no pedido de assinatura. */
+  email: ['payer_email', 'payer.email'],
+  /** Os demais campos do pedido de assinatura sem plano. */
+  outros: [
+    'back_url',
+    'notification_url',
+    'transaction_amount',
+    'frequency_type',
+    'frequency',
+    'external_reference',
+    'end_date',
+    'start_date',
+    'currency_id',
+    'auto_recurring',
+    'reason',
+  ],
+} as const;
+
+/**
+ * CONFIRMAR: frases em que o Mercado Pago recusa por causa do PAGADOR, sem citar o campo. "Invalid users
+ * involved" é o erro clássico de misturar comprador e vendedor de teste (ou de países diferentes) —
+ * em credencial de teste, o `payer_email` precisa ser de um usuário de teste do mesmo país.
+ */
+export const FRASES_DE_EMAIL_DO_PAGADOR: readonly string[] = [
+  'invalid users involved',
+  'cannot operate between different countries',
+];
+
+/** CONFIRMAR: frases que dizem que o TOKEN não vale (além do 401/403, que já bastam). */
+export const FRASES_DE_CREDENCIAL: readonly string[] = [
+  'invalid access token',
+  'invalid_token',
+  'access_token',
+  'unauthorized use of live credentials',
+];

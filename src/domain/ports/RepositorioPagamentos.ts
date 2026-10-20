@@ -82,4 +82,6 @@ export interface RepositorioPagamentos {
 
   registrarEvento(evento: EventoDePagamento): Promise<void>;
   eventosDe(referencia: string): Promise<readonly EventoDePagamento[]>;
+  /** O evento mais recente daquele tipo, de qualquer conta (para o /admin mostrar a última falha do gateway). */
+  ultimoEventoDoTipo(tipo: string): Promise<EventoDePagamento | undefined>;
 }

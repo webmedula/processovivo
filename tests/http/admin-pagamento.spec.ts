@@ -103,6 +103,36 @@ describe('/admin — cobrança recorrente', () => {
     expect(prod['aviso']).toMatch(/PRODUÇÃO com a cobrança em ambiente de TESTE/);
   });
 
+  it('v0.45.1: mostra a última falha do gateway (data, operação, status, código e motivo) e nada do pagador', async () => {
+    c = montar();
+    await precificar(c, 'pecas', 4990);
+    const antes = json(
+      await c.servidor.inject({ method: 'GET', url: '/admin/api/pagamento', headers: H }),
+    );
+    expect(antes['ultimaFalha']).toBeNull();
+
+    const conta = await cadastrar(c, 'ana@exemplo.test');
+    c.gateway.falharProximaChamada = 'recusou';
+    c.gateway.motivoDaRecusa = 'email_pagador';
+    await c.servidor.inject({
+      method: 'POST',
+      url: '/v1/assinatura/checkout',
+      headers: { cookie: conta.cookie },
+      payload: { plano: 'pecas', aceiteTermos: true },
+    });
+    const r = json(
+      await c.servidor.inject({ method: 'GET', url: '/admin/api/pagamento', headers: H }),
+    );
+    expect(r['ultimaFalha']).toEqual({
+      em: c.relogio.agora.toISOString(),
+      operacao: 'criarAssinatura',
+      status: 400,
+      codigo: 'bad_request',
+      motivo: 'email_pagador',
+    });
+    expect(JSON.stringify(r)).not.toContain('ana@');
+  });
+
   it('a lista de assinaturas diz a ORIGEM: manual ou gateway, com estado, id e último pagamento (sem dado pessoal)', async () => {
     c = montar();
     await precificar(c, 'pecas', 4990);
@@ -261,5 +291,14 @@ describe('/admin — tela', () => {
     expect(script).toContain('data-reconciliar');
     expect(script).toContain('/admin/api/pagamento/reconciliar');
     expect(script).not.toMatch(/https?:\/\//);
+  });
+
+  it('v0.45.1: mostra a última falha do gateway, com um rótulo para cada motivo, via esc()', () => {
+    const script = ScriptAdminParaTeste();
+    expect(script).toContain('Última falha do gateway');
+    for (const motivo of ['email_pagador', 'credencial', 'parametro_invalido', 'indisponivel', 'desconhecido']) {
+      expect(script).toContain(motivo);
+    }
+    expect(script).toContain('esc(ROTULO_DA_FALHA_DO_GATEWAY[f.motivo]||f.motivo)');
   });
 });
