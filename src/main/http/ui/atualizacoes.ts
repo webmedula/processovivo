@@ -180,7 +180,7 @@ function celulaSemNovidade(g){
     '<div class="nvt-tit"'+(enxuto!==a.rotulo?' title="'+esc(a.rotulo)+'"':'')+'>'+esc(enxuto)+seloDoAto(a)+'</div>';
   if(g.segredoJustica)
     h+='<div class="nota nvt-sem"><span class="selo al">segredo de justiça</span> O texto do ato não é exibido aqui.</div>';
-  return h+linkAbrir(n)+linhaUltimoAndamento(a)+'</td>';
+  return h+linkAbrir(n)+linhaUltimoAndamento(a)+selosDaLinha(g)+'</td>';
 }
 
 function celulaAtualizacao(g){
@@ -190,31 +190,29 @@ function celulaAtualizacao(g){
   var enxuto=descricaoDoAto(a.rotulo);
   return '<td class="c-atu" data-rotulo="Atualização"><div class="nvt-tit'+(n.vista?'':' nl')+'"'+
     (enxuto!==a.rotulo?' title="'+esc(a.rotulo)+'"':'')+'>'+esc(enxuto)+seloDoAto(a)+'</div>'+
-    linkAbrir(n)+linhaUltimoAndamento(a)+'</td>';
+    linkAbrir(n)+linhaUltimoAndamento(a)+selosDaLinha(g)+'</td>';
 }
 
-/* A coluna "Cumprido" (v0.46.0): só a caixa, como a "Marcar" do Projudi, e nenhum texto de estado. A caixa
-   existe nas linhas que pedem providência e nas já cumpridas; sem providência a célula fica sem caixa e sem
-   traço. Quem desenha a caixa e a dica é o componente __pvProvidencia. Os outros avisos (não lida, sem
-   marca há mais de N dias, intimação a outro destinatário) seguem como antes: cada um é a saída de um filtro. */
-function celulaSituacao(g){
+/* Os selos de OUTRA informação (v0.46.1): "Não lida" e "sem marca há mais de N dias" moravam na célula da coluna
+   "Cumprido", que deixou de existir; passam para o fim da célula Atualização, sem mudar de texto nem de regra.
+   O selo "Intimação a outro destinatário" saiu da linha (decisão do dono): o filtro continua, e quem o explica é a
+   frase "N com intimação a outro destinatário · Ver" acima da tabela e o resumo da lista aberta pelo "Ver". */
+function selosDaLinha(g){
   var P=g.processo&&g.processo.providencia?g.processo.providencia:null;
-  var sit=situacaoDaLinha(g);
-  var s=prov().celula(sit,g.numero,pv().mascara(g.numero),'cumprir-'+g.numero);
-  if(g.naoVistas>0)s+='<div><span class="selo nv" title="'+esc(g.naoVistas+(g.naoVistas>1?' atualizações ainda não lidas neste processo':' atualização ainda não lida neste processo'))+'">'+
-    (g.naoVistas>1?g.naoVistas+' não lidas':'Não lida')+'</span></div>';
-  if(P&&P.situacao==='venceu'&&sit.estado==='nenhuma'){
-    s+='<div><span class="selo neutro nvt-venceu" title="Esta comunicação do Diário passou da janela de leitura automática sem você marcar como cumprida. Confira no processo.">sem marca há mais de '+R.pendenciaIntimacaoJanelaDias+' dias</span></div>';
+  var s='';
+  if(g.naoVistas>0)s+='<span class="selo nv" title="'+esc(g.naoVistas+(g.naoVistas>1?' atualizações ainda não lidas neste processo':' atualização ainda não lida neste processo'))+'">'+
+    (g.naoVistas>1?g.naoVistas+' não lidas':'Não lida')+'</span>';
+  if(P&&P.situacao==='venceu'&&situacaoDaLinha(g).estado==='nenhuma'){
+    s+='<span class="selo neutro nvt-venceu" title="Esta comunicação do Diário passou da janela de leitura automática sem você marcar como cumprida. Confira no processo.">sem marca há mais de '+R.pendenciaIntimacaoJanelaDias+' dias</span>';
   }
-  /* (v0.37.6) Intimação/citação do Diário dirigida a OUTRO destinatário: o processo não entra em "Pedem
-     providência" por causa dela, e a linha diz por quê, em "Todas" e em "Ver". */
-  if(P&&P.outroDestinatario)s+='<div><span class="selo neutro nvt-outro" title="'+esc('Comunicação do Diário Eletrônico dirigida a advogado que não é uma das suas inscrições na OAB. Por isso não conta como providência. Se for de um colega do escritório, confira no processo.')+'">Intimação a outro destinatário</span></div>';
-  return '<td class="c-sit" data-rotulo="Cumprido">'+s+'</td>';
+  return s?'<div class="nvt-selos">'+s+'</div>':'';
 }
 
 function celulaAcoes(g){
   var m=pv().mascara(g.numero);
+  /* A caixa "Cumprido" é o PRIMEIRO controle (v0.46.1): tudo o que diz respeito a ela mora em __pvProvidencia. */
   return '<td class="c-acoes" data-rotulo="Ações"><div class="nvt-acoes">'+
+    prov().celula(situacaoDaLinha(g),g.numero,m,'cumprir-'+g.numero)+
     '<button type="button" class="nvt-ic" data-acao="abrir" data-num="'+esc(g.numero)+'" data-foco="abrir-'+esc(g.numero)+'" aria-label="Abrir o processo '+esc(m)+'" title="Abrir o processo">'+ICO_ABRIR+'</button>'+
     '<button type="button" class="nvt-ic" data-acao="pasta" data-num="'+esc(g.numero)+'" data-foco="pasta-'+esc(g.numero)+'" aria-label="Abrir a pasta digital do processo '+esc(m)+'" title="Abrir a pasta digital">'+ICO_PASTA+'</button>'+
     '</div>'+ia().botao(g.numero,chaveDoAtoDaLinha(g))+'</td>';
@@ -262,7 +260,7 @@ function linha(g){
     '<td class="c-trib" data-rotulo="Tribunal">'+esc(g.processo&&g.processo.tribunal?g.processo.tribunal:'—')+classe.mini+'</td>'+
     '<td class="c-classe" data-rotulo="Classe">'+classe.cheia+'</td>'+
     celulaData(g)+celulaDetectado(g)+
-    celulaSituacao(g)+celulaAcoes(g)+'</tr>'+ia().painel(g.numero);
+    celulaAcoes(g)+'</tr>'+ia().painel(g.numero);
   return h;
 }
 
@@ -280,7 +278,7 @@ function cabecalho(){
     '<th scope="col" class="h-partes">Partes</th><th scope="col" class="h-atu">Atualização</th>'+
     cabecalhoOrdenavel('tribunal')+'<th scope="col" class="h-classe">Classe</th>'+
     cabecalhoOrdenavel('dataAto')+cabecalhoOrdenavel('detectado')+
-    '<th scope="col" class="h-sit" title="A caixa aparece onde há providência, por leitura automática do texto do andamento. Confira no ato completo.">Cumprido</th><th scope="col" class="h-acoes">Ações</th></tr></thead>';
+    '<th scope="col" class="h-acoes" title="A caixa Cumprido aparece onde há providência, por leitura automática do texto do andamento. Confira no ato completo.">Ações</th></tr></thead>';
 }
 
 function filtros(cont){
@@ -291,7 +289,7 @@ function filtros(cont){
     '<button type="button" class="chip'+(todas?'':' on')+'" aria-pressed="'+(todas?'false':'true')+'" data-acao="periodo" data-janela="padrao" data-foco="periodo-padrao">Últimos '+R.janelaPadraoDias+' dias</button>'+
     '<button type="button" class="chip'+(todas?' on':'')+'" aria-pressed="'+(todas?'true':'false')+'" data-acao="periodo" data-janela="todas" data-foco="periodo-todas">Todas</button></div></div>'+
     '<div class="nvt-bloco"><span class="nvt-rot" id="nvt-rot-situacao">Situação</span>'+
-    '<div class="nvt-chips" role="group" aria-labelledby="nvt-rot-situacao" aria-describedby="nvt-aviso-prov">';
+    '<div class="nvt-chips" role="group" aria-labelledby="nvt-rot-situacao">';
   var n={todas:cont.todas,naoLidas:cont.naoLidas,providencia:cont.pedemProvidencia};
   SITUACOES.forEach(function(s){
     var on=S.situacao===s[0];
@@ -300,8 +298,9 @@ function filtros(cont){
     h+='<button type="button" class="chip'+(s[0]==='naoLidas'&&on?' nv':'')+(on?' on':'')+'" aria-pressed="'+(on?'true':'false')+'" title="'+esc(dica)+'" data-acao="situacao" data-sit="'+s[0]+'" data-foco="sit-'+s[0]+'">'+
       esc(s[1])+' ('+n[s[0]]+')</button>';
   });
-  /* Perto do chip, sempre visível (não só em tooltip): a leitura é automática e não é prazo. */
-  h+='</div><p class="nvt-aviso-prov" id="nvt-aviso-prov">Leitura automática do andamento, não é contagem de prazo. Confira no processo.</p></div>'+
+  /* (v0.46.1, decisão do dono) A frase fixa de aviso sob o chip saiu daqui;
+     "leitura automática… confira no ato completo" segue no title do chip, no do cabeçalho Ações e no da etiqueta. */
+  h+='</div></div>'+
     '<div class="nvt-bloco"><label class="nvt-rot" for="nvt-trib">Tribunal</label>'+
     '<select id="nvt-trib" data-sel="tribunal" data-foco="trib"><option value="">Todos os tribunais</option>'+
     (O.tribunais||[]).map(function(t){return '<option value="'+esc(t)+'"'+(O.tribunal===t?' selected':'')+'>'+esc(t)+'</option>'}).join('')+'</select></div>'+
@@ -320,7 +319,7 @@ function saidasDaProvidencia(base){
   var c=contarSaidasDaProvidencia(base),f=frasesDeSaidas(c.cumpridos,c.vencidos,R.pendenciaIntimacaoJanelaDias,c.outros),h='';
   if(f.cumpridos)h+=' · '+esc(f.cumpridos)+' · <button type="button" class="nov-btn" data-acao="situacao" data-sit="cumpridos" data-foco="ver-cumpridos">Ver</button>';
   if(f.vencidos)h+=' · '+esc(f.vencidos);
-  if(f.outros)h+=' · '+esc(f.outros)+' · <button type="button" class="nov-btn" data-acao="situacao" data-sit="outros" data-foco="ver-outros">Ver</button>';
+  if(f.outros)h+=' · '+esc(f.outros)+' · <button type="button" class="nov-btn" data-acao="situacao" data-sit="outros" data-foco="ver-outros" title="Processos cuja intimação do Diário foi dirigida a outro destinatário. Não contam em Pedem providência; se for de um colega do escritório, confira no processo.">Ver</button>';
   return h;
 }
 

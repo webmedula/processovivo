@@ -46,7 +46,6 @@ export const ESTILOS_TABELA_ATUALIZACOES = `
 .nvt-busca-aviso strong{color:var(--tinta)}
 .nvt-sem-prov.nvt-busca-aviso{padding:22px 20px;line-height:1.5;color:var(--tinta)}
 .nvt-busca-aviso:focus{outline:none}
-.nvt-aviso-prov{margin:0;font-size:12.5px;line-height:1.4;color:var(--tinta2);max-width:60ch}
 .nvt-sem-prov{background:var(--papel);border:1px solid var(--linha);border-radius:var(--r);padding:22px 20px;color:var(--tinta)}
 .nvt-sem-prov p{margin:6px 0 0;color:var(--tinta2);font-size:13.5px}
 .nvt-sem-leitura{padding:0 0 12px}
@@ -72,18 +71,20 @@ export const ESTILOS_TABELA_ATUALIZACOES = `
 .nvt-tabela td{padding:12px 8px;vertical-align:top;border-top:1px solid var(--linha2);
   overflow-wrap:anywhere;min-width:0}
 /* Palavra curta quebra em espaço, não no meio ("detectad/o"); só texto de fora usa "anywhere". */
-.nvt-tabela td.c-trib,.nvt-tabela td.c-det,.nvt-tabela td.c-sit{overflow-wrap:break-word}
+.nvt-tabela td.c-trib,.nvt-tabela td.c-det{overflow-wrap:break-word}
 .nvt-tabela td.c-data{white-space:nowrap}
 .nvt-tabela tbody tr:first-child td{border-top:0}
 .nvt-tabela tbody tr.nvt-linha:hover td{background:var(--papel2)}
-/* Larguras (v0.46.0). "Data do ato" e "Detectado" têm largura FIXA, a que a data completa (dd/mm/aaaa) e
-   "há N dias" pedem sem quebrar — medida no navegador, não adivinhada; a coluna "Cumprido" é só uma caixa e
-   encolheu. O que sobrou vai para Partes (percentual) e para Atualização, que NÃO tem largura: é a coluna
-   "auto" e fica com o resto da tabela (assim a soma nunca estoura). A Classe segue com os 12,5% que o teste
-   de navegador dela exige (em 1366 px o conteúdo mede ~1060 px e 8,5% deixava ~74 px, menos que a palavra
-   "Procedimento"). Tribunal, Ações e Processo seguem com o que o conteúdo pede. */
-.h-processo{width:16%}.h-partes{width:10.5%}.h-tribunal{width:6.5%}.h-classe{width:12.5%}
-.h-dataAto,.h-detectado{width:5.25rem}.h-sit{width:9%}.h-acoes{width:9.5%}
+/* Larguras (v0.46.1). A coluna "Cumprido" deixou de existir (a caixa mora em Ações) e a largura dela voltou para
+   a tabela: Partes cresceu (o nome inteiro cabe em até duas linhas), Ações ganhou o lugar da caixa (caixa + dois
+   ícones = 3 × 32 px + folga) e Atualização, a coluna "auto", ficou com o que sobra e é a que perde. "Data do ato"
+   e "Detectado" não mudam: largura FIXA, a que dd/mm/aaaa e "há N dias" pedem sem quebrar. A Classe segue com os
+   12,5% que o teste de navegador dela exige. Três faixas, porque a lateral de 256 px muda o que sobra: >= 1600 px
+   (tabela larga, Atualização por volta de 300–340 px), 1280–1599 e 1024–1279 (ícones de 28 px, abaixo). Os números
+   medidos antes e depois estão no CHANGELOG da 0.46.1. */
+.h-processo{width:16%}.h-partes{width:17%}.h-tribunal{width:6.5%}.h-classe{width:12.5%}
+.h-dataAto,.h-detectado{width:5.25rem}.h-acoes{width:12.5%}
+@media (min-width:1600px){.h-processo{width:17%}.h-partes{width:19.5%}.h-tribunal{width:8%}.h-classe{width:15.5%}.h-acoes{width:9%}}
 .nvt-ord{font:inherit;font-size:inherit;font-weight:inherit;text-transform:inherit;letter-spacing:inherit;
   color:inherit;background:none;border:0;padding:4px 0;min-height:28px;cursor:pointer;text-align:left}
 .nvt-ord:hover{color:var(--tinta)}
@@ -97,6 +98,9 @@ export const ESTILOS_TABELA_ATUALIZACOES = `
 .nvt-copiado{font-size:12px;font-weight:700;color:var(--verde-tinta);align-self:center}
 .nvt-partes,.nvt-classe{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden;
   overflow-wrap:anywhere}
+/* Partes (v0.46.1): quebra em PALAVRAS inteiras, até duas linhas, e só depois as reticências; o nome inteiro está
+   no title. "break-word" parte a palavra só quando ela sozinha não cabe na coluna. */
+.nvt-partes{overflow-wrap:break-word;hyphens:manual}
 /* A classe quebra em PALAVRAS inteiras: "break-word" só parte a palavra que sozinha não cabe
    na coluna. Passando de duas linhas, o clamp põe as reticências e o title tem a classe toda. */
 .nvt-classe{overflow-wrap:break-word;hyphens:manual}
@@ -105,12 +109,12 @@ export const ESTILOS_TABELA_ATUALIZACOES = `
 .nvt-sem{color:var(--tinta2);font-size:12px;margin:0 0 2px}
 .nvt-ult{color:var(--tinta2);font-size:12.5px;margin:4px 0 0;overflow-wrap:anywhere}
 .nvt-ult strong{font-weight:600;color:var(--tinta)}
-.nvt-outro{display:inline-block;margin-top:2px}
 .nvt-sem-nov .nvt-tit{font-weight:500}
 .nvt-tit{font-weight:700;font-size:14px;line-height:1.4;overflow-wrap:anywhere}
 .nvt-tit.nl::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;
   background:var(--novo);margin-right:7px;vertical-align:2px}
-.nvt-tabela .c-sit .selo{display:inline-block;margin:0 4px 4px 0}
+.nvt-selos{margin-top:4px}
+.nvt-tabela .nvt-selos .selo{display:inline-block;margin:0 4px 4px 0}
 .c-data,.c-det{font-variant-numeric:tabular-nums;color:var(--tinta2)}
 
 /* A célula Atualização é uma linha de ato + este link (v0.46.0); o texto do ato não aparece aqui. */
@@ -149,8 +153,8 @@ export const ESTILOS_TABELA_ATUALIZACOES = `
 @media (min-width:1024px) and (max-width:1279px){
   .h-classe,.c-classe{display:none}
   .nvt-classe-mini{display:block}
-  .h-processo{width:17%}.h-partes{width:11.5%}.h-tribunal{width:9.5%}
-  .h-dataAto,.h-detectado{width:4.75rem}.h-sit{width:11%}.h-acoes{width:11%}
+  .h-processo{width:17%}.h-partes{width:19%}.h-tribunal{width:9.5%}
+  .h-dataAto,.h-detectado{width:4.75rem}.h-acoes{width:14.5%}
   .nvt-tabela th{font-size:10px;letter-spacing:0}
   .nvt-classe-mini{font-size:11px;overflow-wrap:anywhere}
   .nvt-tabela th,.nvt-tabela td{padding-left:5px;padding-right:5px}
@@ -177,7 +181,6 @@ export const ESTILOS_TABELA_ATUALIZACOES = `
   .nvt-tabela td::before{content:attr(data-rotulo);display:block;font-size:11px;font-weight:700;
     text-transform:uppercase;letter-spacing:.04em;color:var(--tinta2);margin-bottom:2px}
   .nvt-tabela td.c-proc,.nvt-tabela td.c-atu,.nvt-tabela td.c-acoes,.nvt-tabela td.c-partes{grid-column:1/-1}
-  .nvt-tabela td.c-sit:empty{display:none}
   .nvt-tabela td.c-acoes::before{margin-bottom:4px}
   .nvt-num{display:inline-flex;align-items:center;min-height:44px;padding:0}
   .nvt-pag{justify-content:flex-start}

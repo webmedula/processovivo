@@ -9,6 +9,35 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.46.1] — 2026-10-20
+
+**Tabela de Atualizações, segundo ajuste:** Partes ganha largura, a coluna "Cumprido" deixa de existir (a caixa
+passa para a coluna Ações), o selo "Intimação a outro destinatário" sai da linha e a frase fixa sob o filtro de
+Situação some. Só apresentação e posição de controle: a detecção de "pede providência", as regras e as chamadas de
+"cumprido", `GET /v1/novidades`, `/v1/painel`, calendário, Pasta, IA e a busca não mudaram. Sem migração.
+
+- **Larguras** (1920 / 1366 / 1280 / 1024 px, dados sintéticos, medido no Chromium): Partes 169 → 315 / 111 → 180 /
+  102 → 166 / 83 → 136 px; Atualização 413 → 332 / 214 → 208 / 183 → 178 / 135 → 135 px. A largura da coluna
+  extinta (145 / 95 / 88 / 79 px) voltou para a tabela; Ações cresceu para caber a caixa. Partes quebra em palavras
+  inteiras, em até duas linhas, e só então corta com reticências (o nome completo fica no `title`). Sem rolagem
+  horizontal em 1920, 1366, 1280, 1024, 768 e 390 px.
+- **Caixa "Cumprido" na coluna Ações**, como PRIMEIRO controle (antes de abrir, pasta e "Analisar com IA"). Mesmo
+  comportamento, mesmas duas chamadas, mesma dica (`role="tooltip"`, mouse, foco, Esc). Linha sem providência não
+  tem caixa, mas reserva a vaga dela, para os ícones não mudarem de lugar. No empilhado (< 1024 px) a caixa abre o
+  grupo de ações com o rótulo "Cumprido" visível. O módulo `ui/providencia.ts` continua dono de tudo sobre "cumprido".
+- **Selos que moravam na coluna extinta:** "Não lida" e "sem marca há mais de N dias" passam para o fim da célula
+  Atualização, sem mudar de texto nem de regra.
+- **Selo "Intimação a outro destinatário" retirado da linha** (decisão do dono). O filtro continua: a frase "N com
+  intimação a outro destinatário · Ver" e a lista aberta pelo "Ver" (com a explicação) seguem como estavam; o "Ver"
+  ganhou um `title` com a mesma explicação.
+- **Frase "Leitura automática do andamento, não é contagem de prazo. Confira no processo." removida** de baixo do
+  filtro de Situação (decisão do dono). "Confira no ato completo" fica no `title` do cabeçalho Ações, do chip
+  "Pedem providência" e da etiqueta Intimação/Citação.
+- **Testes reescritos:** os que afirmavam a coluna "Cumprido" (`th.h-sit`, `td.c-sit`, nove colunas), o selo "outro
+  destinatário" na linha, as larguras da 0.46.0 e a frase fixa sob o filtro; mais os que liam "Não lida" em `.c-sit`.
+
+---
+
 ## [0.46.0] — 2026-10-20
 
 **A tabela de Atualizações ficou mais limpa:** a célula Atualização mostra uma linha só, as colunas de data

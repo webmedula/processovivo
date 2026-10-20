@@ -56,7 +56,7 @@ const CUMPRIDO: Linha = {
 const NENHUMA: Linha = { estado: 'nenhuma', caixa: false, marcado: false, chave: '' };
 const NUM = '0001234-56.2026.8.09.0001';
 
-describe('componente da coluna Cumprido (providencia.ts)', () => {
+describe('componente da caixa Cumprido (providencia.ts; na coluna Ações desde a 0.46.1)', () => {
   it('pede providência: caixa DESMARCADA e dica "Pede providência. Marque quando cumprida."', () => {
     const { comp } = carregar();
     const h = comp.celula(PEDE, NUM, NUM, 'cumprir-1');
@@ -76,20 +76,23 @@ describe('componente da coluna Cumprido (providencia.ts)', () => {
     expect(h).toContain('>Cumprida. Clique para desmarcar.</span>');
   });
 
-  it('a célula não tem texto de estado: nem "Pede providência" como rótulo, nem "Cumprido" visível, nem ponto, nem botão', () => {
+  it('a caixa não tem texto de estado (sem "Pede providência" como rótulo, ponto ou botão); o único texto é o rótulo "Cumprido", que só o CSS do empilhado mostra', () => {
     const { comp } = carregar();
     for (const sit of [PEDE, CUMPRIDO]) {
       const h = comp.celula(sit, NUM, NUM, 'f');
       // Só a dica (escondida, ligada por aria-describedby) fala; fora dela não sobra texto.
       const fora = h.replace(/<span class="sit-dica"[^>]*>[^<]*<\/span>/, '');
-      expect(fora.replace(/<[^>]*>/g, '').trim()).toBe('');
-      expect(h).not.toMatch(/sit-cx-txt|sit-ic|class="sit |<button|●|✓/);
+      expect(fora.replace(/<[^>]*>/g, '').trim()).toBe('Cumprido');
+      expect(h).toContain('<span class="sit-cx-txt">Cumprido</span>');
+      expect(h).not.toMatch(/sit-ic|class="sit |<button|●|✓/);
     }
   });
 
-  it('sem providência: a célula é VAZIA (sem traço, sem caixa, sem texto)', () => {
+  it('sem providência: só a VAGA (sem caixa, sem texto, escondida dos leitores de tela) que mantém os ícones alinhados', () => {
     const { comp } = carregar();
-    expect(comp.celula(NENHUMA, NUM, NUM, 'f')).toBe('');
+    const h = comp.celula(NENHUMA, NUM, NUM, 'f');
+    expect(h).toBe('<span class="sit-vaga" aria-hidden="true"></span>');
+    expect(h).not.toMatch(/<input|checkbox|Cumprido/);
   });
 
   it('a caixa é um <input type="checkbox"> real com nome acessível "Cumprido: processo …" e dica ligada por aria-describedby', () => {

@@ -29,7 +29,8 @@ import type {
  */
 const sem = CHROMIUM === undefined;
 const AGORA = Date.now();
-const iso = (diasAtras: number): string => new Date(AGORA - diasAtras * DIA).toISOString();
+const iso = (diasAtras: number): string =>
+  new Date(AGORA - diasAtras * DIA).toISOString();
 const dataBr = (i: string): string =>
   new Date(i).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
 const diaMes = (i: string): string =>
@@ -76,21 +77,35 @@ function cenario(): { grupos: GrupoSintetico[]; sem: SemNovidadeSintetico[] } {
     NA,
     { ...novidade(NA, 'Despacho', { diasDetectada: 2, diasAto: 28 }), data: iso(28) },
     [],
-    infoProcesso('TJGO', 'Procedimento Comum Cível', ['Autora Sintética'], ['Ré Fictícia'], true, {
-      situacao: 'pede',
-      motivo: atoA,
-      cumpridoEm: null,
-    }),
+    infoProcesso(
+      'TJGO',
+      'Procedimento Comum Cível',
+      ['Autora Sintética'],
+      ['Ré Fictícia'],
+      true,
+      {
+        situacao: 'pede',
+        motivo: atoA,
+        cumpridoEm: null,
+      },
+    ),
   );
   const gB = grupo(
     NB,
     { ...novidade(NB, 'Citação', { diasDetectada: 2, diasAto: 3 }), data: atoB.data },
     [],
-    infoProcesso('TJGO', 'Execução Fiscal', ['Fazenda Fictícia'], ['Devedor Fictício'], true, {
-      situacao: 'pede',
-      motivo: atoB,
-      cumpridoEm: null,
-    }),
+    infoProcesso(
+      'TJGO',
+      'Execução Fiscal',
+      ['Fazenda Fictícia'],
+      ['Devedor Fictício'],
+      true,
+      {
+        situacao: 'pede',
+        motivo: atoB,
+        cumpridoEm: null,
+      },
+    ),
   );
   const gC = grupo(
     NC,
@@ -105,7 +120,10 @@ function cenario(): { grupos: GrupoSintetico[]; sem: SemNovidadeSintetico[] } {
   );
   const gD = grupo(
     ND,
-    { ...novidade(ND, 'Ato ordinatório', { diasDetectada: 4, diasAto: 5 }), data: atoD.data },
+    {
+      ...novidade(ND, 'Ato ordinatório', { diasDetectada: 4, diasAto: 5 }),
+      data: atoD.data,
+    },
     [],
     infoProcesso('TJGO', 'Procedimento Comum Cível', [], [], true, {
       situacao: 'pede',
@@ -148,7 +166,9 @@ describe.skipIf(sem)(
       await ctx?.close();
     });
 
-    async function abrir(opcoes: { largura?: number; escuro?: boolean } = {}): Promise<void> {
+    async function abrir(
+      opcoes: { largura?: number; escuro?: boolean } = {},
+    ): Promise<void> {
       ctx = await browser.newContext({
         viewport: { width: opcoes.largura ?? 1280, height: 900 },
         colorScheme: opcoes.escuro ? 'dark' : 'light',
@@ -167,7 +187,11 @@ describe.skipIf(sem)(
         }
         const c = cenario();
         return rota.fulfill({
-          json: respostaNovidades(c.grupos, { acompanhados: 5, janelaDias: null, semNovidade: c.sem }),
+          json: respostaNovidades(c.grupos, {
+            acompanhados: 5,
+            janelaDias: null,
+            semNovidade: c.sem,
+          }),
         });
       });
       await ctx.route('**/v1/facetas', async (rota) => {
@@ -192,7 +216,9 @@ describe.skipIf(sem)(
     it('a linha com providência mostra o ATO da providência, com a data dele; o último andamento vai à parte', async () => {
       await abrir();
       const a = ao(NA);
-      expect(norm(await a.locator('.nvt-tit').textContent())).toBe('Ato ordinatório Intimação');
+      expect(norm(await a.locator('.nvt-tit').textContent())).toBe(
+        'Ato ordinatório Intimação',
+      );
       // Data do ato = a do ato que gera a providência, não a do despacho (28 dias atrás).
       expect(norm(await a.locator('td.c-data').textContent())).toBe(dataBr(iso(20)));
       expect(norm(await a.locator('.nvt-ult').textContent())).toBe(
@@ -200,7 +226,9 @@ describe.skipIf(sem)(
       );
       expect(await a.innerText()).not.toContain('Pede providência por');
       // O selo diz se o destinatário está confirmado.
-      expect(await a.locator('.selo.int').getAttribute('title')).toContain('Destinatário confirmado');
+      expect(await a.locator('.selo.int').getAttribute('title')).toContain(
+        'Destinatário confirmado',
+      );
     });
 
     it('quando o ato da providência é a própria atualização, não há segunda linha', async () => {
@@ -222,7 +250,9 @@ describe.skipIf(sem)(
       await abrir();
       // A: ato de 20 dias atrás, detectado há 2 dias → 18 dias de distância.
       const a = ao(NA).locator('td.c-det');
-      expect(await a.locator('[aria-hidden="true"]').textContent()).toBe(`em ${diaMes(iso(2))}`);
+      expect(await a.locator('[aria-hidden="true"]').textContent()).toBe(
+        `em ${diaMes(iso(2))}`,
+      );
       expect(norm(await a.textContent())).toContain(`detectado em ${diaMes(iso(2))}`);
       const titulo = (await a.locator('span[title]').first().getAttribute('title')) ?? '';
       expect(titulo).toContain(
@@ -235,7 +265,7 @@ describe.skipIf(sem)(
       expect(await b.locator('[aria-hidden="true"]').textContent()).toBe('há 2 dias');
     });
 
-    it('intimação a outro destinatário: fora de "Pedem providência", dita em voz alta, e visível em "Todas"', async () => {
+    it('intimação a outro destinatário: fora de "Pedem providência", dita em voz alta, e sem selo na linha (0.46.1)', async () => {
       await abrir();
       expect(await page.locator('tr.nvt-linha').count()).toBe(4); // A, B, D e E (sem novidade)
       expect(await ao(NC).count()).toBe(0);
@@ -246,7 +276,18 @@ describe.skipIf(sem)(
       await todas();
       const c = ao(NC);
       expect(await c.count()).toBe(1);
-      expect(norm(await c.locator('.nvt-outro').textContent())).toBe('Intimação a outro destinatário');
+      // Reescrito na 0.46.1: o selo "Intimação a outro destinatário" saiu da linha (decisão do dono). O processo
+      // continua em "Todas", a frase "N com intimação a outro destinatário · Ver" segue à vista no filtro padrão,
+      // e o "Ver" explica na lista (teste seguinte). Nada na linha repete a frase.
+      expect(await c.locator('.nvt-outro').count()).toBe(0);
+      expect(norm(await c.innerText())).not.toContain('outro destinatário');
+      await page.locator('[data-foco="sit-providencia"]').click();
+      expect(norm(await page.locator('.nvt-resumo').innerText())).toContain(
+        '1 com intimação a outro destinatário',
+      );
+      expect(
+        await page.locator('[data-foco="ver-outros"]').getAttribute('title'),
+      ).toContain('outro destinatário');
     });
 
     it('"Ver" lista só os de outro destinatário, e "Voltar" retorna ao filtro padrão', async () => {
@@ -257,7 +298,9 @@ describe.skipIf(sem)(
       const resumo = norm(await page.locator('.nvt-resumo').innerText());
       expect(resumo).toContain('1 processo com intimação a outro destinatário');
       expect(resumo).toContain('se for de um colega do escritório, confira no processo');
-      await page.getByRole('button', { name: 'Voltar aos que pedem providência' }).click();
+      await page
+        .getByRole('button', { name: 'Voltar aos que pedem providência' })
+        .click();
       expect(await page.locator('tr.nvt-linha').count()).toBe(4);
     });
 
@@ -269,15 +312,17 @@ describe.skipIf(sem)(
       expect(norm(await e.locator('.nvt-ult').textContent())).toBe(
         `Último andamento: Juntada de petição · ${dataBr(iso(2))}`,
       );
-      expect(norm(await e.locator('.nvt-sem').textContent())).toBe('Sem atualização detectada');
+      expect(norm(await e.locator('.nvt-sem').textContent())).toBe(
+        'Sem atualização detectada',
+      );
     });
 
     it('ordenar por "Data do ato" usa a data que a linha mostra', async () => {
       await abrir();
       await page.locator('[data-chave="dataAto"]').click(); // mais recente primeiro
-      const numeros = await page.locator('tr.nvt-linha').evaluateAll((trs) =>
-        trs.map((t) => (t as HTMLElement).dataset['processo']),
-      );
+      const numeros = await page
+        .locator('tr.nvt-linha')
+        .evaluateAll((trs) => trs.map((t) => (t as HTMLElement).dataset['processo']));
       // Datas exibidas: B (3 dias), D (5), E (6), A (20) — não as dos últimos andamentos.
       expect(numeros).toEqual([NB, ND, NE, NA]);
     });
@@ -305,12 +350,17 @@ describe.skipIf(sem)(
     for (const escuro of [false, true]) {
       it(`axe sem violações (tema ${escuro ? 'escuro' : 'claro'}): padrão, "Todas" e "Ver"`, async () => {
         await abrir({ escuro });
-        await page.addScriptTag({ content: (AxeBuilder as unknown as { source: string }).source });
+        await page.addScriptTag({
+          content: (AxeBuilder as unknown as { source: string }).source,
+        });
         const rodar = async (): Promise<string> => {
           const r = await page.evaluate(() =>
-            (window as unknown as AxeNaPagina).axe.run(document.querySelector('#conteudo')!, {
-              rules: { 'color-contrast': { enabled: true } },
-            }),
+            (window as unknown as AxeNaPagina).axe.run(
+              document.querySelector('#conteudo')!,
+              {
+                rules: { 'color-contrast': { enabled: true } },
+              },
+            ),
           );
           return r.violations
             .map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(' | ')}`)
