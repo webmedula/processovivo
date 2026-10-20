@@ -9,6 +9,31 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.46.0] — 2026-10-20
+
+**A tabela de Atualizações ficou mais limpa:** a célula Atualização mostra uma linha só, as colunas de data
+ficaram estreitas e a coluna de providência virou "Cumprido", apenas com uma caixa e uma dica. É mudança de
+apresentação e de controle; a detecção de "pede providência", as regras de "cumprido" e as rotas não mudaram.
+
+- **Atualização em uma linha:** tipo do ato (negrito) + etiqueta (Intimação/Citação) + link "Abrir processo". O
+  trecho do texto do ato saiu da tabela. **Nenhum dado foi apagado:** o texto continua guardado e aparece na tela
+  do processo, na Pasta e na análise por IA; `GET /v1/novidades` não mudou. O trecho era montado só por
+  `notaDoAto` (`ui/atualizacoes.ts`), com `ui/trechoDeTexto.ts`, que foi removido junto do seu teste. O link
+  "Abrir processo" agora aparece em toda linha (antes, só quando o trecho era cortado).
+- **Datas estreitas:** "Data do ato" e "Detectado" com largura fixa (5,25 rem; 4,75 rem entre 1024 e 1279 px),
+  sem quebra de linha. Atualização e Partes ficaram mais largas em 1920, 1366, 1280 e 1024 px.
+- **Coluna "Cumprido" (antes "Situação"):** só a caixa de seleção, sem o texto "Pede providência" nem o rótulo
+  "Cumprido". Sem providência, a célula fica sem caixa e sem traço. Uma dica leve explica a caixa ("Pede
+  providência. Marque quando cumprida." / "Cumprida. Clique para desmarcar."), com mouse e teclado, e fecha com
+  Esc. Marcar e desmarcar usam as mesmas chamadas, com atualização otimista, reversão em erro e o aviso
+  "Marcado como cumprido. Desfazer".
+- **Código:** a célula e a dica moram em `ui/providencia.ts` (`celula`, `pintar`, `ligar`), isolados para uma
+  futura marcação por categorias (não implementada).
+- Testes reescritos: os que afirmavam o texto "Pede providência", o rótulo "Cumprido" visível, o cabeçalho
+  "Situação" e o trecho transcrito. Testes novos de navegador para a dica, as larguras e o toque.
+
+---
+
 ## [0.45.1] — 2026-10-20
 
 **Quando o Mercado Pago recusa o pedido, o log diz por quê, a API devolve JSON com um motivo e o /admin mostra

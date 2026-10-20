@@ -201,7 +201,13 @@ describe.skipIf(sem)(
       await page.waitForSelector('.nvt-tabela');
       const linha = page.locator(`tr.nvt-linha[data-processo="${NUMERO}"]`);
       expect(await linha.count()).toBe(1);
-      expect(await linha.innerText()).toMatch(/pede providência/i);
+      // (0.46.0) O sinal é a caixa "Cumprido" desmarcada, com a dica "Pede providência…" (não há mais texto de estado).
+      expect(
+        await linha.locator('.c-sit input[type="checkbox"]:not(:checked)').count(),
+      ).toBe(1);
+      expect(await linha.locator('.c-sit .sit-dica').textContent()).toMatch(
+        /^Pede providência/,
+      );
       // O filtro e a contagem do chip.
       const chip = page.locator('[data-foco="sit-providencia"]');
       expect(await chip.innerText()).toMatch(/Pedem providência[\s\S]*1/);

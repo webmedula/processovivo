@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { SCRIPT_ATUALIZACOES } from '../../src/main/http/ui/atualizacoes.js';
 import { descricaoDoAto } from '../../src/domain/entities/descricaoDoAto.js';
-import { trechoDeTexto } from '../../src/main/http/ui/trechoDeTexto.js';
 import {
   SITUACAO_PADRAO,
   atoExibido,
@@ -251,9 +250,8 @@ describe('texto das partes', () => {
 });
 
 describe('o módulo da tela usa as MESMAS funções testadas aqui', () => {
-  it('injeta o trecho curto de 0.35.1 e as regras puras por toString()', () => {
+  it('injeta as regras puras por toString()', () => {
     for (const f of [
-      trechoDeTexto,
       descricaoDoAto,
       contarSituacoes,
       filtrarPorSituacao,
@@ -264,6 +262,10 @@ describe('o módulo da tela usa as MESMAS funções testadas aqui', () => {
     ]) {
       expect(SCRIPT_ATUALIZACOES).toContain(f.toString());
     }
+  });
+
+  it('a tabela não monta mais o trecho do texto do ato (0.46.0): sem trechoDeTexto, sem bloco .nov-txt', () => {
+    expect(SCRIPT_ATUALIZACOES).not.toMatch(/trechoDeTexto|notaDoAto|nov-txt|nov-trecho/);
   });
 
   it('as funções puras são autocontidas: avaliadas sozinhas, sem o módulo, ainda funcionam', () => {
@@ -796,7 +798,7 @@ describe('chaveDoAtoDaLinha — o ato que o botão "Analisar com IA" analisa (v0
   });
 });
 
-describe('situacaoDaLinha — estado em texto e a caixa "Cumprido" (v0.43.0)', () => {
+describe('situacaoDaLinha — o estado da linha e a caixa "Cumprido" (v0.43.0; a coluna só mostra a caixa desde a v0.46.0)', () => {
   const motivo = {
     chave: 'chave-ato',
     rotulo: 'Intimação',
