@@ -152,9 +152,9 @@ describe('tela do processo — ordem dos blocos', () => {
   it('a aba abre em "Pedem providência" e o estado vive na página, nunca em localStorage (v0.37.4)', () => {
     expect(SCRIPT_ATUALIZACOES).toContain('var S={situacao:"providencia"');
     expect(SCRIPT_ATUALIZACOES).not.toMatch(/localStorage|sessionStorage/);
-    expect(SCRIPT_ATUALIZACOES).toContain(
-      'Leitura automática do andamento, não é contagem de prazo. Confira no processo.',
-    );
+    // 0.46.1: a frase fixa saiu; a dica "confira no ato completo" fica no chip.
+    expect(SCRIPT_ATUALIZACOES).not.toContain('não é contagem de prazo');
+    expect(SCRIPT_ATUALIZACOES).toContain('confira no ato completo');
   });
 });
 

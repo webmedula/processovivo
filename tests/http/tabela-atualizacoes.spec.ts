@@ -610,13 +610,9 @@ describe('o ato que a linha mostra (v0.37.6): o que gera a providência, e o úl
 });
 
 describe('script da tela: o texto novo não fala em prazo', () => {
-  it('fora de comentário, a palavra só aparece no aviso de honestidade já existente', () => {
+  it('fora de comentário, a palavra "prazo" não aparece (a frase fixa "não é contagem de prazo" saiu na 0.46.1)', () => {
     const semComentarios = SCRIPT_ATUALIZACOES.replace(/\/\*[\s\S]*?\*\//g, '');
-    const semAviso = semComentarios.replace(
-      'Leitura automática do andamento, não é contagem de prazo. Confira no processo.',
-      '',
-    );
-    expect(semAviso).not.toMatch(/prazo/i);
+    expect(semComentarios).not.toMatch(/prazo/i);
   });
 });
 

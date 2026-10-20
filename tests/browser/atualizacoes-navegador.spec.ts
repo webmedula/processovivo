@@ -219,14 +219,14 @@ describe.skipIf(sem)(
       expect(await page.locator('nav.nvt-pag').count()).toBe(1);
     });
 
-    it('é uma tabela de verdade: caption, nove colunas com <th scope="col"> e as colunas pedidas (a coluna de providência se chama "Cumprido" desde a 0.46.0)', async () => {
+    it('é uma tabela de verdade: caption, oito colunas com <th scope="col"> e as colunas pedidas (a coluna "Cumprido" saiu na 0.46.1: a caixa mora em Ações)', async () => {
       await abrir({ grupos: carteira(5) });
       expect(await page.locator('table.nvt-tabela > caption').textContent()).toBe(
         'Processos acompanhados e a atualização mais recente de cada um',
       );
       const ths = page.locator('table.nvt-tabela thead th');
-      expect(await ths.count()).toBe(9);
-      for (let i = 0; i < 9; i++)
+      expect(await ths.count()).toBe(8);
+      for (let i = 0; i < 8; i++)
         expect(await ths.nth(i).getAttribute('scope')).toBe('col');
       const nomes = (await ths.allTextContents()).map((t) =>
         t.replace(/[↕↑↓]/g, '').trim(),
@@ -239,7 +239,6 @@ describe.skipIf(sem)(
         'Classe',
         'Data do ato',
         'Detectado',
-        'Cumprido',
         'Ações',
       ]);
     });
@@ -286,7 +285,7 @@ describe.skipIf(sem)(
       expect(dataAto).toMatch(/^\d{2}\/\d{2}\/\d{4}$/);
       // O cabeçalho já diz "Detectado": a célula só diz "há 1 dia" (v0.37.1).
       expect(detectado).toBe('há 1 dia');
-      expect(await l.locator('.c-sit').innerText()).toContain('Não lida');
+      expect(await l.locator('.c-atu .nvt-selos').innerText()).toContain('Não lida');
       // Ações com nome acessível.
       const nomesAcoes = await l
         .locator('.c-acoes button')
@@ -309,7 +308,7 @@ describe.skipIf(sem)(
       const l = linhas().first();
       expect((await l.locator('.c-partes').innerText()).trim()).toBe('—');
       expect((await l.locator('.c-classe').innerText()).trim()).toBe('—');
-      expect(await l.locator('.c-sit .selo').count()).toBe(0);
+      expect(await l.locator('.c-atu .nvt-selos .selo').count()).toBe(0);
     });
 
     it('a célula Atualização é UMA linha de ato (tipo + etiqueta) e o link "Abrir processo": o texto do ato, de ~3.000 caracteres, não aparece na tabela (0.46.0)', async () => {
@@ -343,7 +342,8 @@ describe.skipIf(sem)(
           .split('\n')
           .map((t) => t.trim())
           .filter(Boolean),
-      ).toEqual(['Sentença', 'Abrir processo']);
+        // (0.46.1) O selo "não lidas" mudou de coluna: saiu da extinta "Cumprido" e fecha esta célula.
+      ).toEqual(['Sentença', 'Abrir processo', '3 não lidas']);
       expect(await page.locator('.nvt-linha .nov-abrir').count()).toBe(1);
       expect(await page.locator('.nvt-linha').count()).toBe(1);
     });
@@ -406,11 +406,11 @@ describe.skipIf(sem)(
       );
       expect(await page.locator('.nvt-ant, .nvt-item').count()).toBe(0);
       // A situação continua a regra de sempre: atualização não vista do processo.
-      expect(await linhas().first().locator('.c-sit').innerText()).toContain(
+      expect(await linhas().first().locator('.c-atu .nvt-selos').innerText()).toContain(
         '151 não lidas',
       );
       expect(
-        await linhas().first().locator('.c-sit input[type="checkbox"]').count(),
+        await linhas().first().locator('.c-acoes input[type="checkbox"]').count(),
       ).toBe(0);
     });
 
@@ -461,37 +461,46 @@ describe.skipIf(sem)(
       expect(await page.locator('.nov-ant').count()).toBe(1);
     });
 
-    it('Ações: só os dois botões, sem texto, dentro da linha em 1920, 1366, 1280 e 1024', async () => {
+    it('Ações: caixa Cumprido (quando há providência) e os dois botões, sem texto visível, dentro da linha, e ícones alinhados entre as linhas, em 1920, 1366, 1280 e 1024', async () => {
       for (const largura of [1920, 1366, 1280, 1024]) {
         await abrir({ grupos: carteira(3) }, { largura });
         const m = await page.evaluate(() => {
-          const l = document.querySelector('.nvt-linha .c-acoes')!;
+          const l = document.querySelector('.nvt-linha .c-acoes .nvt-acoes')!;
           const cel = l.getBoundingClientRect();
-          const bs = Array.from(l.querySelectorAll('button')).map((b) =>
+          const itens = Array.from(l.querySelectorAll('button, input')).map((b) =>
             b.getBoundingClientRect(),
           );
+          // O primeiro botão de cada linha tem de começar no mesmo x (a vaga reserva o lugar da caixa).
+          const xs = new Set(
+            Array.from(
+              document.querySelectorAll('.nvt-linha .c-acoes [data-acao="abrir"]'),
+            ).map((b) => Math.round(b.getBoundingClientRect().left)),
+          );
           return {
-            n: bs.length,
-            texto: l.textContent?.trim(),
-            dentro: bs.every(
+            texto: (l as HTMLElement).innerText.trim(),
+            dentro: itens.every(
               (b) => b.left >= cel.left - 0.5 && b.right <= cel.right + 0.5,
             ),
-            mesmaLinha: new Set(bs.map((b) => Math.round(b.top))).size,
+            mesmaLinha: new Set(itens.map((b) => Math.round(b.top + b.height / 2))).size,
+            alinhados: xs.size,
           };
         });
-        expect(m).toEqual({ n: 2, texto: '', dentro: true, mesmaLinha: 1 });
+        // Reescrito na 0.46.1: antes eram só 2 botões; agora a caixa (linha com providência) vem antes deles.
+        expect(m).toEqual({ texto: '', dentro: true, mesmaLinha: 1, alinhados: 1 });
         await ctx.close();
       }
     });
 
-    // Antes da 0.46.0 (medido nas mesmas larguras): Atualização 299/196/180/133 px e Partes 153/101/93/79 px.
-    for (const [largura, atuAntes, partesAntes, dataMax] of [
-      [1920, 299, 153, 104],
-      [1366, 196, 101, 104],
-      [1280, 180, 93, 104],
-      [1024, 133, 79, 88],
+    // 0.46.1: a coluna "Cumprido" saiu e Partes ganhou a largura dela. Medido antes (0.46.0) → depois, com dados
+    // sintéticos: Partes 169→315 / 111→180 / 102→166 / 83→136 px; Atualização 413→332 / 214→208 / 183→178 / 135→135 px
+    // (1920/1366/1280/1024). Os pisos abaixo deixam folga de ~5 px para arredondamento; a Atualização tem teto só em 1920.
+    for (const [largura, atuMin, atuMax, partesMin, dataMax] of [
+      [1920, 300, 340, 280, 104],
+      [1366, 195, 400, 170, 104],
+      [1280, 170, 400, 155, 104],
+      [1024, 125, 400, 125, 88],
     ] as const) {
-      it(`${largura}px: "Data do ato" e "Detectado" ficam estreitas e SEM quebra de linha; o espaço vai para Partes e Atualização`, async () => {
+      it(`${largura}px: "Data do ato" e "Detectado" ficam estreitas e SEM quebra de linha; Partes ganha largura (≥ ${partesMin}) e Atualização fica entre ${atuMin} e ${atuMax} px`, async () => {
         const numero = numeroValido(3101);
         await abrir(
           {
@@ -540,9 +549,12 @@ describe.skipIf(sem)(
         });
         expect(m.data).toBeLessThanOrEqual(dataMax);
         expect(m.det).toBeLessThanOrEqual(dataMax);
-        expect(JSON.stringify(m.quebra)).toBe(JSON.stringify(m.quebra.map(() => ({ linhas: 1, sobra: 0 }))));
-        expect(m.atu).toBeGreaterThanOrEqual(atuAntes);
-        expect(m.partes).toBeGreaterThanOrEqual(partesAntes);
+        expect(JSON.stringify(m.quebra)).toBe(
+          JSON.stringify(m.quebra.map(() => ({ linhas: 1, sobra: 0 }))),
+        );
+        expect(m.atu).toBeGreaterThanOrEqual(atuMin);
+        expect(m.atu).toBeLessThanOrEqual(atuMax);
+        expect(m.partes).toBeGreaterThanOrEqual(partesMin);
         expect(m.rolagem).toBeLessThanOrEqual(0);
         // A data completa e o "há 11 dias" aparecem inteiros.
         expect((await linhas().first().locator('.c-data').innerText()).trim()).toMatch(
@@ -676,9 +688,7 @@ describe.skipIf(sem)(
       expect(textos).toContain('dos últimos 10 dias');
       // A página inteira também não anuncia prazo (nem "abre prazo").
       // Única menção: o aviso de honestidade, que NEGA a contagem (v0.37.4).
-      const corpo = (await page.locator('body').innerText())
-        .toLowerCase()
-        .replaceAll('não é contagem de prazo', '');
+      const corpo = (await page.locator('body').innerText()).toLowerCase();
       expect(corpo).not.toContain('prazo');
     });
 
@@ -712,7 +722,7 @@ describe.skipIf(sem)(
       // (0.46.0) A providência é a CAIXA da coluna "Cumprido" (sem texto de estado): a contagem do
       // filtro continua a mesma, só o sinal mudou.
       expect(
-        await page.locator('.c-sit input[type="checkbox"]:not(:checked)').count(),
+        await page.locator('.c-acoes input[type="checkbox"]:not(:checked)').count(),
       ).toBe(2);
 
       await page.getByRole('button', { name: /^Todas \(6\)/ }).click();
@@ -1033,7 +1043,7 @@ describe.skipIf(sem)(
         'sem detecção registrada',
       );
       // Situação vazia: nem "Não lida" nem providência sem base.
-      expect(await sem.locator('.c-sit .selo').count()).toBe(0);
+      expect(await sem.locator('.c-atu .nvt-selos .selo').count()).toBe(0);
       // O resumo conta processos e nenhuma linha some.
       expect(await page.locator('.nvt-resumo').innerText()).toContain(
         '2 processos acompanhados',
@@ -1132,7 +1142,7 @@ describe.skipIf(sem)(
       expect(await linhas().count()).toBe(1);
       // (0.46.0) Mesmo caso: a caixa desmarcada é o sinal.
       expect(
-        await page.locator('.c-sit input[type="checkbox"]:not(:checked)').count(),
+        await page.locator('.c-acoes input[type="checkbox"]:not(:checked)').count(),
       ).toBe(1);
     });
 
@@ -1282,7 +1292,6 @@ describe.skipIf(sem)(
           'Classe',
           'Data do ato',
           'Detectado',
-          'Cumprido',
           'Ações',
         ]);
         // O rótulo é conteúdo gerado, visível ao leitor de tela e ao olho.
@@ -1325,8 +1334,6 @@ describe.skipIf(sem)(
 
     const FRASE_PARCIAL =
       'Mostrando 1 de 2 processos acompanhados: só os que pedem providência';
-    const AVISO =
-      'Leitura automática do andamento, não é contagem de prazo. Confira no processo.';
 
     function doisComProvidencia(pedem: number, tribunais = ['TJGO', 'TJGO']): Cenario {
       return {
@@ -1469,25 +1476,25 @@ describe.skipIf(sem)(
       ).toContain('Mostrando 1 de 3 processos acompanhados');
     });
 
-    it('o aviso de honestidade está à vista perto do chip, ligado a ele por aria-describedby, e a página nunca anuncia prazo', async () => {
+    it('sem a frase fixa "Leitura automática… não é contagem de prazo" (0.46.1, decisão do dono): o chip segue com a dica "confira no ato completo" e a página nunca anuncia prazo', async () => {
       await abrir(doisComProvidencia(1), { padrao: true });
-      expect(await page.locator('#nvt-aviso-prov').innerText()).toBe(AVISO);
-      expect(await page.locator('#nvt-aviso-prov').isVisible()).toBe(true);
+      expect(await page.locator('#nvt-aviso-prov, .nvt-aviso-prov').count()).toBe(0);
       expect(
         await page
           .locator('[role="group"][aria-labelledby="nvt-rot-situacao"]')
           .getAttribute('aria-describedby'),
-      ).toBe('nvt-aviso-prov');
-      const corpo = (await page.locator('body').innerText())
-        .toLowerCase()
-        .replaceAll('não é contagem de prazo', '');
+      ).toBeNull();
+      expect(
+        await page
+          .getByRole('button', { name: /^Pedem providência/ })
+          .getAttribute('title'),
+      ).toContain('confira no ato completo');
+      const corpo = (await page.locator('body').innerText()).toLowerCase();
       expect(corpo).not.toContain('prazo');
       // Também no estado vazio.
       await ctx.close();
       await abrir(doisComProvidencia(0), { padrao: true });
-      const vazio = (await page.locator('body').innerText())
-        .toLowerCase()
-        .replaceAll('não é contagem de prazo', '');
+      const vazio = (await page.locator('body').innerText()).toLowerCase();
       expect(vazio).not.toContain('prazo');
     });
 

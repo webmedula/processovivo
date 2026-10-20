@@ -203,9 +203,9 @@ describe.skipIf(sem)(
       expect(await linha.count()).toBe(1);
       // (0.46.0) O sinal é a caixa "Cumprido" desmarcada, com a dica "Pede providência…" (não há mais texto de estado).
       expect(
-        await linha.locator('.c-sit input[type="checkbox"]:not(:checked)').count(),
+        await linha.locator('.c-acoes input[type="checkbox"]:not(:checked)').count(),
       ).toBe(1);
-      expect(await linha.locator('.c-sit .sit-dica').textContent()).toMatch(
+      expect(await linha.locator('.c-acoes .sit-dica').textContent()).toMatch(
         /^Pede providência/,
       );
       // O filtro e a contagem do chip.

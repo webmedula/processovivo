@@ -318,40 +318,48 @@ describe.skipIf(sem)(
       expect(texto).not.toContain('marcado');
     });
 
-    it('a coluna "Cumprido" mostra SÓ a caixa: sem texto de estado, sem rótulo visível, sem traço nas linhas sem providência', async () => {
+    it('não há coluna "Cumprido": a caixa é o PRIMEIRO controle da coluna Ações, sem texto visível ao lado e sem caixa nas linhas sem providência (0.46.1)', async () => {
       await abrir();
       await todas();
 
-      expect(((await page.locator('th.h-sit').textContent()) ?? '').trim()).toBe(
-        'Cumprido',
-      );
-      expect(await ao(NA).locator('.c-sit').getAttribute('data-rotulo')).toBe('Cumprido');
+      // Reescrito na 0.46.1: antes afirmava a coluna "Cumprido" (th.h-sit, td.c-sit); agora a coluna não existe.
+      expect(await page.locator('th.h-sit, td.c-sit').count()).toBe(0);
+      expect(await page.locator('thead th', { hasText: /^Cumprido$/ }).count()).toBe(0);
 
-      // Linha que pede providência: a caixa DESMARCADA e nenhum texto visível ao lado.
-      const celula = ao(NA).locator('.c-sit');
+      // Linha que pede providência: a caixa DESMARCADA, na célula Ações, antes dos botões.
+      const celula = ao(NA).locator('.c-acoes');
       expect(await celula.locator('input[type="checkbox"]').count()).toBe(1);
       expect(await caixa(NA).isChecked()).toBe(false);
-      expect(await celula.locator('button').count()).toBe(0);
-      expect(await celula.locator('.sit, .sit-cx-txt, .sit-ic').count()).toBe(0);
-      // Nada de texto ao lado da caixa: o rótulo é a própria caixa, sem palavra ("Pede providência",
-      // "Cumprido", "●"). A dica (escondida) e o selo "Não lida" (outra informação) não contam.
+      const ordem = await celula.evaluate((td) =>
+        Array.from(td.querySelectorAll('.nvt-acoes input, .nvt-acoes button')).map(
+          (e) => e.getAttribute('data-cx') ?? e.getAttribute('data-acao'),
+        ),
+      );
+      expect(ordem).toEqual(['cumprido', 'abrir', 'pasta']);
+      // Tabulação lógica: caixa, abrir, pasta (e depois o "Analisar com IA", que fica abaixo no mesmo grupo).
+      await caixa(NA).focus();
+      for (const esperado of ['abrir', 'pasta']) {
+        await page.keyboard.press('Tab');
+        expect(
+          await page.evaluate(() => document.activeElement?.getAttribute('data-acao')),
+        ).toBe(esperado);
+      }
+      // No desktop o rótulo "Cumprido" não aparece (só o empilhado o mostra): nada de texto ao lado da caixa.
       expect((await ao(NA).locator('.sit-cx').innerText()).trim()).toBe('');
-      expect(
-        await celula.evaluate((td) => {
-          const c = td.cloneNode(true) as HTMLElement;
-          c.querySelectorAll('.sit-dica, .selo').forEach((e) => e.remove());
-          return (c.textContent ?? '').trim();
-        }),
-      ).toBe('');
       expect(
         await page.getByRole('button', { name: 'Marcar como cumprido' }).count(),
       ).toBe(0);
 
-      // Sem providência: célula sem caixa e sem traço. O "sem marca há mais de 30 dias" segue como nota.
-      expect(await ao(ND).locator('.c-sit').innerText()).toBe('');
-      expect(await ao(ND).locator('.c-sit input, .c-sit .sit').count()).toBe(0);
-      expect(await ao(NC).locator('.c-sit input').count()).toBe(0);
-      expect(await ao(NC).locator('.nvt-venceu').textContent()).toContain(
+      // Sem providência: nenhuma caixa, mas a vaga reserva o lugar (ícones alinhados com os das outras linhas).
+      expect(await ao(ND).locator('.c-acoes input').count()).toBe(0);
+      expect(await ao(NC).locator('.c-acoes input').count()).toBe(0);
+      const x = (n: string) =>
+        ao(n)
+          .locator('.c-acoes [data-acao="abrir"]')
+          .evaluate((e) => Math.round(e.getBoundingClientRect().left));
+      expect(await x(ND)).toBe(await x(NA));
+      // O "sem marca há mais de 30 dias" segue como selo, agora na célula Atualização.
+      expect(await ao(NC).locator('.c-atu .nvt-venceu').textContent()).toContain(
         'sem marca há mais de 30 dias',
       );
     });
@@ -421,14 +429,12 @@ describe.skipIf(sem)(
       );
     });
 
-    it('em tela de toque a dica aparece depois de marcar (o foco volta à caixa) e o rótulo "Cumprido" já vem acima da caixa no bloco empilhado', async () => {
+    it('em tela de toque a dica aparece depois de marcar (o foco volta à caixa) e o rótulo "Cumprido" fica VISÍVEL ao lado da caixa, no início do grupo de ações', async () => {
       await abrir({ largura: 390, toque: true });
-      // Empilhado: o rótulo da coluna ("Cumprido") é conteúdo gerado acima da caixa.
-      expect(
-        await ao(NA)
-          .locator('td.c-sit')
-          .evaluate((e) => getComputedStyle(e, '::before').content),
-      ).toContain('Cumprido');
+      // Empilhado (0.46.1): a caixa abre o grupo de ações e a palavra "Cumprido" está à vista ao lado dela.
+      expect((await ao(NA).locator('.sit-cx').innerText()).trim()).toBe('Cumprido');
+      const alvo = (await ao(NA).locator('.sit-cx').boundingBox())!;
+      expect(alvo.height).toBeGreaterThanOrEqual(44);
       await todas();
       await caixa(NA).tap();
       await aviso().getByRole('button', { name: 'Desfazer' }).waitFor();
@@ -736,12 +742,14 @@ describe.skipIf(sem)(
       });
     }
 
-    it('a coluna Cumprido é só a caixa: o conteúdo da célula tem a altura de um alvo de toque, sem contar a dica', async () => {
+    it('a caixa em Ações tem alvo de toque de pelo menos 24 px e não aumenta a linha, nem com a dica aberta', async () => {
       await abrir({ largura: 1366 });
-      const h = await ao(NB)
-        .locator('td.c-sit .sit-cx')
-        .evaluate((el) => el.getBoundingClientRect().height);
-      expect(h).toBeLessThanOrEqual(34);
+      const r0 = await ao(NB)
+        .locator('td.c-acoes .sit-cx')
+        .evaluate((el) => el.getBoundingClientRect());
+      expect(r0.height).toBeGreaterThanOrEqual(24);
+      expect(r0.width).toBeGreaterThanOrEqual(24);
+      expect(r0.height).toBeLessThanOrEqual(34);
       // A dica é absoluta: não aumenta a linha.
       const linhaAntes = (await ao(NB).boundingBox())!.height;
       await ao(NB).locator('.sit-cx').hover();
