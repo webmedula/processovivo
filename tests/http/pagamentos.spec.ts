@@ -889,6 +889,100 @@ describe('cobrança recorrente — recusa, cancelamento, pausa e estorno', () =>
   });
 });
 
+describe('cobrança recorrente — falha do gateway (v0.45.1)', () => {
+  const MOTIVOS = ['email_pagador', 'credencial', 'parametro_invalido', 'desconhecido'] as const;
+
+  async function pedirCheckout(cookie: string) {
+    return c.servidor.inject({
+      method: 'POST',
+      url: '/v1/assinatura/checkout',
+      headers: { cookie },
+      payload: { plano: 'pecas', aceiteTermos: true },
+    });
+  }
+
+  it('recusa do gateway é 422 em JSON, com um motivo de lista fechada e uma frase diferente para cada um — nunca 502', async () => {
+    c = montarCenarioDePagamento();
+    await precificar(c, 'pecas', 4990);
+    const conta = await cadastrar(c, 'ana@exemplo.test');
+    const frases = new Set<string>();
+    for (const motivo of MOTIVOS) {
+      c.gateway.falharProximaChamada = 'recusou';
+      c.gateway.motivoDaRecusa = motivo;
+      const r = await pedirCheckout(conta.cookie);
+      expect(r.statusCode, motivo).toBe(422);
+      expect(r.headers['content-type']).toMatch(/application\/json/);
+      expect(json(r)).toMatchObject({
+        erro: 'GATEWAY_DE_PAGAMENTO_RECUSOU',
+        detalhes: { situacao: 'gateway_recusou', motivo },
+      });
+      // A frase é NOSSA: o texto do gateway nunca sai.
+      expect(r.body).not.toMatch(/recusa simulada|bad_request/);
+      frases.add(json(r)['mensagem']);
+    }
+    expect(frases.size).toBe(MOTIVOS.length);
+  });
+
+  it('gateway fora do ar é 503 em JSON com motivo `indisponivel`', async () => {
+    c = montarCenarioDePagamento();
+    await precificar(c, 'pecas', 4990);
+    const conta = await cadastrar(c, 'ana@exemplo.test');
+    c.gateway.falharProximaChamada = 'indisponivel';
+    const r = await pedirCheckout(conta.cookie);
+    expect(r.statusCode).toBe(503);
+    expect(r.headers['content-type']).toMatch(/application\/json/);
+    expect(json(r)).toMatchObject({
+      erro: 'GATEWAY_DE_PAGAMENTO_INDISPONIVEL',
+      detalhes: { situacao: 'gateway_indisponivel', motivo: 'indisponivel' },
+    });
+  });
+
+  it('a falha entra na trilha (operação, status, motivo, código) sem dado do pagador, e a última é a que vale', async () => {
+    c = montarCenarioDePagamento();
+    await precificar(c, 'pecas', 4990);
+    expect(await c.app.pagamentos!.ultimaFalhaDoGateway()).toBeUndefined();
+    const conta = await cadastrar(c, 'ana@exemplo.test');
+    c.gateway.falharProximaChamada = 'recusou';
+    c.gateway.motivoDaRecusa = 'email_pagador';
+    await pedirCheckout(conta.cookie);
+    expect(await c.app.pagamentos!.ultimaFalhaDoGateway()).toMatchObject({
+      operacao: 'criarAssinatura',
+      status: 400,
+      codigo: 'bad_request',
+      motivo: 'email_pagador',
+    });
+    c.gateway.falharProximaChamada = 'indisponivel';
+    await pedirCheckout(conta.cookie);
+    expect(await c.app.pagamentos!.ultimaFalhaDoGateway()).toMatchObject({
+      motivo: 'indisponivel',
+      status: null,
+      codigo: null,
+    });
+    const eventos = await c.app.pagamentos!.eventosDe(c.gateway.pedidos.at(-1)?.referencia ?? 'x');
+    expect(JSON.stringify(eventos)).not.toContain('ana@');
+  });
+
+  it('falha ao cancelar a renovação também é 422/503 em JSON e fica na trilha', async () => {
+    c = montarCenarioDePagamento();
+    await precificar(c, 'pecas', 4990);
+    const conta = await contaComCheckout();
+    await aprovar(conta.gatewayId);
+    c.gateway.falharProximaChamada = 'recusou';
+    c.gateway.motivoDaRecusa = 'credencial';
+    const r = await c.servidor.inject({
+      method: 'DELETE',
+      url: '/v1/assinatura/recorrencia',
+      headers: { cookie: conta.cookie },
+    });
+    expect(r.statusCode).toBe(422);
+    expect(json(r)['detalhes']).toEqual({ situacao: 'gateway_recusou', motivo: 'credencial' });
+    expect(await c.app.pagamentos!.ultimaFalhaDoGateway()).toMatchObject({
+      operacao: 'cancelarAssinatura',
+      motivo: 'credencial',
+    });
+  });
+});
+
 describe('cobrança recorrente — cancelar a renovação (pela conta)', () => {
   it('cancela no gateway, o plano continua até o fim do período pago e o evento fica registrado', async () => {
     c = montarCenarioDePagamento();

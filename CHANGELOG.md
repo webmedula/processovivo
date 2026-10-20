@@ -9,6 +9,37 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.45.1] — 2026-10-20
+
+**Quando o Mercado Pago recusa o pedido, o log diz por quê, a API devolve JSON com um motivo e o /admin mostra
+a última falha.** Em produção, com credenciais de teste, `POST /v1/assinatura/checkout` voltava 502 e o proxy do
+Easypanel trocava o corpo por uma página HTML: ninguém via o motivo do 400.
+
+- **Log (`warn`) a cada 4xx do Mercado Pago** ("gateway de pagamento recusou o pedido"): operação, status, motivo,
+  os campos `error` e `message` e, de cada item de `cause`, o `code` e a `description`; mais os NOMES dos campos
+  enviados no pedido (`payer_email`, `auto_recurring.frequency`…), nunca os valores. E-mail é mascarado
+  (`c***@e***.test`), token é apagado, cada texto é cortado em 300 caracteres e o corpo bruto nunca é gravado.
+  5xx e 429 geram um `warn` curto só com status e operação.
+- **API: 422 e 503, nunca 502.** Recusa do gateway é **422** e gateway fora do ar é **503**, sempre em JSON, com
+  `detalhes: { situacao, motivo }` e `motivo` de uma lista fechada: `email_pagador`, `credencial`,
+  `parametro_invalido`, `indisponivel`, `desconhecido`. A mensagem é nossa; o texto do gateway nunca sai.
+  A classificação casa por **nome de campo do contrato** (`payer_email`, `back_url`…) e por frases inteiras
+  conhecidas (`Invalid users involved`), nunca por palavra solta; sem evidência é `desconhecido`.
+- **Tela:** uma frase diferente, em português claro, para cada motivo. Se o proxy trocar o corpo por HTML
+  (502/503/504 sem JSON), o status sozinho vale como `indisponivel`.
+- **/admin:** `GET /admin/api/pagamento` ganha `ultimaFalha` (data, operação, status, código, motivo) e a aba
+  Assinaturas mostra "Última falha do gateway". Vem da trilha de auditoria (`eventos_de_pagamento`, tipo
+  `gateway_falhou`): sem tabela nem coluna nova, e sem dado do pagador.
+- Falhas do gateway também são registradas ao cancelar a renovação e na reconciliação.
+- `GatewayDePagamentoRecusouError` carrega `motivoDoGateway` e um `diagnostico` já saneado;
+  `GatewayDePagamentoIndisponivelError` carrega `motivoDoGateway = 'indisponivel'`.
+- **O corpo do `POST /preapproval` NÃO mudou** e o fluxo do e-mail do pagador também não (ver o relatório da
+  entrega: o `payer_email` é a causa mais provável do 400 com credencial de teste, e mudar o fluxo depende de
+  decisão do dono).
+- Testes ajustados da 0.45.0: `tests/browser/assinatura-navegador.spec.ts` (o gateway fora do ar agora tem frase
+  própria). Novos: `recusa-do-mercadopago.spec.ts`, `MercadoPagoAdapter-recusa.spec.ts`, e casos em
+  `pagamentos.spec.ts`, `admin-pagamento.spec.ts`, `pagamento-tela.spec.ts` e no teste de navegador.
+
 ## [0.45.0] — 2026-10-19
 
 **Página de vendas: a ponte entre o site (planos) e o app (cadastro, confirmação e pagamento).**

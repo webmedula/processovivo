@@ -1017,9 +1017,40 @@ export class AutorizacaoDoDestinoVencidaError extends DomainError {
 // Cobrança recorrente pelo gateway de pagamento (v0.44.0). Nenhum desses erros carrega dado de
 // cartão, token, segredo nem texto cru do gateway.
 
+/**
+ * Por que o gateway falhou, numa lista FECHADA (v0.45.1). É o que a tela e a API usam para escolher a
+ * frase — nunca o texto do gateway, que pode ecoar o e-mail do pagador:
+ * - `email_pagador`: o gateway não aceitou o e-mail do pagador;
+ * - `credencial`: o token foi recusado (problema nosso, de configuração);
+ * - `parametro_invalido`: outro campo do pedido foi recusado (URL de retorno, valor, ciclo…);
+ * - `indisponivel`: o gateway está fora do ar, lento ou limitando;
+ * - `desconhecido`: respondeu 4xx e nada do que veio permite dizer por quê.
+ */
+export type MotivoDoGateway =
+  | 'email_pagador'
+  | 'credencial'
+  | 'parametro_invalido'
+  | 'indisponivel'
+  | 'desconhecido';
+
+/**
+ * O que a recusa do gateway diz, JÁ SANEADO (e-mail mascarado, sem token, sem corpo bruto): é o que vai
+ * ao log e à trilha de auditoria. Nunca sai pela API.
+ */
+export interface DiagnosticoDoGateway {
+  readonly operacao: string;
+  readonly status: number;
+  readonly erro?: string;
+  readonly mensagem?: string;
+  readonly causas: ReadonlyArray<{ readonly codigo?: string; readonly descricao?: string }>;
+  /** Só os NOMES dos campos enviados no pedido (`auto_recurring.frequency`…), nunca os valores. */
+  readonly camposEnviados: readonly string[];
+}
+
 /** O gateway não respondeu: rede, timeout, 5xx, limite. Nada foi cobrado de forma confirmada. */
 export class GatewayDePagamentoIndisponivelError extends ProviderIndisponivelError {
   override readonly codigo: string = 'GATEWAY_DE_PAGAMENTO_INDISPONIVEL';
+  readonly motivoDoGateway: MotivoDoGateway = 'indisponivel';
 
   constructor(gateway: string, motivo: string, options?: { cause?: unknown }) {
     super(gateway, motivo, options);
@@ -1029,13 +1060,21 @@ export class GatewayDePagamentoIndisponivelError extends ProviderIndisponivelErr
 /** O gateway respondeu e recusou o pedido (4xx definitivo) ou devolveu algo fora do contrato. */
 export class GatewayDePagamentoRecusouError extends DomainError {
   readonly codigo = 'GATEWAY_DE_PAGAMENTO_RECUSOU';
+  readonly motivoDoGateway: MotivoDoGateway;
+  readonly diagnostico: DiagnosticoDoGateway | undefined;
 
   constructor(
     readonly gateway: string,
     readonly status: number | undefined,
     motivo: string,
+    extra: {
+      readonly motivoDoGateway?: MotivoDoGateway;
+      readonly diagnostico?: DiagnosticoDoGateway;
+    } = {},
   ) {
     super(`Gateway de pagamento "${gateway}" recusou o pedido: ${motivo}`);
+    this.motivoDoGateway = extra.motivoDoGateway ?? 'desconhecido';
+    this.diagnostico = extra.diagnostico;
   }
 }
 

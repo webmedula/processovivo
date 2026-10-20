@@ -472,6 +472,8 @@ export function rotasDeAdmin(opcoes: OpcoesRotasAdmin): FastifyPluginAsync {
         gateway: p.nomeDoGateway,
         ambiente: p.ambiente,
         modoDeTeste: teste,
+        // v0.45.1: a última falha do gateway (quando, onde, código e motivo). Nada do pagador.
+        ultimaFalha: await ultimaFalhaParaAdmin(p),
         aviso: teste
           ? opcoes.emProducao
             ? 'ATENÇÃO: o servidor está em PRODUÇÃO com a cobrança em ambiente de TESTE. Nenhum pagamento é real.'
@@ -496,6 +498,17 @@ export function rotasDeAdmin(opcoes: OpcoesRotasAdmin): FastifyPluginAsync {
       return p.reconciliar(workspace !== undefined ? { workspace } : {});
     });
   };
+}
+
+async function ultimaFalhaParaAdmin(p: ServicoPagamentos): Promise<{
+  readonly em: string;
+  readonly operacao: string;
+  readonly status: number | null;
+  readonly codigo: string | null;
+  readonly motivo: string;
+} | null> {
+  const f = await p.ultimaFalhaDoGateway();
+  return f ? { ...f, em: f.em.toISOString() } : null;
 }
 
 function pagamentoParaAdmin(

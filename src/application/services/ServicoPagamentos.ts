@@ -14,7 +14,12 @@ import {
   valorDoCicloEmCentavos,
 } from '../../domain/entities/Plano.js';
 import type { CicloDoPlano, Plano } from '../../domain/entities/Plano.js';
-import { PagamentoRecusadoError } from '../../domain/errors/index.js';
+import {
+  GatewayDePagamentoIndisponivelError,
+  GatewayDePagamentoRecusouError,
+  PagamentoRecusadoError,
+} from '../../domain/errors/index.js';
+import type { MotivoDoGateway } from '../../domain/errors/index.js';
 import type { MotivoDePagamentoRecusado } from '../../domain/errors/index.js';
 import type { GatewayDePagamento } from '../../domain/ports/GatewayDePagamento.js';
 import type { Logger } from '../../domain/ports/Logger.js';
@@ -77,6 +82,20 @@ export interface VisaoDePagamento {
   readonly processando: boolean;
   /** Só conta com e-mail assina online: conta de chave de API não tem recibo nem aviso. */
   readonly contaComEmail: boolean;
+}
+
+/** O que o /admin mostra da última falha do gateway: quando, onde, o código e o motivo. Nada do pagador. */
+export interface UltimaFalhaDoGateway {
+  readonly em: Date;
+  readonly operacao: string;
+  readonly status: number | null;
+  readonly codigo: string | null;
+  readonly motivo: MotivoDoGateway;
+}
+
+/** Só um código curto e seguro do gateway (`bad_request`); qualquer outra coisa não entra na trilha. */
+function codigoCurto(valor: string | undefined): string | undefined {
+  return valor !== undefined && /^[A-Za-z0-9_.-]{1,40}$/.test(valor) ? valor : undefined;
 }
 
 export type EfeitoDoPagamento = 'renovou' | 'registrou' | 'repetido' | 'ignorado';
@@ -305,8 +324,56 @@ export class ServicoPagamentos {
         await this.repo.atualizar({ ...c, estado: 'cancelada', renovacaoCanceladaEm: this.agora(), atualizadaEm: this.agora() });
       }
       await this.evento('checkout_falhou', { workspace: opcoes.workspace, referencia });
+      await this.registrarFalhaDoGateway('criarAssinatura', erro, { workspace: opcoes.workspace, referencia });
       throw erro;
     }
+  }
+
+  // --- a última falha do gateway (para o /admin) -------------------------------------------------
+
+  /**
+   * Guarda NA TRILHA o que falhou com o gateway: operação, status, motivo (lista fechada) e o código curto
+   * do gateway. Nunca o texto dele (pode ecoar o e-mail do pagador), nunca o pedido. Só falha do
+   * gateway entra aqui; erro nosso segue para o handler de erro como sempre.
+   */
+  private async registrarFalhaDoGateway(
+    operacao: string,
+    erro: unknown,
+    quem: { workspace?: string; referencia?: string },
+  ): Promise<void> {
+    let status: number | undefined;
+    let motivo: MotivoDoGateway;
+    let codigo: string | undefined;
+    if (erro instanceof GatewayDePagamentoRecusouError) {
+      status = erro.status;
+      motivo = erro.motivoDoGateway;
+      codigo = codigoCurto(erro.diagnostico?.erro) ?? codigoCurto(erro.diagnostico?.causas[0]?.codigo);
+    } else if (erro instanceof GatewayDePagamentoIndisponivelError) {
+      motivo = 'indisponivel';
+    } else {
+      return;
+    }
+    await this.evento(
+      'gateway_falhou',
+      quem,
+      `operacao=${operacao} status=${status ?? '-'} motivo=${motivo} codigo=${codigo ?? '-'}`,
+    );
+  }
+
+  /** A falha mais recente do gateway, de qualquer conta, ou `undefined` se nunca houve. */
+  async ultimaFalhaDoGateway(): Promise<UltimaFalhaDoGateway | undefined> {
+    const e = await this.repo.ultimoEventoDoTipo('gateway_falhou');
+    if (!e?.detalhe) return undefined;
+    const campo = (nome: string): string | undefined => new RegExp(`${nome}=(\\S+)`).exec(e.detalhe ?? '')?.[1];
+    const status = campo('status');
+    const codigo = campo('codigo');
+    return {
+      em: e.criadoEm,
+      operacao: campo('operacao') ?? '-',
+      status: status && status !== '-' ? Number(status) : null,
+      codigo: codigo && codigo !== '-' ? codigo : null,
+      motivo: (campo('motivo') as MotivoDoGateway | undefined) ?? 'desconhecido',
+    };
   }
 
   // --- cancelar a renovação ----------------------------------------------------------------------
@@ -322,7 +389,14 @@ export class ServicoPagamentos {
     if (!c || !['pendente', 'autorizada', 'pausada'].includes(c.estado)) {
       throw this.recusa('sem_recorrencia');
     }
-    if (c.gatewayId) await this.gateway.cancelarAssinatura(c.gatewayId);
+    if (c.gatewayId) {
+      try {
+        await this.gateway.cancelarAssinatura(c.gatewayId);
+      } catch (erro) {
+        await this.registrarFalhaDoGateway('cancelarAssinatura', erro, { workspace, referencia: c.referencia });
+        throw erro;
+      }
+    }
     const agora = this.agora();
     await this.repo.atualizar({ ...c, estado: 'cancelada', renovacaoCanceladaEm: agora, atualizadaEm: agora });
     await this.evento('renovacao_cancelada_pelo_usuario', { workspace, referencia: c.referencia });
@@ -374,6 +448,7 @@ export class ServicoPagamentos {
         }
       } catch (erro) {
         falhas++;
+        await this.registrarFalhaDoGateway('reconciliar', erro, { workspace: c.workspace, referencia: c.referencia });
         this.logger.warn('reconciliação de uma assinatura falhou', {
           gateway: this.gateway.nome,
           causa: erro instanceof Error ? erro.name : 'erro',

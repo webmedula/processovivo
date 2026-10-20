@@ -15,6 +15,7 @@ import {
   GatewayDePagamentoRecusouError,
 } from '../../../domain/errors/index.js';
 import type { Clock } from '../../../domain/ports/Clock.js';
+import type { Logger } from '../../../domain/ports/Logger.js';
 import { clockDoSistema } from '../../../domain/ports/Clock.js';
 import type { GatewayDePagamento } from '../../../domain/ports/GatewayDePagamento.js';
 import {
@@ -33,6 +34,7 @@ import {
 } from './mercadoPago.constantes.js';
 import type { RespostaDoGateway, TransporteDoGateway } from './TransporteDoGateway.js';
 import { validarAssinaturaDoWebhook } from './validacaoDeWebhook.js';
+import { lerRecusa, nomesDosCampos } from './recusaDoMercadoPago.js';
 import { MESES_POR_CICLO } from '../../../domain/entities/Plano.js';
 
 export const NOME_MERCADO_PAGO = 'mercadopago';
@@ -89,6 +91,8 @@ export interface OpcoesMercadoPagoAdapter {
   readonly ambiente: 'teste' | 'producao';
   readonly transporte: TransporteDoGateway;
   readonly clock?: Clock;
+  /** Para o `warn` da recusa (v0.45.1). Sem ele a recusa só vira o erro, sem linha de log. */
+  readonly logger?: Logger;
   readonly baseDaApi?: string;
   /** Só para teste: sem espera entre as tentativas de leitura. */
   readonly esperar?: (tentativa: number) => Promise<void>;
@@ -146,6 +150,7 @@ export class MercadoPagoAdapter implements GatewayDePagamento {
       },
     };
     const r = await this.chamar('POST', CAMINHOS.assinaturas, {
+      operacao: 'criarAssinatura',
       corpo: JSON.stringify(corpo),
       idempotencia: pedido.chaveDeIdempotencia,
       repetirLeitura: false,
@@ -167,7 +172,9 @@ export class MercadoPagoAdapter implements GatewayDePagamento {
   }
 
   async consultarAssinatura(id: string): Promise<AssinaturaNoGateway> {
-    const r = await this.chamar('GET', `${CAMINHOS.assinaturas}/${encodeURIComponent(id)}`);
+    const r = await this.chamar('GET', `${CAMINHOS.assinaturas}/${encodeURIComponent(id)}`, {
+      operacao: 'consultarAssinatura',
+    });
     const lido = esquemaDaAssinatura.safeParse(this.json(r));
     if (!lido.success) {
       throw new GatewayDePagamentoRecusouError(this.nome, r.status, 'assinatura fora do contrato');
@@ -188,7 +195,9 @@ export class MercadoPagoAdapter implements GatewayDePagamento {
   }
 
   async consultarCobranca(id: string): Promise<PagamentoNoGateway> {
-    const r = await this.chamar('GET', `${CAMINHOS.cobrancas}/${encodeURIComponent(id)}`);
+    const r = await this.chamar('GET', `${CAMINHOS.cobrancas}/${encodeURIComponent(id)}`, {
+      operacao: 'consultarCobranca',
+    });
     const lido = esquemaDaCobranca.safeParse(this.json(r));
     if (!lido.success) {
       throw new GatewayDePagamentoRecusouError(this.nome, r.status, 'cobrança fora do contrato');
@@ -197,7 +206,9 @@ export class MercadoPagoAdapter implements GatewayDePagamento {
   }
 
   async consultarPagamento(id: string): Promise<PagamentoNoGateway> {
-    const r = await this.chamar('GET', `${CAMINHOS.pagamentos}/${encodeURIComponent(id)}`);
+    const r = await this.chamar('GET', `${CAMINHOS.pagamentos}/${encodeURIComponent(id)}`, {
+      operacao: 'consultarPagamento',
+    });
     const lido = esquemaDoPagamento.safeParse(this.json(r));
     if (!lido.success) {
       throw new GatewayDePagamentoRecusouError(this.nome, r.status, 'pagamento fora do contrato');
@@ -231,6 +242,7 @@ export class MercadoPagoAdapter implements GatewayDePagamento {
     const r = await this.chamar(
       'GET',
       `${CAMINHOS.buscaDeCobrancas}?preapproval_id=${encodeURIComponent(assinaturaId)}`,
+      { operacao: 'listarCobrancas' },
     );
     const lido = esquemaDaBuscaDeCobrancas.safeParse(this.json(r));
     if (!lido.success) {
@@ -241,6 +253,7 @@ export class MercadoPagoAdapter implements GatewayDePagamento {
 
   async cancelarAssinatura(id: string): Promise<void> {
     await this.chamar('PUT', `${CAMINHOS.assinaturas}/${encodeURIComponent(id)}`, {
+      operacao: 'cancelarAssinatura',
       corpo: JSON.stringify({ status: STATUS_PARA_CANCELAR }),
       repetirLeitura: false,
     });
@@ -301,7 +314,12 @@ export class MercadoPagoAdapter implements GatewayDePagamento {
   private async chamar(
     metodo: 'GET' | 'POST' | 'PUT',
     caminho: string,
-    extra: { corpo?: string; idempotencia?: string; repetirLeitura?: boolean } = {},
+    extra: {
+      operacao: string;
+      corpo?: string;
+      idempotencia?: string;
+      repetirLeitura?: boolean;
+    },
   ): Promise<RespostaDoGateway> {
     const repete = metodo === 'GET' && extra.repetirLeitura !== false;
     const tentativas = repete ? TENTATIVAS_DE_LEITURA : 1;
@@ -321,11 +339,37 @@ export class MercadoPagoAdapter implements GatewayDePagamento {
           timeoutMs: TIMEOUT_DO_GATEWAY_MS,
         });
         if (r.status >= 500 || r.status === 429) {
+          this.opcoes.logger?.warn('gateway de pagamento indisponível', {
+            gateway: this.nome,
+            operacao: extra.operacao,
+            status: r.status,
+          });
           ultimo = new GatewayDePagamentoIndisponivelError(this.nome, `HTTP ${r.status}`);
-        } else if (r.status === 401 || r.status === 403) {
-          throw new GatewayDePagamentoRecusouError(this.nome, r.status, 'credencial recusada');
         } else if (r.status >= 400) {
-          throw new GatewayDePagamentoRecusouError(this.nome, r.status, `HTTP ${r.status}`);
+          // Recusa definitiva: o motivo (lista fechada) e o diagnóstico saneado ficam no erro, e o
+          // `warn` é a linha que diz ao dono POR QUÊ — sem token, sem e-mail em claro, sem corpo bruto.
+          const recusa = lerRecusa({
+            operacao: extra.operacao,
+            status: r.status,
+            corpo: r.corpo,
+            camposEnviados: nomesDosCampos(extra.corpo),
+          });
+          this.opcoes.logger?.warn('gateway de pagamento recusou o pedido', {
+            gateway: this.nome,
+            operacao: extra.operacao,
+            status: r.status,
+            motivo: recusa.motivo,
+            erro: recusa.diagnostico.erro,
+            mensagem: recusa.diagnostico.mensagem,
+            causas: recusa.diagnostico.causas,
+            camposEnviados: recusa.diagnostico.camposEnviados,
+          });
+          throw new GatewayDePagamentoRecusouError(
+            this.nome,
+            r.status,
+            r.status === 401 || r.status === 403 ? 'credencial recusada' : `HTTP ${r.status}`,
+            { motivoDoGateway: recusa.motivo, diagnostico: recusa.diagnostico },
+          );
         } else {
           return r;
         }

@@ -42,6 +42,13 @@ var FRASE_DO_MOTIVO={
   sem_recorrencia:'Não há renovação automática para cancelar.',
   plano_desconhecido:'Plano não encontrado.',
   termos_nao_aceitos:'Para continuar, aceite os Termos de Uso.',
+  /* v0.45.1: por que o Mercado Pago falhou — uma frase para cada motivo, sempre NOSSA (a do servidor/gateway
+     nunca é lida). 'indisponivel' também vale quando o proxy troca o corpo por uma página HTML. */
+  email_pagador:'O Mercado Pago não aceitou o e-mail da sua conta como pagador. Fale com a gente para concluir a assinatura.',
+  credencial:'O pagamento está com um problema de configuração do nosso lado. Fale com a gente para concluir a assinatura.',
+  parametro_invalido:'Não conseguimos montar o pedido de pagamento. Fale com a gente para concluir a assinatura.',
+  indisponivel:'O Mercado Pago está fora do ar ou lento agora. Tente de novo em instantes.',
+  desconhecido:'O Mercado Pago recusou o pedido por um motivo que não conseguimos identificar. Tente de novo e, se repetir, fale com a gente.',
   plano_ja_vigente:'Este plano já está vigente nesta conta.'
 };
 var AMBIENTE_DE_TESTE='Ambiente de teste, nenhuma cobrança real.';
@@ -275,6 +282,8 @@ function continuar(botao){
     throw new Error('sem endereço');
   }).catch(function(e){
     var motivo=e&&e.detalhes&&e.detalhes.motivo;
+    /* Sem JSON (o proxy troca 502/503/504 por uma página HTML), só o status sobra: é o gateway fora do ar. */
+    if(!motivo&&e&&(e.status===502||e.status===503||e.status===504))motivo='indisponivel';
     aviso=(motivo&&FRASE_DO_MOTIVO[motivo])||FALHA;
     /* Recusa que não se resolve repetindo: sai da confirmação e relê o estado verdadeiro. */
     if(motivo==='ja_assinante'||motivo==='plano_ja_vigente'||motivo==='plano_nao_vendavel'||motivo==='plano_sem_preco'||motivo==='plano_desconhecido'||motivo==='ciclo_nao_suportado'||motivo==='conta_sem_email'){
