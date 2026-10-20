@@ -410,9 +410,13 @@ dele, o histórico de novidades e a credencial dele no tribunal. Perder isso nã
 > (`rsync --exclude leitor/`). Restaurar um backup não traz PDFs de volta, e
 > não precisa: os jobs aparecem como expirados e o advogado pede de novo.
 
-> **Os custos do processo (v0.47.0) estão no backup.** Os lançamentos (`custos_processo`) e as categorias
-> próprias (`categorias_custo`) moram no mesmo banco SQLite e entram no `VACUUM INTO` como qualquer outro dado:
-> restaurar um backup devolve os custos junto com a carteira. São valores que o advogado informou, dado do
+> **Os custos do processo (v0.47.0, ampliados na v0.48.0) estão no backup, com o histórico e os cancelados.** Os
+> lançamentos (`custos_processo`), os recebimentos do cliente (`recebimentos_processo`), as subcategorias próprias
+> (`categorias_custo`) e o histórico de alterações (`historico_custos`, somente de acréscimo) moram no mesmo banco SQLite e entram no `VACUUM INTO` como qualquer outro dado:
+> restaurar um backup devolve os custos junto com a carteira. **Lançamentos e recebimentos cancelados NÃO são
+> apagados:** ficam guardados, junto com o histórico, enquanto a conta existir — só a exclusão da conta os leva. A
+> migração da 0.48.0 roda sozinha no primeiro arranque (marca `migracao:custos-0.48.0` na tabela `estado`) e é
+> idempotente; tire uma cópia do banco antes do primeiro deploy da versão. São valores que o advogado informou, dado do
 > cliente dele — trate a cópia do banco com o mesmo cuidado das credenciais. O PDF da prestação de contas **não**
 > é guardado em lugar nenhum (nasce na resposta e some), então não há arquivo de custos fora do banco. Nada de
 > configuração nova: o recurso não tem variável de ambiente; quem o liga ou desliga por plano é o `/admin`.

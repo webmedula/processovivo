@@ -44,7 +44,7 @@ afterEach(async () => {
 const novo = (extra: Record<string, unknown> = {}): Record<string, unknown> => ({
   data: '2026-10-15',
   descricao: 'Guia de custas iniciais',
-  categoria: 'custas',
+  categoria: 'CUS-020',
   valorCentavos: 12_345,
   reembolsavel: true,
   ...extra,
@@ -87,7 +87,7 @@ async function conta(email: string): Promise<{ cookie: string; workspace: string
   return { cookie, workspace: achado!.usuario.workspace };
 }
 
-describe('Custos — lançar, listar, editar e excluir', () => {
+describe('Custos — lançar, listar, editar e cancelar', () => {
   it('lança e lista, do mais recente para o mais antigo, com os totais calculados no servidor', async () => {
     expect(
       (await lancar(novo({ data: '2026-10-01', valorCentavos: 1_000 }))).statusCode,
@@ -99,7 +99,7 @@ describe('Custos — lançar, listar, editar e excluir', () => {
             data: '2026-10-10',
             valorCentavos: 2_500,
             reembolsavel: false,
-            categoria: 'outros',
+            categoria: 'OUT-001',
           }),
         )
       ).statusCode,
@@ -116,19 +116,29 @@ describe('Custos — lançar, listar, editar e excluir', () => {
     ]);
     expect(j.totais).toMatchObject({
       quantidade: 3,
-      totalGastoCentavos: 3_800,
+      totalDespesasCentavos: 3_800,
+      pagoPeloEscritorioCentavos: 3_800,
+      pagoPeloClienteCentavos: 0,
       totalReembolsavelCentavos: 1_300,
-      totalRessarcidoCentavos: 0,
+      totalRecebidoCentavos: 0,
       saldoACobrarCentavos: 1_300,
+      creditoDoClienteCentavos: 0,
     });
     expect(j.totais.porCategoria[0]).toMatchObject({
-      categoria: 'outros',
-      nome: 'Outros',
+      categoria: 'OUT-001',
+      nome: 'Outras despesas › Despesa processual não classificada',
       totalCentavos: 2_500,
     });
+    expect(j.lancamentos[0]).toMatchObject({
+      grupo: '12',
+      deposito: false,
+      pagoPor: 'escritorio',
+    });
+    expect(j.grupos).toHaveLength(10);
     expect(j.limites).toMatchObject({
       lancamentosPorProcesso: 500,
-      categoriasProprias: 30,
+      categoriasProprias: 60,
+      recebimentosPorProcesso: 500,
     });
     // O número com ou sem máscara é o mesmo processo.
     const semMascara = await listar(A, NUMERO_TJSP_A.replace(/\D/g, ''));
@@ -156,93 +166,345 @@ describe('Custos — lançar, listar, editar e excluir', () => {
     expect((await listar()).json().totais.totalReembolsavelCentavos).toBe(0);
   });
 
-  it('exclui de vez: some da lista e uma segunda exclusão é 404', async () => {
+  it('não existe rota para apagar: DELETE do lançamento não é aceito e nada some', async () => {
     const id = (await lancar()).json().id as string;
     const r = await servidor.inject({
       method: 'DELETE',
       url: `/v1/custos/${id}`,
       headers: A,
     });
-    expect(r.statusCode).toBe(204);
-    expect((await listar()).json().lancamentos).toEqual([]);
-    const outra = await servidor.inject({
-      method: 'DELETE',
-      url: `/v1/custos/${id}`,
-      headers: A,
-    });
-    expect(outra.statusCode).toBe(404);
+    expect([404, 405]).toContain(r.statusCode);
+    expect((await listar()).json().lancamentos).toHaveLength(1);
   });
 
-  it('o desfazer da tela recria o lançamento como era, inclusive o ressarcimento', async () => {
-    const id = (await lancar(novo({ ressarcidoEm: '2026-10-18' }))).json().id as string;
-    await servidor.inject({ method: 'DELETE', url: `/v1/custos/${id}`, headers: A });
-    const recriado = await lancar(novo({ ressarcidoEm: '2026-10-18' }));
-    expect(recriado.statusCode).toBe(201);
-    expect(recriado.json().ressarcidoEm).toBe('2026-10-18');
-    expect((await listar()).json().totais.totalRessarcidoCentavos).toBe(12_345);
-  });
-});
-
-describe('Custos — ressarcimento', () => {
-  it('marca com a data de hoje (São Paulo) e desmarca; os totais acompanham', async () => {
+  it('cancela: some da lista e dos totais, fica guardado com o motivo, e reativa', async () => {
     const id = (await lancar(novo({ valorCentavos: 10_000 }))).json().id as string;
     await lancar(novo({ valorCentavos: 5_000 }));
 
-    const marcado = await servidor.inject({
-      method: 'PUT',
-      url: `/v1/custos/${id}/ressarcimento`,
+    const c = await servidor.inject({
+      method: 'POST',
+      url: `/v1/custos/${id}/cancelamento`,
+      headers: A,
+      payload: { motivo: 'Processo errado' },
+    });
+    expect(c.statusCode).toBe(200);
+    expect(c.json()).toMatchObject({
+      cancelado: true,
+      motivoDoCancelamento: 'Processo errado',
+    });
+
+    const escondido = (await listar()).json();
+    expect(escondido.lancamentos).toHaveLength(1);
+    expect(escondido.canceladosEscondidos).toBe(1);
+    expect(escondido.totais).toMatchObject({
+      totalDespesasCentavos: 5_000,
+      totalReembolsavelCentavos: 5_000,
+    });
+
+    const todos = (
+      await servidor.inject({
+        method: 'GET',
+        url: `/v1/processos/${NUMERO_TJSP_A}/custos?cancelados=true`,
+        headers: A,
+      })
+    ).json();
+    expect(todos.lancamentos).toHaveLength(2);
+    expect(todos.canceladosEscondidos).toBe(0);
+    // Mostrar os cancelados NÃO os põe nos totais.
+    expect(todos.totais.totalDespesasCentavos).toBe(5_000);
+
+    // Cancelar de novo é idempotente; editar cancelado é recusado até reativar.
+    expect(
+      (
+        await servidor.inject({
+          method: 'POST',
+          url: `/v1/custos/${id}/cancelamento`,
+          headers: A,
+          payload: {},
+        })
+      ).statusCode,
+    ).toBe(200);
+    const edita = await servidor.inject({
+      method: 'PATCH',
+      url: `/v1/custos/${id}`,
+      headers: A,
+      payload: { descricao: 'x' },
+    });
+    expect(edita.statusCode).toBe(400);
+
+    const r = await servidor.inject({
+      method: 'DELETE',
+      url: `/v1/custos/${id}/cancelamento`,
+      headers: A,
+    });
+    expect(r.json()).toMatchObject({ cancelado: false, motivoDoCancelamento: null });
+    expect((await listar()).json().totais.totalDespesasCentavos).toBe(15_000);
+  });
+
+  it('motivo com mais de 200 caracteres é 400 e nada é cancelado', async () => {
+    const id = (await lancar()).json().id as string;
+    const r = await servidor.inject({
+      method: 'POST',
+      url: `/v1/custos/${id}/cancelamento`,
+      headers: A,
+      payload: { motivo: 'm'.repeat(201) },
+    });
+    expect(r.statusCode).toBe(400);
+    expect((await listar()).json().lancamentos).toHaveLength(1);
+  });
+
+  it('despesa paga pelo cliente não gera reembolsável nem saldo, mesmo pedindo "cobrar"', async () => {
+    const r = await lancar(
+      novo({ pagoPor: 'cliente', reembolsavel: true, valorCentavos: 8_000 }),
+    );
+    expect(r.statusCode).toBe(201);
+    expect(r.json()).toMatchObject({ pagoPor: 'cliente', reembolsavel: false });
+    const t = (await listar()).json().totais;
+    expect(t).toMatchObject({
+      totalDespesasCentavos: 8_000,
+      pagoPeloClienteCentavos: 8_000,
+      pagoPeloEscritorioCentavos: 0,
+      totalReembolsavelCentavos: 0,
+      saldoACobrarCentavos: 0,
+    });
+    expect((await lancar(novo({ pagoPor: 'banco' }))).statusCode).toBe(400);
+  });
+
+  it('depósito (Grupo 08) fica fora do total de despesas, em bloco à parte; cobrado, entra no saldo', async () => {
+    await lancar(novo({ valorCentavos: 1_000 }));
+    await lancar(
+      novo({ categoria: 'DEP-001', valorCentavos: 50_000, reembolsavel: true }),
+    );
+    await lancar(
+      novo({ categoria: 'DEP-003', valorCentavos: 7_000, reembolsavel: false }),
+    );
+    const j = (await listar()).json();
+    expect(j.totais).toMatchObject({
+      totalDespesasCentavos: 1_000,
+      totalReembolsavelCentavos: 51_000,
+      reembolsavelDeDepositosCentavos: 50_000,
+      saldoACobrarCentavos: 51_000,
+    });
+    expect(j.totais.depositos).toMatchObject({ quantidade: 2, totalCentavos: 57_000 });
+    expect(j.lancamentos.filter((l: { deposito: boolean }) => l.deposito)).toHaveLength(
+      2,
+    );
+  });
+
+  it('códigos da 0.47.0 ainda são aceitos e viram o código novo (compatibilidade)', async () => {
+    const r = await lancar(novo({ categoria: 'publicacoes' }));
+    expect(r.statusCode).toBe(201);
+    expect(r.json().categoria).toBe('DIL-010');
+  });
+
+  it('o histórico registra criar, editar (valor anterior e novo), cancelar e reativar, em ordem', async () => {
+    const id = (await lancar(novo({ valorCentavos: 10_000 }))).json().id as string;
+    await servidor.inject({
+      method: 'PATCH',
+      url: `/v1/custos/${id}`,
+      headers: A,
+      payload: { valorCentavos: 12_500, categoria: 'PER-001' },
+    });
+    await servidor.inject({
+      method: 'POST',
+      url: `/v1/custos/${id}/cancelamento`,
+      headers: A,
+      payload: { motivo: 'engano' },
+    });
+    await servidor.inject({
+      method: 'DELETE',
+      url: `/v1/custos/${id}/cancelamento`,
+      headers: A,
+    });
+    const h = (
+      await servidor.inject({
+        method: 'GET',
+        url: `/v1/custos/${id}/historico`,
+        headers: A,
+      })
+    ).json();
+    expect(h.eventos.map((e: { operacao: string }) => e.operacao)).toEqual([
+      'criou',
+      'editou',
+      'cancelou',
+      'reativou',
+    ]);
+    expect(h.eventos[1].campos).toEqual([
+      { campo: 'valor', rotulo: 'Valor', de: 'R$ 100,00', para: 'R$ 125,00' },
+      {
+        campo: 'categoria',
+        rotulo: 'Subcategoria',
+        de: 'Custas e taxas judiciais › Outras custas judiciais',
+        para: 'Perícias e avaliações › Honorários de perito judicial',
+      },
+    ]);
+    expect(h.eventos[2].motivo).toBe('engano');
+    // Edição sem mudança não gera evento.
+    await servidor.inject({
+      method: 'PATCH',
+      url: `/v1/custos/${id}`,
+      headers: A,
+      payload: { valorCentavos: 12_500 },
+    });
+    const depois = (
+      await servidor.inject({
+        method: 'GET',
+        url: `/v1/custos/${id}/historico`,
+        headers: A,
+      })
+    ).json();
+    expect(depois.eventos).toHaveLength(4);
+  });
+
+  it('o histórico é só de acréscimo: o repositório nem tem como alterar ou apagar um evento', () => {
+    const fonte = readFileSync(
+      resolve(
+        __dirname,
+        '../../src/infrastructure/persistencia/sqlite/RepositorioDeCustosSqlite.ts',
+      ),
+      'utf8',
+    );
+    expect(fonte).not.toMatch(/UPDATE\s+historico_custos/i);
+    expect(fonte).not.toMatch(/DELETE\s+FROM\s+historico_custos/i);
+    // E nenhum lançamento ou recebimento é apagado: só a exclusão da conta apaga, por loop de tabelas.
+    expect(fonte).not.toMatch(
+      /DELETE\s+FROM\s+(custos_processo|recebimentos_processo)\s+WHERE\s+workspace\s*=\s*\?\s+AND/i,
+    );
+  });
+});
+
+describe('Custos — recebimentos do cliente', () => {
+  function receber(
+    corpo: Record<string, unknown>,
+    h: Record<string, string> = A,
+  ): Promise<LightMyRequestResponse> {
+    return servidor.inject({
+      method: 'POST',
+      url: `/v1/processos/${NUMERO_TJSP_A}/recebimentos`,
+      headers: h,
+      payload: corpo,
+    });
+  }
+
+  it('abate o saldo, é parcial e múltiplo; o excedente vira crédito, nunca saldo negativo', async () => {
+    await lancar(novo({ valorCentavos: 10_000 }));
+    await lancar(novo({ valorCentavos: 5_000 }));
+    expect((await receber({ data: '2026-10-18', valorCentavos: 4_000 })).statusCode).toBe(
+      201,
+    );
+    let t = (await listar()).json().totais;
+    expect(t).toMatchObject({
+      totalRecebidoCentavos: 4_000,
+      saldoACobrarCentavos: 11_000,
+      creditoDoClienteCentavos: 0,
+    });
+
+    await receber({ data: '2026-10-19', valorCentavos: 11_000, observacao: 'Pix' });
+    t = (await listar()).json().totais;
+    expect(t).toMatchObject({ saldoACobrarCentavos: 0, creditoDoClienteCentavos: 0 });
+
+    await receber({ data: '2026-10-20', valorCentavos: 1 });
+    t = (await listar()).json().totais;
+    expect(t).toMatchObject({
+      totalRecebidoCentavos: 15_001,
+      saldoACobrarCentavos: 0,
+      creditoDoClienteCentavos: 1,
+    });
+    const j = (await listar()).json();
+    expect(j.recebimentos).toHaveLength(3);
+    expect(j.recebimentos[0]).toMatchObject({ data: '2026-10-20', cancelado: false });
+  });
+
+  it.each([
+    ['valor zero', { valorCentavos: 0 }],
+    ['valor negativo', { valorCentavos: -1 }],
+    ['fração de centavo', { valorCentavos: 10.5 }],
+    ['acima do teto', { valorCentavos: 100_000_001 }],
+    ['data inexistente', { data: '2026-02-30' }],
+    ['observação longa', { observacao: 'o'.repeat(201) }],
+    ['campo desconhecido', { semNexo: 1 }],
+  ])('recusa recebimento com %s e não grava nada', async (_n, extra) => {
+    const r = await receber({ data: '2026-10-18', valorCentavos: 100, ...extra });
+    expect(r.statusCode).toBe(400);
+    expect((await listar()).json().recebimentos).toEqual([]);
+  });
+
+  it('edita, cancela (sai dos totais), reativa e deixa tudo no histórico', async () => {
+    const id = (await receber({ data: '2026-10-18', valorCentavos: 1_000 })).json()
+      .id as string;
+    await lancar(novo({ valorCentavos: 5_000 }));
+    const ed = await servidor.inject({
+      method: 'PATCH',
+      url: `/v1/recebimentos/${id}`,
+      headers: A,
+      payload: { valorCentavos: 2_000, observacao: 'complemento' },
+    });
+    expect(ed.json()).toMatchObject({ valorCentavos: 2_000, observacao: 'complemento' });
+    expect((await listar()).json().totais.saldoACobrarCentavos).toBe(3_000);
+
+    await servidor.inject({
+      method: 'POST',
+      url: `/v1/recebimentos/${id}/cancelamento`,
       headers: A,
       payload: {},
     });
-    expect(marcado.statusCode).toBe(200);
-    expect(marcado.json().ressarcidoEm).toBe('2026-10-20');
-    let t = (await listar()).json().totais;
-    expect(t).toMatchObject({
-      totalReembolsavelCentavos: 15_000,
-      totalRessarcidoCentavos: 10_000,
-      saldoACobrarCentavos: 5_000,
-    });
+    let j = (await listar()).json();
+    expect(j.recebimentos).toEqual([]);
+    expect(j.canceladosEscondidos).toBe(1);
+    expect(j.totais.saldoACobrarCentavos).toBe(5_000);
 
-    const desmarcado = await servidor.inject({
+    await servidor.inject({
       method: 'DELETE',
-      url: `/v1/custos/${id}/ressarcimento`,
+      url: `/v1/recebimentos/${id}/cancelamento`,
       headers: A,
     });
-    expect(desmarcado.json().ressarcidoEm).toBeNull();
-    t = (await listar()).json().totais;
-    expect(t).toMatchObject({ totalRessarcidoCentavos: 0, saldoACobrarCentavos: 15_000 });
+    j = (await listar()).json();
+    expect(j.recebimentos).toHaveLength(1);
+    expect(j.totais.saldoACobrarCentavos).toBe(3_000);
+
+    const h = (
+      await servidor.inject({
+        method: 'GET',
+        url: `/v1/recebimentos/${id}/historico`,
+        headers: A,
+      })
+    ).json();
+    expect(h.eventos.map((e: { operacao: string }) => e.operacao)).toEqual([
+      'criou',
+      'editou',
+      'cancelou',
+      'reativou',
+    ]);
+    expect(h.eventos[1].campos[0]).toMatchObject({
+      campo: 'valor',
+      de: 'R$ 10,00',
+      para: 'R$ 20,00',
+    });
   });
 
-  it('aceita uma data informada e recusa data impossível', async () => {
+  it('a rota do ressarcimento por lançamento da 0.47.0 não existe mais', async () => {
     const id = (await lancar()).json().id as string;
-    const url = `/v1/custos/${id}/ressarcimento`;
-    const boa = await servidor.inject({
-      method: 'PUT',
-      url,
-      headers: A,
-      payload: { em: '2026-10-02' },
-    });
-    expect(boa.json().ressarcidoEm).toBe('2026-10-02');
-    const ruim = await servidor.inject({
-      method: 'PUT',
-      url,
-      headers: A,
-      payload: { em: '2026-02-30' },
-    });
-    expect(ruim.statusCode).toBe(400);
-  });
-
-  it('despesa que não se cobra do cliente não pode ser ressarcida', async () => {
-    const id = (await lancar(novo({ reembolsavel: false }))).json().id as string;
     const r = await servidor.inject({
       method: 'PUT',
       url: `/v1/custos/${id}/ressarcimento`,
       headers: A,
       payload: {},
     });
-    expect(r.statusCode).toBe(400);
-    expect(r.json().mensagem).toContain('Cobrar do cliente');
+    expect([404, 405]).toContain(r.statusCode);
+    expect((await lancar(novo({ ressarcidoEm: '2026-10-18' }))).statusCode).toBe(400);
   });
+
+  it('o teto é de 500 recebimentos por processo, e reativar também respeita', async () => {
+    for (let i = 0; i < 500; i++) {
+      await app.custos.registrarRecebimento(WS_A, NUMERO_TJSP_A, {
+        data: '2026-10-01',
+        valorCentavos: 100,
+      });
+    }
+    const r = await receber({ data: '2026-10-18', valorCentavos: 100 });
+    expect(r.statusCode).toBe(422);
+    expect(r.json().detalhes).toEqual({ limite: 'recebimentos' });
+  }, 60_000);
 });
 
 describe('Custos — valores e entrada', () => {
@@ -259,6 +521,7 @@ describe('Custos — valores e entrada', () => {
     ['data inexistente', { data: '2026-02-30' }],
     ['data em outro formato', { data: '15/10/2026' }],
     ['categoria que não existe', { categoria: 'inventada' }],
+    ['ressarcimento por lançamento (extinto na 0.48.0)', { ressarcidoEm: '2026-10-10' }],
     ['categoria própria de outra conta', { categoria: 'c-nao-existe' }],
     ['campo desconhecido (corpo estrito)', { semNexo: 1 }],
   ])('recusa %s com 400 e sem gravar nada', async (_nome, extra) => {
@@ -294,7 +557,7 @@ describe('Custos — valores e entrada', () => {
       await app.custos.criar(WS_A, NUMERO_TJSP_A, {
         data: '2026-10-01',
         descricao: `Lançamento ${i}`,
-        categoria: 'outros',
+        categoria: 'OUT-001',
         valorCentavos: 100,
         reembolsavel: false,
       });
@@ -307,64 +570,74 @@ describe('Custos — valores e entrada', () => {
   }, 60_000);
 });
 
-describe('Custos — categorias próprias', () => {
-  async function criarCategoria(nome: string, h = A): Promise<LightMyRequestResponse> {
+describe('Custos — subcategorias próprias', () => {
+  async function criarCategoria(
+    nome: string,
+    h = A,
+    grupo?: string,
+  ): Promise<LightMyRequestResponse> {
     return servidor.inject({
       method: 'POST',
       url: '/v1/custos/categorias',
       headers: h,
-      payload: { nome },
+      payload: grupo ? { nome, grupo } : { nome },
     });
   }
+  const patch = (id: string, payload: Record<string, unknown>, h = A) =>
+    servidor.inject({
+      method: 'PATCH',
+      url: `/v1/custos/categorias/${id}`,
+      headers: h,
+      payload,
+    });
 
-  it('lista a base mais as próprias; cria e usa em um lançamento', async () => {
+  it('lista as 45 pré-cadastradas; cria uma própria (grupo 12 por padrão) e usa em um lançamento', async () => {
     const antes = (
       await servidor.inject({ method: 'GET', url: '/v1/custos/categorias', headers: A })
     ).json();
-    expect(antes.categorias).toHaveLength(7);
+    expect(antes.categorias).toHaveLength(45);
     expect(antes.categorias.every((c: { base: boolean }) => c.base)).toBe(true);
+    expect(antes.grupos).toHaveLength(10);
 
     const nova = await criarCategoria('Cartório do 2º ofício');
     expect(nova.statusCode).toBe(201);
+    expect(nova.json()).toMatchObject({ grupo: '12', deposito: false });
     const codigo = nova.json().codigo as string;
     expect(codigo.startsWith('c-')).toBe(true);
 
     expect((await lancar(novo({ categoria: codigo }))).statusCode).toBe(201);
     const j = (await listar()).json();
-    expect(j.categorias).toHaveLength(8);
+    expect(j.categorias).toHaveLength(46);
     expect(j.totais.porCategoria[0]).toMatchObject({
       categoria: codigo,
-      nome: 'Cartório do 2º ofício',
+      nome: 'Outras despesas › Cartório do 2º ofício',
     });
   });
 
-  it('não repete a lista base nem outra categoria própria (sem acento e sem caixa)', async () => {
-    expect((await criarCategoria('perícia')).statusCode).toBe(400);
-    expect((await criarCategoria('Taxa X')).statusCode).toBe(201);
-    expect((await criarCategoria('  taxa   x ')).statusCode).toBe(400);
+  it('o nome é único DENTRO do grupo (sem acento nem caixa) e não repete a pré-cadastrada do grupo', async () => {
+    expect((await criarCategoria('taxa judiciaria', A, '01')).statusCode).toBe(400);
+    expect((await criarCategoria('taxa judiciaria', A, '12')).statusCode).toBe(201);
+    expect((await criarCategoria('  TAXA   judiciária ', A, '12')).statusCode).toBe(400);
+    // O mesmo nome em outro grupo é outra subcategoria.
+    expect((await criarCategoria('Taxa X', A, '03')).statusCode).toBe(201);
+    expect((await criarCategoria('Taxa X', A, '11')).statusCode).toBe(201);
     expect((await criarCategoria('')).statusCode).toBe(400);
-    expect((await criarCategoria('y'.repeat(41))).statusCode).toBe(400);
+    expect((await criarCategoria('y'.repeat(61))).statusCode).toBe(400);
+    expect((await criarCategoria('Ok', A, '09')).statusCode).toBe(400);
+    expect((await criarCategoria('Ok', A, '10')).statusCode).toBe(400);
   });
 
   it('arquiva em vez de excluir: o lançamento antigo mantém o nome; lançamento novo não a usa', async () => {
     const codigo = (await criarCategoria('Taxa de cartório')).json().codigo as string;
     const id = (await lancar(novo({ categoria: codigo }))).json().id as string;
 
-    const arquivada = await servidor.inject({
-      method: 'PATCH',
-      url: `/v1/custos/categorias/${codigo.slice(2)}`,
-      headers: A,
-      payload: { arquivada: true },
-    });
+    const arquivada = await patch(codigo.slice(2), { arquivada: true });
     expect(arquivada.json().arquivada).toBe(true);
 
     const j = (await listar()).json();
     expect(
       j.categorias.find((c: { codigo: string }) => c.codigo === codigo),
-    ).toMatchObject({
-      nome: 'Taxa de cartório',
-      arquivada: true,
-    });
+    ).toMatchObject({ nome: 'Taxa de cartório', arquivada: true });
     expect((await lancar(novo({ categoria: codigo }))).statusCode).toBe(400);
     // Editar o lançamento antigo, sem trocar de categoria, continua valendo.
     const ed = await servidor.inject({
@@ -376,21 +649,35 @@ describe('Custos — categorias próprias', () => {
     expect(ed.statusCode).toBe(200);
   });
 
-  it('criar de novo o nome de uma arquivada a reativa', async () => {
+  it('criar de novo o nome de uma arquivada do mesmo grupo a reativa', async () => {
     const codigo = (await criarCategoria('Taxa Y')).json().codigo as string;
-    await servidor.inject({
-      method: 'PATCH',
-      url: `/v1/custos/categorias/${codigo.slice(2)}`,
-      headers: A,
-      payload: { arquivada: true },
-    });
+    await patch(codigo.slice(2), { arquivada: true });
     const de_novo = await criarCategoria('Taxa Y');
     expect(de_novo.statusCode).toBe(201);
     expect(de_novo.json()).toMatchObject({ codigo, arquivada: false });
   });
 
-  it('limita 30 categorias próprias ativas; arquivar uma abre vaga', async () => {
-    for (let i = 0; i < 30; i++)
+  it('pode mover a própria de grupo; para o Grupo 08 só se ainda não tem lançamento', async () => {
+    const livre = (await criarCategoria('Caução X')).json().codigo as string;
+    const movida = await patch(livre.slice(2), { grupo: '08' });
+    expect(movida.json()).toMatchObject({ grupo: '08', deposito: true });
+    // Já com lançamento, mudar de natureza reclassificaria totais já prestados: recusado.
+    const usada = (await criarCategoria('Usada Z')).json().codigo as string;
+    await lancar(novo({ categoria: usada }));
+    const recusa = await patch(usada.slice(2), { grupo: '08' });
+    expect(recusa.statusCode).toBe(400);
+    // Entre grupos de despesa, pode.
+    expect((await patch(usada.slice(2), { grupo: '03' })).json().grupo).toBe('03');
+    // Nome repetido no grupo de destino é recusado; corpo vazio e grupo inválido também.
+    await criarCategoria('Dup', A, '12');
+    const dup = (await criarCategoria('Dup', A, '11')).json().codigo as string;
+    expect((await patch(dup.slice(2), { grupo: '12' })).statusCode).toBe(400);
+    expect((await patch(dup.slice(2), {})).statusCode).toBe(400);
+    expect((await patch(dup.slice(2), { grupo: '99' })).statusCode).toBe(400);
+  });
+
+  it('limita 60 subcategorias próprias ativas; arquivar uma abre vaga', async () => {
+    for (let i = 0; i < 60; i++)
       expect((await criarCategoria(`Categoria ${i}`)).statusCode).toBe(201);
     const estouro = await criarCategoria('Uma a mais');
     expect(estouro.statusCode).toBe(422);
@@ -400,22 +687,17 @@ describe('Custos — categorias próprias', () => {
     )
       .json()
       .categorias.find((c: { nome: string }) => c.nome === 'Categoria 0');
-    await servidor.inject({
-      method: 'PATCH',
-      url: `/v1/custos/categorias/${String(primeira.codigo).slice(2)}`,
-      headers: A,
-      payload: { arquivada: true },
-    });
+    await patch(String(primeira.codigo).slice(2), { arquivada: true });
     expect((await criarCategoria('Uma a mais')).statusCode).toBe(201);
   });
 });
 
 describe('Custos — isolamento entre contas', () => {
-  it('uma conta não vê, edita, ressarce nem apaga lançamento de outra', async () => {
+  it('uma conta não vê, edita, cancela nem lê o histórico de lançamento ou recebimento de outra', async () => {
     const id = (await lancar()).json().id as string;
 
     expect((await listar(B)).json().lancamentos).toEqual([]);
-    expect((await listar(B)).json().totais.totalGastoCentavos).toBe(0);
+    expect((await listar(B)).json().totais.totalDespesasCentavos).toBe(0);
 
     const edita = await servidor.inject({
       method: 'PATCH',
@@ -423,27 +705,70 @@ describe('Custos — isolamento entre contas', () => {
       headers: B,
       payload: { descricao: 'invadido' },
     });
-    const ressarce = await servidor.inject({
-      method: 'PUT',
-      url: `/v1/custos/${id}/ressarcimento`,
+    const cancela = await servidor.inject({
+      method: 'POST',
+      url: `/v1/custos/${id}/cancelamento`,
       headers: B,
       payload: {},
     });
-    const apaga = await servidor.inject({
+    const historico = await servidor.inject({
+      method: 'GET',
+      url: `/v1/custos/${id}/historico`,
+      headers: B,
+    });
+    const recId = (
+      await servidor.inject({
+        method: 'POST',
+        url: `/v1/processos/${NUMERO_TJSP_A}/recebimentos`,
+        headers: A,
+        payload: { data: '2026-10-18', valorCentavos: 100 },
+      })
+    ).json().id as string;
+    const recEdita = await servidor.inject({
+      method: 'PATCH',
+      url: `/v1/recebimentos/${recId}`,
+      headers: B,
+      payload: { valorCentavos: 1 },
+    });
+    const recCancela = await servidor.inject({
+      method: 'POST',
+      url: `/v1/recebimentos/${recId}/cancelamento`,
+      headers: B,
+      payload: {},
+    });
+    const recReativa = await servidor.inject({
       method: 'DELETE',
-      url: `/v1/custos/${id}`,
+      url: `/v1/recebimentos/${recId}/cancelamento`,
+      headers: B,
+    });
+    const recHistorico = await servidor.inject({
+      method: 'GET',
+      url: `/v1/recebimentos/${recId}/historico`,
       headers: B,
     });
     // Mesma resposta de "não existe": ninguém confirma um id alheio.
-    for (const r of [edita, ressarce, apaga]) {
+    for (const r of [
+      edita,
+      cancela,
+      historico,
+      recEdita,
+      recCancela,
+      recReativa,
+      recHistorico,
+    ]) {
       expect(r.statusCode).toBe(404);
       expect(r.json().erro).toBe('CUSTO_NAO_ENCONTRADO');
     }
     const a = (await listar(A)).json().lancamentos[0];
-    expect(a).toMatchObject({ descricao: 'Guia de custas iniciais', ressarcidoEm: null });
+    expect(a).toMatchObject({ descricao: 'Guia de custas iniciais', cancelado: false });
+    expect((await listar(A)).json().recebimentos[0]).toMatchObject({
+      valorCentavos: 100,
+      cancelado: false,
+    });
+    expect((await listar(B)).json().recebimentos).toEqual([]);
   });
 
-  it('categoria própria de uma conta não existe para outra', async () => {
+  it('subcategoria própria de uma conta não existe para outra', async () => {
     const codigo = (
       await servidor.inject({
         method: 'POST',
@@ -463,7 +788,7 @@ describe('Custos — isolamento entre contas', () => {
     const dasB = (
       await servidor.inject({ method: 'GET', url: '/v1/custos/categorias', headers: B })
     ).json();
-    expect(dasB.categorias).toHaveLength(7);
+    expect(dasB.categorias).toHaveLength(45);
   });
 
   it('o PDF de uma conta nunca traz lançamento de outra', async () => {
@@ -558,12 +883,19 @@ describe('Custos — autenticação, plano e conta de chave', () => {
       ['GET', `/v1/processos/${NUMERO_TJSP_A}/custos/totais`],
       ['GET', `/v1/processos/${NUMERO_TJSP_A}/custos/prestacao.pdf`],
       ['GET', '/v1/custos/categorias'],
+      ['POST', `/v1/processos/${NUMERO_TJSP_A}/recebimentos`],
     ] as const) {
       const r = await servidor.inject({
         method: metodo,
         url,
         headers: { cookie },
-        ...(metodo === 'POST' ? { payload: novo() } : {}),
+        ...(metodo === 'POST'
+          ? {
+              payload: url.endsWith('/recebimentos')
+                ? { data: '2026-10-18', valorCentavos: 100 }
+                : novo(),
+            }
+          : {}),
       });
       expect(r.statusCode, `${metodo} ${url}`).toBe(403);
     }
@@ -597,7 +929,7 @@ describe('Custos — o processo e a conta', () => {
     expect((await lancar(novo(), A, NUMERO_TJSP_B)).statusCode).toBe(201);
   });
 
-  it('apagar a conta (apagarDoWorkspace) leva lançamentos e categorias, e só os dela', async () => {
+  it('apagar a conta (apagarDoWorkspace) leva lançamentos, recebimentos, categorias e histórico, e só os dela', async () => {
     await lancar();
     await servidor.inject({
       method: 'POST',
@@ -606,14 +938,21 @@ describe('Custos — o processo e a conta', () => {
       payload: { nome: 'Minha' },
     });
     await lancar(novo(), B);
+    await servidor.inject({
+      method: 'POST',
+      url: `/v1/processos/${NUMERO_TJSP_A}/recebimentos`,
+      headers: A,
+      payload: { data: '2026-10-18', valorCentavos: 100 },
+    });
     const n = await app.custos.apagarDoWorkspace(WS_A);
-    expect(n).toBe(2);
+    // lançamento + recebimento + categoria + 2 eventos de histórico (criou lançamento, criou recebimento).
+    expect(n).toBe(5);
     expect((await listar(A)).json().lancamentos).toEqual([]);
     expect(
       (
         await servidor.inject({ method: 'GET', url: '/v1/custos/categorias', headers: A })
       ).json().categorias,
-    ).toHaveLength(7);
+    ).toHaveLength(45);
     expect((await listar(B)).json().lancamentos).toHaveLength(1);
   });
 

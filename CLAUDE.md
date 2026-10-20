@@ -88,7 +88,8 @@ src/
 │   │                            #   prazoEmDias (calculadora, exceção v0.39.0) + atoDoDiario,
 │   │                            #   DestinoDePecas + nomeDoArquivoNoDrive (Drive, v0.42.0),
 │   │                            #   Pagamento (vocabulário de cobrança; ciclo em Plano, v0.44.0)
-│   │                            #   Custo + valorEmReais (centro de custos: lançamento, totais, centavos, v0.47.0)
+│   │                            #   Custo + valorEmReais (centro de custos: lançamento, totais, centavos, v0.47.0),
+│   │                            #   Recebimento + HistoricoDeCustos + CatalogoDeCustos (Grupo › Subcategoria, v0.48.0)
 │   ├── errors/                  # hierarquia de DomainError
 │   ├── ports/                   # ProcessoProvider, RepositorioAcompanhamentos, Cache…
 │   └── usecases/                # BuscarProcessoPorNumero, BuscarProcessosPorOab
@@ -226,9 +227,9 @@ interface ProcessoProvider {
 | `PdfDoLeitorExpiradoError` | pediu recorte de um PDF combinado que já saiu do disco | 410; a tela diz que expirou — NÃO baixa de novo do tribunal sem a pessoa pedir |
 | `PecasForaDoPdfError` | pediu recorte com peça que não está naquele PDF | 400 |
 | `EventoDeCalendarioInvalidoError` | data que não existe, hora fora do relógio, intervalo acima de 400 dias, processo fora da carteira | 400 |
-| `CustoInvalidoError` | valor fora de 1 centavo–R$ 1.000.000,00 ou não inteiro, descrição vazia/longa, data que não existe, categoria inexistente/arquivada/repetida, ressarcir despesa que não se cobra | 400; mensagem curta em português, NUNCA com o valor ou o texto recebidos |
-| `CustoNaoEncontradoError` | lançamento ou categoria de custo que não existe PARA ESTE workspace | 404; mesma resposta para "não existe" e "é de outra conta" |
-| `LimiteDeCustosError` | 500 lançamentos no processo ou 30 categorias próprias ativas na conta | 422 com `detalhes.limite` (`lancamentos` \| `categorias`) |
+| `CustoInvalidoError` | valor fora de 1 centavo–R$ 1.000.000,00 ou não inteiro, descrição/observação/motivo vazio ou longo, data que não existe, subcategoria inexistente/arquivada/repetida no grupo, grupo inválido, editar registro cancelado, mover subcategoria com lançamentos de/para o Grupo 08 | 400; mensagem curta em português, NUNCA com o valor ou o texto recebidos |
+| `CustoNaoEncontradoError` | lançamento, recebimento, subcategoria ou histórico que não existe PARA ESTE workspace | 404; mesma resposta para "não existe" e "é de outra conta" |
+| `LimiteDeCustosError` | 500 lançamentos ou 500 recebimentos no processo, ou 60 subcategorias próprias ativas na conta (v0.48.0) | 422 com `detalhes.limite` (`lancamentos` \| `recebimentos` \| `categorias`) |
 | `EventoDeCalendarioNaoEncontradoError` | evento não existe PARA ESTE workspace | 404; mesma resposta para "não existe" e "é de outro" |
 | `TransicaoDeEventoInvalidaError` | mexer em evento descartado | 409; descartado é final |
 | `FeedDoCalendarioAusenteError` | pediu para alterar o feed e não há feed vigente | 404 na rota autenticada; diz o que falta |
@@ -1837,7 +1838,9 @@ Não são detalhes — moldam o código.
   processo (ou "sigiloso"), nunca título, observação nem trecho. Ver `PrazoNaoCalculavelError`.
 - **Centro de custos do processo: valores sempre em centavos inteiros, custos independentes do acompanhamento, PDF que
   nunca grava e nunca traz dado do processo** (v0.47.0, decisões do dono; versão 1 é MANUAL — sem receita, honorário,
-  parcela, integração bancária nem comprovante). (1) **Valor é inteiro em centavos, em toda camada**: `valor_centavos
+  parcela, integração bancária nem comprovante). **Ampliado na v0.48.0 — ver o item seguinte, que SUBSTITUI nesta
+  descrição: o "Ressarcido" por lançamento (itens 2 e 3), a lista de categorias (itens 2 e 5) e o "excluir é
+  definitivo" (item 8). O resto segue valendo.** (1) **Valor é inteiro em centavos, em toda camada**: `valor_centavos
   INTEGER CHECK > 0` no banco, `valorCentavos` inteiro na API, e a conversão do que a pessoa digita (`1.234,56`,
   `1234,56`) é por TEXTO, nunca por multiplicação de decimal (`domain/entities/valorEmReais.ts`: funções puras,
   autocontidas, injetadas no console por `toString()` — o navegador, o servidor e os testes exercitam a MESMA). O
@@ -1872,6 +1875,42 @@ Não são detalhes — moldam o código.
   de 1100 px, caixa "Ressarcido" com as classes `sit-*` da "Cumprido" (otimista com reversão). A dica da caixa cresce
   para a ESQUERDA (`.cust .sit-dica`): a de Atualizações cresce para a direita no empilhado e criaria rolagem horizontal.
   Teste de navegador: `tests/browser/custos-navegador.spec.ts`.
+- **Centro de custos, ampliação da v0.48.0: recebimentos do cliente, quem pagou, depósito derivado do grupo, cancelar em
+  vez de excluir com histórico somente de acréscimo, catálogo em dois níveis** (decisões do dono; continua um advogado só:
+  **fora de escopo, não implementar:** honorários, multas, contas a pagar, vencimentos, previsto × pago, alertas, integração
+  bancária, cálculo de custas, perfis, permissões, multiusuário e **eventos de depósito** — levantamento, restituição e
+  conversão ficam na descrição/observação). (1) **Recebimentos** (`recebimentos_processo`, por processo, `valor_centavos`
+  inteiro > 0, observação ≤ 200): substituem o `ressarcido_em` por lançamento (coluna mantida, sem uso; nada é apagado).
+  **Saldo a cobrar = reembolsável − recebido, nunca negativo; o excedente é "Crédito do cliente", jamais saldo
+  negativo.** `calcularTotais` segue o ÚNICO lugar que soma (despesas, pago pelo escritório, pago pelo cliente,
+  reembolsável, recebido, saldo, crédito e o bloco de depósitos). (2) **`pago_por`** (`escritorio` | `cliente`): despesa paga
+  pelo cliente conta nas despesas e NÃO gera reembolsável nem saldo — o servidor desliga "Cobrar do cliente" à força.
+  (3) **Depósito = Grupo 08, derivado do grupo** (`ehGrupoDeDeposito`), nunca um campo solto: fica fora do total de
+  despesas e dos subtotais, em bloco próprio; depósito adiantado e cobrado entra no saldo, identificado. Subcategoria
+  própria com lançamentos NÃO muda entre o 08 e os demais grupos (reclassificaria totais já prestados). (4) **Cancelar em
+  vez de excluir:** `cancelado_em` + motivo opcional (≤ 200); nenhuma rota nem tela apaga lançamento ou recebimento; o
+  cancelado fica fora de totais, PDFs e (0.49.0) CSV, aparece só em "Mostrar cancelados" e se reativa; o "Cancelado.
+  Desfazer" de 6 s só reativa o MESMO registro. **Só a exclusão da conta (`apagarDoWorkspace`) apaga, e leva junto o histórico;
+  cancelados e histórico ficam guardados enquanto a conta existir e entram no backup (DEPLOY.md).** Registro cancelado não
+  se edita (reative antes); o teto de lançamentos conta só os ativos e reativar o confere. (5) **Histórico**
+  (`historico_custos`) é SOMENTE DE ACRÉSCIMO: o repositório só insere e lê, e grava o evento na MESMA transação da mudança;
+  guarda criou/editou/cancelou/reativou e, nas edições, os campos com o valor anterior e o novo (valor, data, subcategoria,
+  pago por, cobrar do cliente); texto livre (descrição, observação) vira "alterada", sem copiar o texto. Sem usuário: só há
+  um por conta. (6) **Catálogo em dois níveis, Grupo › Subcategoria, com códigos PERMANENTES** (`CatalogoDeCustos.ts`):
+  grupos 01–08, 11 e 12 (**não existem 09 Multas nem 10 Honorários**), 45 subcategorias pré-cadastradas FIXAS (nunca se
+  apaga nem se renumera código), próprias em qualquer grupo (`c-<id>`, até 60 ativas, nome ≤ 60, único DENTRO do grupo pela
+  chave `<grupo>:<nome sem acento>`; arquivam, reativam e mudam de grupo). **O catálogo é um cadastro de classificação: não
+  afirma que determinada cobrança seja exigível em um processo (isso depende da lei, da tabela do tribunal e da situação
+  processual) e não calcula custas.** Migração única e idempotente (`migrarCustosPara048`, marca
+  `migracao:custos-0.48.0` em `estado`): categorias antigas → CUS-020, PER-001, DIL-001, ADM-001, ADM-004, DIL-010 (Publicações:
+  a antiga era genérica) e OUT-001; próprias → Grupo 12; cada lançamento reembolsável ressarcido gera UM recebimento
+  ("Migrado da versão anterior", id derivado do lançamento). O servidor ainda traduz os códigos antigos. (7) **PDF** (continua
+  sem partes, sem texto de ato, sem gravar): categoria "Grupo › Subcategoria", "pago por", depósitos em bloco à parte,
+  recebimentos, saldo e crédito; cancelados nunca aparecem. **Fica para a v0.49.0:** tela "Custos" por cliente (depende do
+  rótulo de cliente, que só existe em processo ACOMPANHADO — sem ele o processo cai em "Sem cliente"; "Deixar de acompanhar"
+  avisará disso), PDF consolidado, CSV (UTF-8 com BOM, `;`, vírgula decimal, proteção contra injeção de fórmula; sem XLSX,
+  que exigiria biblioteca de zip) e comprovantes (só no Google Drive do advogado, ≤ 5 arquivos de 5 MB, nunca gravados no
+  servidor).
 - **O calendário LÊ datas; não calcula prazo** (v0.32.0; **exceção registrada na v0.39.0: o aviso
   a partir da análise por IA, item acima — fora dele a regra segue valendo**). Evento detectado só
   nasce de data EXPLÍCITA no texto do andamento, colada a um gatilho na mesma
@@ -1967,7 +2006,7 @@ teste e carência** (v0.28.0), **visual novo a partir do logo** (v0.29.0),
 **tela do processo sem os blocos "Pede providência" e "Última movimentação", Partes logo abaixo das peças** (v0.41.1), **Google Drive: conectar a conta do advogado e salvar as peças da Pasta digital numa pasta "Processo Vivo", por botão, escopo `drive.file`, desligado por padrão, planos Peças e IA** (v0.42.0), **Drive: o retorno do OAuth usa o workspace do `state` assinado e a conta de chave de API também conecta** (v0.42.1), **testes estáveis no CI e a volta do Google sem corrida no console** (v0.42.2), **Atualizações: situação como texto e caixa "Cumprido" como único controle, com aviso para desfazer** (v0.43.0), **cobrança recorrente pelo Mercado Pago, parte 1: assinatura por cartão atrás da porta de pagamento, webhook idempotente, reconciliação e ciclo no plano** (v0.44.0), **ambiente do pagamento declarado em `PROCESSOVIVO_PAGAMENTO_AMBIENTE`, não deduzido do token** (v0.44.1),
 **página de vendas: vitrine pública `GET /v1/planos`, plano escolhido atravessando cadastro e login, confirmação de assinatura com aceite dos Termos obrigatório e trecho para o site** (v0.45.0), **recusa do gateway com motivo de lista fechada, log saneado, 422/503 em JSON e a última falha no /admin** (v0.45.1), **tabela de Atualizações mais limpa: Atualização em uma linha, datas estreitas e coluna "Cumprido" só com a caixa e a dica** (v0.46.0),
 **tabela de Atualizações: caixa "Cumprido" na coluna Ações, Partes mais larga, sem o selo "outro destinatário" na linha e sem a frase fixa sob o filtro** (v0.46.1),
-**centro de custos do processo: lançamentos manuais por processo, categorias próprias, totais no servidor, caixa "Ressarcido" e prestação de contas em PDF para o cliente** (v0.47.0),
+**centro de custos do processo: lançamentos manuais por processo, categorias próprias, totais no servidor, caixa "Ressarcido" e prestação de contas em PDF para o cliente** (v0.47.0), **custos: recebimentos do cliente com saldo e crédito, quem pagou, depósitos fora das despesas, cancelar com histórico e catálogo Grupo › Subcategoria** (v0.48.0),
 Dockerfile multi-stage, CI, 2961 testes.
 
 **Pasta digital (v0.33.0, backend):** `GET /v1/processos/:numero/pasta` (lista +

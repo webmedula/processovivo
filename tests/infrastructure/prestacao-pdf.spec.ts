@@ -35,6 +35,15 @@ function texto(pdf: Uint8Array, pagina?: number, bruto = false): string {
 }
 const plano = (t: string): string => t.replace(/\s+/g, ' ');
 
+const TOTAIS: DocumentoDePrestacao['totais'] = [
+  { rotulo: 'Total de despesas', valor: 'R$ 150,00' },
+  { rotulo: 'Pago pelo escritório', valor: 'R$ 130,00' },
+  { rotulo: 'Pago diretamente pelo cliente', valor: 'R$ 20,00' },
+  { rotulo: 'Total a cobrar do cliente (reembolsável)', valor: 'R$ 120,00' },
+  { rotulo: 'Total recebido do cliente', valor: 'R$ 20,00' },
+  { rotulo: 'Saldo a cobrar', valor: 'R$ 100,00', destaque: true },
+];
+
 function documento(
   n: number,
   extra: Partial<DocumentoDePrestacao> = {},
@@ -42,10 +51,17 @@ function documento(
   const linhas = Array.from({ length: n }, (_, i) => ({
     data: `${String((i % 28) + 1).padStart(2, '0')}/09/2026`,
     descricao: `Despesa sintética número ${i + 1} do processo de teste, com texto para exercitar a quebra de linha`,
-    categoria: i % 2 ? 'Custas judiciais' : 'Cópias e impressões',
+    categoria:
+      i % 2
+        ? 'Custas e taxas judiciais › Outras custas judiciais'
+        : 'Despesas administrativas › Cópias e digitalizações',
     valor: reaisDeCentavos(100_000 + i),
     situacao:
-      i % 3 === 0 ? 'A cobrar' : i % 3 === 1 ? 'Ressarcido em 05/10/2026' : 'Não cobrado',
+      i % 3 === 0
+        ? 'Pago pelo escritório · a cobrar do cliente'
+        : i % 3 === 1
+          ? 'Pago pelo cliente'
+          : 'Pago pelo escritório · não cobrado',
   }));
   return {
     numeroProcesso: '1234567-47.2023.8.26.0100',
@@ -54,24 +70,21 @@ function documento(
     filtros: [],
     versao: '9.9.9-teste',
     linhas,
+    depositos: [],
+    recebimentos: [],
     subtotais: [
       {
-        categoria: 'Custas judiciais',
+        categoria: 'Custas e taxas judiciais › Outras custas judiciais',
         quantidade: Math.floor(n / 2),
         valor: 'R$ 100,00',
       },
       {
-        categoria: 'Cópias e impressões',
+        categoria: 'Despesas administrativas › Cópias e digitalizações',
         quantidade: Math.ceil(n / 2),
         valor: 'R$ 50,00',
       },
     ],
-    totais: {
-      gasto: 'R$ 150,00',
-      reembolsavel: 'R$ 120,00',
-      ressarcido: 'R$ 20,00',
-      saldoACobrar: 'R$ 100,00',
-    },
+    totais: TOTAIS,
     ...extra,
   };
 }
@@ -110,12 +123,15 @@ describe('PrestacaoDeContasPdf', () => {
       'Data Descrição Categoria Valor Situação',
       '01/09/2026',
       'R$ 1.000,00',
-      'A cobrar',
-      'Subtotais por categoria',
+      'Pago pelo escritório',
+      'Cópias e digitalizações',
+      'Subtotais das despesas por categoria',
       '1 lançamento',
-      'Total gasto R$ 150,00',
+      'Total de despesas R$ 150,00',
+      'Pago pelo escritório R$ 130,00',
+      'Pago diretamente pelo cliente R$ 20,00',
       'Total a cobrar do cliente (reembolsável) R$ 120,00',
-      'Total já ressarcido R$ 20,00',
+      'Total recebido do cliente R$ 20,00',
       'Saldo a cobrar R$ 100,00',
       'Valores informados pelo advogado. Gerado pelo Processo Vivo, versão 9.9.9-teste.',
       'Página 1 de 1',
@@ -147,7 +163,7 @@ describe('PrestacaoDeContasPdf', () => {
     }
     const ultima = plano(texto(bytes, paginas));
     expect(ultima).toContain('Saldo a cobrar R$ 100,00');
-    expect(ultima).toContain('Total gasto R$ 150,00');
+    expect(ultima).toContain('Total de despesas R$ 150,00');
     expect(linhasLidas).toBe(200);
     // Nenhuma linha se perdeu nem se repetiu.
     const todo = plano(texto(bytes));
@@ -164,30 +180,28 @@ describe('PrestacaoDeContasPdf', () => {
       const paginas = (await PDFDocument.load(bytes)).getPageCount();
       const ultima = plano(texto(bytes, paginas));
       expect(ultima, `n=${n}`).toContain('Saldo a cobrar R$ 100,00');
-      expect(ultima, `n=${n}`).toContain('Total gasto');
-      expect(ultima, `n=${n}`).toContain('Total já ressarcido');
+      expect(ultima, `n=${n}`).toContain('Total de despesas');
+      expect(ultima, `n=${n}`).toContain('Total recebido do cliente');
       if (!/Despesa sintética/.test(ultima)) viuPaginaSoDeTotais = true;
     }
     expect(viuPaginaSoDeTotais).toBe(true);
   }, 60_000);
 
-  it('sem lançamentos, diz que não há e mantém os totais', async () => {
+  it('sem despesas, diz que não há e mantém os totais', async () => {
     const t = plano(
       texto(
         await gerador.gerar(
           documento(0, {
             subtotais: [],
-            totais: {
-              gasto: 'R$ 0,00',
-              reembolsavel: 'R$ 0,00',
-              ressarcido: 'R$ 0,00',
-              saldoACobrar: 'R$ 0,00',
-            },
+            totais: [
+              { rotulo: 'Total de despesas', valor: 'R$ 0,00' },
+              { rotulo: 'Saldo a cobrar', valor: 'R$ 0,00', destaque: true },
+            ],
           }),
         ),
       ),
     );
-    expect(t).toContain('Nenhum lançamento neste filtro.');
+    expect(t).toContain('Nenhuma despesa neste filtro.');
     expect(t).toContain('Saldo a cobrar R$ 0,00');
   });
 
@@ -200,9 +214,9 @@ describe('PrestacaoDeContasPdf', () => {
           data: '01/09/2026',
           descricao:
             'Locação de veículo — diligência à comarca de São José do Rio Preto 😀 ✓',
-          categoria: 'Publicações',
+          categoria: 'Diligências e comunicações › Outras diligências',
           valor: 'R$ 1,00',
-          situacao: 'A cobrar',
+          situacao: 'Pago pelo escritório · a cobrar do cliente',
         },
       ],
     });
@@ -219,14 +233,55 @@ describe('PrestacaoDeContasPdf', () => {
         {
           data: '01/09/2026',
           descricao: 'W'.repeat(200),
-          categoria: 'Outros',
+          categoria: 'Outras despesas › Despesa processual não classificada',
           valor: 'R$ 1,00',
-          situacao: 'A cobrar',
+          situacao: 'Pago pelo escritório · a cobrar do cliente',
         },
       ],
     });
     expect((await PDFDocument.load(bytes)).getPageCount()).toBe(1);
     expect(texto(bytes, undefined, true).replace(/\s+/g, '')).toContain('W'.repeat(200));
+  });
+
+  it('depósitos e garantias saem em bloco à parte; recebimentos e crédito aparecem; saldo à vista', async () => {
+    const d = documento(2);
+    const bytes = await gerador.gerar({
+      ...d,
+      depositos: [
+        {
+          data: '03/10/2026',
+          descricao: 'Depósito judicial sintético',
+          categoria: 'Depósitos e garantias › Depósito judicial',
+          valor: 'R$ 500,00',
+          situacao: 'Pago pelo escritório · a cobrar do cliente',
+        },
+      ],
+      recebimentos: [
+        { data: '10/10/2026', observacao: 'Pix parcial sintético', valor: 'R$ 30,00' },
+      ],
+      totais: [
+        ...TOTAIS.slice(0, 4),
+        { rotulo: 'dos quais depósitos e garantias', valor: 'R$ 500,00', recuado: true },
+        { rotulo: 'Total recebido do cliente', valor: 'R$ 30,00' },
+        { rotulo: 'Saldo a cobrar', valor: 'R$ 0,00', destaque: true },
+        { rotulo: 'Crédito do cliente', valor: 'R$ 12,00', destaque: true },
+        {
+          rotulo: 'Depósitos e garantias (fora do total de despesas)',
+          valor: 'R$ 500,00',
+        },
+      ],
+    });
+    const t = plano(texto(bytes));
+    const iDeposito = t.indexOf('Depósito judicial sintético');
+    expect(t).toContain('Depósitos e garantias Não entram no total de despesas.');
+    // O depósito vem DEPOIS de todas as despesas, e nunca entre elas.
+    expect(iDeposito).toBeGreaterThan(t.lastIndexOf('Despesa sintética número 2'));
+    expect(t).toContain('Recebimentos do cliente');
+    expect(t).toContain('Pix parcial sintético');
+    expect(t).toContain('dos quais depósitos e garantias R$ 500,00');
+    expect(t).toContain('Crédito do cliente R$ 12,00');
+    expect(t).toContain('Saldo a cobrar R$ 0,00');
+    expect(t).toContain('Depósitos e garantias (fora do total de despesas) R$ 500,00');
   });
 
   it('o gerador e o serviço não escrevem em disco', () => {
@@ -307,7 +362,7 @@ describe('Prestação de contas — pelo serviço e pela API', () => {
     ({
       data: '2026-09-10',
       descricao: 'Despesa',
-      categoria: 'custas',
+      categoria: 'CUS-020',
       valorCentavos: 10_000,
       reembolsavel: true,
       ...extra,
@@ -387,7 +442,7 @@ describe('Prestação de contas — pelo serviço e pela API', () => {
     await servidor.close();
   });
 
-  it('filtra por período e por "somente o que está a cobrar", e os totais acompanham o filtro', async () => {
+  it('filtra por período e por "somente o que está a cobrar"; recebimentos abatem o saldo', async () => {
     const { app, servidor } = montar();
     await app.custos.criar(
       WS,
@@ -399,9 +454,9 @@ describe('Prestação de contas — pelo serviço e pela API', () => {
       NUMERO_TJSP_A,
       dados({
         data: '2026-09-10',
-        descricao: 'Setembro ressarcido',
+        descricao: 'Setembro pago pelo cliente',
         valorCentavos: 2_000,
-        ressarcidoEm: '2026-09-20',
+        pagoPor: 'cliente',
       }),
     );
     await app.custos.criar(
@@ -419,6 +474,11 @@ describe('Prestação de contas — pelo serviço e pela API', () => {
         reembolsavel: false,
       }),
     );
+    await app.custos.registrarRecebimento(WS, NUMERO_TJSP_A, {
+      data: '2026-09-20',
+      valorCentavos: 1_500,
+      observacao: 'Recebimento de setembro',
+    });
 
     const pegar = async (q: string): Promise<string> => {
       const r = await servidor.inject({
@@ -431,25 +491,28 @@ describe('Prestação de contas — pelo serviço e pela API', () => {
     };
 
     const tudo = await pegar('');
-    expect(tudo).toContain('Total gasto R$ 150,00');
-    expect(tudo).toContain('Total já ressarcido R$ 20,00');
-    expect(tudo).toContain('Saldo a cobrar R$ 50,00');
+    expect(tudo).toContain('Total de despesas R$ 150,00');
+    expect(tudo).toContain('Pago diretamente pelo cliente R$ 20,00');
+    expect(tudo).toContain('Total a cobrar do cliente (reembolsável) R$ 50,00');
+    expect(tudo).toContain('Total recebido do cliente R$ 15,00');
+    expect(tudo).toContain('Saldo a cobrar R$ 35,00');
+    expect(tudo).toContain('Recebimento de setembro');
+    expect(tudo).toContain('Pago pelo cliente');
     // Do mais antigo para o mais novo.
     expect(tudo.indexOf('Agosto cobrado')).toBeLessThan(tudo.indexOf('Setembro cobrar'));
 
     const setembro = await pegar('de=2026-09-01&ate=2026-09-30');
     expect(setembro).toContain('Período: de 01/09/2026 até 30/09/2026');
     expect(setembro).not.toContain('Agosto cobrado');
-    expect(setembro).toContain('Total gasto R$ 140,00');
+    expect(setembro).toContain('Total de despesas R$ 140,00');
 
     const aCobrar = await pegar('somenteACobrar=true');
     expect(aCobrar).toContain('Somente o que está a cobrar do cliente');
     expect(aCobrar).toContain('Agosto cobrado');
     expect(aCobrar).toContain('Setembro cobrar');
-    expect(aCobrar).not.toContain('Setembro ressarcido');
+    expect(aCobrar).not.toContain('Setembro pago pelo cliente');
     expect(aCobrar).not.toContain('Setembro interno');
-    expect(aCobrar).toContain('Total gasto R$ 50,00');
-    expect(aCobrar).toContain('Saldo a cobrar R$ 50,00');
+    expect(aCobrar).toContain('Total de despesas R$ 50,00');
 
     for (const ruim of [
       'de=2026-02-30',
@@ -464,6 +527,57 @@ describe('Prestação de contas — pelo serviço e pela API', () => {
       });
       expect(r.statusCode, ruim).toBe(400);
     }
+    await servidor.close();
+  });
+
+  it('cancelados ficam fora; depósito vai em bloco à parte; excedente aparece como crédito', async () => {
+    const { app, servidor } = montar();
+    const cancelado = await app.custos.criar(
+      WS,
+      NUMERO_TJSP_A,
+      dados({ descricao: 'Lançamento cancelado SUMIDO', valorCentavos: 9_999 }),
+    );
+    await app.custos.cancelar(WS, cancelado.id, 'engano');
+    const recCancelado = await app.custos.registrarRecebimento(WS, NUMERO_TJSP_A, {
+      data: '2026-09-20',
+      valorCentavos: 8_888,
+      observacao: 'Recebimento cancelado SUMIDO',
+    });
+    await app.custos.cancelarRecebimento(WS, recCancelado.id);
+    await app.custos.criar(
+      WS,
+      NUMERO_TJSP_A,
+      dados({ descricao: 'Despesa comum', valorCentavos: 1_000 }),
+    );
+    await app.custos.criar(
+      WS,
+      NUMERO_TJSP_A,
+      dados({
+        descricao: 'Depósito sintético',
+        categoria: 'DEP-001',
+        valorCentavos: 20_000,
+      }),
+    );
+    await app.custos.registrarRecebimento(WS, NUMERO_TJSP_A, {
+      data: '2026-09-21',
+      valorCentavos: 25_000,
+    });
+    const r = await servidor.inject({
+      method: 'GET',
+      url: `/v1/processos/${NUMERO_TJSP_A}/custos/prestacao.pdf`,
+      headers: H,
+    });
+    const t = plano(texto(new Uint8Array(r.rawPayload)));
+    expect(t).not.toContain('SUMIDO');
+    expect(t).not.toContain('99,99');
+    expect(t).not.toContain('88,88');
+    expect(t).toContain('Total de despesas R$ 10,00');
+    expect(t).toContain('Depósitos e garantias Não entram no total de despesas.');
+    expect(t).toContain('dos quais depósitos e garantias R$ 200,00');
+    expect(t).toContain('Total a cobrar do cliente (reembolsável) R$ 210,00');
+    expect(t).toContain('Saldo a cobrar R$ 0,00');
+    expect(t).toContain('Crédito do cliente R$ 40,00');
+    expect(t.indexOf('Depósito sintético')).toBeGreaterThan(t.indexOf('Despesa comum'));
     await servidor.close();
   });
 
@@ -485,7 +599,7 @@ describe('Prestação de contas — pelo serviço e pela API', () => {
       expect(r.statusCode).toBe(200);
       const t = plano(texto(new Uint8Array(r.rawPayload)));
       // 200 × R$ 1,00 + (0+…+199) centavos = 20.000 + 19.900 centavos = R$ 399,00.
-      expect(t).toContain('Total gasto R$ 399,00');
+      expect(t).toContain('Total de despesas R$ 399,00');
     }
     await servidor.close();
   }, 60_000);
