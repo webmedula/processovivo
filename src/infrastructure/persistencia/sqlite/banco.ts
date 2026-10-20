@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { MAPA_DE_CATEGORIAS_ANTIGAS } from '../../../domain/entities/CatalogoDeCustos.js';
 import { PLANOS_INICIAIS } from '../../../domain/entities/Plano.js';
 import { paraBusca } from '../normalizacaoBusca.js';
 
@@ -590,7 +591,13 @@ const ESQUEMA = [
      categoria       TEXT NOT NULL,
      valor_centavos  INTEGER NOT NULL CHECK (valor_centavos > 0),
      reembolsavel    INTEGER NOT NULL DEFAULT 0,
+     -- v0.48.0: ressarcido_em NÃO é mais usada (o reembolso virou recebimento por processo), mas a
+     -- coluna fica: nada da 0.47.0 é apagado. A migração a lê UMA vez.
      ressarcido_em   TEXT,
+     -- v0.48.0: quem pagou ('escritorio' | 'cliente') e o cancelamento (nunca se apaga).
+     pago_por        TEXT NOT NULL DEFAULT 'escritorio',
+     cancelado_em    TEXT,
+     cancelado_motivo TEXT,
      criado_em       TEXT NOT NULL,
      atualizado_em   TEXT NOT NULL,
      PRIMARY KEY (workspace, id)
@@ -602,12 +609,48 @@ const ESQUEMA = [
      workspace   TEXT NOT NULL,
      id          TEXT NOT NULL,
      nome        TEXT NOT NULL,
+     -- v0.48.0: nome_chave passa a ser <grupo>:<nome sem acento>, único DENTRO do grupo.
      nome_chave  TEXT NOT NULL,
+     grupo       TEXT NOT NULL DEFAULT '12',
      arquivada   INTEGER NOT NULL DEFAULT 0,
      criada_em   TEXT NOT NULL,
      PRIMARY KEY (workspace, id),
      UNIQUE (workspace, nome_chave)
    )`,
+  // Recebimentos do cliente (v0.48.0): por processo, parciais e quantos forem. valor_centavos é
+  // INTEIRO e positivo. Cancelado fica guardado (cancelado_em) e pode ser reativado; nada é apagado.
+  `CREATE TABLE IF NOT EXISTS recebimentos_processo (
+     workspace        TEXT NOT NULL,
+     id               TEXT NOT NULL,
+     numero           TEXT NOT NULL,
+     data             TEXT NOT NULL,
+     valor_centavos   INTEGER NOT NULL CHECK (valor_centavos > 0),
+     observacao       TEXT,
+     cancelado_em     TEXT,
+     cancelado_motivo TEXT,
+     criado_em        TEXT NOT NULL,
+     atualizado_em    TEXT NOT NULL,
+     PRIMARY KEY (workspace, id)
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_recebimentos_processo
+     ON recebimentos_processo (workspace, numero, data DESC)`,
+  // Histórico dos custos (v0.48.0): SOMENTE ACRÉSCIMO. O repositório só insere e lê; nada atualiza
+  // nem apaga uma linha daqui (só a exclusão da conta). campos é JSON com os campos alterados (valor
+  // anterior e novo); texto livre do advogado nunca é copiado para cá.
+  `CREATE TABLE IF NOT EXISTS historico_custos (
+     workspace   TEXT NOT NULL,
+     id          TEXT NOT NULL,
+     numero      TEXT NOT NULL,
+     entidade    TEXT NOT NULL,
+     entidade_id TEXT NOT NULL,
+     operacao    TEXT NOT NULL,
+     quando      TEXT NOT NULL,
+     campos      TEXT NOT NULL DEFAULT '[]',
+     motivo      TEXT,
+     PRIMARY KEY (workspace, id)
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_historico_custos
+     ON historico_custos (workspace, entidade, entidade_id, quando)`,
 
   `CREATE INDEX IF NOT EXISTS idx_sessoes_usuario ON sessoes(usuario_id)`,
   `CREATE INDEX IF NOT EXISTS idx_sessoes_expira ON sessoes(expira_em)`,
@@ -762,6 +805,7 @@ export function abrirBanco(caminho: string): DatabaseSync {
   acrescentarCalendarioAosPlanos(db);
   acrescentarSalvarNoDriveAosPlanos(db);
   acrescentarCustosAosPlanos(db);
+  migrarCustosPara048(db);
   retrocarregarAssinaturas(db);
 
   // Segunda passagem: o esquema já existe, então dá para perguntar ao banco se
@@ -851,6 +895,16 @@ const COLUNAS_ACRESCENTADAS: ReadonlyArray<{
   // v0.44.0: o ciclo do plano. Padrão seguro `mensal` para toda linha já gravada (sem retrocarga: o
   // valor padrão É a verdade de todo plano anterior).
   { tabela: 'planos', coluna: 'ciclo', tipo: "TEXT NOT NULL DEFAULT 'mensal'" },
+  // v0.48.0: custos. Padrão seguro para toda linha já gravada: quem pagou foi o escritório, e nada
+  // está cancelado. A migração de dados (recebimentos, categorias) é à parte e marcada em `estado`.
+  {
+    tabela: 'custos_processo',
+    coluna: 'pago_por',
+    tipo: "TEXT NOT NULL DEFAULT 'escritorio'",
+  },
+  { tabela: 'custos_processo', coluna: 'cancelado_em', tipo: 'TEXT' },
+  { tabela: 'custos_processo', coluna: 'cancelado_motivo', tipo: 'TEXT' },
+  { tabela: 'categorias_custo', coluna: 'grupo', tipo: "TEXT NOT NULL DEFAULT '12'" },
 ];
 
 function migrarColunas(db: DatabaseSync): void {
@@ -1095,6 +1149,119 @@ function acrescentarCustosAosPlanos(db: DatabaseSync): void {
     db.exec('ROLLBACK');
     throw erro;
   }
+}
+
+/** Marca, na tabela `estado`, de que a migração dos custos para a 0.48.0 já rodou. */
+export const MARCA_CUSTOS_048 = 'migracao:custos-0.48.0';
+
+export interface ResultadoDaMigracaoDosCustos {
+  readonly jaFeita: boolean;
+  readonly lancamentosReclassificados: number;
+  readonly recebimentosCriados: number;
+  readonly categoriasProprias: number;
+}
+
+/**
+ * Migração dos custos para a 0.48.0, UMA vez por banco (marca em `estado`) e idempotente mesmo sem a
+ * marca (os recebimentos têm id derivado do lançamento: rodar de novo não duplica). Nada é apagado.
+ *
+ * 1. Categorias da 0.47.0 viram as subcategorias do catálogo novo (`MAPA_DE_CATEGORIAS_ANTIGAS`).
+ * 2. Categorias próprias ficam no Grupo 12 (a coluna já nasceu com esse padrão); só a chave de
+ *    unicidade ganha o prefixo do grupo.
+ * 3. Cada lançamento ressarcido gera UM recebimento (data do ressarcimento, valor do lançamento,
+ *    observação "Migrado da versão anterior"). A coluna `ressarcido_em` não é tocada.
+ *
+ * Roda ANTES de qualquer consulta de custos: o primeiro arranque da versão nova já abre migrado.
+ */
+export function migrarCustosPara048(
+  db: DatabaseSync,
+  agora: Date = new Date(),
+): ResultadoDaMigracaoDosCustos {
+  const feita = db.prepare('SELECT 1 FROM estado WHERE chave = ?').get(MARCA_CUSTOS_048);
+  if (feita) {
+    return {
+      jaFeita: true,
+      lancamentosReclassificados: 0,
+      recebimentosCriados: 0,
+      categoriasProprias: 0,
+    };
+  }
+  const quando = agora.toISOString();
+  let reclassificados = 0;
+  let recebimentos = 0;
+  let proprias = 0;
+  db.exec('BEGIN');
+  try {
+    for (const [antigo, novo] of Object.entries(MAPA_DE_CATEGORIAS_ANTIGAS)) {
+      reclassificados += Number(
+        db
+          .prepare('UPDATE custos_processo SET categoria = ? WHERE categoria = ?')
+          .run(novo, antigo).changes,
+      );
+    }
+    proprias = Number(
+      db
+        .prepare(
+          `UPDATE categorias_custo SET nome_chave = grupo || ':' || nome_chave
+            WHERE nome_chave NOT GLOB '[0-9][0-9]:*'`,
+        )
+        .run().changes,
+    );
+    const ressarcidos = db
+      .prepare(
+        `SELECT workspace, id, numero, ressarcido_em, valor_centavos FROM custos_processo
+          WHERE ressarcido_em IS NOT NULL AND reembolsavel = 1`,
+      )
+      .all() as Array<{
+      workspace: string;
+      id: string;
+      numero: string;
+      ressarcido_em: string;
+      valor_centavos: number;
+    }>;
+    const inserir = db.prepare(
+      `INSERT OR IGNORE INTO recebimentos_processo
+         (workspace, id, numero, data, valor_centavos, observacao, criado_em, atualizado_em)
+       VALUES (?, ?, ?, ?, ?, 'Migrado da versão anterior', ?, ?)`,
+    );
+    const trilha = db.prepare(
+      `INSERT OR IGNORE INTO historico_custos
+         (workspace, id, numero, entidade, entidade_id, operacao, quando, campos)
+       VALUES (?, ?, ?, 'recebimento', ?, 'criou', ?, '[]')`,
+    );
+    for (const r of ressarcidos) {
+      const id = `mig-${r.id}`;
+      const novo = Number(
+        inserir.run(
+          r.workspace,
+          id,
+          r.numero,
+          r.ressarcido_em,
+          r.valor_centavos,
+          quando,
+          quando,
+        ).changes,
+      );
+      if (novo > 0) {
+        recebimentos += 1;
+        trilha.run(r.workspace, `ev-${id}`, r.numero, id, quando);
+      }
+    }
+    db.prepare('INSERT INTO estado (chave, valor) VALUES (?, ?)').run(
+      MARCA_CUSTOS_048,
+      quando,
+    );
+    db.exec('COMMIT');
+  } catch (erro) {
+    db.exec('ROLLBACK');
+    throw erro;
+  }
+  return {
+    jaFeita: false,
+    lancamentosReclassificados: reclassificados,
+    recebimentosCriados: recebimentos,
+    categoriasProprias: proprias,
+  };
 }
 
 /** Quanto tempo de cortesia a retrocarga dá a quem já era assinante. */

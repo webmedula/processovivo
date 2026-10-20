@@ -2,17 +2,36 @@ import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type {
   CategoriaParaTela,
+  EventoParaTela,
   ServicoCustos,
 } from '../../../application/services/ServicoCustos.js';
 import type { ServicoAssinaturas } from '../../../application/services/ServicoAssinaturas.js';
-import type { Custo, TotaisDeCusto } from '../../../domain/entities/Custo.js';
+import {
+  GRUPOS_DE_CUSTO,
+  codigoAtualDaCategoria,
+  ehGrupoDeDeposito,
+  grupoDeCusto,
+} from '../../../domain/entities/CatalogoDeCustos.js';
+import type {
+  CategoriaDeCusto,
+  Custo,
+  SubtotalDaCategoria,
+  TotaisDeCusto,
+} from '../../../domain/entities/Custo.js';
 import {
   LIMITE_CATEGORIAS_PROPRIAS,
   LIMITE_DESCRICAO,
   LIMITE_LANCAMENTOS_POR_PROCESSO,
+  LIMITE_MOTIVO,
   LIMITE_NOME_DA_CATEGORIA,
   VALOR_MAXIMO_CENTAVOS,
+  codigoDaCategoriaPropria,
 } from '../../../domain/entities/Custo.js';
+import {
+  LIMITE_OBSERVACAO_DO_RECEBIMENTO,
+  LIMITE_RECEBIMENTOS_POR_PROCESSO,
+} from '../../../domain/entities/Recebimento.js';
+import type { Recebimento } from '../../../domain/entities/Recebimento.js';
 import {
   OperacaoNaoSuportadaError,
   WorkspaceNaoResolvidoError,
@@ -30,6 +49,8 @@ function workspaceDe(requisicao: FastifyRequest): string {
 }
 
 const dataLocal = z.string().max(10);
+const pagoPor = z.enum(['escritorio', 'cliente']);
+const motivo = z.string().max(2000);
 
 const corpoCriar = z
   .object({
@@ -38,8 +59,7 @@ const corpoCriar = z
     categoria: z.string().min(1).max(80),
     valorCentavos: z.number().finite(),
     reembolsavel: z.boolean().default(false),
-    // Só o "Desfazer" da exclusão manda isto: recria o lançamento como ele era.
-    ressarcidoEm: dataLocal.optional(),
+    pagoPor: pagoPor.default('escritorio'),
   })
   .strict();
 
@@ -50,13 +70,40 @@ const corpoAlterar = z
     categoria: z.string().min(1).max(80).optional(),
     valorCentavos: z.number().finite().optional(),
     reembolsavel: z.boolean().optional(),
-    ressarcidoEm: dataLocal.nullable().optional(),
+    pagoPor: pagoPor.optional(),
   })
   .strict();
 
-const corpoRessarcir = z.object({ em: dataLocal.optional() }).strict();
-const corpoCategoria = z.object({ nome: z.string().max(400) }).strict();
-const corpoArquivar = z.object({ arquivada: z.boolean() }).strict();
+const corpoRecebimento = z
+  .object({
+    data: dataLocal,
+    valorCentavos: z.number().finite(),
+    observacao: z.string().max(2000).optional(),
+  })
+  .strict();
+
+const corpoAlterarRecebimento = z
+  .object({
+    data: dataLocal.optional(),
+    valorCentavos: z.number().finite().optional(),
+    observacao: z.string().max(2000).nullable().optional(),
+  })
+  .strict();
+
+const corpoCancelar = z.object({ motivo: motivo.optional() }).strict();
+const corpoCategoria = z
+  .object({ nome: z.string().max(400), grupo: z.string().max(8).optional() })
+  .strict();
+const corpoAlterarCategoria = z
+  .object({ arquivada: z.boolean().optional(), grupo: z.string().max(8).optional() })
+  .strict()
+  .refine((c) => c.arquivada !== undefined || c.grupo !== undefined, {
+    message: 'Informe o que mudar.',
+  });
+
+const consultaLista = z
+  .object({ cancelados: z.enum(['true', 'false']).optional() })
+  .strict();
 
 const consultaPrestacao = z
   .object({
@@ -107,13 +154,18 @@ export function rotasDeCustos(
       '/v1/processos/:numero/custos',
       async (req, resposta) => {
         const { ws, custos } = await preparar(req);
-        const r = await custos.listar(ws, req.params.numero);
+        const q = consultaLista.parse(req.query ?? {});
+        const r = await custos.listar(ws, req.params.numero, q.cancelados === 'true');
+        const grupoDe = new Map(r.categorias.map((c) => [c.codigo, c]));
         void resposta.header('Cache-Control', 'no-store');
         return {
           numeroProcesso: r.numeroProcesso,
-          lancamentos: r.lancamentos.map(paraJson),
+          lancamentos: r.lancamentos.map((c) => paraJson(c, grupoDe)),
+          recebimentos: r.recebimentos.map(recebimentoParaJson),
+          canceladosEscondidos: r.canceladosEscondidos,
           totais: totaisParaJson(r.totais, r.categorias),
           categorias: r.categorias,
+          grupos: GRUPOS_DE_CUSTO,
           limites: limites(),
         };
       },
@@ -123,9 +175,9 @@ export function rotasDeCustos(
       '/v1/processos/:numero/custos/totais',
       async (req, resposta) => {
         const { ws, custos } = await preparar(req);
-        const categorias = await custos.listarCategorias(ws);
+        const r = await custos.listar(ws, req.params.numero);
         void resposta.header('Cache-Control', 'no-store');
-        return totaisParaJson(await custos.totais(ws, req.params.numero), categorias);
+        return totaisParaJson(r.totais, r.categorias);
       },
     );
 
@@ -135,14 +187,7 @@ export function rotasDeCustos(
       async (req, resposta) => {
         const { ws, custos } = await preparar(req);
         const c = corpoCriar.parse(req.body ?? {});
-        const custo = await custos.criar(ws, req.params.numero, {
-          data: c.data,
-          descricao: c.descricao,
-          categoria: c.categoria,
-          valorCentavos: c.valorCentavos,
-          reembolsavel: c.reembolsavel,
-          ...(c.ressarcidoEm !== undefined ? { ressarcidoEm: c.ressarcidoEm } : {}),
-        });
+        const custo = await custos.criar(ws, req.params.numero, c);
         void resposta.header('Cache-Control', 'no-store');
         return resposta.code(201).send(paraJson(custo));
       },
@@ -160,62 +205,129 @@ export function rotasDeCustos(
           ...(c.categoria !== undefined ? { categoria: c.categoria } : {}),
           ...(c.valorCentavos !== undefined ? { valorCentavos: c.valorCentavos } : {}),
           ...(c.reembolsavel !== undefined ? { reembolsavel: c.reembolsavel } : {}),
-          ...(c.ressarcidoEm !== undefined ? { ressarcidoEm: c.ressarcidoEm } : {}),
+          ...(c.pagoPor !== undefined ? { pagoPor: c.pagoPor } : {}),
         });
         void resposta.header('Cache-Control', 'no-store');
         return paraJson(custo);
       },
     );
 
-    // Definitivo: não há lixeira. O "Desfazer" da tela recria o lançamento com um POST.
-    servidor.delete<{ Params: { id: string } }>(
-      '/v1/custos/:id',
+    // Não há DELETE de lançamento: cancelar guarda o registro (fora dos totais) e reativar o devolve.
+    servidor.post<{ Params: { id: string } }>(
+      '/v1/custos/:id/cancelamento',
       escrita,
       async (req, resposta) => {
         const { ws, custos } = await preparar(req);
-        await custos.excluir(ws, req.params.id);
-        return resposta.code(204).send();
-      },
-    );
-
-    servidor.put<{ Params: { id: string } }>(
-      '/v1/custos/:id/ressarcimento',
-      escrita,
-      async (req, resposta) => {
-        const { ws, custos } = await preparar(req);
-        const c = corpoRessarcir.parse(req.body ?? {});
+        const c = corpoCancelar.parse(req.body ?? {});
         void resposta.header('Cache-Control', 'no-store');
-        return paraJson(await custos.ressarcir(ws, req.params.id, c.em));
+        return paraJson(await custos.cancelar(ws, req.params.id, c.motivo));
       },
     );
 
     servidor.delete<{ Params: { id: string } }>(
-      '/v1/custos/:id/ressarcimento',
+      '/v1/custos/:id/cancelamento',
       escrita,
       async (req, resposta) => {
         const { ws, custos } = await preparar(req);
         void resposta.header('Cache-Control', 'no-store');
-        return paraJson(await custos.desfazerRessarcimento(ws, req.params.id));
+        return paraJson(await custos.reativar(ws, req.params.id));
+      },
+    );
+
+    servidor.get<{ Params: { id: string } }>(
+      '/v1/custos/:id/historico',
+      async (req, resposta) => {
+        const { ws, custos } = await preparar(req);
+        void resposta.header('Cache-Control', 'no-store');
+        return {
+          eventos: (await custos.historico(ws, 'lancamento', req.params.id)).map(
+            eventoParaJson,
+          ),
+        };
+      },
+    );
+
+    servidor.post<{ Params: { numero: string } }>(
+      '/v1/processos/:numero/recebimentos',
+      escrita,
+      async (req, resposta) => {
+        const { ws, custos } = await preparar(req);
+        const c = corpoRecebimento.parse(req.body ?? {});
+        const r = await custos.registrarRecebimento(ws, req.params.numero, c);
+        void resposta.header('Cache-Control', 'no-store');
+        return resposta.code(201).send(recebimentoParaJson(r));
+      },
+    );
+
+    servidor.patch<{ Params: { id: string } }>(
+      '/v1/recebimentos/:id',
+      escrita,
+      async (req, resposta) => {
+        const { ws, custos } = await preparar(req);
+        const c = corpoAlterarRecebimento.parse(req.body ?? {});
+        void resposta.header('Cache-Control', 'no-store');
+        return recebimentoParaJson(
+          await custos.alterarRecebimento(ws, req.params.id, {
+            ...(c.data !== undefined ? { data: c.data } : {}),
+            ...(c.valorCentavos !== undefined ? { valorCentavos: c.valorCentavos } : {}),
+            ...(c.observacao !== undefined ? { observacao: c.observacao } : {}),
+          }),
+        );
+      },
+    );
+
+    servidor.post<{ Params: { id: string } }>(
+      '/v1/recebimentos/:id/cancelamento',
+      escrita,
+      async (req, resposta) => {
+        const { ws, custos } = await preparar(req);
+        const c = corpoCancelar.parse(req.body ?? {});
+        void resposta.header('Cache-Control', 'no-store');
+        return recebimentoParaJson(
+          await custos.cancelarRecebimento(ws, req.params.id, c.motivo),
+        );
+      },
+    );
+
+    servidor.delete<{ Params: { id: string } }>(
+      '/v1/recebimentos/:id/cancelamento',
+      escrita,
+      async (req, resposta) => {
+        const { ws, custos } = await preparar(req);
+        void resposta.header('Cache-Control', 'no-store');
+        return recebimentoParaJson(await custos.reativarRecebimento(ws, req.params.id));
+      },
+    );
+
+    servidor.get<{ Params: { id: string } }>(
+      '/v1/recebimentos/:id/historico',
+      async (req, resposta) => {
+        const { ws, custos } = await preparar(req);
+        void resposta.header('Cache-Control', 'no-store');
+        return {
+          eventos: (await custos.historico(ws, 'recebimento', req.params.id)).map(
+            eventoParaJson,
+          ),
+        };
       },
     );
 
     servidor.get('/v1/custos/categorias', async (req, resposta) => {
       const { ws, custos } = await preparar(req);
       void resposta.header('Cache-Control', 'no-store');
-      return { categorias: await custos.listarCategorias(ws), limites: limites() };
+      return {
+        categorias: await custos.listarCategorias(ws),
+        grupos: GRUPOS_DE_CUSTO,
+        limites: limites(),
+      };
     });
 
     servidor.post('/v1/custos/categorias', escrita, async (req, resposta) => {
       const { ws, custos } = await preparar(req);
       const c = corpoCategoria.parse(req.body ?? {});
-      const nova = await custos.criarCategoria(ws, c.nome);
+      const nova = await custos.criarCategoria(ws, c.nome, c.grupo);
       void resposta.header('Cache-Control', 'no-store');
-      return resposta.code(201).send({
-        codigo: `c-${nova.id}`,
-        nome: nova.nome,
-        base: false,
-        arquivada: nova.arquivada,
-      });
+      return resposta.code(201).send(categoriaParaJson(nova));
     });
 
     servidor.patch<{ Params: { id: string } }>(
@@ -223,15 +335,13 @@ export function rotasDeCustos(
       escrita,
       async (req, resposta) => {
         const { ws, custos } = await preparar(req);
-        const c = corpoArquivar.parse(req.body ?? {});
-        const cat = await custos.arquivarCategoria(ws, req.params.id, c.arquivada);
+        const c = corpoAlterarCategoria.parse(req.body ?? {});
+        const cat = await custos.alterarCategoria(ws, req.params.id, {
+          ...(c.arquivada !== undefined ? { arquivada: c.arquivada } : {}),
+          ...(c.grupo !== undefined ? { grupo: c.grupo } : {}),
+        });
         void resposta.header('Cache-Control', 'no-store');
-        return {
-          codigo: `c-${cat.id}`,
-          nome: cat.nome,
-          base: false,
-          arquivada: cat.arquivada,
-        };
+        return categoriaParaJson(cat);
       },
     );
 
@@ -274,25 +384,74 @@ export function rotasDeCustos(
 function limites(): Record<string, number> {
   return {
     lancamentosPorProcesso: LIMITE_LANCAMENTOS_POR_PROCESSO,
+    recebimentosPorProcesso: LIMITE_RECEBIMENTOS_POR_PROCESSO,
     categoriasProprias: LIMITE_CATEGORIAS_PROPRIAS,
     descricao: LIMITE_DESCRICAO,
+    observacao: LIMITE_OBSERVACAO_DO_RECEBIMENTO,
+    motivo: LIMITE_MOTIVO,
     nomeDaCategoria: LIMITE_NOME_DA_CATEGORIA,
     valorMaximoCentavos: VALOR_MAXIMO_CENTAVOS,
   };
 }
 
-function paraJson(c: Custo): Record<string, unknown> {
+function categoriaParaJson(c: CategoriaDeCusto): Record<string, unknown> {
+  return {
+    codigo: codigoDaCategoriaPropria(c.id),
+    nome: c.nome,
+    grupo: c.grupo,
+    nomeDoGrupo: grupoDeCusto(c.grupo)?.nome ?? c.grupo,
+    base: false,
+    arquivada: c.arquivada,
+    deposito: ehGrupoDeDeposito(c.grupo),
+  };
+}
+
+function paraJson(
+  c: Custo,
+  categorias?: ReadonlyMap<string, CategoriaParaTela>,
+): Record<string, unknown> {
+  const cat = categorias?.get(codigoAtualDaCategoria(c.categoria));
   return {
     id: c.id,
     numeroProcesso: c.numeroProcesso,
     data: c.data,
     descricao: c.descricao,
-    categoria: c.categoria,
+    categoria: codigoAtualDaCategoria(c.categoria),
+    grupo: cat?.grupo ?? null,
+    deposito: cat?.deposito ?? false,
     valorCentavos: c.valorCentavos,
     reembolsavel: c.reembolsavel,
-    ressarcidoEm: c.ressarcidoEm ?? null,
+    pagoPor: c.pagoPor,
+    cancelado: c.canceladoEm !== undefined,
+    canceladoEm: c.canceladoEm?.toISOString() ?? null,
+    motivoDoCancelamento: c.motivoDoCancelamento ?? null,
     criadoEm: c.criadoEm.toISOString(),
     atualizadoEm: c.atualizadoEm.toISOString(),
+  };
+}
+
+function recebimentoParaJson(r: Recebimento): Record<string, unknown> {
+  return {
+    id: r.id,
+    numeroProcesso: r.numeroProcesso,
+    data: r.data,
+    valorCentavos: r.valorCentavos,
+    observacao: r.observacao ?? null,
+    cancelado: r.canceladoEm !== undefined,
+    canceladoEm: r.canceladoEm?.toISOString() ?? null,
+    motivoDoCancelamento: r.motivoDoCancelamento ?? null,
+    criadoEm: r.criadoEm.toISOString(),
+    atualizadoEm: r.atualizadoEm.toISOString(),
+  };
+}
+
+function eventoParaJson(e: EventoParaTela): Record<string, unknown> {
+  return {
+    id: e.id,
+    quando: e.quando.toISOString(),
+    operacao: e.operacao,
+    motivo: e.motivo ?? null,
+    campos: e.campos,
   };
 }
 
@@ -300,18 +459,30 @@ function totaisParaJson(
   t: TotaisDeCusto,
   categorias: readonly CategoriaParaTela[],
 ): Record<string, unknown> {
-  const nomes = new Map(categorias.map((c) => [c.codigo, c.nome]));
+  const nomes = new Map(categorias.map((c) => [c.codigo, c.nomeCompleto]));
+  const sub = (s: SubtotalDaCategoria): Record<string, unknown> => ({
+    categoria: s.categoria,
+    nome: nomes.get(s.categoria) ?? 'Categoria não identificada',
+    totalCentavos: s.totalCentavos,
+    quantidade: s.quantidade,
+  });
   return {
     quantidade: t.quantidade,
-    totalGastoCentavos: t.totalGastoCentavos,
+    totalDespesasCentavos: t.totalDespesasCentavos,
+    pagoPeloEscritorioCentavos: t.pagoPeloEscritorioCentavos,
+    pagoPeloClienteCentavos: t.pagoPeloClienteCentavos,
     totalReembolsavelCentavos: t.totalReembolsavelCentavos,
-    totalRessarcidoCentavos: t.totalRessarcidoCentavos,
+    reembolsavelDeDepositosCentavos: t.reembolsavelDeDepositosCentavos,
+    totalRecebidoCentavos: t.totalRecebidoCentavos,
     saldoACobrarCentavos: t.saldoACobrarCentavos,
-    porCategoria: t.porCategoria.map((s) => ({
-      categoria: s.categoria,
-      nome: nomes.get(s.categoria) ?? 'Outros',
-      totalCentavos: s.totalCentavos,
-      quantidade: s.quantidade,
-    })),
+    creditoDoClienteCentavos: t.creditoDoClienteCentavos,
+    porCategoria: t.porCategoria.map(sub),
+    depositos: {
+      quantidade: t.depositos.quantidade,
+      totalCentavos: t.depositos.totalCentavos,
+      pagoPeloEscritorioCentavos: t.depositos.pagoPeloEscritorioCentavos,
+      pagoPeloClienteCentavos: t.depositos.pagoPeloClienteCentavos,
+      porCategoria: t.depositos.porCategoria.map(sub),
+    },
   };
 }

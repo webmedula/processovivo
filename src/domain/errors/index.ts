@@ -1157,13 +1157,15 @@ export class LimiteDeCustosError extends DomainError {
   readonly codigo = 'LIMITE_DE_CUSTOS';
 
   constructor(
-    readonly limite: 'lancamentos' | 'categorias',
+    readonly limite: 'lancamentos' | 'categorias' | 'recebimentos',
     readonly maximo: number,
   ) {
     super(
       limite === 'lancamentos'
         ? `Este processo já tem ${maximo} lançamentos, o máximo permitido.`
-        : `Você já tem ${maximo} categorias próprias, o máximo permitido. Arquive alguma para criar outra.`,
+        : limite === 'recebimentos'
+          ? `Este processo já tem ${maximo} recebimentos, o máximo permitido.`
+          : `Você já tem ${maximo} subcategorias próprias, o máximo permitido. Arquive alguma para criar outra.`,
     );
   }
 }

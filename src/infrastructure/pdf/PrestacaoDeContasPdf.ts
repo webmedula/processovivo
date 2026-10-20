@@ -31,10 +31,13 @@ const ENTRELINHA = 11;
 const FOLGA_DA_LINHA = 4;
 
 // data | descrição | categoria | valor (à direita) | situação — somam LARGURA_UTIL (511,28).
-const COLUNAS = [52, 188, 92, 76, 103.28] as const;
+const COLUNAS = [50, 150, 120, 70, 121.28] as const;
 const X = COLUNAS.map((_, i) =>
   COLUNAS.slice(0, i).reduce((soma, largura) => soma + largura, MARGEM),
 );
+
+const ROTULOS_DAS_DESPESAS = ['Data', 'Descrição', 'Categoria', 'Valor', 'Situação'];
+const ROTULOS_DOS_RECEBIMENTOS = ['Data', 'Observação', '', 'Valor', ''];
 
 const TINTA = rgb(0.09, 0.13, 0.2);
 const TINTA_SUAVE = rgb(0.38, 0.42, 0.5);
@@ -59,6 +62,8 @@ export class PrestacaoDeContasPdf implements GeradorDePrestacaoDeContas {
 class Desenho {
   private pagina!: PDFPage;
   private y = 0;
+  /** Cabeçalho da tabela corrente: repetido a cada página enquanto a tabela continua. */
+  private rotulos: readonly string[] = ROTULOS_DAS_DESPESAS;
   private readonly paginas: PDFPage[] = [];
   private readonly aceitos: Set<number>;
 
@@ -74,12 +79,29 @@ class Desenho {
   tudo(): void {
     this.novaPagina(true);
     this.capa();
-    this.cabecalhoDaTabela();
+    this.cabecalhoDaTabela(ROTULOS_DAS_DESPESAS);
     if (this.d.linhas.length === 0) {
-      this.linhaSimples('Nenhum lançamento neste filtro.', this.regular);
+      this.linhaSimples('Nenhuma despesa neste filtro.', this.regular);
     }
     for (const l of this.d.linhas) {
       this.linhaDaTabela([l.data, l.descricao, l.categoria, l.valor, l.situacao]);
+    }
+    // Depósitos e garantias: bloco à parte, que NÃO entra no total de despesas.
+    if (this.d.depositos.length > 0) {
+      this.tituloDeBloco(
+        'Depósitos e garantias',
+        'Não entram no total de despesas.',
+        ROTULOS_DAS_DESPESAS,
+      );
+      for (const l of this.d.depositos) {
+        this.linhaDaTabela([l.data, l.descricao, l.categoria, l.valor, l.situacao]);
+      }
+    }
+    if (this.d.recebimentos.length > 0) {
+      this.tituloDeBloco('Recebimentos do cliente', undefined, ROTULOS_DOS_RECEBIMENTOS);
+      for (const r of this.d.recebimentos) {
+        this.linhaDaTabela([r.data, r.observacao, '', r.valor, '']);
+      }
     }
     this.fechamento();
     this.carimbarRodapes();
@@ -108,7 +130,24 @@ class Desenho {
   private garantir(altura: number, comCabecalhoDaTabela: boolean): void {
     if (this.y - altura >= LIMITE_INFERIOR) return;
     this.novaPagina(false);
-    if (comCabecalhoDaTabela) this.cabecalhoDaTabela();
+    if (comCabecalhoDaTabela) this.cabecalhoDaTabela(this.rotulos);
+  }
+
+  /** Título de uma seção com a própria tabela; nunca um título sozinho no pé da página. */
+  private tituloDeBloco(
+    titulo: string,
+    nota: string | undefined,
+    rotulos: readonly string[],
+  ): void {
+    this.y -= 14;
+    this.garantir(18 + 18 + 30, false);
+    this.texto(titulo, MARGEM, this.y - 10, 11, this.negrito, TINTA);
+    this.y -= 18;
+    if (nota) {
+      this.texto(nota, MARGEM, this.y - 8, TAMANHO, this.regular, TINTA_SUAVE);
+      this.y -= 14;
+    }
+    this.cabecalhoDaTabela(rotulos);
   }
 
   // ---------- blocos ----------
@@ -144,7 +183,8 @@ class Desenho {
     this.y -= 12;
   }
 
-  private cabecalhoDaTabela(): void {
+  private cabecalhoDaTabela(rotulos: readonly string[]): void {
+    this.rotulos = rotulos;
     const alturaDoCabecalho = 18;
     this.pagina.drawRectangle({
       x: MARGEM,
@@ -153,7 +193,6 @@ class Desenho {
       height: alturaDoCabecalho,
       color: FUNDO_CABECALHO,
     });
-    const rotulos = ['Data', 'Descrição', 'Categoria', 'Valor', 'Situação'];
     rotulos.forEach((r, i) => {
       const x = X[i] ?? MARGEM;
       const w = COLUNAS[i] ?? 0;
@@ -227,7 +266,14 @@ class Desenho {
     this.y -= 16;
     // Título + cabeçalho + a primeira linha: nunca um título sozinho no pé da página.
     this.garantir(18 + 18 + 16, false);
-    this.texto('Subtotais por categoria', MARGEM, this.y - 10, 11, this.negrito, TINTA);
+    this.texto(
+      'Subtotais das despesas por categoria',
+      MARGEM,
+      this.y - 10,
+      11,
+      this.negrito,
+      TINTA,
+    );
     this.y -= 22;
     for (const s of d.subtotais) {
       this.garantir(16, false);
@@ -253,19 +299,13 @@ class Desenho {
     }
 
     // O bloco de totais é INTEIRO ou não é: se não cabe, a página nova só tem os totais.
-    const alturaDosTotais = 18 + 4 * 20 + 14;
+    const alturaDosTotais = 18 + d.totais.length * 20 + 14;
     this.y -= 14;
     this.garantir(alturaDosTotais, false);
     this.texto('Totais', MARGEM, this.y - 10, 11, this.negrito, TINTA);
     this.y -= 22;
-    const totais: Array<[string, string, boolean]> = [
-      ['Total gasto', d.totais.gasto, false],
-      ['Total a cobrar do cliente (reembolsável)', d.totais.reembolsavel, false],
-      ['Total já ressarcido', d.totais.ressarcido, false],
-      ['Saldo a cobrar', d.totais.saldoACobrar, true],
-    ];
-    for (const [rotulo, valor, destaque] of totais) {
-      if (destaque) {
+    for (const t of d.totais) {
+      if (t.destaque) {
         this.pagina.drawRectangle({
           x: MARGEM,
           y: this.y - 18,
@@ -274,17 +314,25 @@ class Desenho {
           color: FUNDO_CABECALHO,
         });
       }
-      const fonte = destaque ? this.negrito : this.regular;
-      const tamanho = destaque ? 10.5 : 9.5;
-      this.texto(rotulo, MARGEM + 6, this.y - 13, tamanho, fonte, TINTA);
-      const w = this.negrito.widthOfTextAtSize(this.seguro(valor), tamanho);
+      const fonte = t.destaque ? this.negrito : this.regular;
+      const tamanho = t.destaque ? 10.5 : 9.5;
+      const cor = t.recuado ? TINTA_SUAVE : TINTA;
       this.texto(
-        valor,
+        t.rotulo,
+        MARGEM + (t.recuado ? 22 : 6),
+        this.y - 13,
+        tamanho,
+        fonte,
+        cor,
+      );
+      const w = this.negrito.widthOfTextAtSize(this.seguro(t.valor), tamanho);
+      this.texto(
+        t.valor,
         MARGEM + LARGURA_UTIL - 6 - w,
         this.y - 13,
         tamanho,
         this.negrito,
-        TINTA,
+        cor,
       );
       this.y -= 20;
     }

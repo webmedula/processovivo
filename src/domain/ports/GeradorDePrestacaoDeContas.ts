@@ -11,8 +11,24 @@ export interface LinhaDaPrestacao {
   readonly descricao: string;
   readonly categoria: string;
   readonly valor: string;
-  /** "A cobrar", "Ressarcido em dd/mm/aaaa" ou "Não cobrado". */
+  /** Quem pagou e se é cobrado: "Pago pelo escritório · a cobrar do cliente", "Pago pelo cliente"... */
   readonly situacao: string;
+}
+
+/** Dinheiro que o cliente devolveu (v0.48.0). Só os ativos: cancelado não chega ao documento. */
+export interface RecebimentoDaPrestacao {
+  readonly data: string;
+  readonly observacao: string;
+  readonly valor: string;
+}
+
+/** Uma linha do quadro de totais, já com o texto e o valor formatados. */
+export interface TotalDaPrestacao {
+  readonly rotulo: string;
+  readonly valor: string;
+  readonly destaque?: boolean;
+  /** "dos quais depósitos e garantias": linha recuada, em tom suave. */
+  readonly recuado?: boolean;
 }
 
 export interface SubtotalDaPrestacao {
@@ -32,14 +48,12 @@ export interface DocumentoDePrestacao {
   /** Frases do que foi filtrado ("Período: de … até …"). Vazio = tudo. */
   readonly filtros: readonly string[];
   readonly versao: string;
+  /** As DESPESAS. Depósitos e garantias vão em `depositos`, nunca misturados a estas. */
   readonly linhas: readonly LinhaDaPrestacao[];
+  readonly depositos: readonly LinhaDaPrestacao[];
+  readonly recebimentos: readonly RecebimentoDaPrestacao[];
   readonly subtotais: readonly SubtotalDaPrestacao[];
-  readonly totais: {
-    readonly gasto: string;
-    readonly reembolsavel: string;
-    readonly ressarcido: string;
-    readonly saldoACobrar: string;
-  };
+  readonly totais: readonly TotalDaPrestacao[];
 }
 
 export interface GeradorDePrestacaoDeContas {
