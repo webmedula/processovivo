@@ -1113,11 +1113,10 @@ Não são detalhes — moldam o código.
 - **O "há N dias" da lista de Atualizações é a detecção, nunca a data do ato; a
   tela diz "detectado há"** (v0.35.2). O cartão "Pedem providência" fala em "ato
   que pede providência", nunca em prazo.
-- **Atualizações mostram só o TRECHO do texto do ato** (v0.35.1): ~220 caracteres,
-  em limite de palavra, 3 linhas, "…" em `aria-hidden`, "Abrir processo" quando
-  cortou (`ui/trechoDeTexto.ts`, função pura injetada no console por
-  `toString()`). Só a exibição encurta; dado e API seguem inteiros e nenhuma
-  atualização some.
+- **Atualizações mostram só o TRECHO do texto do ato** (v0.35.1) — **SUBSTITUÍDO na v0.46.0:** a célula
+  Atualização não traz mais trecho nenhum, ver o item da v0.46.0 mais abaixo (`ui/trechoDeTexto.ts` foi
+  removido). A decisão histórica era: ~220 caracteres, em limite de palavra, só a exibição encurta; dado e API
+  seguem inteiros e nenhuma atualização some.
 - **Atualizações: uma linha por processo, janela de 15 dias** (v0.32.1; desde a v0.37.3 a janela é filtro opcional, desligado por padrão, e a aba lista todos os processos; desde a v0.37.0 a linha é uma linha de TABELA, ver a regra da v0.37.0,
   `NOVIDADES_JANELA_DIAS`). A tela diz quantas atualizações mais antigas ficaram de
   fora da janela e oferece "Todas" (o "+N anteriores" da v0.32.1 saiu na v0.37.1). A janela
@@ -1145,7 +1144,7 @@ Não são detalhes — moldam o código.
   (variável do módulo), nunca em `localStorage`** — recarregar volta ao padrão;
   (6) as regras puras (contar, filtrar, ordenar, paginar, texto
   das partes) moram em `ui/tabelaAtualizacoes.ts` e vão ao navegador por `toString()`,
-  como `trechoDeTexto`: o teste exercita a MESMA função — por isso cada uma é
+  como `descricaoDoAto`: o teste exercita a MESMA função — por isso cada uma é
   autocontida; (7) `script.ts` não cresceu (encolheu): a tela mora em
   `ui/atualizacoes.ts` + `ui/estilosAtualizacoes.ts`. Em 1024–1279 px a lateral de
   256 px come a largura e a coluna Classe vira linha sob o Tribunal; abaixo de 1024
@@ -1309,7 +1308,7 @@ Não são detalhes — moldam o código.
   vizinho; `aria-live` discreto.
   **Hoje só a tabela de Atualizações tem o controle**: a Pasta não tem selo de providência
   e a tela do processo não mostra bloco de providência desde a v0.41.1.
-- **A coluna Situação mostra o estado como TEXTO e a caixa "Cumprido" é o ÚNICO controle** (v0.43.0,
+- **A coluna Situação mostra o estado como TEXTO e a caixa "Cumprido" é o ÚNICO controle** (v0.43.0; **o texto de estado saiu na v0.46.0 e a coluna passou a se chamar "Cumprido", só com a caixa — ver o item da v0.46.0 logo abaixo; o resto deste item segue valendo: caixa real, otimista com reversão, aviso "Desfazer" de 6 s, mesmas rotas**,
   decisão do dono; só apresentação e controle: a regra de "pede providência", a de "cumprido", as
   rotas e as contagens são as de antes). (1) **Estado = texto, nunca botão:** "● Pede providência"
   (âmbar), "✓ Cumprido" (verde discreto, linha um pouco mais apagada: só o título perde peso, nada
@@ -1332,6 +1331,25 @@ Não são detalhes — moldam o código.
   caixa); o "Desfazer" é um botão e faz a mesma chamada de desmarcar. Teste: relógio falso do
   Playwright, nunca espera real. (5) A coluna Ações não mudou (abrir, pasta, "Analisar com IA"). Nada
   de "prazo" em texto novo. `script.ts` não cresceu.
+- **Tabela de Atualizações mais limpa: Atualização em UMA linha, datas estreitas, coluna "Cumprido" só com a caixa e a dica** (v0.46.0, decisões do dono; só
+  apresentação e controle — detecção de "pede providência", regras de "cumprido", `GET /v1/novidades`, `/v1/painel`, calendário, Pasta, IA e a busca
+  não mudaram). (1) **Atualização = tipo do ato (negrito) + etiqueta (Intimação/Citação) + link "Abrir processo"** (e "Último andamento" quando o ato
+  da linha é outro). O trecho transcrito saiu da TABELA: era montado só por `notaDoAto` em `ui/atualizacoes.ts` (via `trechoDeTexto`, que foi removido) e
+  nada mais o consumia. **Nada foi apagado:** `conteudo` segue no retrato e na API; o texto do ato continua na tela do processo, na Pasta e na análise por
+  IA (que lê o ato do servidor). O link aparece em TODA linha (antes só quando o trecho cortava). (2) **"Data do ato" e "Detectado" têm largura fixa**
+  (5,25 rem; 4,75 rem em 1024–1279 px), medida para `dd/mm/aaaa` e "há N dias" sem quebra; Atualização é a coluna `auto` (fica com o resto) e Partes ganhou
+  espaço; há teste que fixa "sem quebra", "Atualização e Partes não menores que antes" e "sem rolagem horizontal" nas seis larguras. (3) **Coluna "Cumprido"
+  (antes "Situação"): só a caixa, sem texto de estado.** A caixa existe onde há providência (desmarcada) ou cumprida (marcada, para desmarcar); sem
+  providência a célula não tem caixa nem traço — a presença da caixa É o sinal. Os selos de outra informação (Não lida, "sem marca há mais de N dias",
+  "Intimação a outro destinatário") continuam na célula: cada um é a saída de um filtro. "Pede" sem chave de ato (servidor antigo) mostra a caixa
+  DESABILITADA, para o sinal não sumir sem inventar chave. Linha cumprida: caixa marcada e título mais apagado (`--tinta2`, ≥ 4,5:1 nos dois temas).
+  (4) **A dica** (`role="tooltip"`, `aria-describedby` na caixa, nunca só `title`): desmarcada "Pede providência. Marque quando cumprida."; marcada
+  "Cumprida. Clique para desmarcar."; aparece com mouse e foco, some com Esc (sem tirar o foco), não recebe o mouse, fica abaixo da caixa e não aumenta
+  a linha. Ancora à direita da caixa (a coluna fica na ponta da tabela; ancorar à esquerda criava rolagem horizontal em 1024 px). **Toque:** a dica aparece
+  depois de marcar/desmarcar (o foco volta à caixa) e, no empilhado, o rótulo "Cumprido" já vem acima da caixa; não há "tocar e segurar". O cabeçalho tem
+  `title` com "leitura automática… confira no ato completo" (a triagem nunca sem essa frase). (5) **Módulo isolado para o futuro (categorias escolhidas
+  pelo advogado, NÃO implementadas — sem tabela, rota nem campo):** tudo o que a coluna sabe sobre "cumprido" mora em `ui/providencia.ts`
+  (`__pvProvidencia`: `celula`, `pintar`, `ligar`, `marcar`, `remover`); a tabela só entrega `situacaoDaLinha` e escuta `change` em `[data-cx]`.
 - **Conferir com o Projudi: a sonda, a linha do ato da providência e o destinatário**
   (v0.37.6). (1) **`scripts/diagnostico-providencia.mjs` é SOMENTE LEITURA**: abre o banco
   com `readOnly` e `query_only` e **nunca por `abrirBanco`** (que cria esquema e migra),
@@ -1895,8 +1913,8 @@ teste e carência** (v0.28.0), **visual novo a partir do logo** (v0.29.0),
 **Pasta digital: backend (v0.33.0) e tela (v0.33.1) — peça aberta ao clique, guarda por peça, montar pasta completa, baixar marcadas**,
 **ato (movimentação) de cada peça na lista da Pasta, com descrição** (v0.33.2) **e o número da movimentação calculado pela posição do ato, com aviso de atos bloqueados** (v0.34.0; a 0.33.3 havia removido o número errado da 0.33.2), **calibração do número com o Projudi feita pelo advogado: exato quando provado, faixa ou estimado quando não** (v0.35.0), **página inicial: Últimas atualizações mostra só o trecho do texto e o trilho de peças baixadas não estoura a largura** (v0.35.1), **Pasta: número da movimentação no lugar do índice; página inicial: "detectado há N dias" e cartão "pede providência"** (v0.35.2), **Pasta: lista em altura total com avisos compactados** (v0.35.3), **Pasta: todas as movimentações na lista, inclusive as sem peça, com lacuna de numeração provada e lista mais larga** (v0.36.0), **página inicial: tabela de últimas atualizações, uma linha por processo, com filtros que contam no lugar dos cartões; histórico de peças baixadas dentro da Pasta** (v0.37.0), **tabela sem "+N anteriores", "Detectado" enxuto e descrição do ato sem repetição na exibição** (v0.37.1), **classe legível e agrupada no filtro, última movimentação sem repetição e carteira sem rodapé redundante** (v0.37.2), **Atualizações lista todos os processos acompanhados, período como filtro opcional e verificação por conta** (v0.37.3), **Atualizações abre em "Pedem providência", com a lista completa a um clique** (v0.37.4), **intimação do Diário pede providência por 30 dias ou até "cumprido", marca por ato, correção da avalanche de novidades e reparo só com dry-run** (v0.37.5), **conferência com o Projudi: sonda de diagnóstico só de leitura, linha do ato da providência, "Detectado" legível e intimação a outro destinatário** (v0.37.6), **"Analisar com IA": por botão, texto redigido, citação verificada, ZDR falhando fechado, desligada por padrão e só no plano IA** (v0.38.0; sonda de IA v1.2.0 e `ia-avaliacoes.mjs` v1.0.0), **exceção de teste fechado da IA por variável (`PROCESSOVIVO_IA_WORKSPACES_LIBERADOS`), a remover antes de abrir ao público** (v0.38.1), **log da análise por IA com status HTTP, passo e funil do roteamento** (v0.38.2), **análise por IA: rodízio por provedor depois de 429/5xx, sem `allow_fallbacks`** (v0.38.3), **análise por IA: formato da resposta em texto, sem `require_parameters` nem `response_format`, ZDR e lista intactas** (v0.38.4), **análise por IA: ações possíveis como providência sem citação, rejeição de ação que copia o trecho-chave e rodapé sem o nome do modelo** (v0.38.5), **IA como secretária, Etapa 1: prazo escrito no ato, calculadora de prazo (exceção registrada) e "Criar aviso no calendário" com prévia e confirmação** (v0.39.0), **IA como secretária, Etapa 2 (só o servidor): resumo do processo por IA, por clique, com verificação item a item e a contagem das providências do sistema que a IA não citou** (v0.40.0), **tela do resumo do processo: botão na capa, painel com estados, link do ato à linha do tempo e correção do prazo sem opção pré-marcada** (v0.40.1), **Atualizações: busca pelo número do processo, que respeita os filtros e diz quantos casam fora deles** (v0.41.0),
 **tela do processo sem os blocos "Pede providência" e "Última movimentação", Partes logo abaixo das peças** (v0.41.1), **Google Drive: conectar a conta do advogado e salvar as peças da Pasta digital numa pasta "Processo Vivo", por botão, escopo `drive.file`, desligado por padrão, planos Peças e IA** (v0.42.0), **Drive: o retorno do OAuth usa o workspace do `state` assinado e a conta de chave de API também conecta** (v0.42.1), **testes estáveis no CI e a volta do Google sem corrida no console** (v0.42.2), **Atualizações: situação como texto e caixa "Cumprido" como único controle, com aviso para desfazer** (v0.43.0), **cobrança recorrente pelo Mercado Pago, parte 1: assinatura por cartão atrás da porta de pagamento, webhook idempotente, reconciliação e ciclo no plano** (v0.44.0), **ambiente do pagamento declarado em `PROCESSOVIVO_PAGAMENTO_AMBIENTE`, não deduzido do token** (v0.44.1),
-**página de vendas: vitrine pública `GET /v1/planos`, plano escolhido atravessando cadastro e login, confirmação de assinatura com aceite dos Termos obrigatório e trecho para o site** (v0.45.0), **recusa do gateway com motivo de lista fechada, log saneado, 422/503 em JSON e a última falha no /admin** (v0.45.1),
-Dockerfile multi-stage, CI, 2825 testes.
+**página de vendas: vitrine pública `GET /v1/planos`, plano escolhido atravessando cadastro e login, confirmação de assinatura com aceite dos Termos obrigatório e trecho para o site** (v0.45.0), **recusa do gateway com motivo de lista fechada, log saneado, 422/503 em JSON e a última falha no /admin** (v0.45.1), **tabela de Atualizações mais limpa: Atualização em uma linha, datas estreitas e coluna "Cumprido" só com a caixa e a dica** (v0.46.0),
+Dockerfile multi-stage, CI, 2826 testes.
 
 **Pasta digital (v0.33.0, backend):** `GET /v1/processos/:numero/pasta` (lista +
 estado de cada peça + intervalos de página + totais SEM filtro + procedência

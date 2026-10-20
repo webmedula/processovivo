@@ -21,7 +21,8 @@ import type {
 } from '../helpers/atualizacoesSinteticas.js';
 
 /*
- * A coluna Situação e a caixa "Cumprido" NUM NAVEGADOR (v0.37.5; refeito na v0.43.0). O servidor e
+ * A coluna "Cumprido" (antes "Situação") e a caixa NUM NAVEGADOR (v0.37.5; refeita na v0.43.0 e na v0.46.0,
+ * quando o texto de estado saiu e ficou só a caixa com a dica). O servidor e
  * o console são os reais; /v1/novidades, /v1/facetas e as rotas de cumprido são simuladas aqui com
  * dados SINTÉTICOS, com o mesmo contrato da API (a API tem teste próprio em
  * tests/http/cumprido.spec.ts). Nenhum teste espera tempo real: o aviso de 6 s corre no relógio
@@ -163,6 +164,7 @@ describe.skipIf(sem)(
         falhaNaMarca?: boolean;
         falha500?: boolean;
         segurar?: boolean;
+        toque?: boolean;
       } = {},
     ): Promise<void> {
       reiniciar();
@@ -172,6 +174,7 @@ describe.skipIf(sem)(
       ctx = await browser.newContext({
         viewport: { width: opcoes.largura ?? 1280, height: 900 },
         colorScheme: opcoes.escuro ? 'dark' : 'light',
+        hasTouch: opcoes.toque ?? false,
       });
       await ctx.addInitScript((c) => {
         try {
@@ -315,50 +318,128 @@ describe.skipIf(sem)(
       expect(texto).not.toContain('marcado');
     });
 
-    it('o estado é TEXTO (sem cara de botão) e a caixa "Cumprido" é o único controle da coluna', async () => {
+    it('a coluna "Cumprido" mostra SÓ a caixa: sem texto de estado, sem rótulo visível, sem traço nas linhas sem providência', async () => {
       await abrir();
       await todas();
 
-      // Pede providência: "● Pede providência", sem fundo, sem borda, sem cursor de clique.
-      const pede = ao(NA).locator('.c-sit .sit-pede');
-      expect(((await pede.textContent()) ?? '').trim()).toBe('● Pede providência');
-      const estilo = await pede.evaluate((el) => {
-        const c = getComputedStyle(el);
-        return {
-          fundo: c.backgroundColor,
-          borda: c.borderTopWidth,
-          cursor: c.cursor,
-          tag: el.tagName,
-        };
-      });
-      expect(estilo).toEqual({
-        fundo: 'rgba(0, 0, 0, 0)',
-        borda: '0px',
-        cursor: 'default',
-        tag: 'SPAN',
-      });
-      // O ícone é reforço (aria-hidden): o texto sozinho já diz o estado.
-      expect(await pede.locator('.sit-ic').getAttribute('aria-hidden')).toBe('true');
+      expect(((await page.locator('th.h-sit').textContent()) ?? '').trim()).toBe(
+        'Cumprido',
+      );
+      expect(await ao(NA).locator('.c-sit').getAttribute('data-rotulo')).toBe('Cumprido');
 
-      // Um único controle na coluna: a caixa. Nada de botão ali.
-      expect(await ao(NA).locator('.c-sit button').count()).toBe(0);
-      expect(await ao(NA).locator('.c-sit input[type="checkbox"]').count()).toBe(1);
+      // Linha que pede providência: a caixa DESMARCADA e nenhum texto visível ao lado.
+      const celula = ao(NA).locator('.c-sit');
+      expect(await celula.locator('input[type="checkbox"]').count()).toBe(1);
       expect(await caixa(NA).isChecked()).toBe(false);
-      expect(await ao(NA).locator('.c-sit .sit-cx-txt').textContent()).toBe('Cumprido');
+      expect(await celula.locator('button').count()).toBe(0);
+      expect(await celula.locator('.sit, .sit-cx-txt, .sit-ic').count()).toBe(0);
+      // Nada de texto ao lado da caixa: o rótulo é a própria caixa, sem palavra ("Pede providência",
+      // "Cumprido", "●"). A dica (escondida) e o selo "Não lida" (outra informação) não contam.
+      expect((await ao(NA).locator('.sit-cx').innerText()).trim()).toBe('');
+      expect(
+        await celula.evaluate((td) => {
+          const c = td.cloneNode(true) as HTMLElement;
+          c.querySelectorAll('.sit-dica, .selo').forEach((e) => e.remove());
+          return (c.textContent ?? '').trim();
+        }),
+      ).toBe('');
       expect(
         await page.getByRole('button', { name: 'Marcar como cumprido' }).count(),
       ).toBe(0);
 
-      // Sem providência: traço e nenhuma caixa. O "sem marca há mais de 30 dias" segue como nota.
-      for (const n of [NC, ND]) {
-        expect(((await ao(n).locator('.c-sit .sit').textContent()) ?? '').trim()).toMatch(
-          /^—\s*Sem providência$/,
-        );
-        expect(await ao(n).locator('.c-sit input').count()).toBe(0);
-      }
+      // Sem providência: célula sem caixa e sem traço. O "sem marca há mais de 30 dias" segue como nota.
+      expect(await ao(ND).locator('.c-sit').innerText()).toBe('');
+      expect(await ao(ND).locator('.c-sit input, .c-sit .sit').count()).toBe(0);
+      expect(await ao(NC).locator('.c-sit input').count()).toBe(0);
       expect(await ao(NC).locator('.nvt-venceu').textContent()).toContain(
         'sem marca há mais de 30 dias',
       );
+    });
+
+    it('a dica: aparece com o mouse e com o foco (sem clique), diz o texto certo, não tapa a própria linha, não recebe o mouse e fecha com Esc', async () => {
+      await abrir();
+      await todas();
+      const dica = (n: string) => ao(n).locator('.sit-dica');
+      // Escondida por padrão e ligada à caixa: role=tooltip + aria-describedby.
+      expect(await dica(NA).getAttribute('role')).toBe('tooltip');
+      expect(await dica(NA).isVisible()).toBe(false);
+      const id = await dica(NA).getAttribute('id');
+      expect(await caixa(NA).getAttribute('aria-describedby')).toBe(id);
+      expect(await caixa(NA).getAttribute('title')).toBeNull();
+
+      // Mouse: passar por cima, sem clicar.
+      await ao(NA).locator('.sit-cx').hover();
+      await dica(NA).waitFor({ state: 'visible' });
+      expect(((await dica(NA).textContent()) ?? '').trim()).toBe(
+        'Pede providência. Marque quando cumprida.',
+      );
+      expect(chamadas).toEqual([]);
+      // Fica abaixo da caixa (não cobre a caixa nem a própria linha) e não recebe o mouse.
+      const rc = (await ao(NA).locator('.sit-cx').boundingBox())!;
+      const rd = (await dica(NA).boundingBox())!;
+      expect(rd.y).toBeGreaterThanOrEqual(rc.y + rc.height - 1);
+      expect(await dica(NA).evaluate((e) => getComputedStyle(e).pointerEvents)).toBe(
+        'none',
+      );
+      // Esc fecha sem tirar o foco nem mudar nada.
+      await page.mouse.move(0, 0);
+      await caixa(NA).focus();
+      await dica(NA).waitFor({ state: 'visible' });
+      await page.keyboard.press('Escape');
+      await dica(NA).waitFor({ state: 'hidden' });
+      expect(await caixa(NA).evaluate((e) => document.activeElement === e)).toBe(true);
+      expect(await caixa(NA).isChecked()).toBe(false);
+      expect(chamadas).toEqual([]);
+      // Sair do foco rearma a dica.
+      await page.keyboard.press('Tab');
+      await caixa(NA).focus();
+      await dica(NA).waitFor({ state: 'visible' });
+
+      // Foco pelo teclado também a mostra; e o aviso fixo da Pasta/IA não é tocado.
+      await caixa(NB).focus();
+      await dica(NB).waitFor({ state: 'visible' });
+      expect(await dica(NA).isVisible()).toBe(false);
+    });
+
+    it('a dica da linha cumprida diz "Cumprida. Clique para desmarcar." e a da desmarcada volta ao texto de antes', async () => {
+      await abrir();
+      await todas();
+      await caixa(NA).click();
+      await aviso().getByRole('button', { name: 'Desfazer' }).waitFor();
+      await page.mouse.move(0, 0);
+      await ao(NA).locator('.sit-cx').hover();
+      await ao(NA).locator('.sit-dica').waitFor({ state: 'visible' });
+      expect(((await ao(NA).locator('.sit-dica').textContent()) ?? '').trim()).toBe(
+        'Cumprida. Clique para desmarcar.',
+      );
+      await caixa(NA).click();
+      await page.waitForFunction(
+        () => document.querySelector('#nvt-live')?.textContent === 'Desmarcado.',
+      );
+      expect(((await ao(NA).locator('.sit-dica').textContent()) ?? '').trim()).toBe(
+        'Pede providência. Marque quando cumprida.',
+      );
+    });
+
+    it('em tela de toque a dica aparece depois de marcar (o foco volta à caixa) e o rótulo "Cumprido" já vem acima da caixa no bloco empilhado', async () => {
+      await abrir({ largura: 390, toque: true });
+      // Empilhado: o rótulo da coluna ("Cumprido") é conteúdo gerado acima da caixa.
+      expect(
+        await ao(NA)
+          .locator('td.c-sit')
+          .evaluate((e) => getComputedStyle(e, '::before').content),
+      ).toContain('Cumprido');
+      await todas();
+      await caixa(NA).tap();
+      await aviso().getByRole('button', { name: 'Desfazer' }).waitFor();
+      await ao(NA).locator('.sit-dica').waitFor({ state: 'visible' });
+      expect(((await ao(NA).locator('.sit-dica').textContent()) ?? '').trim()).toBe(
+        'Cumprida. Clique para desmarcar.',
+      );
+      // Não estoura a janela.
+      const r = (await ao(NA).locator('.sit-dica').boundingBox())!;
+      expect(r.x).toBeGreaterThanOrEqual(0);
+      expect(r.x + r.width).toBeLessThanOrEqual(390);
     });
 
     it('marcar com o mouse faz a MESMA chamada do botão antigo, tira o processo da lista, avisa e leva o foco ao vizinho', async () => {
@@ -420,7 +501,7 @@ describe.skipIf(sem)(
       expect(await focoAtual()).toBe(`cumprir-${NB}`);
     });
 
-    it('em "Todas", a linha marcada fica: "✓ Cumprido", caixa marcada, mais apagada, e desmarcar volta ao estado anterior', async () => {
+    it('em "Todas", a linha marcada fica: caixa marcada, mais apagada, e desmarcar volta ao estado anterior', async () => {
       await abrir();
       await todas();
       expect(await linhas().count()).toBe(4);
@@ -429,15 +510,12 @@ describe.skipIf(sem)(
       // Espera o servidor confirmar (o aviso nasce na confirmação): uma segunda mudança DURANTE o salvamento
       // é ignorada de propósito.
       await aviso().getByRole('button', { name: 'Desfazer' }).waitFor();
-      await ao(NA).locator('.sit-cumprido').waitFor();
       await page.waitForFunction(() =>
         document.activeElement?.getAttribute('data-foco')?.startsWith('cumprir-'),
       );
-      expect(((await ao(NA).locator('.sit-cumprido').textContent()) ?? '').trim()).toBe(
-        '✓ Cumprido',
-      );
-      expect(await ao(NA).locator('.sit-pede').count()).toBe(0);
+      // Cumprida: só a caixa MARCADA (nenhum texto de estado), e a linha mais apagada.
       expect(await caixa(NA).isChecked()).toBe(true);
+      expect((await ao(NA).locator('.sit-cx').innerText()).trim()).toBe('');
       expect(await ao(NA).getAttribute('class')).toContain('nvt-cumprida');
       // O conteúdo da linha segue à vista: só o título perde o peso.
       expect(await ao(NA).locator('.nvt-tit').isVisible()).toBe(true);
@@ -453,7 +531,13 @@ describe.skipIf(sem)(
       await page.waitForFunction(
         () => document.querySelector('#nvt-live')?.textContent === 'Desmarcado.',
       );
-      await ao(NA).locator('.sit-pede').waitFor();
+      await page.waitForFunction(
+        (n) =>
+          !document
+            .querySelector(`tr[data-processo="${n}"]`)
+            ?.classList.contains('nvt-cumprida'),
+        NA,
+      );
       expect(chamadas.map((c) => c.metodo)).toEqual(['POST', 'DELETE']);
       expect(chamadas[1]).toEqual({
         metodo: 'DELETE',
@@ -472,11 +556,12 @@ describe.skipIf(sem)(
 
       await caixa(NA).click();
       // O servidor ainda não respondeu: a chamada saiu e está presa.
-      await page.waitForFunction(() => document.querySelector('.sit-cumprido'));
-      expect(((await ao(NA).locator('.sit').textContent()) ?? '').trim()).toBe(
-        '✓ Cumprido',
-      );
+      await page.waitForFunction(() => document.querySelector('tr.nvt-cumprida'));
+      expect(await caixa(NA).isChecked()).toBe(true);
       expect(await caixa(NA).getAttribute('aria-busy')).toBe('true');
+      expect(((await ao(NA).locator('.sit-dica').textContent()) ?? '').trim()).toBe(
+        'Cumprida. Clique para desmarcar.',
+      );
       // Os contadores só mudam com a confirmação do servidor.
       expect(
         await page.getByRole('button', { name: 'Pedem providência (2)' }).count(),
@@ -500,7 +585,7 @@ describe.skipIf(sem)(
       expect(await linhas().count()).toBe(2);
       expect(await caixa(NA).isChecked()).toBe(false);
       expect(await caixa(NA).isEnabled()).toBe(true);
-      expect(await ao(NA).locator('.sit-pede').count()).toBe(1);
+      expect(await ao(NA).getAttribute('class')).not.toContain('nvt-cumprida');
       expect(await aviso().innerText()).toBe('');
       expect(await focoAtual()).toBe(`cumprir-${NA}`);
     });
@@ -524,7 +609,7 @@ describe.skipIf(sem)(
       await aviso().getByRole('button', { name: 'Desfazer' }).click();
       await aguardarLinhas(2);
       expect(chamadas.map((c) => c.metodo)).toEqual(['POST', 'DELETE']);
-      expect(await ao(NA).locator('.sit-pede').count()).toBe(1);
+      expect(await ao(NA).getAttribute('class')).not.toContain('nvt-cumprida');
       expect(await caixa(NA).isChecked()).toBe(false);
       expect(await aviso().innerText()).toBe('');
       expect(await resumo()).not.toContain('marcado');
@@ -572,9 +657,7 @@ describe.skipIf(sem)(
 
       await page.getByRole('button', { name: 'Ver', exact: true }).click();
       expect(await linhas().count()).toBe(1);
-      expect(((await ao(NA).locator('.sit-cumprido').textContent()) ?? '').trim()).toBe(
-        '✓ Cumprido',
-      );
+      expect(await ao(NA).getAttribute('class')).toContain('nvt-cumprida');
       expect(await caixa(NA).isChecked()).toBe(true);
       expect(await resumo()).toContain('1 processo marcado como cumprido');
 
@@ -582,7 +665,7 @@ describe.skipIf(sem)(
       await caixa(NA).click();
       await aguardarLinhas(2);
       expect(await page.getByRole('button', { name: 'Sim, desfazer' }).count()).toBe(0);
-      expect(await ao(NA).locator('.sit-pede').count()).toBe(1);
+      expect(await caixa(NA).isChecked()).toBe(false);
       expect(await resumo()).not.toContain('marcado');
       expect(dialogos).toEqual([]);
     });
@@ -639,6 +722,13 @@ describe.skipIf(sem)(
         m = await medir();
         expect(m.sw).toBeLessThanOrEqual(m.cw);
 
+        // Com a dica aberta a página também não ganha rolagem horizontal.
+        await ao(NB).locator('.sit-cx').hover();
+        await ao(NB).locator('.sit-dica').waitFor({ state: 'visible' });
+        await caixa(NB).focus();
+        m = await medir();
+        expect(m.sw, 'dica aberta').toBeLessThanOrEqual(m.cw);
+
         // Alvo da caixa: 24 px no mínimo em qualquer largura; 44 no empilhado (toque).
         const alvo = await ao(NB).locator('.sit-cx').boundingBox();
         expect(alvo!.height).toBeGreaterThanOrEqual(largura < 1024 ? 44 : 24);
@@ -646,22 +736,21 @@ describe.skipIf(sem)(
       });
     }
 
-    it('a coluna Situação não alarga a linha: estado + caixa ocupam menos que o selo + botão redondo de antes', async () => {
+    it('a coluna Cumprido é só a caixa: o conteúdo da célula tem a altura de um alvo de toque, sem contar a dica', async () => {
       await abrir({ largura: 1366 });
-      // O conteúdo da célula (não a altura da linha, que a célula herda do resto): do topo do estado
-      // ao pé da caixa. Antes: selo + botão de duas linhas + "Não lida" (medido em 1366 px: 142 px); agora ~98 px.
       const h = await ao(NB)
-        .locator('td.c-sit')
-        .evaluate((td) => {
-          const r = document.createRange();
-          r.selectNodeContents(td);
-          return r.getBoundingClientRect().height;
-        });
-      expect(h).toBeLessThanOrEqual(110);
+        .locator('td.c-sit .sit-cx')
+        .evaluate((el) => el.getBoundingClientRect().height);
+      expect(h).toBeLessThanOrEqual(34);
+      // A dica é absoluta: não aumenta a linha.
+      const linhaAntes = (await ao(NB).boundingBox())!.height;
+      await ao(NB).locator('.sit-cx').hover();
+      await ao(NB).locator('.sit-dica').waitFor({ state: 'visible' });
+      expect((await ao(NB).boundingBox())!.height).toBe(linhaAntes);
     });
 
     for (const escuro of [false, true]) {
-      it(`axe sem violações (tema ${escuro ? 'escuro' : 'claro'}): estados, aviso, "Todas" com cumprido, caixa por foco`, async () => {
+      it(`axe sem violações (tema ${escuro ? 'escuro' : 'claro'}): caixas, dica, aviso, "Todas" com cumprido`, async () => {
         await abrir({ escuro });
         await page.addScriptTag({
           content: (AxeBuilder as unknown as { source: string }).source,
@@ -679,29 +768,27 @@ describe.skipIf(sem)(
             .map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(' | ')}`)
             .join('\n');
         };
-        // O texto âmbar ("Pede providência") já está na tela.
-        expect(await rodar(), 'padrão (âmbar)').toBe('');
+        expect(await rodar(), 'padrão (caixas desmarcadas)').toBe('');
+
+        // A dica visível (foco na caixa) também passa no contraste.
+        await caixa(NA).focus();
+        await ao(NA).locator('.sit-dica').waitFor({ state: 'visible' });
+        expect(await rodar(), 'dica visível').toBe('');
 
         await ao(NA).locator('.sit-cx').click();
         await aguardarLinhas(1);
         expect(await rodar(), 'depois de marcar (com o aviso)').toBe('');
 
         await page.getByRole('button', { name: 'Ver', exact: true }).click();
-        expect(await rodar(), 'Ver (verde "Cumprido")').toBe('');
+        expect(await rodar(), 'Ver (linha cumprida)').toBe('');
 
         await page
           .getByRole('button', { name: 'Voltar aos que pedem providência' })
           .click();
         await todas();
-        expect(await rodar(), 'Todas (âmbar, verde e traço)').toBe('');
-
-        // Contraste medido de fato nos dois estados (a regra do axe acima também o confere).
-        const cor = (sel: string): Promise<string> =>
-          page
-            .locator(sel)
-            .first()
-            .evaluate((el) => getComputedStyle(el).color);
-        expect(await cor('.sit-pede')).not.toBe(await cor('.sit-cumprido'));
+        expect(await rodar(), 'Todas (pede, cumprido e sem providência)').toBe('');
+        // A linha cumprida (mais apagada) segue com contraste de texto: o axe acima a conferiu em "Todas".
+        expect(await ao(NA).getAttribute('class')).toContain('nvt-cumprida');
       });
     }
   },

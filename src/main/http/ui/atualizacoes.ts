@@ -33,7 +33,6 @@
  */
 import { descricaoDoAto } from '../../../domain/entities/descricaoDoAto.js';
 import { nomeDaClasse } from '../../../domain/entities/nomeDaClasse.js';
-import { trechoDeTexto } from './trechoDeTexto.js';
 import {
   SITUACAO_PADRAO,
   atoExibido,
@@ -61,9 +60,7 @@ import { ESTILOS_TABELA_ATUALIZACOES } from './estilosAtualizacoes.js';
 export const SCRIPT_ATUALIZACOES = String.raw`
 (function(){
 var pv=function(){return window.__pv};
-/* As MESMAS funções que os testes exercitam (ui/trechoDeTexto.ts e
-   ui/tabelaAtualizacoes.ts), injetadas como texto. */
-var trechoDeTexto=${trechoDeTexto.toString()};
+/* As MESMAS funções que os testes exercitam (ui/tabelaAtualizacoes.ts), injetadas como texto. */
 var contarSituacoes=${contarSituacoes.toString()};
 var montarLinhas=${montarLinhas.toString()};
 var filtrarPorSituacao=${filtrarPorSituacao.toString()};
@@ -126,15 +123,11 @@ function detectadoHa(iso){
   return c?'detectado '+c:'';
 }
 
-/* Só o começo do texto do ato; o inteiro está no processo (v0.35.1). As
-   reticências ficam fora do texto lido: aria-hidden, para não virar "ponto ponto ponto". */
-function notaDoAto(n){
-  var t=trechoDeTexto(n.conteudo);
-  if(!t.texto)return '';
-  return '<div class="nota nov-trecho"><div class="nov-txt">'+esc(t.texto)+
-    (t.cortado?'<span aria-hidden="true">…</span>':'')+'</div>'+
-    (t.cortado?'<button type="button" class="lnh nov-abrir" data-acao="abrir" data-num="'+esc(n.numero)+
-      '" aria-label="Abrir o processo para ler o texto completo">Abrir processo</button>':'')+'</div>';
+/* A célula Atualização é UMA linha de ato (v0.46.0, decisão do dono): tipo, etiqueta e este link. O texto
+   do ato NÃO aparece na tabela — continua guardado e é lido na tela do processo, na Pasta e na análise por IA. */
+function linkAbrir(n){
+  return '<div class="nvt-abrir"><button type="button" class="lnh nov-abrir" data-acao="abrir" data-num="'+esc(n.numero)+
+    '" data-foco="abrir-ato-'+esc(n.numero)+'" aria-label="Abrir o processo '+esc(pv().mascara(n.numero))+'">Abrir processo</button></div>';
 }
 
 /* ---------- a linha do processo ---------- */
@@ -187,8 +180,7 @@ function celulaSemNovidade(g){
     '<div class="nvt-tit"'+(enxuto!==a.rotulo?' title="'+esc(a.rotulo)+'"':'')+'>'+esc(enxuto)+seloDoAto(a)+'</div>';
   if(g.segredoJustica)
     h+='<div class="nota nvt-sem"><span class="selo al">segredo de justiça</span> O texto do ato não é exibido aqui.</div>';
-  else if(a.igualAAtualizacao)h+=notaDoAto(n);
-  return h+linhaUltimoAndamento(a)+'</td>';
+  return h+linkAbrir(n)+linhaUltimoAndamento(a)+'</td>';
 }
 
 function celulaAtualizacao(g){
@@ -198,17 +190,17 @@ function celulaAtualizacao(g){
   var enxuto=descricaoDoAto(a.rotulo);
   return '<td class="c-atu" data-rotulo="Atualização"><div class="nvt-tit'+(n.vista?'':' nl')+'"'+
     (enxuto!==a.rotulo?' title="'+esc(a.rotulo)+'"':'')+'>'+esc(enxuto)+seloDoAto(a)+'</div>'+
-    (a.igualAAtualizacao?notaDoAto(n):'')+linhaUltimoAndamento(a)+'</td>';
+    linkAbrir(n)+linhaUltimoAndamento(a)+'</td>';
 }
 
-/* A coluna Situação (v0.43.0): o ESTADO da providência é texto ("● Pede providência", "✓ Cumprido", "—")
-   e a caixa "Cumprido" é o único controle da coluna. Os outros avisos (não lida, sem marca há mais de N dias,
-   intimação a outro destinatário) seguem como antes, abaixo do estado. */
+/* A coluna "Cumprido" (v0.46.0): só a caixa, como a "Marcar" do Projudi, e nenhum texto de estado. A caixa
+   existe nas linhas que pedem providência e nas já cumpridas; sem providência a célula fica sem caixa e sem
+   traço. Quem desenha a caixa e a dica é o componente __pvProvidencia. Os outros avisos (não lida, sem
+   marca há mais de N dias, intimação a outro destinatário) seguem como antes: cada um é a saída de um filtro. */
 function celulaSituacao(g){
   var P=g.processo&&g.processo.providencia?g.processo.providencia:null;
   var sit=situacaoDaLinha(g);
-  var s=prov().estado(sit.estado,g.processo?g.processo.motivoProvidencia:'',sit.cumpridoEm);
-  if(sit.caixa)s+='<div>'+prov().caixa(g.numero,pv().mascara(g.numero),sit.chave,sit.marcado,'cumprir-'+g.numero)+'</div>';
+  var s=prov().celula(sit,g.numero,pv().mascara(g.numero),'cumprir-'+g.numero);
   if(g.naoVistas>0)s+='<div><span class="selo nv" title="'+esc(g.naoVistas+(g.naoVistas>1?' atualizações ainda não lidas neste processo':' atualização ainda não lida neste processo'))+'">'+
     (g.naoVistas>1?g.naoVistas+' não lidas':'Não lida')+'</span></div>';
   if(P&&P.situacao==='venceu'&&sit.estado==='nenhuma'){
@@ -217,7 +209,7 @@ function celulaSituacao(g){
   /* (v0.37.6) Intimação/citação do Diário dirigida a OUTRO destinatário: o processo não entra em "Pedem
      providência" por causa dela, e a linha diz por quê, em "Todas" e em "Ver". */
   if(P&&P.outroDestinatario)s+='<div><span class="selo neutro nvt-outro" title="'+esc('Comunicação do Diário Eletrônico dirigida a advogado que não é uma das suas inscrições na OAB. Por isso não conta como providência. Se for de um colega do escritório, confira no processo.')+'">Intimação a outro destinatário</span></div>';
-  return '<td class="c-sit" data-rotulo="Situação">'+s+'</td>';
+  return '<td class="c-sit" data-rotulo="Cumprido">'+s+'</td>';
 }
 
 function celulaAcoes(g){
@@ -288,7 +280,7 @@ function cabecalho(){
     '<th scope="col" class="h-partes">Partes</th><th scope="col" class="h-atu">Atualização</th>'+
     cabecalhoOrdenavel('tribunal')+'<th scope="col" class="h-classe">Classe</th>'+
     cabecalhoOrdenavel('dataAto')+cabecalhoOrdenavel('detectado')+
-    '<th scope="col" class="h-sit">Situação</th><th scope="col" class="h-acoes">Ações</th></tr></thead>';
+    '<th scope="col" class="h-sit" title="A caixa aparece onde há providência, por leitura automática do texto do andamento. Confira no ato completo.">Cumprido</th><th scope="col" class="h-acoes">Ações</th></tr></thead>';
 }
 
 function filtros(cont){
@@ -636,11 +628,8 @@ function falhouNaMarca(num,e){
    se refazem quando o servidor responde. Se ele falhar, desenhar() de novo devolve a linha ao que os dados dizem. */
 function pintarOtimista(caixa,marcar){
   var tr=caixa.closest?caixa.closest('tr'):null;
-  caixa.setAttribute('aria-busy','true');
-  if(!tr)return;
-  tr.classList.toggle('nvt-cumprida',marcar);
-  var est=tr.querySelector('.sit');
-  if(est)est.outerHTML=prov().estado(marcar?'cumprido':'pede','',null);
+  prov().pintar(caixa,marcar);
+  if(tr)tr.classList.toggle('nvt-cumprida',marcar);
 }
 
 function concluir(num,marcar,viz,info){
@@ -784,6 +773,7 @@ function montar(alvo,r,opc){
   raiz.addEventListener('click',aoClicar);
   raiz.addEventListener('change',aoMudar);
   raiz.addEventListener('keydown',aoTeclar);
+  prov().ligar(raiz);
   /* IA (v0.38.0): desligada, não há botão. Ligada, a primeira pergunta ao servidor redesenha UMA vez. */
   ia().ligar({redesenhar:function(f){S.foco=f||'';desenhar(false)},anunciar:anunciar});
   if(!ia().habilitada())ia().carregar().then(function(h){if(h&&corpo&&corpo.isConnected)desenhar(false)});

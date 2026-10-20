@@ -219,7 +219,7 @@ describe.skipIf(sem)(
       expect(await page.locator('nav.nvt-pag').count()).toBe(1);
     });
 
-    it('é uma tabela de verdade: caption, nove colunas com <th scope="col"> e as colunas pedidas', async () => {
+    it('é uma tabela de verdade: caption, nove colunas com <th scope="col"> e as colunas pedidas (a coluna de providência se chama "Cumprido" desde a 0.46.0)', async () => {
       await abrir({ grupos: carteira(5) });
       expect(await page.locator('table.nvt-tabela > caption').textContent()).toBe(
         'Processos acompanhados e a atualização mais recente de cada um',
@@ -239,7 +239,7 @@ describe.skipIf(sem)(
         'Classe',
         'Data do ato',
         'Detectado',
-        'Situação',
+        'Cumprido',
         'Ações',
       ]);
     });
@@ -312,7 +312,7 @@ describe.skipIf(sem)(
       expect(await l.locator('.c-sit .selo').count()).toBe(0);
     });
 
-    it('mostra só o começo da decisão de ~3.000 caracteres, sem o fim, e abre o processo pelo botão', async () => {
+    it('a célula Atualização é UMA linha de ato (tipo + etiqueta) e o link "Abrir processo": o texto do ato, de ~3.000 caracteres, não aparece na tabela (0.46.0)', async () => {
       const numero = numeroValido(2003);
       const g = grupo(numero, novidade(numero, 'Sentença', { conteudo: DECISAO }), [
         novidade(numero, 'Decisão interlocutória', {
@@ -326,26 +326,25 @@ describe.skipIf(sem)(
       ]);
       await abrir({ grupos: [g] });
       expect(DECISAO.length).toBeGreaterThan(2900);
-      const texto = (
-        await page.locator('.nvt-linha .nov-txt').first().innerText()
-      ).trim();
-      expect(texto.length).toBeLessThanOrEqual(222);
-      expect(texto.endsWith('…')).toBe(true);
-      expect(await page.locator('.nvt-tabela').innerText()).not.toContain(TEXTO_FIM);
+      const celula = page.locator('.nvt-linha .c-atu').first();
+      // Nada do texto transcrito: nem o começo, nem o fim, nem reticências, nem o bloco antigo.
+      expect(await celula.locator('.nov-txt, .nov-trecho').count()).toBe(0);
+      const tabela = await page.locator('.nvt-tabela').innerText();
+      expect(tabela).not.toContain(TEXTO_FIM);
+      expect(tabela).not.toContain(DECISAO.slice(0, 40));
+      expect(tabela).not.toContain('…');
+      // Sobra o tipo do ato (negrito) e o link, e só.
+      expect((await celula.locator('.nvt-tit').textContent())?.trim()).toBe('Sentença');
       expect(
-        await page.locator('.nov-txt > span[aria-hidden="true"]').first().textContent(),
-      ).toBe('…');
-      const linhasVisuais = await page
-        .locator('.nvt-linha .nov-txt')
-        .first()
-        .evaluate((el) => {
-          const lh = parseFloat(getComputedStyle(el).lineHeight) || 18;
-          return Math.round(el.getBoundingClientRect().height / lh);
-        });
-      expect(linhasVisuais).toBeLessThanOrEqual(3);
+        await celula.locator('.nvt-tit').evaluate((e) => getComputedStyle(e).fontWeight),
+      ).toBe('700');
+      expect(
+        (await celula.innerText())
+          .split('\n')
+          .map((t) => t.trim())
+          .filter(Boolean),
+      ).toEqual(['Sentença', 'Abrir processo']);
       expect(await page.locator('.nvt-linha .nov-abrir').count()).toBe(1);
-      // Sem texto, nenhum bloco vazio. Uma linha, a atualização mais recente e mais nada.
-      expect(await page.locator('.nov-trecho:empty').count()).toBe(0);
       expect(await page.locator('.nvt-linha').count()).toBe(1);
     });
 
@@ -358,8 +357,11 @@ describe.skipIf(sem)(
         const numero = numeroValido(2004 + i);
         return {
           c,
-          g: // Ato um dia antes da detecção: perto o bastante para o texto continuar relativo (v0.37.6).
-          grupo(numero, novidade(numero, 'A', { diasDetectada: c.d, diasAto: c.d + 1 })),
+          // Ato um dia antes da detecção: perto o bastante para o texto continuar relativo (v0.37.6).
+          g: grupo(
+            numero,
+            novidade(numero, 'A', { diasDetectada: c.d, diasAto: c.d + 1 }),
+          ),
         };
       });
       await abrir({ grupos: gs.map((x) => x.g) });
@@ -407,7 +409,9 @@ describe.skipIf(sem)(
       expect(await linhas().first().locator('.c-sit').innerText()).toContain(
         '151 não lidas',
       );
-      expect(await linhas().first().locator('.c-sit .sit-pede').count()).toBe(0);
+      expect(
+        await linhas().first().locator('.c-sit input[type="checkbox"]').count(),
+      ).toBe(0);
     });
 
     it('a frase da regra de ouro é UMA, da página: aparece quando algum processo tem mais de uma atualização, sem contagem', async () => {
@@ -479,6 +483,106 @@ describe.skipIf(sem)(
         await ctx.close();
       }
     });
+
+    // Antes da 0.46.0 (medido nas mesmas larguras): Atualização 299/196/180/133 px e Partes 153/101/93/79 px.
+    for (const [largura, atuAntes, partesAntes, dataMax] of [
+      [1920, 299, 153, 104],
+      [1366, 196, 101, 104],
+      [1280, 180, 93, 104],
+      [1024, 133, 79, 88],
+    ] as const) {
+      it(`${largura}px: "Data do ato" e "Detectado" ficam estreitas e SEM quebra de linha; o espaço vai para Partes e Atualização`, async () => {
+        const numero = numeroValido(3101);
+        await abrir(
+          {
+            grupos: [
+              // Detectado há 11 dias (texto mais longo) e outro com data absoluta ("em dd/mm").
+              grupo(
+                numero,
+                novidade(numero, 'Sentença', { diasDetectada: 11, diasAto: 30 }),
+              ),
+              grupo(
+                numeroValido(3102),
+                novidade(numeroValido(3102), 'Despacho', {
+                  diasDetectada: 1,
+                  diasAto: 40,
+                }),
+              ),
+              ...carteira(2),
+            ],
+          },
+          { largura },
+        );
+        const m = await page.evaluate(() => {
+          const w = (s: string) =>
+            document.querySelector(s)!.getBoundingClientRect().width;
+          // Uma linha só: o conteúdo de cada célula não é mais alto que ~1,6 linha, e nada transborda.
+          const quebra = Array.from(document.querySelectorAll('td.c-data, td.c-det')).map(
+            (td) => {
+              const alvo = (td.querySelector('time, [aria-hidden="true"]') ??
+                td) as HTMLElement;
+              const lh = parseFloat(getComputedStyle(alvo).lineHeight) || 18;
+              return {
+                linhas: Math.round(alvo.getBoundingClientRect().height / lh),
+                sobra: td.scrollWidth - td.clientWidth,
+              };
+            },
+          );
+          return {
+            data: w('th.h-dataAto'),
+            det: w('th.h-detectado'),
+            atu: w('th.h-atu'),
+            partes: w('th.h-partes'),
+            quebra,
+            rolagem:
+              document.documentElement.scrollWidth - document.documentElement.clientWidth,
+          };
+        });
+        expect(m.data).toBeLessThanOrEqual(dataMax);
+        expect(m.det).toBeLessThanOrEqual(dataMax);
+        expect(JSON.stringify(m.quebra)).toBe(JSON.stringify(m.quebra.map(() => ({ linhas: 1, sobra: 0 }))));
+        expect(m.atu).toBeGreaterThanOrEqual(atuAntes);
+        expect(m.partes).toBeGreaterThanOrEqual(partesAntes);
+        expect(m.rolagem).toBeLessThanOrEqual(0);
+        // A data completa e o "há 11 dias" aparecem inteiros.
+        expect((await linhas().first().locator('.c-data').innerText()).trim()).toMatch(
+          /^\d{2}\/\d{2}\/\d{4}$/,
+        );
+        expect(
+          (
+            await linhas().first().locator('.c-det [aria-hidden="true"]').textContent()
+          )?.trim(),
+        ).toMatch(/^(há \d+ dias?|em \d{2}\/\d{2})$/);
+      });
+    }
+
+    for (const largura of [768, 390]) {
+      it(`${largura}px (empilhado): as datas não quebram e a página não rola na horizontal`, async () => {
+        const numero = numeroValido(3101);
+        await abrir(
+          {
+            grupos: [
+              grupo(
+                numero,
+                novidade(numero, 'Sentença', { diasDetectada: 11, diasAto: 30 }),
+              ),
+              ...carteira(2),
+            ],
+          },
+          { largura },
+        );
+        const m = await page.evaluate(() => ({
+          rolagem:
+            document.documentElement.scrollWidth - document.documentElement.clientWidth,
+          datas: Array.from(document.querySelectorAll('td.c-data time')).map((t) => {
+            const lh = parseFloat(getComputedStyle(t).lineHeight) || 18;
+            return Math.round(t.getBoundingClientRect().height / lh);
+          }),
+        }));
+        expect(m.rolagem).toBeLessThanOrEqual(0);
+        expect(m.datas.every((n) => n === 1)).toBe(true);
+      });
+    }
 
     it('descrição sem repetição: a linha mostra a versão enxuta e o title guarda a original', async () => {
       const numero = numeroValido(3004);
@@ -605,9 +709,11 @@ describe.skipIf(sem)(
       expect(await page.locator('.nvt-resumo').innerText()).toContain(
         'Mostrando 2 de 6 processos',
       );
-      // (v0.43.0) O estado da providência é TEXTO ("● Pede providência"), não mais o selo âmbar:
-      // a contagem do filtro continua a mesma, só o seletor do estado mudou.
-      expect(await page.locator('.c-sit .sit-pede').count()).toBe(2);
+      // (0.46.0) A providência é a CAIXA da coluna "Cumprido" (sem texto de estado): a contagem do
+      // filtro continua a mesma, só o sinal mudou.
+      expect(
+        await page.locator('.c-sit input[type="checkbox"]:not(:checked)').count(),
+      ).toBe(2);
 
       await page.getByRole('button', { name: /^Todas \(6\)/ }).click();
       expect(await linhas().count()).toBe(6);
@@ -914,9 +1020,12 @@ describe.skipIf(sem)(
       expect(await sem.locator('.c-atu .nvt-tit').getAttribute('title')).toBe(
         'Juntada de Petição — Juntada de Petição',
       );
-      expect(await sem.locator('.c-atu .nov-txt').textContent()).toContain(
+      // (0.46.0) O texto do último ato não aparece na tabela; fica o link para abrir o processo.
+      expect(await sem.locator('.c-atu .nov-txt').count()).toBe(0);
+      expect(await sem.locator('.c-atu').innerText()).not.toContain(
         'Texto sintético do último ato conhecido.',
       );
+      expect(await sem.locator('.c-atu .nov-abrir').count()).toBe(1);
       // Data do ato = data da movimentação; Detectado = "—" com texto acessível.
       expect(await sem.locator('.c-data time').count()).toBe(1);
       expect(await sem.locator('.c-det').innerText()).toContain('—');
@@ -1021,8 +1130,10 @@ describe.skipIf(sem)(
       ]);
       await page.getByRole('button', { name: /^Pedem providência/ }).click();
       expect(await linhas().count()).toBe(1);
-      // (v0.43.0) Mesmo caso, com o estado em texto no lugar do selo.
-      expect(await page.locator('.c-sit .sit-pede').count()).toBe(1);
+      // (0.46.0) Mesmo caso: a caixa desmarcada é o sinal.
+      expect(
+        await page.locator('.c-sit input[type="checkbox"]:not(:checked)').count(),
+      ).toBe(1);
     });
 
     /* ----------------------------------------------------------------- ações */
@@ -1171,7 +1282,7 @@ describe.skipIf(sem)(
           'Classe',
           'Data do ato',
           'Detectado',
-          'Situação',
+          'Cumprido',
           'Ações',
         ]);
         // O rótulo é conteúdo gerado, visível ao leitor de tela e ao olho.

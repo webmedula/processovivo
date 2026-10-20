@@ -3,23 +3,24 @@ import { describe, expect, it } from 'vitest';
 import { SCRIPT_PROVIDENCIA } from '../../src/main/http/ui/providencia.js';
 
 /*
- * O componente da coluna Situação (v0.43.0), executado de verdade num contexto isolado, sem navegador
- * e sem rede: `window.__pv` é um dublê que só anota as chamadas à API. O que se prova aqui é o HTML de
- * cada estado e que marcar/desmarcar fazem as MESMAS duas chamadas que o botão antigo fazia.
+ * O componente da coluna "Cumprido" (v0.46.0; antes "Situação", v0.43.0), executado de verdade num contexto
+ * isolado, sem navegador e sem rede: `window.__pv` é um dublê que só anota as chamadas à API. O que se prova
+ * aqui é o HTML de cada estado (só a caixa e a dica, sem texto de estado) e que marcar/desmarcar fazem as
+ * MESMAS duas chamadas da 0.43.0.
  */
 interface Chamada {
   caminho: string;
   opcoes: { method: string; body?: unknown };
 }
+interface Linha {
+  estado: 'pede' | 'cumprido' | 'nenhuma';
+  caixa: boolean;
+  marcado: boolean;
+  chave: string;
+}
 interface Componente {
-  estado(est: string, motivo: string | null, cumpridoEm: string | null): string;
-  caixa(
-    num: string,
-    mascara: string,
-    chave: string,
-    marcado: boolean,
-    foco: string,
-  ): string;
+  celula(sit: Linha, num: string, mascara: string, foco: string): string;
+  textoDaDica(marcado: boolean): string;
   marcar(num: string, chave: string): Promise<unknown>;
   remover(num: string): Promise<unknown>;
 }
@@ -45,61 +46,81 @@ function carregar(): { comp: Componente; chamadas: Chamada[] } {
   return { comp: janela['__pvProvidencia'] as Componente, chamadas };
 }
 
-describe('componente de Situação (providencia.ts)', () => {
-  it('"pede providência": ponto aria-hidden + texto, em <span> (nunca botão), com o motivo no title', () => {
-    const { comp } = carregar();
-    const h = comp.estado('pede', 'Intimação nos últimos 10 dias', null);
-    expect(h).toContain('class="sit sit-pede"');
-    expect(h).toContain(
-      '<span class="sit-ic" aria-hidden="true">●</span> Pede providência',
-    );
-    expect(h).toContain('Intimação nos últimos 10 dias');
-    expect(h).not.toMatch(/<button|<a |onclick/);
-  });
+const PEDE: Linha = { estado: 'pede', caixa: true, marcado: false, chave: 'chave-ato' };
+const CUMPRIDO: Linha = {
+  estado: 'cumprido',
+  caixa: true,
+  marcado: true,
+  chave: 'chave-ato',
+};
+const NENHUMA: Linha = { estado: 'nenhuma', caixa: false, marcado: false, chave: '' };
+const NUM = '0001234-56.2026.8.09.0001';
 
-  it('"cumprido": ✓ + texto, e o title diz quando foi marcado sem falar em prazo', () => {
+describe('componente da coluna Cumprido (providencia.ts)', () => {
+  it('pede providência: caixa DESMARCADA e dica "Pede providência. Marque quando cumprida."', () => {
     const { comp } = carregar();
-    const h = comp.estado('cumprido', null, '2026-10-05T10:00:00.000Z');
-    expect(h).toContain('class="sit sit-cumprido"');
-    expect(h).toContain('<span class="sit-ic" aria-hidden="true">✓</span> Cumprido');
-    expect(h).toContain('Você marcou como cumprido em 05/10/2026 10:00');
-    expect(h).not.toMatch(/prazo|<button/i);
-  });
-
-  it('sem providência: traço com texto para leitor de tela, sem caixa', () => {
-    const { comp } = carregar();
-    const h = comp.estado('nenhuma', null, null);
-    expect(h).toContain('<span aria-hidden="true">—</span>');
-    expect(h).toContain('Sem providência');
-    expect(h).not.toContain('input');
-  });
-
-  it('a caixa é um <input type="checkbox"> real, com rótulo visível "Cumprido" e nome acessível que o contém', () => {
-    const { comp } = carregar();
-    const h = comp.caixa(
-      '0001234-56.2026.8.09.0001',
-      '0001234-56.2026.8.09.0001',
-      'chave-ato',
-      false,
-      'cumprir-1',
-    );
-    expect(h).toMatch(/^<label class="sit-cx"><input type="checkbox"/);
-    expect(h).toContain('<span class="sit-cx-txt">Cumprido</span>');
-    expect(h).toContain('aria-label="Cumprido: processo 0001234-56.2026.8.09.0001"');
-    expect(h).toContain('data-chave="chave-ato"');
+    const h = comp.celula(PEDE, NUM, NUM, 'cumprir-1');
+    expect(h).toContain('<input type="checkbox"');
     expect(h).not.toContain(' checked');
-    expect(comp.caixa('1', '1', 'c', true, 'f')).toContain(' checked');
-  });
-
-  it('o que vem do servidor é escapado (chave e motivo nunca viram marcação)', () => {
-    const { comp } = carregar();
-    expect(comp.caixa('1', '1', '"><img src=x onerror=1>', false, 'f')).not.toContain(
-      '<img',
+    expect(h).toContain('data-chave="chave-ato"');
+    expect(h).toMatch(
+      /role="tooltip" id="dica-cumprido-00012345620268090001">Pede providência\. Marque quando cumprida\.</,
     );
-    expect(comp.estado('pede', '<script>x</script>', null)).not.toContain('<script>');
+    expect(h).toContain('aria-describedby="dica-cumprido-00012345620268090001"');
   });
 
-  it('marcar e desmarcar fazem as MESMAS chamadas do botão antigo: POST { chaveDoAto } e DELETE, no mesmo caminho', async () => {
+  it('cumprida: caixa MARCADA (para poder desmarcar) e dica "Cumprida. Clique para desmarcar."', () => {
+    const { comp } = carregar();
+    const h = comp.celula(CUMPRIDO, NUM, NUM, 'cumprir-1');
+    expect(h).toContain(' checked');
+    expect(h).toContain('>Cumprida. Clique para desmarcar.</span>');
+  });
+
+  it('a célula não tem texto de estado: nem "Pede providência" como rótulo, nem "Cumprido" visível, nem ponto, nem botão', () => {
+    const { comp } = carregar();
+    for (const sit of [PEDE, CUMPRIDO]) {
+      const h = comp.celula(sit, NUM, NUM, 'f');
+      // Só a dica (escondida, ligada por aria-describedby) fala; fora dela não sobra texto.
+      const fora = h.replace(/<span class="sit-dica"[^>]*>[^<]*<\/span>/, '');
+      expect(fora.replace(/<[^>]*>/g, '').trim()).toBe('');
+      expect(h).not.toMatch(/sit-cx-txt|sit-ic|class="sit |<button|●|✓/);
+    }
+  });
+
+  it('sem providência: a célula é VAZIA (sem traço, sem caixa, sem texto)', () => {
+    const { comp } = carregar();
+    expect(comp.celula(NENHUMA, NUM, NUM, 'f')).toBe('');
+  });
+
+  it('a caixa é um <input type="checkbox"> real com nome acessível "Cumprido: processo …" e dica ligada por aria-describedby', () => {
+    const { comp } = carregar();
+    const h = comp.celula(PEDE, NUM, NUM, 'cumprir-1');
+    expect(h).toContain('aria-label="Cumprido: processo 0001234-56.2026.8.09.0001"');
+    expect(h).toContain('data-cx="cumprido"');
+    expect(h).toContain('data-foco="cumprir-1"');
+    // a dica fica FORA do rótulo: clicar nela não marca
+    expect(h).toMatch(/<\/label><span class="sit-dica"/);
+  });
+
+  it('"pede" sem ato marcável (servidor antigo): caixa desabilitada, sinal mantido e a tela não inventa a chave', () => {
+    const { comp } = carregar();
+    const h = comp.celula({ ...PEDE, caixa: false, chave: '' }, NUM, NUM, 'f');
+    expect(h).toContain(' disabled');
+    expect(h).toContain('data-chave=""');
+    expect(h).toContain('Pede providência, sem ato marcável');
+  });
+
+  it('o que vem do servidor é escapado (chave e número nunca viram marcação)', () => {
+    const { comp } = carregar();
+    expect(
+      comp.celula({ ...PEDE, chave: '"><img src=x onerror=1>' }, '1', '1', 'f'),
+    ).not.toContain('<img');
+    expect(comp.celula(PEDE, '<b>1', '<script>x</script>', 'f')).not.toMatch(
+      /<script>|<b>/,
+    );
+  });
+
+  it('marcar e desmarcar fazem as MESMAS chamadas da 0.43.0: POST { chaveDoAto } e DELETE, no mesmo caminho', async () => {
     const { comp, chamadas } = carregar();
     await comp.marcar('0001234-56.2026.8.09.0001', 'chave-ato');
     await comp.remover('00012345620268090001');
@@ -115,9 +136,9 @@ describe('componente de Situação (providencia.ts)', () => {
     ]);
   });
 
-  it('não existe mais o botão "Marcar como cumprido" nem a confirmação "Sim, desfazer"', () => {
+  it('não existe mais o botão "Marcar como cumprido", a confirmação "Sim, desfazer" nem o estado em texto', () => {
     expect(SCRIPT_PROVIDENCIA).not.toMatch(
-      /Marcar como cumprido|Sim, desfazer|botaoCumprir|controleDeDesfazer/,
+      /Marcar como cumprido|Sim, desfazer|botaoCumprir|controleDeDesfazer|sit-pede|sit-cumprido|sit-nenhuma/,
     );
   });
 });

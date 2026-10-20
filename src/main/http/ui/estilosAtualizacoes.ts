@@ -76,13 +76,14 @@ export const ESTILOS_TABELA_ATUALIZACOES = `
 .nvt-tabela td.c-data{white-space:nowrap}
 .nvt-tabela tbody tr:first-child td{border-top:0}
 .nvt-tabela tbody tr.nvt-linha:hover td{background:var(--papel2)}
-/* (v0.43.0: Partes e Atualização cederam 2 pontos à Situação, para "Cumprido" não quebrar no meio da palavra; a
-   Classe segue com os 12,5% abaixo, que o teste de navegador dela exige.)
-   Classe com 12,5% (era 8,5%): em 1366 px o conteúdo mede ~1060 px e 8,5% deixava ~74 px,
-   menos que a palavra "Procedimento". A largura veio de Partes e Atualização (o texto longo,
-   que tem clamp e title) e de Processo; Ações e Data seguem com o que os botões e a data pedem. */
-.h-processo{width:16%}.h-partes{width:9.5%}.h-atu{width:18.5%}.h-tribunal{width:6.5%}.h-classe{width:12.5%}
-.h-dataAto{width:8.5%}.h-detectado{width:8%}.h-sit{width:11%}.h-acoes{width:9.5%}
+/* Larguras (v0.46.0). "Data do ato" e "Detectado" têm largura FIXA, a que a data completa (dd/mm/aaaa) e
+   "há N dias" pedem sem quebrar — medida no navegador, não adivinhada; a coluna "Cumprido" é só uma caixa e
+   encolheu. O que sobrou vai para Partes (percentual) e para Atualização, que NÃO tem largura: é a coluna
+   "auto" e fica com o resto da tabela (assim a soma nunca estoura). A Classe segue com os 12,5% que o teste
+   de navegador dela exige (em 1366 px o conteúdo mede ~1060 px e 8,5% deixava ~74 px, menos que a palavra
+   "Procedimento"). Tribunal, Ações e Processo seguem com o que o conteúdo pede. */
+.h-processo{width:16%}.h-partes{width:10.5%}.h-tribunal{width:6.5%}.h-classe{width:12.5%}
+.h-dataAto,.h-detectado{width:5.25rem}.h-sit{width:9%}.h-acoes{width:9.5%}
 .nvt-ord{font:inherit;font-size:inherit;font-weight:inherit;text-transform:inherit;letter-spacing:inherit;
   color:inherit;background:none;border:0;padding:4px 0;min-height:28px;cursor:pointer;text-align:left}
 .nvt-ord:hover{color:var(--tinta)}
@@ -112,13 +113,11 @@ export const ESTILOS_TABELA_ATUALIZACOES = `
 .nvt-tabela .c-sit .selo{display:inline-block;margin:0 4px 4px 0}
 .c-data,.c-det{font-variant-numeric:tabular-nums;color:var(--tinta2)}
 
-/* O clamp é só rede de segurança (220 caracteres em coluna estreita passam de 3
-   linhas); o botão fica FORA do bloco cortado para nunca ser comido por ele. */
-.nov-txt{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;line-clamp:3;
-  overflow:hidden;overflow-wrap:anywhere;font-weight:400;color:var(--tinta2)}
-.nov-trecho{margin-top:4px}
-.nov-trecho .nov-abrir{display:block;margin-top:3px;color:var(--acento);font-weight:600;
-  background:none;border:0;padding:2px 0;cursor:pointer;font-family:inherit;font-size:13px}
+/* A célula Atualização é uma linha de ato + este link (v0.46.0); o texto do ato não aparece aqui. */
+.nvt-abrir{margin-top:2px}
+.nvt-abrir .nov-abrir{color:var(--acento);font-weight:600;background:none;border:0;padding:2px 0;cursor:pointer;
+  font-family:inherit;font-size:13px}
+.nvt-abrir .nov-abrir:hover{text-decoration:underline}
 
 /* ---------- ações ---------- */
 .nvt-acoes{display:flex;flex-wrap:nowrap;gap:4px;align-items:center}
@@ -150,8 +149,8 @@ export const ESTILOS_TABELA_ATUALIZACOES = `
 @media (min-width:1024px) and (max-width:1279px){
   .h-classe,.c-classe{display:none}
   .nvt-classe-mini{display:block}
-  .h-processo{width:17%}.h-partes{width:11%}.h-atu{width:18.5%}.h-tribunal{width:9.5%}
-  .h-dataAto{width:10%}.h-detectado{width:10%}.h-sit{width:13%}.h-acoes{width:11%}
+  .h-processo{width:17%}.h-partes{width:11.5%}.h-tribunal{width:9.5%}
+  .h-dataAto,.h-detectado{width:4.75rem}.h-sit{width:11%}.h-acoes{width:11%}
   .nvt-tabela th{font-size:10px;letter-spacing:0}
   .nvt-classe-mini{font-size:11px;overflow-wrap:anywhere}
   .nvt-tabela th,.nvt-tabela td{padding-left:5px;padding-right:5px}
@@ -167,6 +166,7 @@ export const ESTILOS_TABELA_ATUALIZACOES = `
   .nvt .chip,.nvt-bloco select,.nvt-busca input,.nov-btn,.nvt-por select{min-height:44px}
   .nvt-busca{flex:1 1 100%}
   .nvt-ic{width:44px;height:44px}
+  .nvt-abrir .nov-abrir{min-height:44px}
   .nvt-wrap{border:0;background:transparent;box-shadow:none}
   .nvt-tabela,.nvt-tabela tbody,.nvt-tabela tr,.nvt-tabela td{display:block}
   .nvt-tabela thead{display:none}
