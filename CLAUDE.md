@@ -1968,7 +1968,7 @@ teste e carência** (v0.28.0), **visual novo a partir do logo** (v0.29.0),
 **página de vendas: vitrine pública `GET /v1/planos`, plano escolhido atravessando cadastro e login, confirmação de assinatura com aceite dos Termos obrigatório e trecho para o site** (v0.45.0), **recusa do gateway com motivo de lista fechada, log saneado, 422/503 em JSON e a última falha no /admin** (v0.45.1), **tabela de Atualizações mais limpa: Atualização em uma linha, datas estreitas e coluna "Cumprido" só com a caixa e a dica** (v0.46.0),
 **tabela de Atualizações: caixa "Cumprido" na coluna Ações, Partes mais larga, sem o selo "outro destinatário" na linha e sem a frase fixa sob o filtro** (v0.46.1),
 **centro de custos do processo: lançamentos manuais por processo, categorias próprias, totais no servidor, caixa "Ressarcido" e prestação de contas em PDF para o cliente** (v0.47.0),
-Dockerfile multi-stage, CI, 2826 testes.
+Dockerfile multi-stage, CI, 2961 testes.
 
 **Pasta digital (v0.33.0, backend):** `GET /v1/processos/:numero/pasta` (lista +
 estado de cada peça + intervalos de página + totais SEM filtro + procedência
