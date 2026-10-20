@@ -412,6 +412,8 @@ describe.skipIf(sem)('Painel de Custos, apresentação', { timeout: 120_000 }, (
     const b = page
       .locator(LINHA)
       .getByRole('button', { name: 'Anexar comprovante (2 anexados)' });
+    // A lista é recarregada pela rota interceptada: espera o botão com a contagem em vez de contar de imediato.
+    await b.waitFor();
     expect(await b.count()).toBe(1);
     const com = (await b.boundingBox())!;
     expect([com.width, com.height]).toEqual([sem.width, sem.height]);
