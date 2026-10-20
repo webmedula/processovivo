@@ -568,7 +568,7 @@ describe.skipIf(sem)(
         // O arquivo está no Drive de mentira, na pasta Custos.
         expect(destino.envios).toHaveLength(1);
 
-        await page.getByRole('button', { name: /Histórico: Guia/ }).click();
+        await page.getByRole('button', { name: 'Histórico do lançamento' }).click();
         await page.waitForSelector('.cust-hist-lista');
         expect(await page.locator('.cust-hist-lista').innerText()).toContain(
           'Comprovante anexado',
@@ -665,7 +665,12 @@ describe.skipIf(sem)(
         expect(await page.locator('.cust-comp-n').innerText()).toContain('5');
         const botao = page.getByRole('button', { name: /^Anexar comprovante/ }).first();
         expect(await botao.isDisabled()).toBe(true);
-        expect(await botao.getAttribute('title')).toContain('5 comprovantes');
+        // v0.49.1: o motivo mora na dica (aria-describedby), não mais em `title`.
+        expect(
+          await botao.evaluate(
+            (el) => document.getElementById(el.getAttribute('aria-describedby')!)?.textContent,
+          ),
+        ).toContain('5 comprovantes');
       });
 
       it('Drive cheio: a frase é nossa, e nada fica anexado', async () => {

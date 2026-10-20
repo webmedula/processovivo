@@ -58,6 +58,14 @@ function celula(sit,num,mascara,foco){
     '<span class="sit-dica" role="tooltip" id="'+id+'">'+esc(dica)+'</span></span>';
 }
 
+/* A MESMA dica (v0.49.1) para qualquer controle que precise dela — hoje, as ações em ícones do painel de
+   Custos: o controle fica dentro do envoltório, a dica é irmã dele, ligada por aria-describedby (o chamador
+   põe o aria-describedby=id no controle), escondida por CSS e com Esc em ligar(). Um só desenho de dica no
+   console: o texto e o id vêm de quem chama; nada é copiado para o HTML além de esc(). */
+function comDica(controleHtml,id,texto){
+  return '<span class="sit-dica-wrap">'+controleHtml+'<span class="sit-dica" role="tooltip" id="'+esc(id)+'">'+esc(texto)+'</span></span>';
+}
+
 /* Pintura otimista da caixa que acabou de mudar: a dica já diz o estado novo. A linha cumprida é
    marcada pela tabela (classe da <tr>). */
 function pintar(caixa,marcar){
@@ -97,7 +105,7 @@ function remover(num){
   return pv().api(caminho(num),{method:'DELETE'}).then(function(r){return r.processo});
 }
 
-window.__pvProvidencia={celula:celula,pintar:pintar,ligar:ligar,textoDaDica:textoDaDica,marcar:marcar,remover:remover};
+window.__pvProvidencia={celula:celula,comDica:comDica,pintar:pintar,ligar:ligar,textoDaDica:textoDaDica,marcar:marcar,remover:remover};
 })();
 `;
 
