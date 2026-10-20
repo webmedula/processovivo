@@ -9,6 +9,45 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.47.0] — 2026-10-20
+
+**Centro de custos do processo:** o advogado lança as despesas de cada processo, vê os totais e gera uma prestação
+de contas em PDF para o cliente. Funcionalidade nova e aditiva: Atualizações, Pasta, Calendário, IA, Drive,
+pagamentos, página de vendas e a busca não mudaram. Versão 1 é manual — sem receita, honorário, parcela, integração
+bancária nem comprovante.
+
+- **Dados** (duas tabelas novas, sem migração destrutiva e sem retrocarga): `custos_processo` (lançamento: data,
+  descrição, categoria, `valor_centavos` INTEIRO, reembolsável, `ressarcido_em`) e `categorias_custo` (categorias
+  próprias, nome único por conta sem acento nem caixa, arquivável). Lista base fixa em código: Custas judiciais,
+  Perícia, Diligência, Deslocamento, Cópias e impressões, Publicações, Outros. Chaves começam por `workspace`.
+- **Regras:** valor em centavos, maior que zero e até R$ 1.000.000,00; descrição obrigatória, até 200 caracteres;
+  data real (1/1/2000 até um ano à frente); 500 lançamentos por processo e 30 categorias próprias ativas por conta
+  (422 com `detalhes.limite`); categoria própria não repete a base. **Os custos NÃO dependem de o processo estar
+  acompanhado:** deixar de acompanhar não os apaga (a pasta e os custos são coisas diferentes; o gasto existiu).
+- **Recurso `custosDoProcesso` no catálogo de planos**, ligado em TODOS os planos (inclusive o teste de 14 dias) por
+  retrocarga única e marca em `estado`, como o calendário. O operador pode tirá-lo de um plano no `/admin` sem
+  mexer em código. Conta de chave de API passa pelo `exigir()` como nos demais recursos (sem assinatura, passa).
+- **API** (cookie ou chave, `exigir`, isolamento por workspace, limite de taxa por rota): `GET|POST
+  /v1/processos/:numero/custos`, `GET …/custos/totais`, `PATCH|DELETE /v1/custos/:id`, `PUT|DELETE
+  /v1/custos/:id/ressarcimento`, `GET|POST /v1/custos/categorias`, `PATCH /v1/custos/categorias/:id` (arquivar) e
+  `GET …/custos/prestacao.pdf`. Totais calculados no servidor, em inteiros: gasto, reembolsável, ressarcido, saldo a
+  cobrar (= reembolsável − ressarcido) e subtotais por categoria. Lançamento de outra conta é 404, igual a "não existe".
+- **Prestação de contas em PDF** (pdf-lib, que o projeto já usa — nenhuma dependência nova): A4, cabeçalho da tabela
+  repetido, totais sempre na última página, "Página N de M", filtros de período e "somente o que está a cobrar".
+  Só leva número, tribunal, rótulo de cliente, advogado e OAB da conta, os lançamentos e os totais; **nunca** parte,
+  texto de ato nem dado de segredo de justiça. Gerado sob demanda, entregue na resposta, **sem gravar em disco**.
+- **Tela** (`ui/custos.ts`; `script.ts` não cresceu): botão "Custos" na capa do processo, painel com totais,
+  subtotais, lista (cartões abaixo de 1100 px), formulário com valor `1.234,56`/`1234,56`, "Nova categoria…" e a
+  caixa "Ressarcido" no estilo da "Cumprido" (otimista, com reversão). Excluir pede confirmação na linha e mostra
+  "Excluído. Desfazer" por 6 s; o desfazer recria o lançamento.
+- **Privacidade:** valor, descrição e nome de categoria não vão a log, e-mail, `/v1/novidades` nem rota pública.
+  Os custos entram no backup do banco como os demais dados (nota no DEPLOY.md).
+- **Testes** (sintéticos): domínio (totais, valores, categorias), HTTP (cookie e chave, isolamento, plano, limites),
+  PDF (1 e 200 lançamentos, texto extraído com `pdftotext`) e Chromium (fluxo, teclado, axe nos dois temas, seis
+  larguras, regressão da tela do processo e de Atualizações).
+
+---
+
 ## [0.46.1] — 2026-10-20
 
 **Tabela de Atualizações, segundo ajuste:** Partes ganha largura, a coluna "Cumprido" deixa de existir (a caixa

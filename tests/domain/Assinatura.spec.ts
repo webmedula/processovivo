@@ -302,6 +302,20 @@ describe('Assinatura', () => {
   });
 });
 
+describe('Plano — custosDoProcesso (v0.47.0)', () => {
+  it('entra em TODOS os planos da semente e nos planos novos do painel', () => {
+    for (const codigo of ['acompanhamento', 'pecas', 'ia']) {
+      expect(planoInicial(codigo).recursos).toContain('custosDoProcesso');
+    }
+    expect(RECURSOS_PADRAO_DE_PLANO_NOVO).toContain('custosDoProcesso');
+  });
+
+  it('é um recurso com nome próprio e implementado, para o operador poder restringi-lo depois', () => {
+    const r = RECURSOS.find((x) => x.recurso === 'custosDoProcesso');
+    expect(r).toMatchObject({ nome: 'Custos do processo', implementado: true });
+  });
+});
+
 describe('Plano — salvarNoDrive (v0.42.0)', () => {
   it('entra nos planos Peças e IA da semente — e no Acompanhamento NÃO', () => {
     expect(planoInicial('pecas').recursos).toContain('salvarNoDrive');
@@ -338,6 +352,8 @@ describe('Plano — recursos (v0.32.0)', () => {
       // PROCESSOVIVO_DRIVE_HABILITADO (desligada por padrão). A trava da VENDA do plano IA
       // continua sendo `analiseIa` — o recurso novo não a destrava.
       ['salvarNoDrive', true],
+      // v0.47.0: o centro de custos existe e entra em todos os planos (decisão do dono).
+      ['custosDoProcesso', true],
     ]);
   });
 

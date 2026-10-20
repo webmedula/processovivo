@@ -1069,7 +1069,7 @@ function ligarBotoesDetalhe(numero,acompanhado){
     api('/v1/acompanhamentos/'+encodeURIComponent(numero),{method:'DELETE'})
       .then(function(){carregarFacetas();atualizarBolha();ir('processos')})
       .catch(function(e){alert(explicar(e))})});
-  if(window.__pvResumoIA)window.__pvResumoIA.aposDesenhar(numero,acompanhado);// ui/resumoIA.ts
+  if(window.__pvResumoIA)window.__pvResumoIA.aposDesenhar(numero,acompanhado);if(window.__pvCustos)window.__pvCustos.aposDesenhar(numero);// ui/resumoIA.ts, ui/custos.ts
 }
 
 function agrupar(movs){
@@ -2218,7 +2218,7 @@ function salvarNotificacao(ativa){
 }
 
 function render(){
-  if(!estado.detalhe&&window.__pvResumoIA)window.__pvResumoIA.sair();// ui/resumoIA.ts
+  if(!estado.detalhe&&window.__pvResumoIA)window.__pvResumoIA.sair();if(!estado.detalhe&&window.__pvCustos)window.__pvCustos.sair();// ui/resumoIA.ts, ui/custos.ts
   if(estado.detalhe)return;
   $('conteudo').classList.toggle('env-larga',estado.aba==='novidades');
   if(estado.aba==='novidades')return verNovidades();

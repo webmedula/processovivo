@@ -1,0 +1,97 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { describe, expect, it } from 'vitest';
+import { ESTILOS_CUSTOS, SCRIPT_CUSTOS } from '../../src/main/http/ui/custos.js';
+import { paginaConsole } from '../../src/main/http/ui/pagina.js';
+import {
+  campoDeCentavos,
+  centavosDeTexto,
+  reaisDeCentavos,
+} from '../../src/domain/entities/valorEmReais.js';
+
+/* A tela do centro de custos (v0.47.0): contrato do arquivo, sem navegador. O comportamento está em custos-navegador. */
+
+// Medido com `split("\n").length`: o script do console tinha 2.357 antes do centro de custos.
+const LINHAS_DO_SCRIPT_ANTES_DOS_CUSTOS = 2357;
+
+describe('tela do centro de custos — o contrato do arquivo', () => {
+  it('o console inclui o script e os estilos, depois do calendário e do resumo', () => {
+    const html = paginaConsole('0.0.0');
+    expect(html).toContain(SCRIPT_CUSTOS.trim().slice(0, 40));
+    expect(html).toContain(ESTILOS_CUSTOS.trim().slice(0, 40));
+    expect(html.indexOf('window.__pvCustos=')).toBeGreaterThan(
+      html.indexOf('window.__pvResumoIA='),
+    );
+  });
+
+  it('script.ts NÃO cresce: os dois ganchos entraram em linhas que já existiam', () => {
+    const fonte = readFileSync(
+      resolve(__dirname, '../../src/main/http/ui/script.ts'),
+      'utf8',
+    );
+    expect(fonte.split('\n').length).toBeLessThanOrEqual(
+      LINHAS_DO_SCRIPT_ANTES_DOS_CUSTOS,
+    );
+    expect(fonte).toContain('window.__pvCustos.aposDesenhar(numero)');
+    expect(fonte).toContain('window.__pvCustos.sair()');
+    // A tela não mora no script do console: ele só a chama.
+    expect(fonte).not.toContain('prestacao.pdf');
+    expect(fonte).not.toContain('cust-painel');
+  });
+
+  it('o navegador recebe as MESMAS funções de dinheiro que o servidor e os testes exercitam', () => {
+    for (const f of [centavosDeTexto, reaisDeCentavos, campoDeCentavos]) {
+      expect(SCRIPT_CUSTOS).toContain(`var ${f.name}=${f.toString()};`);
+    }
+    // E, executadas como o navegador as recebe, dão os mesmos resultados.
+    const nocorpo = (nome: string): string => {
+      const i = SCRIPT_CUSTOS.indexOf(`var ${nome}=`);
+      const fim = SCRIPT_CUSTOS.indexOf('\nvar ', i + 1);
+      return SCRIPT_CUSTOS.slice(i, fim);
+    };
+    const f = new Function(
+      `${nocorpo('centavosDeTexto')}\n${nocorpo('reaisDeCentavos')}\n${nocorpo('campoDeCentavos')}
+       return {c:centavosDeTexto,r:reaisDeCentavos,e:campoDeCentavos};`,
+    )() as { c(t: unknown): number | null; r(n: number): string; e(n: number): string };
+    for (const t of [
+      '1.234,56',
+      '1234,56',
+      '0,01',
+      '0',
+      '-1',
+      'abc',
+      'NaN',
+      '1234.56',
+      '99999999999999,99',
+    ]) {
+      expect(f.c(t), t).toBe(centavosDeTexto(t));
+    }
+    expect(f.r(123_456)).toBe('R$ 1.234,56');
+    expect(f.e(123_456)).toBe('1234,56');
+  });
+
+  it('nenhum dado vai a localStorage e o texto de lançamento nunca entra no HTML sem esc()', () => {
+    expect(SCRIPT_CUSTOS).not.toContain('localStorage');
+    expect(SCRIPT_CUSTOS).not.toContain('sessionStorage');
+    // Interpolação crua de campo de texto do usuário em HTML: `'+l.descricao+'` sem esc().
+    for (const campo of [
+      'l.descricao',
+      'r.descricao',
+      'r.nomeNova',
+      's.nome',
+      'c.nome',
+    ]) {
+      const cru = new RegExp(`\\+\\s*${campo.replace('.', '\\.')}\\s*\\+`);
+      expect(cru.test(SCRIPT_CUSTOS), campo).toBe(false);
+    }
+  });
+
+  it('nenhuma frase fala em prazo', () => {
+    expect(SCRIPT_CUSTOS.toLowerCase()).not.toContain('prazo');
+  });
+
+  it('o único recurso de rede é a própria API (nada de fonte, script ou imagem de fora)', () => {
+    expect(SCRIPT_CUSTOS).not.toMatch(/https?:\/\//);
+    expect(ESTILOS_CUSTOS).not.toMatch(/https?:\/\//);
+  });
+});

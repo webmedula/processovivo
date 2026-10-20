@@ -410,6 +410,13 @@ dele, o histórico de novidades e a credencial dele no tribunal. Perder isso nã
 > (`rsync --exclude leitor/`). Restaurar um backup não traz PDFs de volta, e
 > não precisa: os jobs aparecem como expirados e o advogado pede de novo.
 
+> **Os custos do processo (v0.47.0) estão no backup.** Os lançamentos (`custos_processo`) e as categorias
+> próprias (`categorias_custo`) moram no mesmo banco SQLite e entram no `VACUUM INTO` como qualquer outro dado:
+> restaurar um backup devolve os custos junto com a carteira. São valores que o advogado informou, dado do
+> cliente dele — trate a cópia do banco com o mesmo cuidado das credenciais. O PDF da prestação de contas **não**
+> é guardado em lugar nenhum (nasce na resposta e some), então não há arquivo de custos fora do banco. Nada de
+> configuração nova: o recurso não tem variável de ambiente; quem o liga ou desliga por plano é o `/admin`.
+
 ### O que o sistema já faz sozinho
 
 Uma cópia por dia, guardando as 7 últimas, em `/dados/backups/`. Ligado por

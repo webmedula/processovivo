@@ -30,6 +30,7 @@ import { rotasDoPainel } from './rotas/painel.js';
 import { rotasDaAnaliseIA } from './rotas/analiseIA.js';
 import { rotasDoResumoIA } from './rotas/resumoIA.js';
 import { ROTA_FEED_PUBLICO, rotasDoCalendario } from './rotas/calendario.js';
+import { rotasDeCustos } from './rotas/custos.js';
 import { ROTA_PLANOS_PUBLICOS, rotasDePlanosPublicos } from './rotas/planosPublicos.js';
 import { rotasDeAssinaturas } from './rotas/assinaturas.js';
 import { ROTA_WEBHOOK_DE_PAGAMENTO, rotasDePagamentos } from './rotas/pagamentos.js';
@@ -166,6 +167,7 @@ export function construirServidor(app: Aplicacao, config: Config): FastifyInstan
   void servidor.register(
     rotasDoCalendario(app.calendario, app.assinaturas, { urlBase: config.http.urlBase }),
   );
+  void servidor.register(rotasDeCustos(app.custos, app.assinaturas));
   void servidor.register(
     rotasDeAssinaturas(app.assinaturas, app.planos, {
       pagamentos: app.pagamentos,
