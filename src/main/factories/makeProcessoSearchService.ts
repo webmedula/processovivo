@@ -19,6 +19,7 @@ import { TransporteComHttpClient } from '../../infrastructure/adapters/drive/Tra
 import { RepositorioDoDriveSqlite } from '../../infrastructure/persistencia/sqlite/RepositorioDoDriveSqlite.js';
 import { ServicoCalendario } from '../../application/services/ServicoCalendario.js';
 import { ServicoCustos } from '../../application/services/ServicoCustos.js';
+import { ServicoCustosPorCliente } from '../../application/services/ServicoCustosPorCliente.js';
 import { PrestacaoDeContasPdf } from '../../infrastructure/pdf/PrestacaoDeContasPdf.js';
 import { RepositorioDeCustosSqlite } from '../../infrastructure/persistencia/sqlite/RepositorioDeCustosSqlite.js';
 import { VERSAO } from '../../infrastructure/config/versao.js';
@@ -169,6 +170,8 @@ export interface Aplicacao {
   readonly agendadorCalendario: Agendador | undefined;
   /** Centro de custos do processo (v0.47.0). Sempre montado — só depende do banco. */
   readonly custos: ServicoCustos;
+  /** Custos por cliente, PDF consolidado e CSV (v0.49.0). */
+  readonly custosPorCliente: ServicoCustosPorCliente;
   /** Contas de assinante. Cada uma nasce com o próprio `workspace`. */
   readonly contas: ServicoContas;
   /**
@@ -546,6 +549,27 @@ export function montarAplicacao(config: Config): Aplicacao {
     assinaturas,
   );
 
+  const repositorioDeCustos = new RepositorioDeCustosSqlite(db);
+  const custos = new ServicoCustos({
+    repositorio: repositorioDeCustos,
+    acompanhamentos: repositorioCru,
+    gerador: new PrestacaoDeContasPdf(),
+    logger,
+    gerarId: () => randomUUID(),
+    // O Drive do advogado guarda os comprovantes; com o Drive desligado, anexar responde que o
+    // recurso não está disponível.
+    comprovantes: drive,
+    versao: VERSAO,
+  });
+  const custosPorCliente = new ServicoCustosPorCliente({
+    repositorio: repositorioDeCustos,
+    acompanhamentos: repositorioCru,
+    custos,
+    gerador: new PrestacaoDeContasPdf(),
+    logger,
+    versao: VERSAO,
+  });
+
   return {
     buscarProcessoPorNumero,
     buscarProcessosPorOab: new BuscarProcessosPorOab(provider),
@@ -583,14 +607,8 @@ export function montarAplicacao(config: Config): Aplicacao {
     agendadorLimpezaLeitor,
     calendario,
     agendadorCalendario,
-    custos: new ServicoCustos({
-      repositorio: new RepositorioDeCustosSqlite(db),
-      acompanhamentos: repositorioCru,
-      gerador: new PrestacaoDeContasPdf(),
-      logger,
-      gerarId: () => randomUUID(),
-      versao: VERSAO,
-    }),
+    custos,
+    custosPorCliente,
     contas,
     assinaturas,
     usuarios,

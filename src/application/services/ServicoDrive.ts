@@ -9,6 +9,7 @@ import type {
 import { nomeDoArquivoNoDrive } from '../../domain/entities/nomeDoArquivoNoDrive.js';
 import {
   ArquivoRemovidoNoDestinoError,
+  ComprovanteNaoEnviadoError,
   AutorizacaoDoDestinoRevogadaError,
   AutorizacaoDoDestinoVencidaError,
   CredencialTribunalAusenteError,
@@ -27,6 +28,11 @@ import {
 } from '../../domain/errors/index.js';
 import type { Clock } from '../../domain/ports/Clock.js';
 import { clockDoSistema } from '../../domain/ports/Clock.js';
+import type {
+  ArquivoParaOComprovante,
+  ComprovanteNoDestino,
+  DestinoDeComprovantes,
+} from '../../domain/ports/DestinoDeComprovantes.js';
 import type { DestinoExternoDePecas } from '../../domain/ports/DestinoExternoDePecas.js';
 import type { Logger } from '../../domain/ports/Logger.js';
 import type { RepositorioDoDrive } from '../../domain/ports/RepositorioDoDrive.js';
@@ -261,7 +267,7 @@ class FalhaDaPeca extends Error {
   }
 }
 
-export class ServicoDrive {
+export class ServicoDrive implements DestinoDeComprovantes {
   private readonly destino: DestinoExternoDePecas;
   private readonly repositorio: RepositorioDoDrive;
   private readonly fonte: FonteDePecasParaODrive;
@@ -956,15 +962,23 @@ export class ServicoDrive {
     e: Execucao,
     fn: (a: AutorizacaoDoDestino) => Promise<T>,
   ): Promise<T> {
+    return this.repetir(e.envio.workspace, fn, () => e.cancelado);
+  }
+
+  private async repetir<T>(
+    workspace: string,
+    fn: (a: AutorizacaoDoDestino) => Promise<T>,
+    cancelado: () => boolean,
+  ): Promise<T> {
     let ultimo: unknown;
     for (let tentativa = 1; tentativa <= MAXIMO_DE_TENTATIVAS; tentativa += 1) {
       try {
-        return await this.comAutorizacao(e.envio.workspace, fn);
+        return await this.comAutorizacao(workspace, fn);
       } catch (erro) {
         ultimo = erro;
         const repetivel =
           erro instanceof DestinoLimitouError || erro instanceof DestinoIndisponivelError;
-        if (!repetivel || tentativa === MAXIMO_DE_TENTATIVAS || e.cancelado) throw erro;
+        if (!repetivel || tentativa === MAXIMO_DE_TENTATIVAS || cancelado()) throw erro;
         const pedido = erro instanceof DestinoLimitouError ? erro.esperarMs : undefined;
         // O Google pediu mais do que vale esperar: o lote para, com a causa dita à pessoa.
         if (pedido !== undefined && pedido > TETO_DA_ESPERA_MS) throw erro;
@@ -976,6 +990,189 @@ export class ServicoDrive {
       }
     }
     throw ultimo;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Comprovantes de custo (v0.49.0)
+
+  /**
+   * Guarda UM comprovante de custo no Drive do advogado, em `Processo Vivo/<número>/Custos`.
+   *
+   * Só roda porque ele clicou em "Anexar comprovante" (nenhum agendador chama isto). O arquivo passa
+   * pela memória: não toca o disco do servidor. Sem plano, sem conexão ou com a autorização vencida,
+   * NENHUMA chamada ao Google acontece. Mesmo backoff limitado das peças; nada de texto do Google
+   * sobe em erro ou log (e o nome do arquivo também não).
+   */
+  async anexar(
+    workspace: string,
+    numeroProcesso: string,
+    arquivo: ArquivoParaOComprovante,
+  ): Promise<ComprovanteNoDestino> {
+    await this.exigirPlano(workspace);
+    const conexao = await this.repositorio.conexao(workspace);
+    if (!conexao?.pastaRaiz || conexao.estado === 'desconectado') {
+      throw new DriveRecusadoError(
+        'nao_conectado',
+        'Conecte o Google Drive em Meus acessos para anexar comprovantes.',
+      );
+    }
+    if (conexao.estado === 'precisa_reconectar') {
+      throw new DriveRecusadoError(
+        'precisa_reconectar',
+        'A autorização do Google Drive expirou. Reconecte em Meus acessos para anexar comprovantes.',
+      );
+    }
+    const conteudo: ConteudoParaEnvio = {
+      tamanho: arquivo.conteudo.length,
+      async *ler(inicio: number, fim: number) {
+        yield arquivo.conteudo.subarray(inicio, fim + 1);
+      },
+    };
+    try {
+      let pasta = await this.pastaDosComprovantes(workspace, numeroProcesso);
+      for (let tentativa = 1; ; tentativa += 1) {
+        try {
+          const enviado = await this.repetir(
+            workspace,
+            (a) =>
+              this.destino.enviarArquivo(a, {
+                nome: arquivo.nome,
+                paiId: pasta,
+                mimetype: arquivo.tipo,
+                conteudo,
+              }),
+            () => false,
+          );
+          return { arquivoId: enviado.id, link: enviado.link };
+        } catch (erro) {
+          // O pai sumiu no meio do caminho: recria a subpasta UMA vez e repete.
+          if (erro instanceof PastaRemovidaNoDestinoError && tentativa === 1) {
+            pasta = await this.pastaDosComprovantes(workspace, numeroProcesso, true);
+            continue;
+          }
+          throw erro;
+        }
+      }
+    } catch (erro) {
+      throw await this.traduzirFalhaDoComprovante(workspace, erro);
+    }
+  }
+
+  /**
+   * A subpasta `Custos` do processo. Os ids ficam guardados (o escopo `drive.file` não deixa procurar
+   * pasta pelo nome); a subpasta usa a mesma tabela das pastas de processo, com a chave
+   * `custos:<número>`, que não colide com nenhum número de processo.
+   */
+  private async pastaDosComprovantes(
+    workspace: string,
+    numero: string,
+    recriarCustos = false,
+  ): Promise<string> {
+    const conexao = await this.repositorio.conexao(workspace);
+    const raiz = await this.comAutorizacao(workspace, (a) =>
+      this.destino.garantirPasta(a, {
+        nome: NOME_DA_PASTA_RAIZ,
+        idConhecido: conexao?.pastaRaiz?.id as string,
+      }),
+    );
+    if (raiz.recriada) {
+      await this.repositorio.atualizarPastaRaiz(
+        workspace,
+        raiz.pasta,
+        'pasta_raiz_recriada',
+      );
+    } else {
+      await this.repositorio.registrarVerificacao(workspace, this.clock.agora());
+    }
+    const conhecida = await this.repositorio.pastaDoProcesso(workspace, numero);
+    const processo = await this.comAutorizacao(workspace, (a) =>
+      this.destino.garantirPasta(a, {
+        nome: NumeroCNJ.criar(numero).formatado,
+        paiId: raiz.pasta.id,
+        ...(conhecida && !raiz.recriada ? { idConhecido: conhecida.pasta.id } : {}),
+      }),
+    );
+    if (
+      !conhecida ||
+      processo.recriada ||
+      raiz.recriada ||
+      conhecida.pasta.id !== processo.pasta.id
+    ) {
+      await this.repositorio.guardarPastaDoProcesso({
+        workspace,
+        numeroProcesso: numero,
+        pasta: processo.pasta,
+      });
+    }
+    const chave = `custos:${numero}`;
+    const conhecidaC = await this.repositorio.pastaDoProcesso(workspace, chave);
+    const refazer = recriarCustos || raiz.recriada || processo.recriada;
+    const custos = await this.comAutorizacao(workspace, (a) =>
+      this.destino.garantirPasta(a, {
+        nome: 'Custos',
+        paiId: processo.pasta.id,
+        ...(conhecidaC && !refazer ? { idConhecido: conhecidaC.pasta.id } : {}),
+      }),
+    );
+    if (
+      !conhecidaC ||
+      custos.recriada ||
+      refazer ||
+      conhecidaC.pasta.id !== custos.pasta.id
+    ) {
+      await this.repositorio.guardarPastaDoProcesso({
+        workspace,
+        numeroProcesso: chave,
+        pasta: custos.pasta,
+      });
+    }
+    return custos.pasta.id;
+  }
+
+  private async traduzirFalhaDoComprovante(
+    workspace: string,
+    erro: unknown,
+  ): Promise<unknown> {
+    if (
+      erro instanceof AutorizacaoDoDestinoRevogadaError ||
+      erro instanceof AutorizacaoDoDestinoVencidaError
+    ) {
+      if (erro instanceof AutorizacaoDoDestinoRevogadaError) {
+        await this.marcarPrecisaReconectar(workspace, erro.motivo);
+      }
+      return new DriveRecusadoError(
+        'precisa_reconectar',
+        'A autorização do Google Drive expirou. Reconecte em Meus acessos para anexar comprovantes.',
+      );
+    }
+    if (erro instanceof DestinoSemEspacoError) {
+      return new ComprovanteNaoEnviadoError(
+        'drive_cheio',
+        'O seu Google Drive está sem espaço. Libere espaço e tente de novo.',
+      );
+    }
+    if (erro instanceof DestinoLimitouError) {
+      return new ComprovanteNaoEnviadoError(
+        'limite_de_uso',
+        'O Google Drive pediu uma pausa. Tente de novo em alguns minutos.',
+      );
+    }
+    if (
+      erro instanceof DestinoIndisponivelError ||
+      erro instanceof PastaRemovidaNoDestinoError
+    ) {
+      return new ComprovanteNaoEnviadoError(
+        'drive_indisponivel',
+        'O Google Drive não respondeu agora. Tente de novo em instantes.',
+      );
+    }
+    if (erro instanceof DestinoRecusouError) {
+      return new ComprovanteNaoEnviadoError(
+        'recusado',
+        'O Google Drive recusou o arquivo. Confira o comprovante e tente de novo.',
+      );
+    }
+    return erro;
   }
 
   private async autorizacao(

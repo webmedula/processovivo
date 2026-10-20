@@ -56,7 +56,32 @@ export interface DocumentoDePrestacao {
   readonly totais: readonly TotalDaPrestacao[];
 }
 
+/** A prestação de contas CONSOLIDADA de um cliente (v0.49.0): uma seção por processo. */
+export interface SecaoDeProcessoNaPrestacao {
+  readonly numeroProcesso: string;
+  readonly tribunal: string;
+  readonly linhas: readonly LinhaDaPrestacao[];
+  readonly depositos: readonly LinhaDaPrestacao[];
+  readonly recebimentos: readonly RecebimentoDaPrestacao[];
+  readonly subtotais: readonly SubtotalDaPrestacao[];
+  readonly totais: readonly TotalDaPrestacao[];
+}
+
+export interface DocumentoConsolidadoDePrestacao {
+  /** O rótulo de cliente que o advogado deu às pastas. */
+  readonly cliente: string;
+  readonly advogado?: { readonly nome: string; readonly oab?: string };
+  readonly geradoEm: string;
+  readonly filtros: readonly string[];
+  readonly versao: string;
+  readonly secoes: readonly SecaoDeProcessoNaPrestacao[];
+  /** Os totais gerais: a soma dos totais de cada processo. */
+  readonly totaisGerais: readonly TotalDaPrestacao[];
+}
+
 export interface GeradorDePrestacaoDeContas {
   /** Os bytes do PDF, em memória. Nunca grava em disco. */
   gerar(documento: DocumentoDePrestacao): Promise<Uint8Array>;
+  /** Idem, para o consolidado por cliente. */
+  gerarConsolidado(documento: DocumentoConsolidadoDePrestacao): Promise<Uint8Array>;
 }

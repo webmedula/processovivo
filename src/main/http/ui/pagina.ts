@@ -12,6 +12,7 @@ import { ESTILOS_ANALISE_IA, SCRIPT_ANALISE_IA } from './analiseIA.js';
 import { ESTILOS_RESUMO_IA, SCRIPT_RESUMO_IA } from './resumoIA.js';
 import { ESTILOS_DRIVE, SCRIPT_DRIVE } from './drive.js';
 import { ESTILOS_CUSTOS, SCRIPT_CUSTOS } from './custos.js';
+import { ESTILOS_CUSTOS_CLIENTE, SCRIPT_CUSTOS_CLIENTE } from './custosPorCliente.js';
 import { ESTILOS_PAGAMENTO, SCRIPT_PAGAMENTO } from './pagamento.js';
 import { SCRIPT_PLANO_ESCOLHIDO } from './planoEscolhido.js';
 
@@ -43,6 +44,9 @@ export const ICONES = {
   ),
   calendario: icone(
     '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/>',
+  ),
+  custos: icone(
+    '<circle cx="12" cy="12" r="9"/><path d="M14.8 9.2c-.5-.8-1.5-1.2-2.8-1.2-1.6 0-2.7.8-2.7 2s1 1.7 2.7 2c1.7.3 2.9.8 2.9 2.1 0 1.2-1.2 2-2.9 2-1.4 0-2.5-.5-3-1.4M12 6.5V8m0 8v1.5"/>',
   ),
   lupa: icone('<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>'),
   olho: icone('<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>'),
@@ -79,7 +83,7 @@ export function paginaConsole(versao: string): string {
 <link rel="icon" type="image/svg+xml" href="${FAVICON_DATA_URI}">
 <meta name="theme-color" content="#0b192c">
 <script>${SCRIPT_TEMA}</script>
-<style>${ESTILOS}${ESTILOS_PASTA}${ESTILOS_CALENDARIO}${ESTILOS_ATUALIZACOES}${ESTILOS_PROVIDENCIA}${ESTILOS_ANALISE_IA}${ESTILOS_RESUMO_IA}${ESTILOS_DRIVE}${ESTILOS_CUSTOS}${ESTILOS_PAGAMENTO}</style>
+<style>${ESTILOS}${ESTILOS_PASTA}${ESTILOS_CALENDARIO}${ESTILOS_ATUALIZACOES}${ESTILOS_PROVIDENCIA}${ESTILOS_ANALISE_IA}${ESTILOS_RESUMO_IA}${ESTILOS_DRIVE}${ESTILOS_CUSTOS}${ESTILOS_CUSTOS_CLIENTE}${ESTILOS_PAGAMENTO}</style>
 </head>
 <body>
 
@@ -96,6 +100,7 @@ export function paginaConsole(versao: string): string {
       <button id="nav-novidades">${ICONES.sino}<span>Atualizações</span> <span class="bolha oculto" id="bolha"></span></button>
       <button id="nav-processos">${ICONES.pasta}<span>Meus processos</span> <span class="cont" id="cont-processos"></span></button>
       <button id="nav-calendario">${ICONES.calendario}<span>Calendário</span></button>
+      <button id="nav-custos">${ICONES.custos}<span>Custos</span></button>
       <button id="nav-buscar">${ICONES.lupa}<span>Buscar</span></button>
       <button id="nav-vigilancia">${ICONES.olho}<span>Vigilância</span></button>
       <button id="nav-credenciais">${ICONES.chave}<span>Meus acessos</span></button>
@@ -125,6 +130,7 @@ export function paginaConsole(versao: string): string {
 <script>${SCRIPT_RESUMO_IA}</script>
 <script>${SCRIPT_DRIVE}</script>
 <script>${SCRIPT_CUSTOS}</script>
+<script>${SCRIPT_CUSTOS_CLIENTE}</script>
 <script>${SCRIPT_PAGAMENTO}</script>
 <script>${SCRIPT_PLANO_ESCOLHIDO}</script>
 <script>${SCRIPT_ATUALIZACOES}</script>

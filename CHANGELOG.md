@@ -9,6 +9,66 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.49.0] — 2026-10-21
+
+**Centro de custos, ampliação 2 de 2 (itens 4 e 7):** a tela **Custos** por cliente (com PDF consolidado e
+planilha CSV) e os **comprovantes** guardados no Google Drive do advogado — mais o aviso do "Deixar de acompanhar".
+Continua um advogado só, sem receita, honorário, multa, vencimento, previsto, alerta, integração bancária,
+cálculo de custas, perfis nem permissões. Atualizações, Pasta, Calendário, IA, pagamentos, página de vendas e as
+regras de plano não mudaram; o envio de peças ao Drive (v0.42.0) ganhou só um método novo e uma refatoração do
+repetidor de 429/5xx, com os mesmos testes verdes.
+
+- **Tela "Custos" no menu, logo depois de "Calendário"** (`ui/custosPorCliente.ts`; `script.ts` não cresceu).
+  Filtros por **cliente**, **período** e **"somente com saldo a cobrar"**. Cada linha: processos, total de despesas,
+  pago pelo escritório, recebido, saldo a cobrar e crédito do cliente. Abrir um cliente lista os processos dele
+  com os totais de cada um e um atalho para o painel de custos do processo. Toda lista diz "Mostrando X de Y"
+  (Y sem filtro). O cliente é o **rótulo que o advogado deu à pasta do processo**; quem não tem rótulo cai em
+  "Sem cliente", e a tela AVISA quantos processos estão assim. Saldo e crédito são **por processo** (o recebimento
+  de um processo não abate o de outro); o consolidado só soma os inteiros que `calcularTotais` já devolveu.
+- **"Deixar de acompanhar" avisa** quando o processo tem custos lançados: o rótulo de cliente mora na pasta e se
+  perde, o processo passa a "Sem cliente" na tela Custos, e **os custos não se perdem** (decisão A do dono; os custos
+  continuam independentes do acompanhamento). Sem custos, não pergunta nada.
+- **PDF consolidado por cliente** ("Prestação de contas — <cliente>"): uma seção por processo (número e tribunal)
+  com despesas, depósitos e garantias em bloco à parte, recebimentos e totais do processo, e os **totais gerais**
+  no fim. Mesmas regras do PDF por processo: categoria "Grupo › Subcategoria", "pago por", saldo e crédito;
+  cancelados fora; **sem partes, sem texto de ato, sem dado de segredo de justiça**; gerado sob demanda e entregue
+  na resposta, **sem gravar em disco**; rodapé com a versão do sistema. Cada lançamento diz "Comprovantes: N" (só o
+  número — nunca nome de arquivo nem link do Drive).
+- **CSV** (por processo, e por cliente/período): UTF-8 **com BOM**, separador **ponto e vírgula**, **vírgula
+  decimal** (`1234,56`), datas `dd/mm/aaaa`, CRLF; uma linha por lançamento e outra por recebimento (coluna **Tipo**:
+  Despesa, Depósito, Recebimento); colunas Situação, Processo, Cliente, Descrição, Subcategoria, Pago por, Cobrar
+  do cliente, Valor e Comprovantes. Cancelados ficam de fora; com a opção entram **marcados** na coluna Situação.
+  **Proteção contra injeção de fórmula:** célula de texto que começa com `=`, `+`, `-`, `@`, tabulação ou retorno
+  de carro ganha um apóstrofo na frente. **XLSX não foi feito:** o projeto não tem biblioteca de zip/planilha e a
+  regra é não criar dependência nova; o CSV abre direto no Excel em português.
+- **Comprovantes (item 7):** até **5 por lançamento**, **PDF, JPEG ou PNG, 5 MB cada**. O tipo é conferido pelos
+  **primeiros bytes** (a extensão e o `Content-Type` não decidem; o que o navegador declarou tem de bater com o
+  conteúdo), o nome é saneado (sem caminho nem caractere proibido, com a extensão do tipo real) e a mensagem nunca
+  repete o nome nem o conteúdo. O arquivo vai **direto da memória ao Drive** (`Processo Vivo/<número>/Custos`, só
+  o número no nome): **nada é gravado no servidor**, nem arquivo temporário. O sistema guarda **apenas** o id do
+  arquivo no Drive, o link, o nome, o tamanho e a data (`comprovantes_custo`, tabela nova e aditiva). Regras do
+  Drive valem aqui: só quando o advogado clica, só de ida (não lê nem apaga nada no Drive), `salvarNoDrive` do plano
+  e `PROCESSOVIVO_DRIVE_HABILITADO` respeitados, token no cofre. Sem Drive conectado, sem o recurso no plano ou com o
+  Drive desligado, o botão **explica** (frase nossa, o caminho é "Meus acessos") e **nenhuma chamada ao Google**
+  acontece. Cota cheia, limite de uso, fora do ar (4 tentativas, `Retry-After` até 60 s) e autorização vencida
+  (renova UMA vez; se revogada, pede reconexão sem insistir) têm resposta própria em JSON, sem texto do Google.
+  **"Remover" tira só o vínculo**: o arquivo continua no Google Drive do advogado, e a tela diz isso.
+  "Abrir no Drive" abre em nova aba com `rel="noopener noreferrer"` e só para endereço do domínio do Google.
+  O histórico registra **anexou** e **removeu** (sem nome de arquivo); nada de nome de arquivo em log.
+- **API nova:** `POST /v1/custos/:id/comprovantes` (corpo binário, nome em `x-nome-do-arquivo`, 20 por minuto),
+  `DELETE /v1/custos/:id/comprovantes/:comprovanteId`, `GET /v1/custos/clientes`, `GET /v1/custos/clientes/detalhe`,
+  `GET /v1/custos/clientes/prestacao.pdf`, `GET /v1/custos/lancamentos.csv` e
+  `GET /v1/processos/:numero/custos/lancamentos.csv`. Cookie ou chave, `exigir('custosDoProcesso')`, isolamento por
+  workspace, Zod `.strict()` nas consultas, limite de taxa. Corpo grande demais agora responde 413 em JSON.
+  Upload **sem dependência nova** (sem multipart): corpo binário e teto de 5 MB só nessa rota.
+- **Sem dependência nova.** Testes: domínio (tipo pelos bytes, nome saneado, soma por cliente), CSV (BOM, separador,
+  injeção de fórmula), servidor (isolamento, planos, limites, Drive simulado — upload ok, tipo falso, 5 MB, 6º
+  arquivo, Drive desconectado, plano sem o recurso, token expirado, cota cheia, remoção só do vínculo, nada em disco,
+  nada em log), PDF consolidado (texto extraído com `pdftotext`; 1 e 200 lançamentos) e navegador (menu, filtros,
+  "Sem cliente", PDF e CSV baixados, aviso do "Deixar de acompanhar", comprovantes, axe nos dois temas, seis larguras).
+
+---
+
 ## [0.48.0] — 2026-10-21
 
 **Centro de custos, ampliação 1 de 2 (itens 1, 2, 3, 5 e 6):** recebimentos do cliente, quem pagou, depósitos e

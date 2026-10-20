@@ -1157,7 +1157,7 @@ export class LimiteDeCustosError extends DomainError {
   readonly codigo = 'LIMITE_DE_CUSTOS';
 
   constructor(
-    readonly limite: 'lancamentos' | 'categorias' | 'recebimentos',
+    readonly limite: 'lancamentos' | 'categorias' | 'recebimentos' | 'comprovantes',
     readonly maximo: number,
   ) {
     super(
@@ -1165,7 +1165,43 @@ export class LimiteDeCustosError extends DomainError {
         ? `Este processo já tem ${maximo} lançamentos, o máximo permitido.`
         : limite === 'recebimentos'
           ? `Este processo já tem ${maximo} recebimentos, o máximo permitido.`
-          : `Você já tem ${maximo} subcategorias próprias, o máximo permitido. Arquive alguma para criar outra.`,
+          : limite === 'comprovantes'
+            ? `Este lançamento já tem ${maximo} comprovantes, o máximo permitido. Remova algum para anexar outro.`
+            : `Você já tem ${maximo} subcategorias próprias, o máximo permitido. Arquive alguma para criar outra.`,
     );
+  }
+}
+
+/**
+ * O arquivo do comprovante não passa nas regras (v0.49.0): vazio, maior que 5 MB, ou que não é PDF,
+ * JPEG nem PNG DE VERDADE (conferido pelos primeiros bytes, não pela extensão). A mensagem é do
+ * sistema e nunca repete o nome nem o conteúdo recebidos. NENHUM chamou o Google.
+ */
+export type MotivoDeComprovanteInvalido = 'arquivo_vazio' | 'arquivo_grande' | 'tipo_nao_aceito';
+export class ComprovanteInvalidoError extends DomainError {
+  readonly codigo = 'COMPROVANTE_INVALIDO';
+
+  constructor(
+    readonly motivo: MotivoDeComprovanteInvalido,
+    mensagem: string,
+  ) {
+    super(mensagem);
+  }
+}
+
+/**
+ * O Google Drive recusou ou não conseguiu guardar o comprovante (v0.49.0). A frase é NOSSA — o
+ * texto do Google nunca sai — e o `motivo` deixa a tela escolher a explicação.
+ */
+export type MotivoDeComprovanteNaoEnviado =
+  'drive_cheio' | 'limite_de_uso' | 'drive_indisponivel' | 'recusado';
+export class ComprovanteNaoEnviadoError extends DomainError {
+  readonly codigo = 'COMPROVANTE_NAO_ENVIADO';
+
+  constructor(
+    readonly motivo: MotivoDeComprovanteNaoEnviado,
+    mensagem: string,
+  ) {
+    super(mensagem);
   }
 }

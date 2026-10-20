@@ -134,6 +134,16 @@ export class RepositorioAcompanhamentosSqlite implements RepositorioAcompanhamen
     return linhas.map((l) => String(l['v']));
   }
 
+  async rotulosDeCliente(workspace: string): Promise<ReadonlyMap<string, string>> {
+    const linhas = this.db
+      .prepare(
+        `SELECT numero, cliente FROM acompanhamentos
+          WHERE workspace = ? AND cliente IS NOT NULL AND TRIM(cliente) <> ''`,
+      )
+      .all(workspace) as Linha[];
+    return new Map(linhas.map((l) => [String(l['numero']), String(l['cliente']).trim()]));
+  }
+
   async buscar(workspace: string, numero: string): Promise<Acompanhamento | undefined> {
     const linha = this.db
       .prepare('SELECT * FROM acompanhamentos WHERE workspace = ? AND numero = ?')

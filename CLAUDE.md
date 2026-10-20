@@ -89,7 +89,8 @@ src/
 │   │                            #   DestinoDePecas + nomeDoArquivoNoDrive (Drive, v0.42.0),
 │   │                            #   Pagamento (vocabulário de cobrança; ciclo em Plano, v0.44.0)
 │   │                            #   Custo + valorEmReais (centro de custos: lançamento, totais, centavos, v0.47.0),
-│   │                            #   Recebimento + HistoricoDeCustos + CatalogoDeCustos (Grupo › Subcategoria, v0.48.0)
+│   │                            #   Recebimento + HistoricoDeCustos + CatalogoDeCustos (Grupo › Subcategoria, v0.48.0),
+│   │                            #   Comprovante (tipo pelos bytes) + CustosPorCliente (chave do cliente, soma de totais, v0.49.0)
 │   ├── errors/                  # hierarquia de DomainError
 │   ├── ports/                   # ProcessoProvider, RepositorioAcompanhamentos, Cache…
 │   └── usecases/                # BuscarProcessoPorNumero, BuscarProcessosPorOab
@@ -108,7 +109,8 @@ src/
 │                                #   ServicoResumoDoProcesso (resumo por IA, por botão, v0.40.0),
 │                                #   ServicoDrive + fonteDePecasDaPasta (envio ao Google Drive, v0.42.0),
 │                                #   ServicoPagamentos (cobrança recorrente atrás da porta GatewayDePagamento, v0.44.0)
-│                                #   ServicoCustos (centro de custos do processo + prestação de contas em PDF, v0.47.0)
+│                                #   ServicoCustos (centro de custos do processo + prestação de contas em PDF, v0.47.0),
+│                                #   ServicoCustosPorCliente (visão por cliente, PDF consolidado, CSV, v0.49.0)
 ├── infrastructure/
 │   ├── adapters/
 │   │   ├── modelo/              # OpenRouter: transporte (ZDR), lista ZDR 24 h, analisador
@@ -229,7 +231,9 @@ interface ProcessoProvider {
 | `EventoDeCalendarioInvalidoError` | data que não existe, hora fora do relógio, intervalo acima de 400 dias, processo fora da carteira | 400 |
 | `CustoInvalidoError` | valor fora de 1 centavo–R$ 1.000.000,00 ou não inteiro, descrição/observação/motivo vazio ou longo, data que não existe, subcategoria inexistente/arquivada/repetida no grupo, grupo inválido, editar registro cancelado, mover subcategoria com lançamentos de/para o Grupo 08 | 400; mensagem curta em português, NUNCA com o valor ou o texto recebidos |
 | `CustoNaoEncontradoError` | lançamento, recebimento, subcategoria ou histórico que não existe PARA ESTE workspace | 404; mesma resposta para "não existe" e "é de outra conta" |
-| `LimiteDeCustosError` | 500 lançamentos ou 500 recebimentos no processo, ou 60 subcategorias próprias ativas na conta (v0.48.0) | 422 com `detalhes.limite` (`lancamentos` \| `recebimentos` \| `categorias`) |
+| `LimiteDeCustosError` | 500 lançamentos ou 500 recebimentos no processo, 60 subcategorias próprias ativas na conta (v0.48.0) ou 5 comprovantes no lançamento (v0.49.0) | 422 com `detalhes.limite` (`lancamentos` \| `recebimentos` \| `categorias` \| `comprovantes`) |
+| `ComprovanteInvalidoError` | o arquivo do comprovante está vazio (`arquivo_vazio`, 400), passa de 5 MB (`arquivo_grande`, 413) ou não é PDF/JPEG/PNG DE VERDADE pelos primeiros bytes, ou o conteúdo não bate com o tipo declarado (`tipo_nao_aceito`, 415) | corpo com `detalhes.motivo`; mensagem do sistema, NUNCA com o nome ou o conteúdo; **zero** chamadas ao Google |
+| `ComprovanteNaoEnviadoError` | o Drive não guardou o comprovante: `drive_cheio` / `recusado` (422), `limite_de_uso` (429), `drive_indisponivel` (503) | corpo com `detalhes.motivo`; frase NOSSA, nunca texto do Google; nada é anexado |
 | `EventoDeCalendarioNaoEncontradoError` | evento não existe PARA ESTE workspace | 404; mesma resposta para "não existe" e "é de outro" |
 | `TransicaoDeEventoInvalidaError` | mexer em evento descartado | 409; descartado é final |
 | `FeedDoCalendarioAusenteError` | pediu para alterar o feed e não há feed vigente | 404 na rota autenticada; diz o que falta |
@@ -1908,9 +1912,38 @@ Não são detalhes — moldam o código.
   sem partes, sem texto de ato, sem gravar): categoria "Grupo › Subcategoria", "pago por", depósitos em bloco à parte,
   recebimentos, saldo e crédito; cancelados nunca aparecem. **Fica para a v0.49.0:** tela "Custos" por cliente (depende do
   rótulo de cliente, que só existe em processo ACOMPANHADO — sem ele o processo cai em "Sem cliente"; "Deixar de acompanhar"
-  avisará disso), PDF consolidado, CSV (UTF-8 com BOM, `;`, vírgula decimal, proteção contra injeção de fórmula; sem XLSX,
-  que exigiria biblioteca de zip) e comprovantes (só no Google Drive do advogado, ≤ 5 arquivos de 5 MB, nunca gravados no
-  servidor).
+  avisa disso), PDF consolidado, CSV e comprovantes — **tudo isso foi feito na v0.49.0, no item seguinte**.
+- **Centro de custos, ampliação da v0.49.0: tela "Custos" por cliente, PDF consolidado, CSV e comprovantes no Drive**
+  (decisões do dono; o mesmo escopo fechado da v0.48.0 — um advogado só, sem honorário, multa, vencimento, previsto,
+  alerta, custas calculadas, perfis nem multiusuário). (1) **Cliente = o RÓTULO da pasta do processo**
+  (`acompanhamentos.cliente`, lido por `rotulosDeCliente`, sem carregar o retrato). **Os custos NÃO copiam o rótulo**
+  (seria uma segunda verdade para manter em sincronia): processo sem rótulo, ou que deixou de ser acompanhado (o rótulo
+  mora na pasta), cai em **"Sem cliente"** — e a tela AVISA quantos processos estão assim; "Deixar de acompanhar" pergunta,
+  quando o processo tem custos, antes de apagar o rótulo ("o custo não se perde"). A chave de agrupamento ignora acento,
+  caixa e espaços repetidos (`chaveDoCliente`); o nome mostrado é o do processo de MENOR número daquele grupo, estável.
+  (2) **Saldo e crédito são POR PROCESSO** (recebimento é por processo): o consolidado de um cliente soma inteiros que
+  `calcularTotais` já devolveu (`somarTotais`) e nunca refaz a regra do saldo. Toda lista diz "Mostrando X de Y" com Y sem
+  filtro; cancelado nunca entra. (3) **PDF consolidado** (`gerarConsolidado`, mesma classe e mesmo desenho do PDF por
+  processo): uma seção por processo, depósitos à parte, recebimentos, totais do processo e totais gerais; sem partes, sem
+  texto de ato, sem gravar. (4) **CSV** (`application/politicas/csvDeCustos.ts`): UTF-8 com BOM, `;`, vírgula decimal sem
+  separador de milhar, `dd/mm/aaaa`, CRLF; coluna **Tipo** (Despesa | Depósito | Recebimento) e **Situação** (Ativo |
+  Cancelado — cancelado só entra com `incluirCancelados`, marcado); **toda célula de TEXTO que começa com `=`, `+`, `-`,
+  `@`, tabulação ou retorno de carro ganha um apóstrofo** (injeção de fórmula); o motivo do cancelamento e nome de
+  arquivo/link do Drive nunca saem. **Sem XLSX:** não há biblioteca de zip/planilha e dependência nova está vetada.
+  (5) **Comprovantes** (`comprovantes_custo`: id do arquivo no Drive, link, nome, tamanho, data): ≤ 5 por lançamento,
+  PDF/JPEG/PNG, ≤ 5 MB. **O tipo vem dos primeiros bytes** (`detectarTipoDoComprovante`), nunca da extensão; o `Content-Type`
+  declarado tem de bater. **O arquivo NUNCA é gravado no servidor**: o corpo binário (parser só da rota, teto de 5 MB só
+  nela — sem multipart nem dependência nova) passa pela memória até `ServicoDrive.anexar`, que o envia a
+  `Processo Vivo/<número>/Custos` (a subpasta usa a tabela de pastas com a chave `custos:<número>`). Valem TODAS as regras
+  do Drive: só por clique, só de ida (nem lista, nem lê, nem apaga), `salvarNoDrive` + `pecas` sem a exceção do "workspace
+  sem assinatura" (conta de chave de API só anexa com assinatura), `PROCESSOVIVO_DRIVE_HABILITADO`, tokens no cofre, backoff
+  limitado, renovação UMA vez, autorização revogada pede reconexão sem insistir, zero chamadas ao Google quando não há
+  plano/conexão. **"Remover" apaga só o vínculo** (o arquivo continua no Drive do advogado, e a tela diz). Histórico
+  `anexou`/`removeu` sem nome de arquivo; **nome de arquivo e tamanho nunca vão a log**; PDF e CSV levam só "Comprovantes: N".
+  O link "Abrir no Drive" só aparece para endereço do domínio do Google, em nova aba, `rel="noopener noreferrer"`. A tela
+  explica o caminho em "Meus acessos" (onde mora o cartão do Drive), com frases fixas — nunca texto do servidor ou do Google.
+  Telas: `ui/custosPorCliente.ts` (`window.__pvCustosCliente`, aba `custos` do menu, logo depois de "Calendário") e `ui/custos.ts`
+  (comprovantes, CSV, `avisoAoParar`, `abrirPainelDe`); `script.ts` não cresceu (só linhas já existentes ganharam código).
 - **O calendário LÊ datas; não calcula prazo** (v0.32.0; **exceção registrada na v0.39.0: o aviso
   a partir da análise por IA, item acima — fora dele a regra segue valendo**). Evento detectado só
   nasce de data EXPLÍCITA no texto do andamento, colada a um gatilho na mesma
@@ -2006,7 +2039,7 @@ teste e carência** (v0.28.0), **visual novo a partir do logo** (v0.29.0),
 **tela do processo sem os blocos "Pede providência" e "Última movimentação", Partes logo abaixo das peças** (v0.41.1), **Google Drive: conectar a conta do advogado e salvar as peças da Pasta digital numa pasta "Processo Vivo", por botão, escopo `drive.file`, desligado por padrão, planos Peças e IA** (v0.42.0), **Drive: o retorno do OAuth usa o workspace do `state` assinado e a conta de chave de API também conecta** (v0.42.1), **testes estáveis no CI e a volta do Google sem corrida no console** (v0.42.2), **Atualizações: situação como texto e caixa "Cumprido" como único controle, com aviso para desfazer** (v0.43.0), **cobrança recorrente pelo Mercado Pago, parte 1: assinatura por cartão atrás da porta de pagamento, webhook idempotente, reconciliação e ciclo no plano** (v0.44.0), **ambiente do pagamento declarado em `PROCESSOVIVO_PAGAMENTO_AMBIENTE`, não deduzido do token** (v0.44.1),
 **página de vendas: vitrine pública `GET /v1/planos`, plano escolhido atravessando cadastro e login, confirmação de assinatura com aceite dos Termos obrigatório e trecho para o site** (v0.45.0), **recusa do gateway com motivo de lista fechada, log saneado, 422/503 em JSON e a última falha no /admin** (v0.45.1), **tabela de Atualizações mais limpa: Atualização em uma linha, datas estreitas e coluna "Cumprido" só com a caixa e a dica** (v0.46.0),
 **tabela de Atualizações: caixa "Cumprido" na coluna Ações, Partes mais larga, sem o selo "outro destinatário" na linha e sem a frase fixa sob o filtro** (v0.46.1),
-**centro de custos do processo: lançamentos manuais por processo, categorias próprias, totais no servidor, caixa "Ressarcido" e prestação de contas em PDF para o cliente** (v0.47.0), **custos: recebimentos do cliente com saldo e crédito, quem pagou, depósitos fora das despesas, cancelar com histórico e catálogo Grupo › Subcategoria** (v0.48.0),
+**centro de custos do processo: lançamentos manuais por processo, categorias próprias, totais no servidor, caixa "Ressarcido" e prestação de contas em PDF para o cliente** (v0.47.0), **custos: recebimentos do cliente com saldo e crédito, quem pagou, depósitos fora das despesas, cancelar com histórico e catálogo Grupo › Subcategoria** (v0.48.0), **custos por cliente: tela no menu, PDF consolidado, CSV, comprovantes no Google Drive do advogado e aviso ao deixar de acompanhar** (v0.49.0),
 Dockerfile multi-stage, CI, 2961 testes.
 
 **Pasta digital (v0.33.0, backend):** `GET /v1/processos/:numero/pasta` (lista +

@@ -139,6 +139,27 @@ describe('o Drive e as regras de dependência', () => {
     expect(quemChama).toEqual(['src/main/http/rotas/drive.ts']);
   });
 
+  it('v0.49.0 — comprovantes SÓ POR CLIQUE: a rota chama o serviço de custos, que é o único a chamar o Drive', () => {
+    const quemAnexa = arquivosTs(join(RAIZ, 'src'))
+      .filter((a) => /\.anexarComprovante\(/.test(fonte(a)))
+      .map(rel);
+    expect(quemAnexa).toEqual(['src/main/http/rotas/custos.ts']);
+    const quemEnvia = arquivosTs(join(RAIZ, 'src'))
+      .filter((a) => /comprovantes\??\.anexar\(/.test(fonte(a)))
+      .map(rel);
+    expect(quemEnvia).toEqual(['src/application/services/ServicoCustos.ts']);
+    // A porta dos comprovantes só tem IDA: não lista, não lê, não apaga.
+    const porta = fonte(join(RAIZ, 'src/domain/ports/DestinoDeComprovantes.ts')).replace(
+      /\/\*[\s\S]*?\*\//g,
+      '',
+    );
+    expect(porta).toContain('anexar(');
+    for (const proibido of ['listar', 'buscar', 'apagar', 'remover', 'baixar', 'ler']) {
+      expect(porta, proibido).not.toContain(`${proibido}(`);
+    }
+    expect(porta).not.toMatch(/google/i);
+  });
+
   it('o escopo pedido ao Google é um só, `drive.file`, e nenhum outro aparece no código', () => {
     const escopos = new Set<string>();
     for (const a of arquivosTs(join(RAIZ, 'src'))) {

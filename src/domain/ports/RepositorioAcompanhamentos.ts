@@ -90,6 +90,13 @@ export interface RepositorioAcompanhamentos {
   /** Os rótulos de cliente em uso, para alimentar o seletor. */
   clientes(workspace: string): Promise<string[]>;
 
+  /**
+   * O rótulo de cliente de CADA processo acompanhado que tem um (número → rótulo), sem carregar o
+   * retrato do processo. É o que a visão de custos por cliente usa: processo sem acompanhamento, ou
+   * sem rótulo, não aparece aqui — e cai em "Sem cliente".
+   */
+  rotulosDeCliente(workspace: string): Promise<ReadonlyMap<string, string>>;
+
   buscar(workspace: string, numero: string): Promise<Acompanhamento | undefined>;
 
   listar(

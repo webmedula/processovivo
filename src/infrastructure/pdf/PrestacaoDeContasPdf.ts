@@ -1,8 +1,10 @@
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import type { PDFFont, PDFPage } from 'pdf-lib';
 import type {
+  DocumentoConsolidadoDePrestacao,
   DocumentoDePrestacao,
   GeradorDePrestacaoDeContas,
+  SecaoDeProcessoNaPrestacao,
 } from '../../domain/ports/GeradorDePrestacaoDeContas.js';
 
 /**
@@ -44,18 +46,75 @@ const TINTA_SUAVE = rgb(0.38, 0.42, 0.5);
 const LINHA = rgb(0.82, 0.85, 0.89);
 const FUNDO_CABECALHO = rgb(0.93, 0.95, 0.97);
 
+/** O que a capa e o cabeçalho corrente precisam, igual para o PDF de um processo e o consolidado. */
+interface Meta {
+  readonly titulo: string;
+  readonly fatos: Array<[string, string]>;
+  readonly filtros: readonly string[];
+  readonly versao: string;
+  readonly cabecalhoCorrente: string;
+}
+
+type Secao = Pick<
+  DocumentoDePrestacao,
+  'linhas' | 'depositos' | 'recebimentos' | 'subtotais' | 'totais'
+>;
+
+function fatosComuns(d: {
+  advogado?: { nome: string; oab?: string } | undefined;
+  geradoEm: string;
+}): Array<[string, string]> {
+  const fatos: Array<[string, string]> = [];
+  if (d.advogado) {
+    fatos.push([
+      'Advogado(a)',
+      d.advogado.oab ? `${d.advogado.nome} · OAB ${d.advogado.oab}` : d.advogado.nome,
+    ]);
+  }
+  fatos.push(['Gerado em', d.geradoEm]);
+  return fatos;
+}
+
 export class PrestacaoDeContasPdf implements GeradorDePrestacaoDeContas {
   async gerar(d: DocumentoDePrestacao): Promise<Uint8Array> {
+    const fatos: Array<[string, string]> = [
+      ['Processo', d.numeroProcesso],
+      ['Tribunal', d.tribunal],
+    ];
+    if (d.cliente) fatos.push(['Cliente', d.cliente]);
+    fatos.push(...fatosComuns(d));
+    const desenho = await this.preparar({
+      titulo: 'Prestação de contas',
+      fatos,
+      filtros: d.filtros,
+      versao: d.versao,
+      cabecalhoCorrente: `Prestação de contas · Processo ${d.numeroProcesso}`,
+    });
+    desenho.tudo(d);
+    return desenho.salvar();
+  }
+
+  /** O consolidado de um cliente: uma seção por processo e, no fim, os totais gerais. */
+  async gerarConsolidado(d: DocumentoConsolidadoDePrestacao): Promise<Uint8Array> {
+    const desenho = await this.preparar({
+      titulo: `Prestação de contas — ${d.cliente}`,
+      fatos: [['Cliente', d.cliente], ...fatosComuns(d)],
+      filtros: d.filtros,
+      versao: d.versao,
+      cabecalhoCorrente: `Prestação de contas · ${d.cliente}`,
+    });
+    desenho.tudoConsolidado(d);
+    return desenho.salvar();
+  }
+
+  private async preparar(meta: Meta): Promise<Desenho> {
     const doc = await PDFDocument.create();
     doc.setTitle('Prestação de contas');
     doc.setProducer('Processo Vivo');
     doc.setCreator('Processo Vivo');
     const regular = await doc.embedFont(StandardFonts.Helvetica);
     const negrito = await doc.embedFont(StandardFonts.HelveticaBold);
-    const desenho = new Desenho(doc, regular, negrito, d);
-    desenho.tudo();
-
-    return doc.save();
+    return new Desenho(doc, regular, negrito, meta);
   }
 }
 
@@ -66,45 +125,99 @@ class Desenho {
   private rotulos: readonly string[] = ROTULOS_DAS_DESPESAS;
   private readonly paginas: PDFPage[] = [];
   private readonly aceitos: Set<number>;
+  /** A seção que está sendo desenhada (o processo único, ou um dos do consolidado). */
+  private sec!: Secao;
 
   constructor(
     private readonly doc: PDFDocument,
     private readonly regular: PDFFont,
     private readonly negrito: PDFFont,
-    private readonly d: DocumentoDePrestacao,
+    private readonly meta: Meta,
   ) {
     this.aceitos = new Set(regular.getCharacterSet());
   }
 
-  tudo(): void {
+  async salvar(): Promise<Uint8Array> {
+    this.carimbarRodapes();
+    return this.doc.save();
+  }
+
+  tudo(d: DocumentoDePrestacao): void {
     this.novaPagina(true);
     this.capa();
+    this.sec = d;
+    this.corpo();
+    this.fechamento();
+  }
+
+  tudoConsolidado(d: DocumentoConsolidadoDePrestacao): void {
+    this.novaPagina(true);
+    this.capa();
+    if (d.secoes.length === 0) {
+      this.cabecalhoDaTabela(ROTULOS_DAS_DESPESAS);
+      this.linhaSimples('Nenhum processo neste filtro.', this.regular);
+    }
+    for (const s of d.secoes) this.secaoDoProcesso(s);
+    this.totaisGerais(d);
+  }
+
+  private secaoDoProcesso(s: SecaoDeProcessoNaPrestacao): void {
+    this.y -= 18;
+    // Título do processo + cabeçalho + uma linha: nunca um título sozinho no pé da página.
+    this.garantir(22 + 18 + 30, false);
+    this.pagina.drawRectangle({
+      x: MARGEM,
+      y: this.y - 20,
+      width: LARGURA_UTIL,
+      height: 22,
+      color: FUNDO_CABECALHO,
+    });
+    this.texto(
+      `Processo ${s.numeroProcesso} · ${s.tribunal}`,
+      MARGEM + 6,
+      this.y - 14,
+      10.5,
+      this.negrito,
+      TINTA,
+    );
+    this.y -= 26;
+    this.sec = s;
+    this.corpo();
+    // Totais do PROCESSO, compactos, antes do próximo.
+    this.quadroDeTotais('Totais do processo', s.totais);
+  }
+
+  private totaisGerais(d: DocumentoConsolidadoDePrestacao): void {
+    this.y -= 18;
+    this.quadroDeTotais('Totais gerais', d.totaisGerais);
+  }
+
+  /** Despesas, depósitos (bloco à parte) e recebimentos de `this.sec`. */
+  private corpo(): void {
     this.cabecalhoDaTabela(ROTULOS_DAS_DESPESAS);
-    if (this.d.linhas.length === 0) {
+    if (this.sec.linhas.length === 0) {
       this.linhaSimples('Nenhuma despesa neste filtro.', this.regular);
     }
-    for (const l of this.d.linhas) {
+    for (const l of this.sec.linhas) {
       this.linhaDaTabela([l.data, l.descricao, l.categoria, l.valor, l.situacao]);
     }
     // Depósitos e garantias: bloco à parte, que NÃO entra no total de despesas.
-    if (this.d.depositos.length > 0) {
+    if (this.sec.depositos.length > 0) {
       this.tituloDeBloco(
         'Depósitos e garantias',
         'Não entram no total de despesas.',
         ROTULOS_DAS_DESPESAS,
       );
-      for (const l of this.d.depositos) {
+      for (const l of this.sec.depositos) {
         this.linhaDaTabela([l.data, l.descricao, l.categoria, l.valor, l.situacao]);
       }
     }
-    if (this.d.recebimentos.length > 0) {
+    if (this.sec.recebimentos.length > 0) {
       this.tituloDeBloco('Recebimentos do cliente', undefined, ROTULOS_DOS_RECEBIMENTOS);
-      for (const r of this.d.recebimentos) {
+      for (const r of this.sec.recebimentos) {
         this.linhaDaTabela([r.data, r.observacao, '', r.valor, '']);
       }
     }
-    this.fechamento();
-    this.carimbarRodapes();
   }
 
   // ---------- páginas ----------
@@ -116,7 +229,7 @@ class Desenho {
     if (!primeira) {
       // Cabeçalho corrente: quem recebe só a página 4 sabe de que processo é.
       this.texto(
-        `Prestação de contas · Processo ${this.d.numeroProcesso}`,
+        this.meta.cabecalhoCorrente,
         MARGEM,
         this.y - 8,
         8.5,
@@ -153,21 +266,13 @@ class Desenho {
   // ---------- blocos ----------
 
   private capa(): void {
-    const d = this.d;
-    this.texto('Prestação de contas', MARGEM, this.y - 18, 18, this.negrito, TINTA);
-    this.y -= 34;
-    const fatos: Array<[string, string]> = [
-      ['Processo', d.numeroProcesso],
-      ['Tribunal', d.tribunal],
-    ];
-    if (d.cliente) fatos.push(['Cliente', d.cliente]);
-    if (d.advogado) {
-      fatos.push([
-        'Advogado(a)',
-        d.advogado.oab ? `${d.advogado.nome} · OAB ${d.advogado.oab}` : d.advogado.nome,
-      ]);
+    const m = this.meta;
+    const titulo = this.quebrar(m.titulo, this.negrito, 18, LARGURA_UTIL);
+    for (const [i, l] of titulo.entries()) {
+      this.texto(l, MARGEM, this.y - 18 - i * 22, 18, this.negrito, TINTA);
     }
-    fatos.push(['Gerado em', d.geradoEm]);
+    this.y -= 34 + (titulo.length - 1) * 22;
+    const fatos = m.fatos;
     for (const [rotulo, valor] of fatos) {
       this.texto(rotulo, MARGEM, this.y - 9, TAMANHO, this.negrito, TINTA_SUAVE);
       const linhas = this.quebrar(valor, this.regular, 10, LARGURA_UTIL - 78);
@@ -176,7 +281,7 @@ class Desenho {
       }
       this.y -= 14 + (linhas.length - 1) * 12;
     }
-    for (const f of d.filtros) {
+    for (const f of m.filtros) {
       this.texto(f, MARGEM, this.y - 9, TAMANHO, this.regular, TINTA_SUAVE);
       this.y -= 13;
     }
@@ -262,7 +367,7 @@ class Desenho {
 
   /** Subtotais por categoria e, por último, os totais — sempre na última página. */
   private fechamento(): void {
-    const d = this.d;
+    const d = this.sec;
     this.y -= 16;
     // Título + cabeçalho + a primeira linha: nunca um título sozinho no pé da página.
     this.garantir(18 + 18 + 16, false);
@@ -279,7 +384,7 @@ class Desenho {
       this.garantir(16, false);
       this.texto(s.categoria, MARGEM + 4, this.y - 10, TAMANHO, this.regular, TINTA);
       const q = `${s.quantidade} ${s.quantidade === 1 ? 'lançamento' : 'lançamentos'}`;
-      this.texto(q, MARGEM + 250, this.y - 10, TAMANHO, this.regular, TINTA_SUAVE);
+      this.texto(q, MARGEM + 300, this.y - 10, TAMANHO, this.regular, TINTA_SUAVE);
       const w = this.negrito.widthOfTextAtSize(this.seguro(s.valor), TAMANHO);
       this.texto(
         s.valor,
@@ -297,14 +402,17 @@ class Desenho {
         color: LINHA,
       });
     }
-
-    // O bloco de totais é INTEIRO ou não é: se não cabe, a página nova só tem os totais.
-    const alturaDosTotais = 18 + d.totais.length * 20 + 14;
     this.y -= 14;
+    this.quadroDeTotais('Totais', d.totais);
+  }
+
+  /** O quadro de totais é INTEIRO ou não é: se não cabe, a página nova só tem ele. */
+  private quadroDeTotais(titulo: string, totais: Secao['totais']): void {
+    const alturaDosTotais = 18 + totais.length * 20 + 14;
     this.garantir(alturaDosTotais, false);
-    this.texto('Totais', MARGEM, this.y - 10, 11, this.negrito, TINTA);
+    this.texto(titulo, MARGEM, this.y - 10, 11, this.negrito, TINTA);
     this.y -= 22;
-    for (const t of d.totais) {
+    for (const t of totais) {
       if (t.destaque) {
         this.pagina.drawRectangle({
           x: MARGEM,
@@ -340,7 +448,7 @@ class Desenho {
 
   private carimbarRodapes(): void {
     const total = this.paginas.length;
-    const fixo = `Valores informados pelo advogado. Gerado pelo Processo Vivo, versão ${this.d.versao}.`;
+    const fixo = `Valores informados pelo advogado. Gerado pelo Processo Vivo, versão ${this.meta.versao}.`;
     this.paginas.forEach((p, i) => {
       p.drawLine({
         start: { x: MARGEM, y: MARGEM + 22 },

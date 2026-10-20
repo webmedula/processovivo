@@ -45,10 +45,22 @@ var NOVA='__nova__';
 var GRUPO_DE_DEPOSITOS='08';
 var AVISO_DO_DEPOSITO='Depósitos e garantias não entram no total de despesas.';
 var AVISO_PAGO_PELO_CLIENTE='Despesa paga pelo cliente não é cobrada de volta: não gera saldo.';
-var ROTULO_DA_OPERACAO={criou:'Criado',editou:'Editado',cancelou:'Cancelado',reativou:'Reativado'};
+var ROTULO_DA_OPERACAO={criou:'Criado',editou:'Editado',cancelou:'Cancelado',reativou:'Reativado',anexou:'Comprovante anexado',removeu:'Comprovante removido'};
+var LIMITE_ARQUIVO=5*1024*1024;
+var TEXTO_DO_DRIVE={
+  desligado:'O envio de comprovantes ao Google Drive não está ativado neste servidor.',
+  sem_plano:'Anexar comprovantes ao Google Drive faz parte dos planos Peças e IA.',
+  nao_conectado:'Conecte o Google Drive em Meus acessos para anexar comprovantes.',
+  precisa_reconectar:'A autorização do Google Drive expirou. Reconecte em Meus acessos para anexar comprovantes.'
+};
+var CLIPE='<svg class="cust-ic" aria-hidden="true" focusable="false" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m21.4 11-9.2 9.2a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5"/></svg>';
+function linkSeguro(u){return /^https:\/\/(drive|docs)\.google\.com\//.test(String(u||''))}
+function tamanhoLegivel(n){return n>=1048576?(n/1048576).toFixed(1).replace('.',',')+' MB':Math.max(1,Math.round(n/1024))+' KB'}
 
 /* Estado DESTE processo; null = painel nunca aberto aqui. */
 var S=null;
+/* Pedido da tela Custos por cliente: abrir o painel assim que a tela deste processo desenhar. */
+var pendente='';
 
 var ICONE='<svg class="cust-ic" aria-hidden="true" focusable="false" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M14.8 9.2c-.5-.8-1.5-1.2-2.8-1.2-1.6 0-2.7.8-2.7 2s1 1.7 2.7 2c1.7.3 2.9.8 2.9 2.1 0 1.2-1.2 2-2.9 2-1.4 0-2.5-.5-3-1.4M12 6.5V8m0 8v1.5"/></svg>';
 
@@ -145,8 +157,34 @@ function acoesHtml(tipo,x,rotulo){
   }else{
     h+='<button type="button" class="bt bt2 cust-mini" data-cust="editar" data-tipo="'+tipo+'" data-id="'+id+'" aria-label="Editar: '+rotulo+'">Editar</button>'+
       '<button type="button" class="bt bt2 cust-mini" data-cust="cancelar" data-tipo="'+tipo+'" data-id="'+id+'" aria-label="Cancelar: '+rotulo+'">Cancelar</button>';
+    if(tipo==='lancamento'){
+      var cheio=((x.comprovantes||[]).length>=S.dados.limites.comprovantesPorLancamento);
+      h+='<button type="button" class="bt bt2 cust-mini" data-cust="anexar" data-id="'+id+'" aria-label="Anexar comprovante: '+rotulo+'"'+(cheio?' disabled title="Este lançamento já tem '+S.dados.limites.comprovantesPorLancamento+' comprovantes."':'')+'>Anexar comprovante</button>';
+    }
   }
   return h+'<button type="button" class="bt bt2 cust-mini" data-cust="historico" data-tipo="'+tipo+'" data-id="'+id+'" aria-label="Histórico: '+rotulo+'">Histórico</button>';
+}
+
+function comprovantesHtml(l){
+  var cs=l.comprovantes||[];
+  if(!cs.length)return '';
+  var h='<span class="cust-comp"><span class="cust-comp-n">'+CLIPE+'<span class="cust-sr">Comprovantes: </span>'+cs.length+'</span>'+
+    '<span class="cust-comp-t"> '+(cs.length===1?'comprovante':'comprovantes')+'</span>';
+  h+='<ul class="cust-comp-lista" aria-label="Comprovantes deste lançamento">'+cs.map(function(c){
+    var id=esc(c.id),lid=esc(l.id);
+    var abrir=linkSeguro(c.link)?'<a href="'+esc(c.link)+'" target="_blank" rel="noopener noreferrer">Abrir no Drive<span class="cust-sr">: '+esc(c.nome)+'</span></a>':'';
+    var remover;
+    if(S.removendoComp===c.id){
+      remover='<span class="cust-conf" role="group" aria-label="Confirmar remoção do comprovante">'+
+        '<span>Remove só o vínculo. O arquivo continua no seu Google Drive.</span>'+
+        '<button type="button" class="bt bt2 cust-perigo cust-mini" data-cust="remover-comp-sim" data-id="'+lid+'" data-comp="'+id+'">Remover vínculo</button>'+
+        '<button type="button" class="bt bt2 cust-mini" data-cust="remover-comp-nao" data-id="'+lid+'" data-comp="'+id+'" id="cust-rcn-'+id+'">Voltar</button></span>';
+    }else{
+      remover='<button type="button" class="bt bt2 cust-mini" data-cust="remover-comp" data-id="'+lid+'" data-comp="'+id+'" aria-label="Remover comprovante: '+esc(c.nome)+'">Remover</button>';
+    }
+    return '<li><span class="cust-comp-nome">'+esc(c.nome)+'</span> <span class="cust-nd">('+tamanhoLegivel(c.tamanho)+')</span> '+abrir+' '+(l.cancelado?'':remover)+'</li>';
+  }).join('')+'</ul></span>';
+  return h;
 }
 
 function marcaDeCancelado(x){
@@ -161,7 +199,7 @@ function linhaHtml(l){
   var cobrar=l.pagoPor==='cliente'?'<span class="cust-nd" aria-label="Não se aplica">—</span>':(l.reembolsavel?'Sim':'Não');
   return '<tr data-id="'+id+'"'+(l.cancelado?' class="cust-cancelado"':'')+'>'+
     '<td data-rotulo="Data">'+esc(dataBr(l.data))+'</td>'+
-    '<td data-rotulo="Descrição" class="cust-desc">'+esc(l.descricao)+marcaDeCancelado(l)+'</td>'+
+    '<td data-rotulo="Descrição" class="cust-desc">'+esc(l.descricao)+marcaDeCancelado(l)+comprovantesHtml(l)+'</td>'+
     '<td data-rotulo="Subcategoria">'+esc(nomeDaCategoria(l.categoria))+'</td>'+
     '<td data-rotulo="Valor" class="cust-val">'+reaisDeCentavos(l.valorCentavos)+'</td>'+
     '<td data-rotulo="Pago por">'+(l.pagoPor==='cliente'?'Cliente':'Escritório')+'</td>'+
@@ -315,6 +353,8 @@ function esqueleto(){
     '<div id="cust-formulario"></div>'+
     '<div class="cust-aviso" id="cust-aviso" role="status"></div>'+
     '<div id="cust-msg" class="cust-msg" role="alert"></div>'+
+    '<div id="cust-comp-aviso" class="cust-msg cust-comp-aviso" role="status"></div>'+
+    '<input type="file" id="cust-arq" class="cust-sr" tabindex="-1" aria-hidden="true" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png">'+
     '<div id="cust-lista" class="cust-lista"></div>'+
     '<div id="cust-historico"></div>'+
     '<div class="cust-pdf"><h4 class="cust-rot">Prestação de contas</h4>'+
@@ -324,7 +364,12 @@ function esqueleto(){
     '<div class="cust-campo"><label for="cust-pdf-ate">Até</label><input id="cust-pdf-ate" type="date"></div>'+
     '<label class="cust-marca"><input type="checkbox" id="cust-pdf-cobrar"> Somente o que está a cobrar</label></div>'+
     '<div class="cust-botoes"><button type="button" class="bt bt2" data-cust="pdf" id="cust-pdf">Gerar prestação de contas (PDF)</button></div>'+
-    '<div id="cust-pdf-msg" class="cust-msg" role="alert"></div></div></section>';
+    '<div id="cust-pdf-msg" class="cust-msg" role="alert"></div>'+
+    '<h4 class="cust-rot">Planilha</h4>'+
+    '<p class="cust-nota">Uma linha por lançamento e outra por recebimento, para abrir no Excel. Usa o mesmo período acima.</p>'+
+    '<div class="cust-campos"><label class="cust-marca"><input type="checkbox" id="cust-csv-canc"> Incluir cancelados (marcados)</label></div>'+
+    '<div class="cust-botoes"><button type="button" class="bt bt2" data-cust="csv" id="cust-csv">Exportar planilha (CSV)</button></div>'+
+    '<div id="cust-csv-msg" class="cust-msg" role="alert"></div></div></section>';
 }
 
 function pintarDados(){
@@ -389,7 +434,7 @@ function aposDesenhar(numero){
   var capa=document.querySelector('#conteudo .capa');
   var num=capa?capa.querySelector('.num'):null;
   if(!capa||!num||digitos(num.textContent)!==n)return;
-  if(!S)S={numero:n,aberto:false,dados:null,rascunho:null,confirmando:null,mostrarCancelados:false,historico:null,salvando:{},ultimo:null,timer:0};
+  if(!S)S={numero:n,aberto:false,dados:null,rascunho:null,confirmando:null,removendoComp:'',anexandoA:'',mostrarCancelados:false,historico:null,salvando:{},ultimo:null,timer:0};
   if(!document.getElementById('cust-abrir')){
     var ancora=document.getElementById('parar')||document.getElementById('acompanhar');
     var linha=ancora?ancora.parentElement:null;
@@ -405,7 +450,9 @@ function aposDesenhar(numero){
   /* A tela foi redesenhada (régua carregada) com o painel aberto: devolve o painel a partir do estado. */
   if(S.aberto)montarRaiz();
   else marcarBotao();
+  if(pendente===n){pendente='';if(!S.aberto)abrir()}
 }
+function abrirPainelDe(numero){pendente=digitos(numero);pv().abrir(numero)}
 
 function descartar(){
   if(S&&S.timer)clearTimeout(S.timer);
@@ -708,18 +755,14 @@ function fecharHistorico(){
 }
 
 /* ---------- prestação de contas ---------- */
-function gerarPdf(){
-  var msg=document.getElementById('cust-pdf-msg'),botao=document.getElementById('cust-pdf');
+function baixar(o){
+  var msg=document.getElementById(o.msg),botao=document.getElementById(o.botao);
   function dizer(t){if(msg)msg.textContent=t||''}
   var de=document.getElementById('cust-pdf-de').value,ate=document.getElementById('cust-pdf-ate').value;
-  var cobrar=document.getElementById('cust-pdf-cobrar').checked;
   if(de&&ate&&de>ate)return dizer('A data inicial não pode ser depois da data final.');
   dizer('');
-  var q=[];
-  if(de)q.push('de='+encodeURIComponent(de));
-  if(ate)q.push('ate='+encodeURIComponent(ate));
-  if(cobrar)q.push('somenteACobrar=true');
-  var url=caminhoDoProcesso(S.numero)+'/prestacao.pdf'+(q.length?'?'+q.join('&'):'');
+  var q=o.consulta(de,ate);
+  var url=caminhoDoProcesso(S.numero)+o.caminho+(q.length?'?'+q.join('&'):'');
   var chave=pv().chave();
   var numero=S.numero;
   botao.disabled=true;botao.setAttribute('aria-busy','true');botao.textContent='Gerando…';
@@ -728,18 +771,141 @@ function gerarPdf(){
       var e=new Error(b.mensagem||('HTTP '+r.status));e.status=r.status;e.codigo=b.erro;throw e});
     var cd=r.headers.get('content-disposition')||'';
     var m=/filename="([^"]+)"/.exec(cd);
-    return r.blob().then(function(blob){return{blob:blob,nome:m?m[1]:'prestacao-de-contas-'+numero+'.pdf'}});
+    return r.blob().then(function(blob){return{blob:blob,nome:m?m[1]:o.padrao+'-'+numero+o.extensao}});
   }).then(function(x){
     var a=document.createElement('a');
     a.href=URL.createObjectURL(x.blob);a.download=x.nome;
     document.body.appendChild(a);a.click();
     setTimeout(function(){URL.revokeObjectURL(a.href);document.body.removeChild(a)},1000);
     dizer('');
-    anunciar('Prestação de contas gerada.');
+    anunciar(o.pronto);
   }).catch(function(e){dizer(mensagemDeErro(e))}).then(function(){
-    var b=document.getElementById('cust-pdf');
-    if(b){b.disabled=false;b.removeAttribute('aria-busy');b.textContent='Gerar prestação de contas (PDF)'}
+    var b=document.getElementById(o.botao);
+    if(b){b.disabled=false;b.removeAttribute('aria-busy');b.textContent=o.rotulo}
   });
+}
+function gerarPdf(){
+  baixar({msg:'cust-pdf-msg',botao:'cust-pdf',caminho:'/prestacao.pdf',padrao:'prestacao-de-contas',extensao:'.pdf',rotulo:'Gerar prestação de contas (PDF)',pronto:'Prestação de contas gerada.',
+    consulta:function(de,ate){
+      var q=[];
+      if(de)q.push('de='+encodeURIComponent(de));
+      if(ate)q.push('ate='+encodeURIComponent(ate));
+      if(document.getElementById('cust-pdf-cobrar').checked)q.push('somenteACobrar=true');
+      return q}});
+}
+function gerarCsv(){
+  baixar({msg:'cust-csv-msg',botao:'cust-csv',caminho:'/lancamentos.csv',padrao:'custos',extensao:'.csv',rotulo:'Exportar planilha (CSV)',pronto:'Planilha gerada.',
+    consulta:function(de,ate){
+      var q=[];
+      if(de)q.push('de='+encodeURIComponent(de));
+      if(ate)q.push('ate='+encodeURIComponent(ate));
+      if(document.getElementById('cust-csv-canc').checked)q.push('incluirCancelados=true');
+      return q}});
+}
+
+/* ---------- comprovantes (o arquivo vai direto ao Google Drive do advogado) ---------- */
+function avisoDeComprovante(t){
+  var a=document.getElementById('cust-comp-aviso');
+  if(a)a.textContent=t||'';
+}
+function irParaAcessos(){if(window.__processovivo_ir)window.__processovivo_ir('credenciais')}
+/* Antes de abrir o seletor de arquivo: o Drive está pronto? Cada frase é nossa e fixa. */
+function conferirDrive(){
+  return pv().api('/v1/drive').then(function(d){
+    if(!d||d.habilitado===false)return 'desligado';
+    if(d.plano===false)return 'sem_plano';
+    if(d.estado==='precisa_reconectar')return 'precisa_reconectar';
+    if(d.estado!=='conectado')return 'nao_conectado';
+    return '';
+  }).catch(function(){return ''});
+}
+function pedirComprovante(id){
+  avisoDeComprovante('');
+  conferirDrive().then(function(motivo){
+    if(!S)return;
+    if(motivo){
+      var a=document.getElementById('cust-comp-aviso');
+      if(!a)return;
+      a.textContent=TEXTO_DO_DRIVE[motivo]||'';
+      if(motivo==='nao_conectado'||motivo==='precisa_reconectar'){
+        a.appendChild(document.createTextNode(' '));
+        var b=document.createElement('button');
+        b.type='button';b.className='bt bt2 cust-mini';b.textContent='Abrir Meus acessos';
+        b.addEventListener('click',irParaAcessos);
+        a.appendChild(b);
+      }
+      return;
+    }
+    S.anexandoA=id;
+    var inp=document.getElementById('cust-arq');
+    if(inp){inp.value='';inp.click()}
+  });
+}
+function frasePorMotivo(e){
+  var m=e&&e.detalhes&&e.detalhes.motivo,s=e&&e.status;
+  if(m&&TEXTO_DO_DRIVE[m])return TEXTO_DO_DRIVE[m];
+  if(m==='tipo_nao_aceito')return 'Anexe um PDF, uma imagem JPEG ou uma imagem PNG.';
+  if(m==='arquivo_grande')return 'O comprovante pode ter até 5 MB.';
+  if(m==='arquivo_vazio')return 'Escolha um arquivo para anexar.';
+  if(m==='drive_cheio')return 'O seu Google Drive está sem espaço. Libere espaço e tente de novo.';
+  if(m==='limite_de_uso')return 'O Google Drive pediu uma pausa. Tente de novo em alguns minutos.';
+  if(m==='drive_indisponivel')return 'O Google Drive não respondeu agora. Tente de novo em instantes.';
+  if(m==='recusado')return 'O Google Drive recusou o arquivo. Confira o comprovante e tente de novo.';
+  if(s===413)return 'O comprovante pode ter até 5 MB.';
+  if(s===415)return 'Anexe um PDF, uma imagem JPEG ou uma imagem PNG.';
+  if(s===422&&e.codigo==='LIMITE_DE_CUSTOS')return 'Este lançamento já tem 5 comprovantes. Remova algum para anexar outro.';
+  return mensagemDeErro(e);
+}
+function enviarComprovante(arquivo){
+  var id=S.anexandoA;
+  S.anexandoA='';
+  if(!id||!arquivo)return;
+  if(arquivo.size>LIMITE_ARQUIVO)return avisoDeComprovante('O comprovante pode ter até 5 MB.');
+  if(arquivo.size===0)return avisoDeComprovante('Escolha um arquivo para anexar.');
+  var chave=pv().chave();
+  var cab={'content-type':arquivo.type||'application/octet-stream','x-nome-do-arquivo':encodeURIComponent(arquivo.name||'comprovante')};
+  if(chave)cab['x-api-key']=chave;
+  avisoDeComprovante('Enviando o comprovante ao seu Google Drive…');
+  var botao=document.querySelector('#cust-lista [data-cust="anexar"][data-id="'+id+'"]');
+  if(botao)botao.disabled=true;
+  fetch('/v1/custos/'+encodeURIComponent(id)+'/comprovantes',{method:'POST',headers:cab,body:arquivo}).then(function(r){
+    if(!r.ok)return r.json().catch(function(){return{}}).then(function(b){
+      var e=new Error(b.mensagem||('HTTP '+r.status));e.status=r.status;e.codigo=b.erro;e.detalhes=b.detalhes;throw e});
+    return r.json();
+  }).then(function(){
+    return carregar().then(function(){
+      avisoDeComprovante('Comprovante anexado. O arquivo ficou no seu Google Drive.');
+      anunciar('Comprovante anexado.');
+      var b=document.querySelector('#cust-lista [data-cust="anexar"][data-id="'+id+'"]');
+      if(b&&!b.disabled)b.focus();
+    });
+  }).catch(function(e){
+    if(!S)return;
+    avisoDeComprovante(frasePorMotivo(e));
+    if(botao)botao.disabled=false;
+  });
+}
+function removerComprovante(id,comp){
+  pv().api('/v1/custos/'+encodeURIComponent(id)+'/comprovantes/'+encodeURIComponent(comp),{method:'DELETE'}).then(function(){
+    S.removendoComp='';
+    return carregar();
+  }).then(function(){
+    avisoDeComprovante('Comprovante removido do lançamento. O arquivo continua no seu Google Drive.');
+    anunciar('Comprovante removido. O arquivo continua no seu Google Drive.');
+    var b=document.querySelector('#cust-lista [data-cust="anexar"][data-id="'+id+'"]');
+    if(b)b.focus();
+  }).catch(function(e){S.removendoComp='';pintarDados();mensagem(mensagemDeErro(e))});
+}
+
+/* "Deixar de acompanhar": o rótulo de cliente mora na pasta do processo. Se o processo tem custos, a
+   pessoa é avisada de que ele passa a "Sem cliente" na visão por cliente (os custos NÃO se perdem). */
+function avisoAoParar(numero){
+  var n=digitos(numero);
+  return pv().api(caminhoDoProcesso(n)+'/totais').then(function(t){
+    var tem=t&&((t.quantidade||0)>0||(t.totalRecebidoCentavos||0)>0);
+    if(!tem)return true;
+    return window.confirm('Este processo tem custos lançados. Ao deixar de acompanhar, o rótulo de cliente se perde e o processo passa a aparecer como "Sem cliente" na tela Custos por cliente. Os custos não se perdem. Deixar de acompanhar mesmo assim?');
+  }).catch(function(){return true});
 }
 
 /* ---------- eventos (delegados no documento; a tela é redesenhada com frequência) ---------- */
@@ -764,6 +930,11 @@ document.addEventListener('click',function(ev){
   else if(a==='historico')abrirHistorico(tipo,id);
   else if(a==='hist-fechar')fecharHistorico();
   else if(a==='pdf')gerarPdf();
+  else if(a==='csv')gerarCsv();
+  else if(a==='anexar')pedirComprovante(id);
+  else if(a==='remover-comp'){S.removendoComp=t.getAttribute('data-comp');pintarDados();var rn=document.getElementById('cust-rcn-'+S.removendoComp);if(rn)rn.focus()}
+  else if(a==='remover-comp-nao'){var rid=S.removendoComp;S.removendoComp='';pintarDados();var rb=document.querySelector('#cust-lista [data-cust="remover-comp"][data-comp="'+rid+'"]');if(rb)rb.focus()}
+  else if(a==='remover-comp-sim')removerComprovante(id,t.getAttribute('data-comp'));
   else if(a==='criar-categoria'){
     lerCampos();
     var nome=String(S.rascunho.nomeNova).replace(/\s+/g,' ').trim();
@@ -779,6 +950,7 @@ document.addEventListener('click',function(ev){
 document.addEventListener('change',function(ev){
   var t=ev.target;
   if(!S||!t||!t.getAttribute)return;
+  if(t.id==='cust-arq'){enviarComprovante(t.files&&t.files[0]);return}
   if(t.id==='cust-f-mostrar-canc'){
     S.mostrarCancelados=t.checked;
     carregar().then(function(){
@@ -824,12 +996,13 @@ document.addEventListener('keydown',function(ev){
   if(ev.target.closest&&ev.target.closest('#cust-aviso')){ev.preventDefault();limparAviso();return}
   ev.preventDefault();
   if(S.confirmando){voltarDoCancelamento(S.confirmando.tipo,S.confirmando.id);return}
+  if(S.removendoComp){var rc=S.removendoComp;S.removendoComp='';pintarDados();var rb2=document.querySelector('#cust-lista [data-cust="remover-comp"][data-comp="'+rc+'"]');if(rb2)rb2.focus();return}
   if(S.historico){fecharHistorico();return}
   if(S.rascunho){fecharFormulario(true);return}
   fechar();
 });
 
-window.__pvCustos={aposDesenhar:aposDesenhar,sair:sair};
+window.__pvCustos={aposDesenhar:aposDesenhar,sair:sair,avisoAoParar:avisoAoParar,abrirPainelDe:abrirPainelDe};
 })();
 `;
 
@@ -898,6 +1071,12 @@ export const ESTILOS_CUSTOS = `
 .cust-motivo{min-width:0;flex:1 1 140px}
 .cust-motivo-l{font-size:12px;font-weight:600;color:var(--tinta2)}
 .cust-escondidos{display:inline-block;margin:0 0 0 8px}
+.cust-comp{display:block;margin-top:6px;font-size:12.5px;color:var(--tinta2)}
+.cust-comp-n{display:inline-flex;align-items:center;gap:4px;font-weight:700;color:var(--tinta)}
+.cust-comp-lista{margin:4px 0 0;padding:0;list-style:none}
+.cust-comp-lista li{display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center;padding:2px 0;min-width:0}
+.cust-comp-nome{overflow-wrap:anywhere}
+.cust-comp-aviso{color:var(--tinta);font-size:13px}
 .cust-hist{margin:12px 0;padding:10px 12px;background:var(--papel);border:1px solid var(--linha);border-radius:var(--r)}
 .cust-hist:focus-visible{outline:2px solid var(--acento);outline-offset:2px}
 .cust-hist-lista{margin:0;padding:0 0 0 18px}
