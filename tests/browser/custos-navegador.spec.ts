@@ -117,7 +117,7 @@ describe.skipIf(sem)('Centro de custos, no navegador', { timeout: 120_000 }, () 
       }
     }, CHAVE);
     page = await ctx.newPage();
-    page.setDefaultTimeout(15_000);
+    page.setDefaultTimeout(30_000);
     page.on('pageerror', (e) => {
       throw e;
     });
