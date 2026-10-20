@@ -94,6 +94,8 @@ var ESPERA_BUSCA_MS=200;
 
 var SITUACOES=[['todas','Todas'],['naoLidas','Não lidas'],['providencia','Pedem providência']];
 var NOMES_ORDEM={processo:'Processo',tribunal:'Tribunal',dataAto:'Data do ato',detectado:'Detectado'};
+/* Rótulo do cabeçalho quando o nome inteiro não cabe numa linha (v0.49.2); o nome completo fica no aria-label e no title. */
+var NOMES_CURTOS={dataAto:'Data'};
 
 function svg(d){return '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">'+d+'</svg>'}
 var ICO_COPIAR=svg('<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>');
@@ -126,17 +128,24 @@ function detectadoHa(iso){
 /* A célula Atualização é UMA linha de ato (v0.46.0, decisão do dono): tipo, etiqueta e este link. O texto
    do ato NÃO aparece na tabela — continua guardado e é lido na tela do processo, na Pasta e na análise por IA. */
 function linkAbrir(n){
-  return '<div class="nvt-abrir"><button type="button" class="lnh nov-abrir" data-acao="abrir" data-num="'+esc(n.numero)+
-    '" data-foco="abrir-ato-'+esc(n.numero)+'" aria-label="Abrir o processo '+esc(pv().mascara(n.numero))+'">Abrir processo</button></div>';
+  return '<span class="nvt-abrir"><button type="button" class="lnh nov-abrir" data-acao="abrir" data-num="'+esc(n.numero)+
+    '" data-foco="abrir-ato-'+esc(n.numero)+'" aria-label="Abrir o processo '+esc(pv().mascara(n.numero))+'">Abrir processo</button></span>';
 }
 
 /* ---------- a linha do processo ---------- */
+/* Ícone da fileira com a MESMA dica da caixa "Cumprido" (__pvProvidencia.comDica, v0.49.2): nome acessível no
+   aria-label, texto da dica ligado por aria-describedby; nada de title (a dica o substitui). */
+function icone(classe,acao,g,foco,nome,dica,ico,texto){
+  var n=esc(digitos(g.numero));
+  return prov().comDica('<button type="button" class="nvt-ic'+classe+'" data-acao="'+acao+'" data-num="'+esc(g.numero)+'" data-foco="'+foco+esc(g.numero)+
+    '" aria-label="'+nome+'" aria-describedby="dica-'+acao+'-'+n+'">'+ico+'<span class="nvt-ic-t">'+texto+'</span></button>','dica-'+acao+'-'+n,dica);
+}
+
 function celulaProcesso(g){
   var m=pv().mascara(g.numero);
   return '<td class="c-proc" data-rotulo="Processo"><div class="nvt-proc">'+
-    '<a class="nvt-num" href="/?processo='+esc(digitos(g.numero))+'" data-acao="abrir" data-num="'+esc(g.numero)+'">'+esc(m).replace(/([-.])/g,'$1<wbr>')+'</a>'+
-    '<button type="button" class="nvt-ic nvt-copiar" data-acao="copiar" data-num="'+esc(g.numero)+'" data-foco="copiar-'+esc(g.numero)+'"'+
-    ' aria-label="Copiar o número do processo '+esc(m)+'" title="Copiar o número">'+ICO_COPIAR+'</button></div></td>';
+    '<a class="nvt-num" href="/?processo='+esc(digitos(g.numero))+'" data-acao="abrir" data-num="'+esc(g.numero)+'">'+esc(m)+'</a>'+
+    icone(' nvt-copiar','copiar',g,'copiar-','Copiar o número do processo '+esc(m),'Copiar número',ICO_COPIAR,'Copiar número')+'</div></td>';
 }
 
 function celulaPartes(g){
@@ -176,11 +185,17 @@ function celulaSemNovidade(g){
   }
   var a=atoExibido(g);
   var enxuto=descricaoDoAto(a.rotulo);
-  h+='<div class="nvt-sem">'+(a.daProvidencia?'Sem atualização detectada':'Última movimentação conhecida · sem atualização detectada')+'</div>'+
-    '<div class="nvt-tit"'+(enxuto!==a.rotulo?' title="'+esc(a.rotulo)+'"':'')+'>'+esc(enxuto)+seloDoAto(a)+'</div>';
+  /* v0.49.2: uma linha só — o ato, o link e o aviso discreto "sem atualização detectada" (mesmo texto de antes) —, que
+     só desce quando falta largura; o aviso deixou de ter linha própria acima do ato. O texto visível é "Sem atualização
+     detectada" nos dois casos; "Última movimentação conhecida" (quando o ato da linha é só o último andamento) vai no
+     title e em texto para leitor de tela, para o aviso caber numa linha. */
+  h+='<div class="nvt-ato"><span class="nvt-tit"'+(enxuto!==a.rotulo?' title="'+esc(a.rotulo)+'"':'')+'>'+esc(enxuto)+seloDoAto(a)+'</span>'+
+    linkAbrir(n)+(a.daProvidencia?'<span class="nvt-sem">Sem atualização detectada</span>':
+      '<span class="nvt-sem" title="Última movimentação conhecida: o acompanhamento ainda não detectou atualização neste processo."><span class="nvt-sr">Última movimentação conhecida · </span>Sem atualização detectada</span>')+
+    selosDaLinha(g)+'</div>';
   if(g.segredoJustica)
     h+='<div class="nota nvt-sem"><span class="selo al">segredo de justiça</span> O texto do ato não é exibido aqui.</div>';
-  return h+linkAbrir(n)+linhaUltimoAndamento(a)+selosDaLinha(g)+'</td>';
+  return h+linhaUltimoAndamento(a)+'</td>';
 }
 
 function celulaAtualizacao(g){
@@ -188,9 +203,9 @@ function celulaAtualizacao(g){
   var a=atoExibido(g);
   /* Só a exibição perde a repetição do tipo; o original fica no title. */
   var enxuto=descricaoDoAto(a.rotulo);
-  return '<td class="c-atu" data-rotulo="Atualização"><div class="nvt-tit'+(n.vista?'':' nl')+'"'+
-    (enxuto!==a.rotulo?' title="'+esc(a.rotulo)+'"':'')+'>'+esc(enxuto)+seloDoAto(a)+'</div>'+
-    linkAbrir(n)+linhaUltimoAndamento(a)+selosDaLinha(g)+'</td>';
+  return '<td class="c-atu" data-rotulo="Atualização"><div class="nvt-ato"><span class="nvt-tit'+(n.vista?'':' nl')+'"'+
+    (enxuto!==a.rotulo?' title="'+esc(a.rotulo)+'"':'')+'>'+esc(enxuto)+seloDoAto(a)+'</span>'+
+    linkAbrir(n)+selosDaLinha(g)+'</div>'+linhaUltimoAndamento(a)+'</td>';
 }
 
 /* Os selos de OUTRA informação (v0.46.1): "Não lida" e "sem marca há mais de N dias" moravam na célula da coluna
@@ -205,17 +220,18 @@ function selosDaLinha(g){
   if(P&&P.situacao==='venceu'&&situacaoDaLinha(g).estado==='nenhuma'){
     s+='<span class="selo neutro nvt-venceu" title="Esta comunicação do Diário passou da janela de leitura automática sem você marcar como cumprida. Confira no processo.">sem marca há mais de '+R.pendenciaIntimacaoJanelaDias+' dias</span>';
   }
-  return s?'<div class="nvt-selos">'+s+'</div>':'';
+  return s?'<span class="nvt-selos">'+s+'</span>':'';
 }
 
 function celulaAcoes(g){
   var m=pv().mascara(g.numero);
-  /* A caixa "Cumprido" é o PRIMEIRO controle (v0.46.1): tudo o que diz respeito a ela mora em __pvProvidencia. */
+  /* A caixa "Cumprido" é o PRIMEIRO controle (v0.46.1): tudo o que diz respeito a ela mora em __pvProvidencia. Desde a
+     v0.49.2 a fileira é uma só e o "Analisar com IA" é o quarto ícone (antes um botão de texto na linha de baixo). */
   return '<td class="c-acoes" data-rotulo="Ações"><div class="nvt-acoes">'+
     prov().celula(situacaoDaLinha(g),g.numero,m,'cumprir-'+g.numero)+
-    '<button type="button" class="nvt-ic" data-acao="abrir" data-num="'+esc(g.numero)+'" data-foco="abrir-'+esc(g.numero)+'" aria-label="Abrir o processo '+esc(m)+'" title="Abrir o processo">'+ICO_ABRIR+'</button>'+
-    '<button type="button" class="nvt-ic" data-acao="pasta" data-num="'+esc(g.numero)+'" data-foco="pasta-'+esc(g.numero)+'" aria-label="Abrir a pasta digital do processo '+esc(m)+'" title="Abrir a pasta digital">'+ICO_PASTA+'</button>'+
-    '</div>'+ia().botao(g.numero,chaveDoAtoDaLinha(g))+'</td>';
+    icone('','abrir',g,'abrir-','Abrir o processo '+esc(m),'Abrir o processo',ICO_ABRIR,'Abrir')+
+    icone('','pasta',g,'pasta-','Abrir a pasta digital do processo '+esc(m),'Abrir a pasta do processo',ICO_PASTA,'Pasta')+
+    ia().botao(g.numero,chaveDoAtoDaLinha(g))+'</div></td>';
 }
 
 /* A classe é montada AQUI e só aqui: a coluna Classe e a linha sob o Tribunal (1024–1279 px)
@@ -269,8 +285,8 @@ function cabecalhoOrdenavel(chave){
   var o=S.ordem&&S.ordem.chave===chave?S.ordem:null;
   var seta=o?(o.direcao==='asc'?'↑':'↓'):'↕';
   return '<th scope="col" class="h-'+chave+'" aria-sort="'+(o?(o.direcao==='asc'?'ascending':'descending'):'none')+'">'+
-    '<button type="button" class="nvt-ord" data-acao="ord" data-chave="'+chave+'" data-foco="ord-'+chave+'">'+NOMES_ORDEM[chave]+
-    ' <span class="nvt-seta" aria-hidden="true">'+seta+'</span></button></th>';
+    '<button type="button" class="nvt-ord" data-acao="ord" data-chave="'+chave+'" data-foco="ord-'+chave+'" aria-label="'+NOMES_ORDEM[chave]+'" title="'+NOMES_ORDEM[chave]+'">'+
+    (NOMES_CURTOS[chave]||NOMES_ORDEM[chave])+' <span class="nvt-seta" aria-hidden="true">'+seta+'</span></button></th>';
 }
 
 function cabecalho(){
@@ -565,7 +581,7 @@ function copiar(btn,num){
     anunciar('Número '+m+' copiado.');
     var s=document.createElement('span');
     s.className='nvt-copiado';s.setAttribute('aria-hidden','true');s.textContent='Copiado';
-    btn.parentNode.appendChild(s);
+    (btn.closest('.nvt-proc')||btn.parentNode).appendChild(s);
     setTimeout(function(){if(s.parentNode)s.parentNode.removeChild(s)},1800);
   },function(){anunciar('Não foi possível copiar. Selecione o número e copie com o teclado.')});
 }

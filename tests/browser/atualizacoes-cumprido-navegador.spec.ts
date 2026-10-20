@@ -367,7 +367,8 @@ describe.skipIf(sem)(
     it('a dica: aparece com o mouse e com o foco (sem clique), diz o texto certo, não tapa a própria linha, não recebe o mouse e fecha com Esc', async () => {
       await abrir();
       await todas();
-      const dica = (n: string) => ao(n).locator('.sit-dica');
+      // v0.49.2: a linha tem uma dica por ícone (copiar, abrir, pasta, IA); aqui a que importa é a da caixa "Cumprido".
+      const dica = (n: string) => ao(n).locator('[id^="dica-cumprido-"]');
       // Escondida por padrão e ligada à caixa: role=tooltip + aria-describedby.
       expect(await dica(NA).getAttribute('role')).toBe('tooltip');
       expect(await dica(NA).isVisible()).toBe(false);
@@ -416,17 +417,17 @@ describe.skipIf(sem)(
       await aviso().getByRole('button', { name: 'Desfazer' }).waitFor();
       await page.mouse.move(0, 0);
       await ao(NA).locator('.sit-cx').hover();
-      await ao(NA).locator('.sit-dica').waitFor({ state: 'visible' });
-      expect(((await ao(NA).locator('.sit-dica').textContent()) ?? '').trim()).toBe(
-        'Cumprida. Clique para desmarcar.',
-      );
+      await ao(NA).locator('[id^="dica-cumprido-"]').waitFor({ state: 'visible' });
+      expect(
+        ((await ao(NA).locator('[id^="dica-cumprido-"]').textContent()) ?? '').trim(),
+      ).toBe('Cumprida. Clique para desmarcar.');
       await caixa(NA).click();
       await page.waitForFunction(
         () => document.querySelector('#nvt-live')?.textContent === 'Desmarcado.',
       );
-      expect(((await ao(NA).locator('.sit-dica').textContent()) ?? '').trim()).toBe(
-        'Pede providência. Marque quando cumprida.',
-      );
+      expect(
+        ((await ao(NA).locator('[id^="dica-cumprido-"]').textContent()) ?? '').trim(),
+      ).toBe('Pede providência. Marque quando cumprida.');
     });
 
     it('em tela de toque a dica aparece depois de marcar (o foco volta à caixa) e o rótulo "Cumprido" fica VISÍVEL ao lado da caixa, no início do grupo de ações', async () => {
@@ -438,12 +439,12 @@ describe.skipIf(sem)(
       await todas();
       await caixa(NA).tap();
       await aviso().getByRole('button', { name: 'Desfazer' }).waitFor();
-      await ao(NA).locator('.sit-dica').waitFor({ state: 'visible' });
-      expect(((await ao(NA).locator('.sit-dica').textContent()) ?? '').trim()).toBe(
-        'Cumprida. Clique para desmarcar.',
-      );
+      await ao(NA).locator('[id^="dica-cumprido-"]').waitFor({ state: 'visible' });
+      expect(
+        ((await ao(NA).locator('[id^="dica-cumprido-"]').textContent()) ?? '').trim(),
+      ).toBe('Cumprida. Clique para desmarcar.');
       // Não estoura a janela.
-      const r = (await ao(NA).locator('.sit-dica').boundingBox())!;
+      const r = (await ao(NA).locator('[id^="dica-cumprido-"]').boundingBox())!;
       expect(r.x).toBeGreaterThanOrEqual(0);
       expect(r.x + r.width).toBeLessThanOrEqual(390);
     });
@@ -565,9 +566,9 @@ describe.skipIf(sem)(
       await page.waitForFunction(() => document.querySelector('tr.nvt-cumprida'));
       expect(await caixa(NA).isChecked()).toBe(true);
       expect(await caixa(NA).getAttribute('aria-busy')).toBe('true');
-      expect(((await ao(NA).locator('.sit-dica').textContent()) ?? '').trim()).toBe(
-        'Cumprida. Clique para desmarcar.',
-      );
+      expect(
+        ((await ao(NA).locator('[id^="dica-cumprido-"]').textContent()) ?? '').trim(),
+      ).toBe('Cumprida. Clique para desmarcar.');
       // Os contadores só mudam com a confirmação do servidor.
       expect(
         await page.getByRole('button', { name: 'Pedem providência (2)' }).count(),
@@ -730,7 +731,7 @@ describe.skipIf(sem)(
 
         // Com a dica aberta a página também não ganha rolagem horizontal.
         await ao(NB).locator('.sit-cx').hover();
-        await ao(NB).locator('.sit-dica').waitFor({ state: 'visible' });
+        await ao(NB).locator('[id^="dica-cumprido-"]').waitFor({ state: 'visible' });
         await caixa(NB).focus();
         m = await medir();
         expect(m.sw, 'dica aberta').toBeLessThanOrEqual(m.cw);
@@ -753,7 +754,7 @@ describe.skipIf(sem)(
       // A dica é absoluta: não aumenta a linha.
       const linhaAntes = (await ao(NB).boundingBox())!.height;
       await ao(NB).locator('.sit-cx').hover();
-      await ao(NB).locator('.sit-dica').waitFor({ state: 'visible' });
+      await ao(NB).locator('[id^="dica-cumprido-"]').waitFor({ state: 'visible' });
       expect((await ao(NB).boundingBox())!.height).toBe(linhaAntes);
     });
 
@@ -780,7 +781,7 @@ describe.skipIf(sem)(
 
         // A dica visível (foco na caixa) também passa no contraste.
         await caixa(NA).focus();
-        await ao(NA).locator('.sit-dica').waitFor({ state: 'visible' });
+        await ao(NA).locator('[id^="dica-cumprido-"]').waitFor({ state: 'visible' });
         expect(await rodar(), 'dica visível').toBe('');
 
         await ao(NA).locator('.sit-cx').click();

@@ -68,67 +68,78 @@ export const ESTILOS_TABELA_ATUALIZACOES = `
   padding:10px 8px;border-bottom:1px solid var(--linha)}
 .nvt-tabela th:first-child{border-top-left-radius:var(--r)}
 .nvt-tabela th:last-child{border-top-right-radius:var(--r)}
-.nvt-tabela td{padding:12px 8px;vertical-align:top;border-top:1px solid var(--linha2);
+.nvt-tabela td{height:48px;padding:8px 8px;vertical-align:middle;border-top:1px solid var(--linha2);
   overflow-wrap:anywhere;min-width:0}
+/* Linha compacta (v0.49.2): cabeçalhos e datas nunca quebram; Tribunal e Classe são UMA linha com reticências (o texto
+   inteiro está no title); Partes tem até duas linhas. A linha típica fica entre 48 e 56 px em 1920, 1366 e 1280. */
+.nvt-tabela th{white-space:nowrap}
+.nvt-tabela td.c-trib{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.3}
 /* Palavra curta quebra em espaço, não no meio ("detectad/o"); só texto de fora usa "anywhere". */
 .nvt-tabela td.c-trib,.nvt-tabela td.c-det{overflow-wrap:break-word}
 .nvt-tabela td.c-data{white-space:nowrap}
 .nvt-tabela tbody tr:first-child td{border-top:0}
 .nvt-tabela tbody tr.nvt-linha:hover td{background:var(--papel2)}
-/* Larguras (v0.46.1). A coluna "Cumprido" deixou de existir (a caixa mora em Ações) e a largura dela voltou para
-   a tabela: Partes cresceu (o nome inteiro cabe em até duas linhas), Ações ganhou o lugar da caixa (caixa + dois
-   ícones = 3 × 32 px + folga) e Atualização, a coluna "auto", ficou com o que sobra e é a que perde. "Data do ato"
-   e "Detectado" não mudam: largura FIXA, a que dd/mm/aaaa e "há N dias" pedem sem quebrar. A Classe segue com os
-   12,5% que o teste de navegador dela exige. Três faixas, porque a lateral de 256 px muda o que sobra: >= 1600 px
-   (tabela larga, Atualização por volta de 300–340 px), 1280–1599 e 1024–1279 (ícones de 28 px, abaixo). Os números
-   medidos antes e depois estão no CHANGELOG da 0.46.1. */
-.h-processo{width:16%}.h-partes{width:17%}.h-tribunal{width:6.5%}.h-classe{width:12.5%}
-.h-dataAto,.h-detectado{width:5.25rem}.h-acoes{width:12.5%}
-@media (min-width:1600px){.h-processo{width:17%}.h-partes{width:19.5%}.h-tribunal{width:8%}.h-classe{width:15.5%}.h-acoes{width:9%}}
+/* Larguras (v0.49.2). Processo, Data do ato, Detectado e Ações têm largura de CONTEÚDO (o CNJ tem 25 caracteres e não
+   quebra; dd/mm/aaaa e "há N dias" também não); Tribunal e Classe são uma linha com reticências; Partes e a coluna
+   "auto", Atualização, dividem o resto. Três faixas, porque a lateral de 256 px muda o que sobra: >= 1600 px, 1280–1599
+   e 1024–1279 (abaixo). Os números medidos antes e depois estão no CHANGELOG da 0.49.2. */
+.h-processo{width:15rem}.h-partes{width:17%}.h-tribunal{width:5rem}.h-classe{width:13%}
+.h-dataAto{width:5.75rem}.h-detectado{width:6rem}.h-acoes{width:9rem}
 .nvt-ord{font:inherit;font-size:inherit;font-weight:inherit;text-transform:inherit;letter-spacing:inherit;
   color:inherit;background:none;border:0;padding:4px 0;min-height:28px;cursor:pointer;text-align:left}
 .nvt-ord:hover{color:var(--tinta)}
 .nvt-seta{color:var(--tinta3)}
 .nvt-tabela th[aria-sort="ascending"] .nvt-seta,.nvt-tabela th[aria-sort="descending"] .nvt-seta{color:var(--acento)}
 
-.nvt-proc{display:flex;align-items:flex-start;gap:4px;flex-wrap:nowrap}
+.nvt-proc{position:relative;display:flex;align-items:center;gap:2px;flex-wrap:nowrap}
+/* O número NÃO quebra e o ícone de copiar fica colado a ele, não na borda da célula. */
 .nvt-num{font-family:var(--mono);font-weight:600;font-size:12.5px;color:var(--acento);text-decoration:none;
-  overflow-wrap:normal;padding:4px 0;flex:1 1 auto;min-width:0}
+  white-space:nowrap;overflow-wrap:normal;padding:0;flex:none}
 .nvt-num:hover{text-decoration:underline}
-.nvt-copiado{font-size:12px;font-weight:700;color:var(--verde-tinta);align-self:center}
+.nvt-copiado{position:absolute;left:0;top:100%;z-index:5;padding:2px 8px;border-radius:6px;background:var(--papel);
+  border:1px solid var(--linha);box-shadow:var(--sombra);font-size:12px;font-weight:700;color:var(--verde-tinta)}
 .nvt-partes,.nvt-classe{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden;
   overflow-wrap:anywhere}
 /* Partes (v0.46.1): quebra em PALAVRAS inteiras, até duas linhas, e só depois as reticências; o nome inteiro está
    no title. "break-word" parte a palavra só quando ela sozinha não cabe na coluna. */
-.nvt-partes{overflow-wrap:break-word;hyphens:manual}
+.nvt-partes{overflow-wrap:break-word;hyphens:manual;font-size:13px;line-height:1.3}
 /* A classe quebra em PALAVRAS inteiras: "break-word" só parte a palavra que sozinha não cabe
    na coluna. Passando de duas linhas, o clamp põe as reticências e o title tem a classe toda. */
-.nvt-classe{overflow-wrap:break-word;hyphens:manual}
-.nvt-classe-mini{display:none;margin-top:3px;font-size:12px;color:var(--tinta2)}
+.nvt-classe{display:block;-webkit-line-clamp:unset;line-clamp:unset;white-space:nowrap;text-overflow:ellipsis;overflow:hidden}
+.nvt-classe-mini{display:none;font-size:12px;line-height:1.3;color:var(--tinta2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .nvt-vazio{color:var(--tinta2)}
-.nvt-sem{color:var(--tinta2);font-size:12px;margin:0 0 2px}
+.nvt-sem{color:var(--tinta2);font-size:12px;margin:0}
 .nvt-ult{color:var(--tinta2);font-size:12.5px;margin:4px 0 0;overflow-wrap:anywhere}
 .nvt-ult strong{font-weight:600;color:var(--tinta)}
 .nvt-sem-nov .nvt-tit{font-weight:500}
-.nvt-tit{font-weight:700;font-size:14px;line-height:1.4;overflow-wrap:anywhere}
+.nvt-tit{font-weight:700;font-size:14px;line-height:1.3;overflow-wrap:anywhere;min-width:0}
+/* A célula Atualização (v0.49.2): ato, etiqueta, link "Abrir processo" e selos NUMA linha, que só quebra quando falta
+   largura. O aviso "sem atualização detectada" (mesmo texto) é um texto pequeno na mesma linha, sem linha própria. */
+.nvt-ato{display:flex;flex-wrap:wrap;align-items:center;gap:2px 8px;min-width:0}
 .nvt-tit.nl::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;
   background:var(--novo);margin-right:7px;vertical-align:2px}
-.nvt-selos{margin-top:4px}
-.nvt-tabela .nvt-selos .selo{display:inline-block;margin:0 4px 4px 0}
+.nvt-selos{display:inline-flex;flex-wrap:wrap;gap:2px 4px}
+.nvt-tabela .nvt-selos .selo{display:inline-block;margin:0;font-size:11px;line-height:16px;padding:0 7px}
 .c-data,.c-det{font-variant-numeric:tabular-nums;color:var(--tinta2)}
 
 /* A célula Atualização é uma linha de ato + este link (v0.46.0); o texto do ato não aparece aqui. */
-.nvt-abrir{margin-top:2px}
+.nvt-abrir{white-space:nowrap;line-height:1.3}
 .nvt-abrir .nov-abrir{color:var(--acento);font-weight:600;background:none;border:0;padding:2px 0;cursor:pointer;
   font-family:inherit;font-size:13px}
 .nvt-abrir .nov-abrir:hover{text-decoration:underline}
 
 /* ---------- ações ---------- */
+/* UMA fileira (v0.49.2): caixa "Cumprido", abrir, pasta e "Analisar com IA", todos de 28 px (alvo mínimo de 24), cada
+   um com a dica comum do console. O texto de cada ícone só aparece nos cartões (sem mouse não há dica). */
 .nvt-acoes{display:flex;flex-wrap:nowrap;gap:4px;align-items:center}
-.nvt-ic{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;padding:0;
-  border-radius:8px;border:1px solid var(--linha);background:var(--papel);color:var(--tinta2);cursor:pointer;flex:none}
+.nvt-ic{display:inline-flex;align-items:center;justify-content:center;gap:6px;width:28px;height:28px;padding:0;
+  border-radius:8px;border:1px solid var(--linha);background:var(--papel);color:var(--tinta2);cursor:pointer;flex:none;
+  font:inherit;font-size:13px;font-weight:600}
 .nvt-ic:hover:not(:disabled){background:var(--acento-bg);border-color:var(--acento);color:var(--acento)}
 .nvt-ic:disabled{opacity:.4;cursor:default}
+.nvt-ic-t,.pvia-btn-t{display:none}
+@media (min-width:1024px){.nvt-acoes .sit-cx,.nvt-acoes .sit-vaga{min-width:28px;min-height:28px;width:28px;height:28px}}
+.nvt-acoes .sit-dica-wrap,.nvt-proc .sit-dica-wrap{flex:none}
 .nvt-tabela .selo{white-space:normal;text-align:center;line-height:1.25}
 
 /* ---------- rodapé ---------- */
@@ -149,19 +160,32 @@ export const ESTILOS_TABELA_ATUALIZACOES = `
 @keyframes nvt-brilho{from{opacity:.45}to{opacity:1}}
 @media (prefers-reduced-motion:reduce){.nvt-esq-linha span{animation:none}}
 
-/* ---------- de 1024 a 1279: a lateral de 256px come a largura ---------- */
-@media (min-width:1024px) and (max-width:1279px){
+/* ---------- de 1024 a 1599: a lateral de 256px come a largura ---------- */
+/* A Classe vira uma linha sob o Tribunal (uma linha, com reticências e o texto inteiro no title) em vez de espremer
+   a Atualização, que é a coluna que o advogado lê. */
+@media (min-width:1024px) and (max-width:1599px){
   .h-classe,.c-classe{display:none}
   .nvt-classe-mini{display:block}
-  .h-processo{width:17%}.h-partes{width:19%}.h-tribunal{width:9.5%}
-  .h-dataAto,.h-detectado{width:4.75rem}.h-acoes{width:14.5%}
+  .h-processo{width:14rem}.h-partes{width:11%}.h-tribunal{width:4rem}
+  .h-dataAto{width:5rem}.h-detectado{width:6rem}.h-acoes{width:8.25rem}
+  .nvt-tabela th,.nvt-tabela td{padding-left:6px;padding-right:6px}
+  .nvt-tabela td.c-data,.nvt-tabela td.c-det{font-size:12.5px}
+  .nvt-acoes{gap:3px}
+}
+/* De 1024 a 1279 a tabela inteira encolhe: o CNJ (25 caracteres, sem quebra) e a fileira de ícones já pedem ~330 px. */
+@media (min-width:1024px) and (max-width:1279px){
+  .h-processo{width:12.4rem}.h-partes{width:13%}.h-tribunal{width:3.75rem}
+  .h-dataAto{width:4.5rem}.h-detectado{width:5rem}.h-acoes{width:7.4rem}
   .nvt-tabela th{font-size:10px;letter-spacing:0}
-  .nvt-classe-mini{font-size:11px;overflow-wrap:anywhere}
-  .nvt-tabela th,.nvt-tabela td{padding-left:5px;padding-right:5px}
+  .nvt-classe-mini{font-size:11px}
+  .nvt-tabela th,.nvt-tabela td{padding-left:4px;padding-right:4px}
   .nvt-tabela{font-size:12.5px}
-  .nvt-tabela td.c-data{font-size:12px}
-  .nvt-ic{width:28px;height:28px}
-  .nvt-copiar{margin-top:2px}
+  .nvt-tabela td.c-data,.nvt-tabela td.c-det{font-size:11.5px}
+  .nvt-num{font-size:11px}
+  .nvt-ic{width:26px;height:26px}
+  .nvt-acoes{gap:2px}
+  .nvt-acoes .sit-cx,.nvt-acoes .sit-vaga{min-width:26px;min-height:26px;width:26px;height:26px}
+  .nvt-tabela td.c-trib{white-space:normal}
 }
 
 /* ---------- abaixo de 1024: um bloco por processo ---------- */
@@ -169,7 +193,13 @@ export const ESTILOS_TABELA_ATUALIZACOES = `
   .nvt-so-pequeno{display:flex}
   .nvt .chip,.nvt-bloco select,.nvt-busca input,.nov-btn,.nvt-por select{min-height:44px}
   .nvt-busca{flex:1 1 100%}
-  .nvt-ic{width:44px;height:44px}
+  .nvt-ic{width:auto;min-width:44px;height:44px;padding:0 12px}
+  .nvt-ic-t,.pvia-btn-t{display:inline}
+  .nvt-acoes{flex-wrap:wrap}
+  /* Sem mouse o texto está no botão; a dica da caixa "Cumprido" continua (aparece depois de marcar, como na 0.46.0). */
+  .nvt-acoes .sit-dica:not([id^="dica-cumprido-"]),.nvt-proc .sit-dica{display:none}
+  .nvt-tabela td.c-trib{white-space:normal}
+  .nvt-classe{white-space:normal}
   .nvt-abrir .nov-abrir{min-height:44px}
   .nvt-wrap{border:0;background:transparent;box-shadow:none}
   .nvt-tabela,.nvt-tabela tbody,.nvt-tabela tr,.nvt-tabela td{display:block}
@@ -183,6 +213,7 @@ export const ESTILOS_TABELA_ATUALIZACOES = `
   .nvt-tabela td.c-proc,.nvt-tabela td.c-atu,.nvt-tabela td.c-acoes,.nvt-tabela td.c-partes{grid-column:1/-1}
   .nvt-tabela td.c-acoes::before{margin-bottom:4px}
   .nvt-num{display:inline-flex;align-items:center;min-height:44px;padding:0}
+  .nvt-ato{gap:4px 10px}
   .nvt-pag{justify-content:flex-start}
   .env.env-larga{padding-left:14px;padding-right:14px}
 }

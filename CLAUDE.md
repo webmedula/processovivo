@@ -1961,6 +1961,19 @@ Não são detalhes — moldam o código.
   navegador: `tests/browser/custos-layout-navegador.spec.ts`. (5) **O formulário é uma grade CSS** (`.cust-campos`, quatro faixas;
   campo comum = 1, `cust-grande` = 2) com início alinhado: rótulo, caixa e altura iguais na linha; o texto de apoio (prévia do
   valor) mora ABAIXO da caixa em altura reservada. A ordem do DOM e do Tab não muda.
+- **Atualizações: linha compacta, número do processo SEM quebra, Ações numa fileira de ícones com dica (inclusive "Analisar com IA") e
+  texto visível nos cartões** (v0.49.2, decisões do dono; só apresentação — detecção, "pede providência", "cumprido", filtros, contagens,
+  `/v1/novidades`, `/v1/painel`, calendário e o painel de IA não mudaram). (1) **A linha típica tem de 48 a 56 px** em 1920, 1366 e
+  1280 px; o CNJ é `white-space:nowrap` com o ícone de copiar colado a ele; Partes quebra em até 2 linhas (title com o texto inteiro);
+  Tribunal e Classe, uma linha com reticências (abaixo de 1600 px a Classe é a linha de baixo da célula do Tribunal). Data do ato e
+  Detectado não quebram: o cabeçalho mostra "Data" e o nome completo ("Data do ato") fica no `aria-label`/`title` do botão de ordenar.
+  (2) **A célula Atualização é UMA linha** (`.nvt-ato`: ato, etiqueta, link "Abrir processo", "Não lida" e o aviso "Sem atualização
+  detectada"), que só quebra quando falta largura; "Última movimentação conhecida" mora no `title` e em texto para leitor de tela.
+  (3) **Ações = uma fileira** de controles de 28 px: caixa "Cumprido", abrir, pasta e "Analisar com IA" (ícone, `aria-label="Analisar com
+  IA"`, mesmo clique e mesmas regras; o botão ou existe ou não existe, e o painel guarda o carregamento). Todos usam a dica ÚNICA do console
+  (`__pvProvidencia.comDica`/`ligar`, ver o item dos Custos da v0.49.1): não se desenha outra e não se põe `title` em ícone. (4) **Cartões
+  (< 1024 px, ponto de quebra inalterado):** o texto da ação aparece ao lado de cada ícone, a dica dos ícones some (a da caixa "Cumprido"
+  continua). Em 1024–1279 px a tabela cabe sem rolagem horizontal, mas é apertada. Teste: `tests/browser/atualizacoes-layout-navegador.spec.ts`.
 - **O calendário LÊ datas; não calcula prazo** (v0.32.0; **exceção registrada na v0.39.0: o aviso
   a partir da análise por IA, item acima — fora dele a regra segue valendo**). Evento detectado só
   nasce de data EXPLÍCITA no texto do andamento, colada a um gatilho na mesma
@@ -2056,7 +2069,7 @@ teste e carência** (v0.28.0), **visual novo a partir do logo** (v0.29.0),
 **tela do processo sem os blocos "Pede providência" e "Última movimentação", Partes logo abaixo das peças** (v0.41.1), **Google Drive: conectar a conta do advogado e salvar as peças da Pasta digital numa pasta "Processo Vivo", por botão, escopo `drive.file`, desligado por padrão, planos Peças e IA** (v0.42.0), **Drive: o retorno do OAuth usa o workspace do `state` assinado e a conta de chave de API também conecta** (v0.42.1), **testes estáveis no CI e a volta do Google sem corrida no console** (v0.42.2), **Atualizações: situação como texto e caixa "Cumprido" como único controle, com aviso para desfazer** (v0.43.0), **cobrança recorrente pelo Mercado Pago, parte 1: assinatura por cartão atrás da porta de pagamento, webhook idempotente, reconciliação e ciclo no plano** (v0.44.0), **ambiente do pagamento declarado em `PROCESSOVIVO_PAGAMENTO_AMBIENTE`, não deduzido do token** (v0.44.1),
 **página de vendas: vitrine pública `GET /v1/planos`, plano escolhido atravessando cadastro e login, confirmação de assinatura com aceite dos Termos obrigatório e trecho para o site** (v0.45.0), **recusa do gateway com motivo de lista fechada, log saneado, 422/503 em JSON e a última falha no /admin** (v0.45.1), **tabela de Atualizações mais limpa: Atualização em uma linha, datas estreitas e coluna "Cumprido" só com a caixa e a dica** (v0.46.0),
 **tabela de Atualizações: caixa "Cumprido" na coluna Ações, Partes mais larga, sem o selo "outro destinatário" na linha e sem a frase fixa sob o filtro** (v0.46.1),
-**centro de custos do processo: lançamentos manuais por processo, categorias próprias, totais no servidor, caixa "Ressarcido" e prestação de contas em PDF para o cliente** (v0.47.0), **custos: recebimentos do cliente com saldo e crédito, quem pagou, depósitos fora das despesas, cancelar com histórico e catálogo Grupo › Subcategoria** (v0.48.0), **custos por cliente: tela no menu, PDF consolidado, CSV, comprovantes no Google Drive do advogado e aviso ao deixar de acompanhar** (v0.49.0), **painel de Custos: colunas de conteúdo, ações em ícones com dica e formulário em grade** (v0.49.1),
+**centro de custos do processo: lançamentos manuais por processo, categorias próprias, totais no servidor, caixa "Ressarcido" e prestação de contas em PDF para o cliente** (v0.47.0), **custos: recebimentos do cliente com saldo e crédito, quem pagou, depósitos fora das despesas, cancelar com histórico e catálogo Grupo › Subcategoria** (v0.48.0), **custos por cliente: tela no menu, PDF consolidado, CSV, comprovantes no Google Drive do advogado e aviso ao deixar de acompanhar** (v0.49.0), **painel de Custos: colunas de conteúdo, ações em ícones com dica e formulário em grade** (v0.49.1), **Atualizações: linha compacta, número do processo sem quebra e Ações em ícones com dica, inclusive "Analisar com IA"** (v0.49.2),
 Dockerfile multi-stage, CI, 2961 testes.
 
 **Pasta digital (v0.33.0, backend):** `GET /v1/processos/:numero/pasta` (lista +

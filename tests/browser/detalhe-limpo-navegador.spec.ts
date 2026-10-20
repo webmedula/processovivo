@@ -205,9 +205,9 @@ describe.skipIf(sem)(
       expect(
         await linha.locator('.c-acoes input[type="checkbox"]:not(:checked)').count(),
       ).toBe(1);
-      expect(await linha.locator('.c-acoes .sit-dica').textContent()).toMatch(
-        /^Pede providência/,
-      );
+      expect(
+        await linha.locator('.c-acoes [id^="dica-cumprido-"]').textContent(),
+      ).toMatch(/^Pede providência/);
       // O filtro e a contagem do chip.
       const chip = page.locator('[data-foco="sit-providencia"]');
       expect(await chip.innerText()).toMatch(/Pedem providência[\s\S]*1/);

@@ -191,3 +191,36 @@ describe('selo de verificação por conta (v0.37.3)', () => {
     expect(disparo).toContain('s.demorando');
   });
 });
+
+describe('linha compacta e ações em ícones (v0.49.2) — o contrato do arquivo', () => {
+  it('cada ícone da fileira tem nome acessível próprio, a dica comum do console e texto só para os cartões', () => {
+    for (const frase of [
+      "icone(' nvt-copiar','copiar'",
+      "'Copiar o número do processo '+esc(m),'Copiar número'",
+      "'Abrir o processo '+esc(m),'Abrir o processo'",
+      "'Abrir a pasta digital do processo '+esc(m),'Abrir a pasta do processo'",
+      'prov().comDica(',
+      'nvt-ic-t',
+    ]) {
+      expect(SCRIPT_ATUALIZACOES, frase).toContain(frase);
+    }
+    // Nenhum `title` de ícone: a dica (role=tooltip) o substituiu.
+    expect(SCRIPT_ATUALIZACOES).not.toContain('title="Copiar o número"');
+    expect(SCRIPT_ATUALIZACOES).not.toContain('title="Abrir o processo"');
+    expect(SCRIPT_ATUALIZACOES).not.toContain('title="Abrir a pasta digital"');
+  });
+
+  it('o "Analisar com IA" é um ícone na fileira de Ações (aria-label, dica e texto só nos cartões) e o número não ganha pontos de quebra', () => {
+    expect(SCRIPT_ATUALIZACOES).toContain(
+      "ia().botao(g.numero,chaveDoAtoDaLinha(g))+'</div></td>'",
+    );
+    expect(SCRIPT_ATUALIZACOES).not.toContain('<wbr>');
+    expect(SCRIPT_ATUALIZACOES).toContain('NOMES_CURTOS={dataAto:');
+  });
+
+  it('o aviso "Sem atualização detectada" divide a linha do ato, sem linha própria', () => {
+    expect(SCRIPT_ATUALIZACOES).toContain('<div class="nvt-ato">');
+    expect(SCRIPT_ATUALIZACOES).toContain('Sem atualização detectada');
+    expect(SCRIPT_ATUALIZACOES).toContain('Última movimentação conhecida');
+  });
+});

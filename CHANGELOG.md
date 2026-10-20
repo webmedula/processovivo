@@ -9,6 +9,35 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.49.2] — 2026-10-21
+
+**Tabela de Atualizações, só apresentação:** linha compacta, número do processo sem quebra, Ações numa fileira de
+ícones com dica (inclusive "Analisar com IA") e texto visível nos cartões. Detecção, regras de "pede providência" e de
+"cumprido", filtros e contagens, busca, ordenação, paginação, `GET /v1/novidades`, `/v1/painel`, calendário, o painel e
+o conteúdo da análise por IA, a tela do processo, a Pasta, os Custos e os planos **não mudaram**; sem migração e sem
+dependência nova; `script.ts` não cresceu.
+
+- **Linha de 48 a 56 px** (antes ~104 px) para o processo típico em 1920, 1366 e 1280 px. **Processo:** o CNJ numa linha só
+  (sem quebra) com o ícone de copiar colado ao número. **Partes:** até duas linhas e só então reticências, texto
+  inteiro no `title`. **Tribunal/Classe:** uma linha com reticências; abaixo de 1600 px a Classe vira a linha de baixo da
+  célula do Tribunal (como já era de 1024 a 1279 px). **Data do ato** e **Detectado** sem quebra, em coluna de conteúdo;
+  o cabeçalho mostra **"Data"** (o nome completo, "Data do ato", fica no `aria-label` e no `title` do botão de ordenar).
+- **Atualização numa linha só:** tipo do ato (negrito), etiqueta ("Intimação"), o link "Abrir processo", "Não lida" e o
+  aviso **"Sem atualização detectada"** (mesmo texto, em letra pequena) dividem a MESMA linha e só descem quando falta
+  largura. Quando o ato da linha é apenas o último andamento, "Última movimentação conhecida" deixou de ser texto
+  visível: vai no `title` e em texto para leitor de tela, para o aviso caber numa linha.
+- **Ações numa fileira só**, todos de 28 px (26 px em 1024–1279 px): caixa "Cumprido", abrir, pasta e **"Analisar com IA"
+  como ícone** (faísca). Cada ícone tem `aria-label` próprio e a **mesma dica** da caixa "Cumprido"
+  (`__pvProvidencia.comDica`), por mouse e por foco, com Esc fechando só a dica: "Copiar número", "Abrir o processo",
+  "Abrir a pasta do processo", "Analisar com IA". O `title` antigo dos ícones saiu (a dica o substitui); a caixa
+  mantém as dicas da 0.46.1. O botão de IA não tem estado desabilitado nem de carregamento — ele existe ou não existe
+  (IA desligada ou ato sem chave); aberto/fechado continua em `aria-expanded` (fundo azul-claro) e o carregamento no
+  painel. Mesmo clique, mesmo painel, mesmas regras de plano e de teste fechado.
+- **Cartões (abaixo de 1024 px, como antes):** cada ícone ganha o texto ao lado ("Copiar número", "Abrir", "Pasta",
+  "Analisar com IA"), alvo de 44 px, e as dicas dos ícones somem (sem mouse não há dica); a da caixa "Cumprido" continua.
+- **O ponto de quebra para cartões não mudou (1024 px).** Em 1024–1279 px a tabela cabe sem rolagem horizontal, mas é
+  apertada: o CNJ sem quebra e a fileira de ícones já pedem ~330 px dos ~720 px da tabela.
+
 ## [0.49.1] — 2026-10-21
 
 **Painel de Custos do processo, só apresentação:** colunas da tabela de lançamentos, ações em ícones com dica e grade do
