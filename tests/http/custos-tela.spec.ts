@@ -2,6 +2,10 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { ESTILOS_CUSTOS, SCRIPT_CUSTOS } from '../../src/main/http/ui/custos.js';
+import {
+  ESTILOS_CUSTOS_CLIENTE,
+  SCRIPT_CUSTOS_CLIENTE,
+} from '../../src/main/http/ui/custosPorCliente.js';
 import { paginaConsole } from '../../src/main/http/ui/pagina.js';
 import {
   campoDeCentavos,
@@ -15,6 +19,61 @@ import {
 const LINHAS_DO_SCRIPT_ANTES_DOS_CUSTOS = 2357;
 
 describe('tela do centro de custos — o contrato do arquivo', () => {
+  it('v0.49.0: o menu "Custos" vem logo depois de "Calendário", e a tela por cliente é um arquivo à parte', () => {
+    const html = paginaConsole('0.0.0');
+    const iCal = html.indexOf('id="nav-calendario"');
+    const iCustos = html.indexOf('id="nav-custos"');
+    const iBuscar = html.indexOf('id="nav-buscar"');
+    expect(iCal).toBeGreaterThan(0);
+    expect(iCustos).toBeGreaterThan(iCal);
+    expect(iBuscar).toBeGreaterThan(iCustos);
+    expect(html).toContain(SCRIPT_CUSTOS_CLIENTE.trim().slice(0, 40));
+    expect(html).toContain(ESTILOS_CUSTOS_CLIENTE.trim().slice(0, 40));
+    expect(html).toContain('window.__pvCustosCliente=');
+    const fonte = readFileSync(
+      resolve(__dirname, '../../src/main/http/ui/script.ts'),
+      'utf8',
+    );
+    expect(fonte).toContain("estado.aba==='custos'&&window.__pvCustosCliente");
+    // "Deixar de acompanhar" avisa do rótulo de cliente antes de apagar o acompanhamento.
+    expect(fonte).toContain('window.__pvCustos.avisoAoParar(numero)');
+  });
+
+  it('a tela por cliente: aviso de "Sem cliente", "Mostrando X de Y", filtros e relatórios, sem localStorage nem prazo', () => {
+    for (const frase of [
+      'Mostrando',
+      'Somente com saldo a cobrar',
+      'estão sem cliente',
+      'Os custos não se perdem',
+      'Gerar prestação de contas do cliente (PDF)',
+      'Exportar planilha (CSV)',
+      'Incluir cancelados na planilha (marcados)',
+    ]) {
+      expect(SCRIPT_CUSTOS_CLIENTE, frase).toContain(frase);
+    }
+    expect(SCRIPT_CUSTOS_CLIENTE).not.toContain('localStorage');
+    expect(SCRIPT_CUSTOS_CLIENTE.toLowerCase()).not.toContain('prazo');
+    expect(SCRIPT_CUSTOS_CLIENTE).not.toMatch(/https?:\/\//);
+    // Todo texto vindo do servidor passa por esc().
+    for (const campo of ['c.nome', 'd.nome', 'p.formatado', 'p.tribunal', 'c.chave']) {
+      const cru = new RegExp(`\\+\\s*${campo.replace('.', '\\.')}\\s*\\+`);
+      expect(cru.test(SCRIPT_CUSTOS_CLIENTE), campo).toBe(false);
+    }
+  });
+
+  it('comprovantes na tela: link para o Drive só do domínio do Google, em nova aba e com noopener noreferrer', () => {
+    expect(SCRIPT_CUSTOS).toContain('target="_blank" rel="noopener noreferrer"');
+    expect(SCRIPT_CUSTOS).toContain('linkSeguro(');
+    expect(SCRIPT_CUSTOS).toContain('O arquivo continua no seu Google Drive');
+    expect(SCRIPT_CUSTOS).toContain(
+      'Conecte o Google Drive em Meus acessos para anexar comprovantes.',
+    );
+    for (const campo of ['c.nome', 'c.link']) {
+      const cru = new RegExp(`\\+\\s*${campo.replace('.', '\\.')}\\s*\\+`);
+      expect(cru.test(SCRIPT_CUSTOS), campo).toBe(false);
+    }
+  });
+
   it('o console inclui o script e os estilos, depois do calendário e do resumo', () => {
     const html = paginaConsole('0.0.0');
     expect(html).toContain(SCRIPT_CUSTOS.trim().slice(0, 40));
@@ -114,10 +173,14 @@ describe('tela do centro de custos — o contrato do arquivo', () => {
         ),
       ).toContain(frase);
     }
-    // A única chamada DELETE da tela é a que REATIVA (…/cancelamento).
+    // As únicas chamadas DELETE da tela: REATIVAR (…/cancelamento) e desfazer o VÍNCULO de um
+    // comprovante (…/comprovantes/…) — nenhuma apaga lançamento ou recebimento.
     const deletes = SCRIPT_CUSTOS.match(/method:'DELETE'/g) ?? [];
-    expect(deletes).toHaveLength(1);
+    expect(deletes).toHaveLength(2);
     expect(SCRIPT_CUSTOS).toContain("+'/cancelamento',{method:'DELETE'}");
+    expect(SCRIPT_CUSTOS).toContain(
+      "'/comprovantes/'+encodeURIComponent(comp),{method:'DELETE'}",
+    );
   });
 
   it('nenhuma frase fala em prazo', () => {

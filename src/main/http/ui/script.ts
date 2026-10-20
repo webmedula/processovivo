@@ -219,7 +219,7 @@ function vazio(icone,titulo,texto,acao){
 
 /* ---------------- chrome ---------------- */
 function pintarNav(){
-  ['novidades','processos','calendario','buscar','vigilancia','credenciais','conta'].forEach(function(a){
+  ['novidades','processos','calendario','custos','buscar','vigilancia','credenciais','conta'].forEach(function(a){
     var b=$('nav-'+a); if(b)b.classList.toggle('ativo',estado.aba===a&&!estado.detalhe)});
 }
 function atualizarBolha(){
@@ -1066,9 +1066,9 @@ function ligarBotoesDetalhe(numero,acompanhado){
       .catch(function(e){b.disabled=false;b.textContent='Acompanhar';alert(explicar(e))})});
   var p=$('parar');
   if(p)p.addEventListener('click',function(){
-    api('/v1/acompanhamentos/'+encodeURIComponent(numero),{method:'DELETE'})
+    (window.__pvCustos?window.__pvCustos.avisoAoParar(numero):Promise.resolve(true)).then(function(ok){if(!ok)return;api('/v1/acompanhamentos/'+encodeURIComponent(numero),{method:'DELETE'})// ui/custos.ts avisa do rótulo de cliente
       .then(function(){carregarFacetas();atualizarBolha();ir('processos')})
-      .catch(function(e){alert(explicar(e))})});
+      .catch(function(e){alert(explicar(e))})})});
   if(window.__pvResumoIA)window.__pvResumoIA.aposDesenhar(numero,acompanhado);if(window.__pvCustos)window.__pvCustos.aposDesenhar(numero);// ui/resumoIA.ts, ui/custos.ts
 }
 
@@ -2226,7 +2226,7 @@ function render(){
   if(estado.aba==='vigilancia')return verVigilancia();
   if(estado.aba==='credenciais')return verCredenciais();
   if(estado.aba==='conta')return verConta();
-  if(estado.aba==='calendario'&&window.__pvCalendario)return window.__pvCalendario.ver($('conteudo'));// ui/calendario.ts
+  if(estado.aba==='calendario'&&window.__pvCalendario)return window.__pvCalendario.ver($('conteudo'));if(estado.aba==='custos'&&window.__pvCustosCliente)return window.__pvCustosCliente.ver($('conteudo'));// ui/calendario.ts, ui/custosPorCliente.ts
   return verBuscar();
 }
 
@@ -2300,7 +2300,7 @@ function iniciar(){
   });
 }
 
-['novidades','processos','calendario','buscar','vigilancia','credenciais','conta'].forEach(function(a){
+['novidades','processos','calendario','custos','buscar','vigilancia','credenciais','conta'].forEach(function(a){
   var b=$('nav-'+a); if(b)b.addEventListener('click',function(){ir(a)})});
 
 $('sair').addEventListener('click',function(){
