@@ -88,6 +88,7 @@ src/
 │   │                            #   prazoEmDias (calculadora, exceção v0.39.0) + atoDoDiario,
 │   │                            #   DestinoDePecas + nomeDoArquivoNoDrive (Drive, v0.42.0),
 │   │                            #   Pagamento (vocabulário de cobrança; ciclo em Plano, v0.44.0)
+│   │                            #   Custo + valorEmReais (centro de custos: lançamento, totais, centavos, v0.47.0)
 │   ├── errors/                  # hierarquia de DomainError
 │   ├── ports/                   # ProcessoProvider, RepositorioAcompanhamentos, Cache…
 │   └── usecases/                # BuscarProcessoPorNumero, BuscarProcessosPorOab
@@ -106,6 +107,7 @@ src/
 │                                #   ServicoResumoDoProcesso (resumo por IA, por botão, v0.40.0),
 │                                #   ServicoDrive + fonteDePecasDaPasta (envio ao Google Drive, v0.42.0),
 │                                #   ServicoPagamentos (cobrança recorrente atrás da porta GatewayDePagamento, v0.44.0)
+│                                #   ServicoCustos (centro de custos do processo + prestação de contas em PDF, v0.47.0)
 ├── infrastructure/
 │   ├── adapters/
 │   │   ├── modelo/              # OpenRouter: transporte (ZDR), lista ZDR 24 h, analisador
@@ -127,7 +129,7 @@ src/
 │   ├── agenda/                  # Agendador da varredura
 │   ├── arquivos/                # ArmazemEmDisco (guarda temporária do leitor)
 │   ├── calendario/              # gerador do feed ICS (RFC 5545)
-│   ├── pdf/                     # QpdfMontador (qpdf junta; pdf-lib gera avisos)
+│   ├── pdf/                     # QpdfMontador (qpdf junta; pdf-lib gera avisos), PrestacaoDeContasPdf (v0.47.0, só pdf-lib)
 │   └── ratelimit/               # TokenBucketRateLimiter
 └── main/
     ├── factories/               # composition root
@@ -224,6 +226,9 @@ interface ProcessoProvider {
 | `PdfDoLeitorExpiradoError` | pediu recorte de um PDF combinado que já saiu do disco | 410; a tela diz que expirou — NÃO baixa de novo do tribunal sem a pessoa pedir |
 | `PecasForaDoPdfError` | pediu recorte com peça que não está naquele PDF | 400 |
 | `EventoDeCalendarioInvalidoError` | data que não existe, hora fora do relógio, intervalo acima de 400 dias, processo fora da carteira | 400 |
+| `CustoInvalidoError` | valor fora de 1 centavo–R$ 1.000.000,00 ou não inteiro, descrição vazia/longa, data que não existe, categoria inexistente/arquivada/repetida, ressarcir despesa que não se cobra | 400; mensagem curta em português, NUNCA com o valor ou o texto recebidos |
+| `CustoNaoEncontradoError` | lançamento ou categoria de custo que não existe PARA ESTE workspace | 404; mesma resposta para "não existe" e "é de outra conta" |
+| `LimiteDeCustosError` | 500 lançamentos no processo ou 30 categorias próprias ativas na conta | 422 com `detalhes.limite` (`lancamentos` \| `categorias`) |
 | `EventoDeCalendarioNaoEncontradoError` | evento não existe PARA ESTE workspace | 404; mesma resposta para "não existe" e "é de outro" |
 | `TransicaoDeEventoInvalidaError` | mexer em evento descartado | 409; descartado é final |
 | `FeedDoCalendarioAusenteError` | pediu para alterar o feed e não há feed vigente | 404 na rota autenticada; diz o que falta |
@@ -1830,6 +1835,43 @@ Não são detalhes — moldam o código.
   advogado mexeu. (6) **Privacidade:** o título sai só de campos estruturados ("Prazo de 15 dias úteis
   (a conferir)"), sem texto da IA e sem nome de parte; o feed continua levando só tipo e número do
   processo (ou "sigiloso"), nunca título, observação nem trecho. Ver `PrazoNaoCalculavelError`.
+- **Centro de custos do processo: valores sempre em centavos inteiros, custos independentes do acompanhamento, PDF que
+  nunca grava e nunca traz dado do processo** (v0.47.0, decisões do dono; versão 1 é MANUAL — sem receita, honorário,
+  parcela, integração bancária nem comprovante). (1) **Valor é inteiro em centavos, em toda camada**: `valor_centavos
+  INTEGER CHECK > 0` no banco, `valorCentavos` inteiro na API, e a conversão do que a pessoa digita (`1.234,56`,
+  `1234,56`) é por TEXTO, nunca por multiplicação de decimal (`domain/entities/valorEmReais.ts`: funções puras,
+  autocontidas, injetadas no console por `toString()` — o navegador, o servidor e os testes exercitam a MESMA). O
+  ponto só vale como milhar (`1234.56` é recusado: adivinhar erra o valor sem avisar); teto de R$ 1.000.000,00 por
+  lançamento (`VALOR_MAXIMO_CENTAVOS`). (2) **Modelo**: `custos_processo` (workspace, id, `numero` = 20 dígitos do
+  CNJ, data `AAAA-MM-DD` sem fuso, descrição ≤ 200, categoria, valor, reembolsável, `ressarcido_em` opcional) e
+  `categorias_custo` (workspace, id, nome único por conta SEM acento e caixa, arquivada). Lista base FIXA em código
+  (`CATEGORIAS_BASE`); categoria própria tem código `c-<id>`. Chaves começam por `workspace`; lançamento de outra conta
+  é 404 igual a "não existe". Limites: 500 lançamentos por processo, 30 categorias próprias ativas por conta. Categoria
+  própria nunca se exclui: **arquiva** (o lançamento antigo mantém o nome; lançamento novo não a usa; criar o mesmo
+  nome de uma arquivada a reativa). (3) **Totais só em `calcularTotais`**, aritmética de inteiro: gasto, reembolsável,
+  ressarcido (só despesa reembolsável pode ser ressarcida; desmarcar "Cobrar do cliente" apaga o ressarcimento) e saldo
+  a cobrar = reembolsável − ressarcido; a tela, a API e o PDF mostram o que ela devolveu e não refazem a conta. (4)
+  **Os custos NÃO dependem de o processo estar acompanhado**: não há vínculo com `acompanhamentos`; deixar de
+  acompanhar não apaga nada (o gasto existiu e a prestação de contas continua devida). Apagar a CONTA apaga tudo, pelo
+  `apagarDoWorkspace` (como os demais dados por workspace; a exclusão de conta ainda não existe no produto). (5)
+  **Recurso `custosDoProcesso`** no catálogo, em TODOS os planos (retrocarga única com marca em `estado`, como o
+  calendário; `RECURSOS_PADRAO_DE_PLANO_NOVO` o inclui) — restringir depois é tirá-lo do plano no `/admin`. Todas as
+  rotas passam por `exigir()`: conta de chave de API (sem assinatura) usa, como nos demais recursos; não há exceção. (6)
+  **O PDF da prestação de contas NUNCA grava e NUNCA traz dado do processo além do número, do tribunal e do rótulo de
+  cliente**: `DocumentoDePrestacao` (a porta) não tem campo para parte, texto de ato nem segredo de justiça — o que
+  não está no tipo não chega ao arquivo que o advogado envia para fora. Os bytes nascem na resposta (`Cache-Control:
+  no-store`), o gerador (`PrestacaoDeContasPdf`, só pdf-lib, que o leitor já usava) não importa `fs`, e o nome do
+  arquivo é `prestacao-de-contas-<número>-<data>.pdf`. Leva também nome e OAB do advogado da SESSÃO (conta de chave de
+  API não tem pessoa: sem a linha). Datas `dd/mm/aaaa`, moeda `R$ 1.234,56`, A4, cabeçalho da tabela repetido,
+  totais inteiros na última página. Caractere que a fonte não desenha vira `?` em vez de derrubar a geração. (7)
+  **Dado de custo é do cliente do advogado** (ele é o controlador): nada de valor, descrição ou nome de categoria em
+  log, e-mail, erro, `/v1/novidades`, painel, calendário ou rota pública; a mensagem de `CustoInvalidoError` não
+  repete o que foi enviado. (8) **Excluir é definitivo no servidor (sem lixeira)**; o "Excluído. Desfazer" de 6 s da
+  tela RECRIA o lançamento com um POST (novo id), não restaura. (9) **Tela** em `ui/custos.ts` (`window.__pvCustos`;
+  `script.ts` não cresceu): botão "Custos" na capa, painel que só existe no DOM aberto, lista que vira cartões abaixo
+  de 1100 px, caixa "Ressarcido" com as classes `sit-*` da "Cumprido" (otimista com reversão). A dica da caixa cresce
+  para a ESQUERDA (`.cust .sit-dica`): a de Atualizações cresce para a direita no empilhado e criaria rolagem horizontal.
+  Teste de navegador: `tests/browser/custos-navegador.spec.ts`.
 - **O calendário LÊ datas; não calcula prazo** (v0.32.0; **exceção registrada na v0.39.0: o aviso
   a partir da análise por IA, item acima — fora dele a regra segue valendo**). Evento detectado só
   nasce de data EXPLÍCITA no texto do andamento, colada a um gatilho na mesma
@@ -1925,7 +1967,8 @@ teste e carência** (v0.28.0), **visual novo a partir do logo** (v0.29.0),
 **tela do processo sem os blocos "Pede providência" e "Última movimentação", Partes logo abaixo das peças** (v0.41.1), **Google Drive: conectar a conta do advogado e salvar as peças da Pasta digital numa pasta "Processo Vivo", por botão, escopo `drive.file`, desligado por padrão, planos Peças e IA** (v0.42.0), **Drive: o retorno do OAuth usa o workspace do `state` assinado e a conta de chave de API também conecta** (v0.42.1), **testes estáveis no CI e a volta do Google sem corrida no console** (v0.42.2), **Atualizações: situação como texto e caixa "Cumprido" como único controle, com aviso para desfazer** (v0.43.0), **cobrança recorrente pelo Mercado Pago, parte 1: assinatura por cartão atrás da porta de pagamento, webhook idempotente, reconciliação e ciclo no plano** (v0.44.0), **ambiente do pagamento declarado em `PROCESSOVIVO_PAGAMENTO_AMBIENTE`, não deduzido do token** (v0.44.1),
 **página de vendas: vitrine pública `GET /v1/planos`, plano escolhido atravessando cadastro e login, confirmação de assinatura com aceite dos Termos obrigatório e trecho para o site** (v0.45.0), **recusa do gateway com motivo de lista fechada, log saneado, 422/503 em JSON e a última falha no /admin** (v0.45.1), **tabela de Atualizações mais limpa: Atualização em uma linha, datas estreitas e coluna "Cumprido" só com a caixa e a dica** (v0.46.0),
 **tabela de Atualizações: caixa "Cumprido" na coluna Ações, Partes mais larga, sem o selo "outro destinatário" na linha e sem a frase fixa sob o filtro** (v0.46.1),
-Dockerfile multi-stage, CI, 2826 testes.
+**centro de custos do processo: lançamentos manuais por processo, categorias próprias, totais no servidor, caixa "Ressarcido" e prestação de contas em PDF para o cliente** (v0.47.0),
+Dockerfile multi-stage, CI, 2961 testes.
 
 **Pasta digital (v0.33.0, backend):** `GET /v1/processos/:numero/pasta` (lista +
 estado de cada peça + intervalos de página + totais SEM filtro + procedência

@@ -575,6 +575,40 @@ const ESQUEMA = [
      PRIMARY KEY (workspace, numero, peca_id)
    )`,
 
+  // Centro de custos (v0.47.0). Duas tabelas NOVAS e aditivas, sem retrocarga (nada derivado de dado
+  // já guardado). Chaves começam por `workspace`: nenhuma consulta chega a uma linha sem dizer de
+  // quem ela é. `numero` são os 20 dígitos do CNJ — a mesma chave de `acompanhamentos` — mas SEM
+  // vínculo com ela: deixar de acompanhar o processo não apaga os lançamentos (o gasto existiu).
+  // `valor_centavos` é INTEIRO e positivo; dinheiro nunca é ponto flutuante. `ressarcido_em` vazio
+  // = ainda não ressarcido. Os valores e descrições são dado do cliente do advogado: não vão a log.
+  `CREATE TABLE IF NOT EXISTS custos_processo (
+     workspace       TEXT NOT NULL,
+     id              TEXT NOT NULL,
+     numero          TEXT NOT NULL,
+     data            TEXT NOT NULL,
+     descricao       TEXT NOT NULL,
+     categoria       TEXT NOT NULL,
+     valor_centavos  INTEGER NOT NULL CHECK (valor_centavos > 0),
+     reembolsavel    INTEGER NOT NULL DEFAULT 0,
+     ressarcido_em   TEXT,
+     criado_em       TEXT NOT NULL,
+     atualizado_em   TEXT NOT NULL,
+     PRIMARY KEY (workspace, id)
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_custos_processo
+     ON custos_processo (workspace, numero, data DESC)`,
+  // `nome_chave` é o nome sem acento e em caixa baixa: a unicidade é por ele, não pelo texto digitado.
+  `CREATE TABLE IF NOT EXISTS categorias_custo (
+     workspace   TEXT NOT NULL,
+     id          TEXT NOT NULL,
+     nome        TEXT NOT NULL,
+     nome_chave  TEXT NOT NULL,
+     arquivada   INTEGER NOT NULL DEFAULT 0,
+     criada_em   TEXT NOT NULL,
+     PRIMARY KEY (workspace, id),
+     UNIQUE (workspace, nome_chave)
+   )`,
+
   `CREATE INDEX IF NOT EXISTS idx_sessoes_usuario ON sessoes(usuario_id)`,
   `CREATE INDEX IF NOT EXISTS idx_sessoes_expira ON sessoes(expira_em)`,
 ];
@@ -727,6 +761,7 @@ export function abrirBanco(caminho: string): DatabaseSync {
   semearPlanos(db);
   acrescentarCalendarioAosPlanos(db);
   acrescentarSalvarNoDriveAosPlanos(db);
+  acrescentarCustosAosPlanos(db);
   retrocarregarAssinaturas(db);
 
   // Segunda passagem: o esquema já existe, então dá para perguntar ao banco se
@@ -1009,6 +1044,50 @@ function acrescentarSalvarNoDriveAosPlanos(db: DatabaseSync): void {
     }
     db.prepare('INSERT INTO estado (chave, valor) VALUES (?, ?)').run(
       MARCA_DRIVE_NOS_PLANOS,
+      new Date().toISOString(),
+    );
+    db.exec('COMMIT');
+  } catch (erro) {
+    db.exec('ROLLBACK');
+    throw erro;
+  }
+}
+
+/** Marca, na tabela `estado`, de que a retrocarga do centro de custos nos planos já rodou. */
+export const MARCA_CUSTOS_NOS_PLANOS = 'retrocarga:custos-do-processo-nos-planos';
+
+/**
+ * O centro de custos entra em TODOS os planos já gravados (v0.47.0, decisão do dono: disponível
+ * para todos, inclusive no teste). Mesma lição do calendário: a semente só vale para banco vazio.
+ * Roda UMA vez por banco (marca em `estado`): depois dela o catálogo volta a ser do operador, e se
+ * ele tirar `custosDoProcesso` de um plano pelo /admin, um redeploy não desfaz. Não duplica.
+ */
+function acrescentarCustosAosPlanos(db: DatabaseSync): void {
+  const feita = db
+    .prepare('SELECT 1 FROM estado WHERE chave = ?')
+    .get(MARCA_CUSTOS_NOS_PLANOS);
+  if (feita) return;
+
+  const planos = db.prepare('SELECT codigo, recursos FROM planos').all() as Array<{
+    codigo: string;
+    recursos: string;
+  }>;
+  const gravar = db.prepare('UPDATE planos SET recursos = ? WHERE codigo = ?');
+
+  db.exec('BEGIN');
+  try {
+    for (const p of planos) {
+      let recursos: unknown;
+      try {
+        recursos = JSON.parse(p.recursos);
+      } catch {
+        continue;
+      }
+      if (!Array.isArray(recursos) || recursos.includes('custosDoProcesso')) continue;
+      gravar.run(JSON.stringify([...recursos, 'custosDoProcesso']), p.codigo);
+    }
+    db.prepare('INSERT INTO estado (chave, valor) VALUES (?, ?)').run(
+      MARCA_CUSTOS_NOS_PLANOS,
       new Date().toISOString(),
     );
     db.exec('COMMIT');

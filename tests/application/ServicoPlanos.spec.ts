@@ -94,16 +94,16 @@ describe('ServicoPlanos — criar', () => {
     expect(criado.nome).toBe('Escritório');
   });
 
-  it('plano novo inclui o calendário por padrão, mesmo que o formulário não o marque', async () => {
+  it('plano novo inclui o calendário e o centro de custos por padrão, mesmo que o formulário não os marque', async () => {
     const { servico } = montar();
     const criado = await servico.criar({ ...NOVO, recursos: ['consulta'] });
-    expect(criado.recursos).toEqual(['consulta', 'calendario']);
+    expect(criado.recursos).toEqual(['consulta', 'calendario', 'custosDoProcesso']);
     const comEle = await servico.criar({
       ...NOVO,
       codigo: 'outro',
       recursos: ['calendario', 'consulta'],
     });
-    expect(comEle.recursos).toEqual(['calendario', 'consulta']);
+    expect(comEle.recursos).toEqual(['calendario', 'consulta', 'custosDoProcesso']);
     // Tirar depois, pela edição, continua possível: é o operador decidindo.
     const sem = await servico.atualizar('outro', { recursos: ['consulta'] });
     expect(sem.recursos).toEqual(['consulta']);

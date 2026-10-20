@@ -29,7 +29,8 @@ export type RecursoDoPlano =
   | 'calendario'
   | 'pecas'
   | 'analiseIa'
-  | 'salvarNoDrive';
+  | 'salvarNoDrive'
+  | 'custosDoProcesso';
 
 export interface DescricaoDoRecurso {
   readonly recurso: RecursoDoPlano;
@@ -84,6 +85,14 @@ export const RECURSOS: readonly DescricaoDoRecurso[] = Object.freeze([
     recurso: 'salvarNoDrive',
     nome: 'Salvar no Google Drive',
     frase: 'o envio de peças ao Google Drive',
+    implementado: true,
+  },
+  // v0.47.0: centro de custos do processo. Em TODOS os planos (decisão do dono), mas como recurso
+  // com nome próprio: restringir depois é tirá-lo de um plano no /admin, sem mexer em código.
+  {
+    recurso: 'custosDoProcesso',
+    nome: 'Custos do processo',
+    frase: 'o centro de custos do processo',
     implementado: true,
   },
 ] as const);
@@ -178,11 +187,13 @@ const BASE: readonly RecursoDoPlano[] = [
   'acompanhamento',
   'vigilancia',
   'calendario',
+  'custosDoProcesso',
 ];
 
 /** Recursos que todo plano criado pelo painel recebe por padrão. */
 export const RECURSOS_PADRAO_DE_PLANO_NOVO: readonly RecursoDoPlano[] = Object.freeze([
   'calendario',
+  'custosDoProcesso',
 ]);
 
 /**

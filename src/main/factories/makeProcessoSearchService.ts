@@ -18,6 +18,10 @@ import { GoogleDriveAdapter } from '../../infrastructure/adapters/drive/GoogleDr
 import { TransporteComHttpClient } from '../../infrastructure/adapters/drive/TransporteDoDrive.js';
 import { RepositorioDoDriveSqlite } from '../../infrastructure/persistencia/sqlite/RepositorioDoDriveSqlite.js';
 import { ServicoCalendario } from '../../application/services/ServicoCalendario.js';
+import { ServicoCustos } from '../../application/services/ServicoCustos.js';
+import { PrestacaoDeContasPdf } from '../../infrastructure/pdf/PrestacaoDeContasPdf.js';
+import { RepositorioDeCustosSqlite } from '../../infrastructure/persistencia/sqlite/RepositorioDeCustosSqlite.js';
+import { VERSAO } from '../../infrastructure/config/versao.js';
 import { comIndicadorDeDestinatario } from '../../application/services/indicadorDeDestinatario.js';
 import { comDeteccaoDoCalendario } from '../../application/services/ingestaoDoCalendario.js';
 import { OabsDoWorkspaceSqlite } from '../../infrastructure/persistencia/sqlite/OabsDoWorkspaceSqlite.js';
@@ -163,6 +167,8 @@ export interface Aplicacao {
   readonly calendario: ServicoCalendario;
   /** Preenchimento retroativo do calendário (de hora em hora, só banco). */
   readonly agendadorCalendario: Agendador | undefined;
+  /** Centro de custos do processo (v0.47.0). Sempre montado — só depende do banco. */
+  readonly custos: ServicoCustos;
   /** Contas de assinante. Cada uma nasce com o próprio `workspace`. */
   readonly contas: ServicoContas;
   /**
@@ -577,6 +583,14 @@ export function montarAplicacao(config: Config): Aplicacao {
     agendadorLimpezaLeitor,
     calendario,
     agendadorCalendario,
+    custos: new ServicoCustos({
+      repositorio: new RepositorioDeCustosSqlite(db),
+      acompanhamentos: repositorioCru,
+      gerador: new PrestacaoDeContasPdf(),
+      logger,
+      gerarId: () => randomUUID(),
+      versao: VERSAO,
+    }),
     contas,
     assinaturas,
     usuarios,

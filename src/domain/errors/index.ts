@@ -1125,3 +1125,45 @@ export class PagamentoRecusadoError extends DomainError {
     super(mensagem);
   }
 }
+
+/**
+ * Centro de custos (v0.47.0): o lançamento ou a categoria não passa nas regras — valor fora da
+ * faixa, descrição vazia, data que não existe, nome repetido. 400: o pedido é que está errado, e
+ * a mensagem (em português, curta) diz qual campo. NUNCA carrega o valor, a descrição ou o nome
+ * recebidos: o dado de custo é do cliente do advogado e não vai a log nem a erro.
+ */
+export class CustoInvalidoError extends DomainError {
+  readonly codigo = 'CUSTO_INVALIDO';
+
+  constructor(motivo: string) {
+    super(motivo);
+  }
+}
+
+/**
+ * O lançamento ou a categoria de custo não existe PARA ESTE workspace. Mesma resposta para
+ * "não existe" e "é de outra conta": diferenciar deixaria quem tem um id alheio confirmá-lo.
+ */
+export class CustoNaoEncontradoError extends DomainError {
+  readonly codigo = 'CUSTO_NAO_ENCONTRADO';
+
+  constructor() {
+    super('Lançamento ou categoria não encontrado na sua conta.');
+  }
+}
+
+/** Teto de lançamentos por processo ou de categorias próprias por conta. 422 com `detalhes.limite`. */
+export class LimiteDeCustosError extends DomainError {
+  readonly codigo = 'LIMITE_DE_CUSTOS';
+
+  constructor(
+    readonly limite: 'lancamentos' | 'categorias',
+    readonly maximo: number,
+  ) {
+    super(
+      limite === 'lancamentos'
+        ? `Este processo já tem ${maximo} lançamentos, o máximo permitido.`
+        : `Você já tem ${maximo} categorias próprias, o máximo permitido. Arquive alguma para criar outra.`,
+    );
+  }
+}

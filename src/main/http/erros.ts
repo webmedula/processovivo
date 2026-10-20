@@ -20,6 +20,9 @@ import {
   DomainError,
   EmailJaCadastradoError,
   EventoDeCalendarioNaoEncontradoError,
+  CustoInvalidoError,
+  CustoNaoEncontradoError,
+  LimiteDeCustosError,
   FeedDoCalendarioAusenteError,
   FeedDoCalendarioNaoEncontradoError,
   TransicaoDeEventoInvalidaError,
@@ -105,7 +108,11 @@ export function mapearErro(erro: unknown): RespostaDeErro {
     };
   }
 
-  if (erro instanceof NumeroCNJInvalidoError || erro instanceof OabInvalidaError) {
+  if (
+    erro instanceof NumeroCNJInvalidoError ||
+    erro instanceof OabInvalidaError ||
+    erro instanceof CustoInvalidoError
+  ) {
     return { status: 400, corpo: { erro: erro.codigo, mensagem: erro.message } };
   }
 
@@ -234,6 +241,14 @@ export function mapearErro(erro: unknown): RespostaDeErro {
     };
   }
 
+  // Centro de custos: o teto é do estado da conta (422 com o nome do limite), não do formato do pedido.
+  if (erro instanceof LimiteDeCustosError) {
+    return {
+      status: 422,
+      corpo: { erro: erro.codigo, mensagem: erro.message, detalhes: { limite: erro.limite } },
+    };
+  }
+
   // Aviso de prazo a partir da análise (v0.39.0): o corpo traz `motivo` para a tela escolher a frase.
   if (erro instanceof PrazoNaoCalculavelError) {
     return {
@@ -254,6 +269,7 @@ export function mapearErro(erro: unknown): RespostaDeErro {
     erro instanceof JobDoLeitorNaoEncontradoError ||
     erro instanceof PecaDaPastaNaoEncontradaError ||
     erro instanceof EventoDeCalendarioNaoEncontradoError ||
+    erro instanceof CustoNaoEncontradoError ||
     erro instanceof FeedDoCalendarioAusenteError
   ) {
     return { status: 404, corpo: { erro: erro.codigo, mensagem: erro.message } };

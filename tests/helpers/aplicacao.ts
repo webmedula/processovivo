@@ -15,6 +15,9 @@ import { RepositorioDoDriveSqlite } from '../../src/infrastructure/persistencia/
 import type { DestinoExternoDePecas } from '../../src/domain/ports/DestinoExternoDePecas.js';
 import { RepositorioDaPastaSqlite } from '../../src/infrastructure/persistencia/sqlite/RepositorioDaPastaSqlite.js';
 import { ServicoCalendario } from '../../src/application/services/ServicoCalendario.js';
+import { ServicoCustos } from '../../src/application/services/ServicoCustos.js';
+import { PrestacaoDeContasPdf } from '../../src/infrastructure/pdf/PrestacaoDeContasPdf.js';
+import { RepositorioDeCustosSqlite } from '../../src/infrastructure/persistencia/sqlite/RepositorioDeCustosSqlite.js';
 import { comDeteccaoDoCalendario } from '../../src/application/services/ingestaoDoCalendario.js';
 import { RepositorioDeEventosSqlite } from '../../src/infrastructure/persistencia/sqlite/RepositorioDeEventosSqlite.js';
 import type { ConfiguracaoLeitor } from '../../src/application/services/ServicoLeitor.js';
@@ -522,6 +525,15 @@ export function aplicacaoDeTeste(
     assinaturas,
     calendario,
     agendadorCalendario: undefined,
+    custos: new ServicoCustos({
+      repositorio: new RepositorioDeCustosSqlite(db),
+      acompanhamentos: repositorioCru,
+      gerador: new PrestacaoDeContasPdf(),
+      logger: loggerSilencioso,
+      gerarId: () => randomUUID(),
+      versao: '9.9.9-teste',
+      ...(opcoes.agora ? { agora: opcoes.agora } : {}),
+    }),
     usuarios,
     repositorioAssinaturas,
     planos: new ServicoPlanos({
