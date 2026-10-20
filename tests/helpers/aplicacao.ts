@@ -15,6 +15,7 @@ import { RepositorioDoDriveSqlite } from '../../src/infrastructure/persistencia/
 import type { DestinoExternoDePecas } from '../../src/domain/ports/DestinoExternoDePecas.js';
 import { RepositorioDaPastaSqlite } from '../../src/infrastructure/persistencia/sqlite/RepositorioDaPastaSqlite.js';
 import { ServicoCalendario } from '../../src/application/services/ServicoCalendario.js';
+import { ServicoCustosPorCliente } from '../../src/application/services/ServicoCustosPorCliente.js';
 import { ServicoCustos } from '../../src/application/services/ServicoCustos.js';
 import { PrestacaoDeContasPdf } from '../../src/infrastructure/pdf/PrestacaoDeContasPdf.js';
 import { RepositorioDeCustosSqlite } from '../../src/infrastructure/persistencia/sqlite/RepositorioDeCustosSqlite.js';
@@ -504,6 +505,27 @@ export function aplicacaoDeTeste(
       })
     : undefined;
 
+  const repositorioDeCustos = new RepositorioDeCustosSqlite(db);
+  const custos = new ServicoCustos({
+    repositorio: repositorioDeCustos,
+    acompanhamentos: repositorioCru,
+    gerador: new PrestacaoDeContasPdf(),
+    logger: loggerSilencioso,
+    gerarId: () => randomUUID(),
+    comprovantes: drive,
+    versao: '9.9.9-teste',
+    ...(opcoes.agora ? { agora: opcoes.agora } : {}),
+  });
+  const custosPorCliente = new ServicoCustosPorCliente({
+    repositorio: repositorioDeCustos,
+    acompanhamentos: repositorioCru,
+    custos,
+    gerador: new PrestacaoDeContasPdf(),
+    logger: loggerSilencioso,
+    versao: '9.9.9-teste',
+    ...(opcoes.agora ? { agora: opcoes.agora } : {}),
+  });
+
   return {
     buscarProcessoPorNumero: new BuscarProcessoPorNumero(orquestrador),
     buscarProcessosPorOab: new BuscarProcessosPorOab(orquestrador),
@@ -525,15 +547,8 @@ export function aplicacaoDeTeste(
     assinaturas,
     calendario,
     agendadorCalendario: undefined,
-    custos: new ServicoCustos({
-      repositorio: new RepositorioDeCustosSqlite(db),
-      acompanhamentos: repositorioCru,
-      gerador: new PrestacaoDeContasPdf(),
-      logger: loggerSilencioso,
-      gerarId: () => randomUUID(),
-      versao: '9.9.9-teste',
-      ...(opcoes.agora ? { agora: opcoes.agora } : {}),
-    }),
+    custos,
+    custosPorCliente,
     usuarios,
     repositorioAssinaturas,
     planos: new ServicoPlanos({

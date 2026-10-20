@@ -34,6 +34,7 @@ export function comDeteccaoDoCalendario(
     marcarCumprido: repositorio.marcarCumprido.bind(repositorio),
     desfazerCumprido: repositorio.desfazerCumprido.bind(repositorio),
     clientes: repositorio.clientes.bind(repositorio),
+    rotulosDeCliente: repositorio.rotulosDeCliente.bind(repositorio),
     buscar: repositorio.buscar.bind(repositorio),
     listar: repositorio.listar.bind(repositorio),
     listarParaSincronizar: repositorio.listarParaSincronizar.bind(repositorio),

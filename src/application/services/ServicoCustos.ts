@@ -24,7 +24,6 @@ import type {
   CategoriaDeCusto,
   Custo,
   DadosDoCusto,
-  ItemParaTotais,
   TotaisDeCusto,
 } from '../../domain/entities/Custo.js';
 import {
@@ -42,6 +41,11 @@ import type {
   EventoDoHistorico,
   OperacaoDoHistorico,
 } from '../../domain/entities/HistoricoDeCustos.js';
+import {
+  LIMITE_COMPROVANTES_POR_LANCAMENTO,
+  validarComprovante,
+} from '../../domain/entities/Comprovante.js';
+import type { Comprovante } from '../../domain/entities/Comprovante.js';
 import { NumeroCNJ } from '../../domain/entities/NumeroCNJ.js';
 import {
   LIMITE_RECEBIMENTOS_POR_PROCESSO,
@@ -58,13 +62,15 @@ import { reaisDeCentavos } from '../../domain/entities/valorEmReais.js';
 import {
   CustoInvalidoError,
   CustoNaoEncontradoError,
+  DriveRecusadoError,
   LimiteDeCustosError,
 } from '../../domain/errors/index.js';
 import type {
   DocumentoDePrestacao,
   GeradorDePrestacaoDeContas,
-  LinhaDaPrestacao,
 } from '../../domain/ports/GeradorDePrestacaoDeContas.js';
+import { itensParaTotais, montarSecao } from './prestacaoDeCustos.js';
+import type { DestinoDeComprovantes } from '../../domain/ports/DestinoDeComprovantes.js';
 import type { Logger } from '../../domain/ports/Logger.js';
 import type { RepositorioAcompanhamentos } from '../../domain/ports/RepositorioAcompanhamentos.js';
 import type { RepositorioDeCustos } from '../../domain/ports/RepositorioDeCustos.js';
@@ -76,6 +82,11 @@ export interface OpcoesServicoCustos {
   readonly gerador: GeradorDePrestacaoDeContas;
   readonly logger: Logger;
   readonly gerarId: () => string;
+  /**
+   * Onde os comprovantes são guardados: o Drive do advogado. `undefined` com o Drive desligado no
+   * servidor — anexar então responde que o recurso não está disponível, sem erro técnico.
+   */
+  readonly comprovantes?: DestinoDeComprovantes | undefined;
   /** A versão do sistema, que vai no rodapé do PDF. */
   readonly versao: string;
   readonly agora?: () => Date;
@@ -100,6 +111,8 @@ export interface CustosDoProcesso {
   /** Ativos e, se pedido, cancelados (marcados por `canceladoEm`). */
   readonly lancamentos: readonly Custo[];
   readonly recebimentos: readonly Recebimento[];
+  /** Os comprovantes de cada lançamento (id do lançamento → anexos). */
+  readonly comprovantes: ReadonlyMap<string, readonly Comprovante[]>;
   /** Calculados SÓ sobre os ativos. */
   readonly totais: TotaisDeCusto;
   readonly categorias: readonly CategoriaParaTela[];
@@ -179,6 +192,10 @@ export class ServicoCustos {
       true,
     );
     const categorias = await this.categoriasParaTela(workspace);
+    const anexos = new Map<string, Comprovante[]>();
+    for (const c of await this.o.repositorio.listarComprovantes(workspace, numero)) {
+      anexos.set(c.custoId, [...(anexos.get(c.custoId) ?? []), c]);
+    }
     const ativos = todos.filter((c) => !c.canceladoEm);
     const recebimentosAtivos = recebimentos.filter((r) => !r.canceladoEm);
     const cancelados =
@@ -187,7 +204,8 @@ export class ServicoCustos {
       numeroProcesso: numero,
       lancamentos: incluirCancelados ? todos : ativos,
       recebimentos: incluirCancelados ? recebimentos : recebimentosAtivos,
-      totais: calcularTotais(this.paraTotais(ativos, categorias), recebimentosAtivos),
+      comprovantes: anexos,
+      totais: calcularTotais(itensParaTotais(ativos, categorias), recebimentosAtivos),
       categorias,
       canceladosEscondidos: incluirCancelados ? 0 : cancelados,
     };
@@ -421,6 +439,91 @@ export class ServicoCustos {
   }
 
   // ---------------------------------------------------------------------------
+  // Comprovantes (v0.49.0): o arquivo vai direto da memória ao Drive do advogado
+
+  /**
+   * Anexa um comprovante ao lançamento. O arquivo é validado pelos primeiros bytes (PDF, JPEG ou PNG,
+   * até 5 MB) ANTES de qualquer chamada ao Google; nada é gravado em disco; só o id, o link, o nome,
+   * o tamanho e a data ficam aqui. Nunca vai a log: nem o nome, nem o tamanho.
+   */
+  async anexarComprovante(
+    workspace: string,
+    custoId: string,
+    arquivo: {
+      readonly conteudo: unknown;
+      readonly nome: unknown;
+      readonly tipoDeclarado: unknown;
+    },
+  ): Promise<Comprovante> {
+    const custo = await this.exigir(workspace, custoId);
+    if (custo.canceladoEm) {
+      throw new CustoInvalidoError('Reative o lançamento antes de anexar comprovantes.');
+    }
+    const valido = validarComprovante(
+      arquivo.conteudo,
+      arquivo.nome,
+      arquivo.tipoDeclarado,
+    );
+    if (
+      (await this.o.repositorio.contarComprovantes(workspace, custoId)) >=
+      LIMITE_COMPROVANTES_POR_LANCAMENTO
+    ) {
+      throw new LimiteDeCustosError('comprovantes', LIMITE_COMPROVANTES_POR_LANCAMENTO);
+    }
+    if (!this.o.comprovantes) {
+      throw new DriveRecusadoError(
+        'sem_plano',
+        'O envio de comprovantes ao Google Drive não está disponível neste servidor.',
+      );
+    }
+    const enviado = await this.o.comprovantes.anexar(workspace, custo.numeroProcesso, {
+      nome: valido.nome,
+      tipo: valido.tipo,
+      conteudo: arquivo.conteudo as Uint8Array,
+    });
+    const agora = this.agora();
+    const comprovante: Comprovante = Object.freeze({
+      id: this.o.gerarId(),
+      workspace,
+      custoId,
+      numeroProcesso: custo.numeroProcesso,
+      arquivoId: enviado.arquivoId,
+      link: linkDoDrive(enviado.arquivoId, enviado.link),
+      nome: valido.nome,
+      tipo: valido.tipo,
+      tamanho: valido.tamanho,
+      anexadoEm: agora,
+    });
+    const gravou = await this.o.repositorio.inserirComprovante(
+      comprovante,
+      LIMITE_COMPROVANTES_POR_LANCAMENTO,
+      this.evento(custo, 'lancamento', custoId, 'anexou', [], agora),
+    );
+    if (!gravou)
+      throw new LimiteDeCustosError('comprovantes', LIMITE_COMPROVANTES_POR_LANCAMENTO);
+    this.o.logger.debug('comprovante anexado');
+    return comprovante;
+  }
+
+  /** Remove SÓ o vínculo. O arquivo continua no Google Drive do advogado: o sistema nunca apaga lá. */
+  async removerComprovante(
+    workspace: string,
+    custoId: string,
+    id: string,
+  ): Promise<void> {
+    const custo = await this.exigir(workspace, custoId);
+    const atual = await this.o.repositorio.buscarComprovante(workspace, id);
+    if (!atual || atual.custoId !== custoId) throw new CustoNaoEncontradoError();
+    const ok = await this.o.repositorio.removerComprovante(
+      workspace,
+      id,
+      this.evento(custo, 'lancamento', custoId, 'removeu', [], this.agora()),
+    );
+    if (!ok) throw new CustoNaoEncontradoError();
+    this.o.logger.debug('comprovante desvinculado');
+  }
+
+  // ---------------------------------------------------------------------------
   // Catálogo
 
   async listarCategorias(workspace: string): Promise<readonly CategoriaParaTela[]> {
@@ -570,7 +673,6 @@ export class ServicoCustos {
       (de === undefined || data >= de) && (ate === undefined || data <= ate);
 
     const categorias = await this.categoriasParaTela(workspace);
-    const porCodigo = new Map(categorias.map((c) => [c.codigo, c]));
     const incluidos = (await this.o.repositorio.listar(workspace, cnj.digitos, false))
       .filter((c) => noPeriodo(c.data))
       .filter((c) => !opcoes.somenteACobrar || estaACobrar(c));
@@ -582,24 +684,11 @@ export class ServicoCustos {
       .filter((r) => noPeriodo(r.data))
       .reverse();
 
-    const totais = calcularTotais(this.paraTotais(incluidos, categorias), recebimentos);
-    const nomeDe = (codigo: string): string =>
-      porCodigo.get(codigoAtualDaCategoria(codigo))?.nomeCompleto ??
-      'Categoria não identificada';
-    const ehDeposito = (codigo: string): boolean =>
-      porCodigo.get(codigoAtualDaCategoria(codigo))?.deposito === true;
-    const linha = (c: Custo): LinhaDaPrestacao => ({
-      data: dataBrasileira(c.data),
-      descricao: c.descricao,
-      categoria: nomeDe(c.categoria),
-      valor: reaisDeCentavos(c.valorCentavos),
-      situacao:
-        c.pagoPor === 'cliente'
-          ? 'Pago pelo cliente'
-          : c.reembolsavel
-            ? 'Pago pelo escritório · a cobrar do cliente'
-            : 'Pago pelo escritório · não cobrado',
-    });
+    const anexos = new Map<string, number>();
+    for (const c of await this.o.repositorio.listarComprovantes(workspace, cnj.digitos)) {
+      anexos.set(c.custoId, (anexos.get(c.custoId) ?? 0) + 1);
+    }
+    const secao = montarSecao(incluidos, recebimentos, categorias, anexos);
 
     const cliente = (await this.o.acompanhamentos.buscar(workspace, cnj.digitos))
       ?.cliente;
@@ -614,48 +703,6 @@ export class ServicoCustos {
     }
     if (opcoes.somenteACobrar) filtros.push('Somente o que está a cobrar do cliente');
 
-    const m = reaisDeCentavos;
-    const totaisDoDocumento: DocumentoDePrestacao['totais'] = [
-      { rotulo: 'Total de despesas', valor: m(totais.totalDespesasCentavos) },
-      { rotulo: 'Pago pelo escritório', valor: m(totais.pagoPeloEscritorioCentavos) },
-      {
-        rotulo: 'Pago diretamente pelo cliente',
-        valor: m(totais.pagoPeloClienteCentavos),
-      },
-      {
-        rotulo: 'Total a cobrar do cliente (reembolsável)',
-        valor: m(totais.totalReembolsavelCentavos),
-      },
-      ...(totais.reembolsavelDeDepositosCentavos > 0
-        ? [
-            {
-              rotulo: 'dos quais depósitos e garantias',
-              valor: m(totais.reembolsavelDeDepositosCentavos),
-              recuado: true,
-            },
-          ]
-        : []),
-      { rotulo: 'Total recebido do cliente', valor: m(totais.totalRecebidoCentavos) },
-      { rotulo: 'Saldo a cobrar', valor: m(totais.saldoACobrarCentavos), destaque: true },
-      ...(totais.creditoDoClienteCentavos > 0
-        ? [
-            {
-              rotulo: 'Crédito do cliente',
-              valor: m(totais.creditoDoClienteCentavos),
-              destaque: true,
-            },
-          ]
-        : []),
-      ...(totais.depositos.quantidade > 0
-        ? [
-            {
-              rotulo: 'Depósitos e garantias (fora do total de despesas)',
-              valor: m(totais.depositos.totalCentavos),
-            },
-          ]
-        : []),
-    ];
-
     const documento: DocumentoDePrestacao = {
       numeroProcesso: cnj.formatado,
       tribunal: cnj.siglaTribunal ?? 'Tribunal não identificado',
@@ -666,19 +713,11 @@ export class ServicoCustos {
       geradoEm: `${dataBrasileira(hojeLocal)} ${horaLocalDe(agora)}`,
       filtros,
       versao: this.o.versao,
-      linhas: incluidos.filter((c) => !ehDeposito(c.categoria)).map(linha),
-      depositos: incluidos.filter((c) => ehDeposito(c.categoria)).map(linha),
-      recebimentos: recebimentos.map((r) => ({
-        data: dataBrasileira(r.data),
-        observacao: r.observacao ?? '',
-        valor: m(r.valorCentavos),
-      })),
-      subtotais: totais.porCategoria.map((s) => ({
-        categoria: nomeDe(s.categoria),
-        quantidade: s.quantidade,
-        valor: m(s.totalCentavos),
-      })),
-      totais: totaisDoDocumento,
+      linhas: secao.linhas,
+      depositos: secao.depositos,
+      recebimentos: secao.recebimentos,
+      subtotais: secao.subtotais,
+      totais: secao.totais,
     };
     const pdf = await this.o.gerador.gerar(documento);
     this.o.logger.info('prestação de contas gerada', {
@@ -693,23 +732,6 @@ export class ServicoCustos {
 
   // ---------------------------------------------------------------------------
   // Internos
-
-  private paraTotais(
-    custos: readonly Custo[],
-    categorias: readonly CategoriaParaTela[],
-  ): ItemParaTotais[] {
-    const porCodigo = new Map(categorias.map((c) => [c.codigo, c]));
-    return custos.map((c) => {
-      const codigo = codigoAtualDaCategoria(c.categoria);
-      return {
-        categoria: codigo,
-        valorCentavos: c.valorCentavos,
-        reembolsavel: c.reembolsavel,
-        pagoPor: c.pagoPor,
-        deposito: porCodigo.get(codigo)?.deposito === true,
-      };
-    });
-  }
 
   private evento(
     base: { readonly workspace: string; readonly numeroProcesso: string },
@@ -822,4 +844,11 @@ export class ServicoCustos {
 function horaLocalDe(instante: Date): string {
   const local = new Date(instante.getTime() - 3 * 3_600_000);
   return local.toISOString().slice(11, 16);
+}
+
+/** Link do arquivo no Drive: o informado pelo Google, se for do domínio do Google; senão, montado do id. */
+function linkDoDrive(arquivoId: string, informado: string | undefined): string {
+  if (informado && /^https:\/\/(drive|docs)\.google\.com\//.test(informado))
+    return informado;
+  return `https://drive.google.com/file/d/${encodeURIComponent(arquivoId)}/view`;
 }

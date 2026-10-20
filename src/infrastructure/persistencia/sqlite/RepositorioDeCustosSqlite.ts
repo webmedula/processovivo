@@ -1,4 +1,8 @@
 import type { DatabaseSync } from 'node:sqlite';
+import type {
+  Comprovante,
+  TipoDeComprovante,
+} from '../../../domain/entities/Comprovante.js';
 import {
   chaveDeUnicidadeDaCategoria,
   ehPagador,
@@ -11,7 +15,10 @@ import type {
   OperacaoDoHistorico,
 } from '../../../domain/entities/HistoricoDeCustos.js';
 import type { Recebimento } from '../../../domain/entities/Recebimento.js';
-import type { RepositorioDeCustos } from '../../../domain/ports/RepositorioDeCustos.js';
+import type {
+  FiltroDePeriodo,
+  RepositorioDeCustos,
+} from '../../../domain/ports/RepositorioDeCustos.js';
 
 type Linha = Record<string, unknown>;
 
@@ -235,6 +242,124 @@ export class RepositorioDeCustosSqlite implements RepositorioDeCustos {
     });
   }
 
+  async listarDoWorkspace(
+    workspace: string,
+    filtro: FiltroDePeriodo,
+    incluirCancelados: boolean,
+  ): Promise<Custo[]> {
+    const { sql, args } = periodo(filtro);
+    const linhas = this.db
+      .prepare(
+        `SELECT * FROM custos_processo WHERE workspace = ? ${sql}
+           ${incluirCancelados ? '' : 'AND cancelado_em IS NULL'}
+         ORDER BY numero, data DESC, criado_em DESC, id DESC`,
+      )
+      .all(workspace, ...args) as Linha[];
+    return linhas.map(paraCusto);
+  }
+
+  async listarRecebimentosDoWorkspace(
+    workspace: string,
+    filtro: FiltroDePeriodo,
+    incluirCancelados: boolean,
+  ): Promise<Recebimento[]> {
+    const { sql, args } = periodo(filtro);
+    const linhas = this.db
+      .prepare(
+        `SELECT * FROM recebimentos_processo WHERE workspace = ? ${sql}
+           ${incluirCancelados ? '' : 'AND cancelado_em IS NULL'}
+         ORDER BY numero, data DESC, criado_em DESC, id DESC`,
+      )
+      .all(workspace, ...args) as Linha[];
+    return linhas.map(paraRecebimento);
+  }
+
+  async listarComprovantes(
+    workspace: string,
+    numeroProcesso?: string,
+  ): Promise<Comprovante[]> {
+    const linhas = (
+      numeroProcesso === undefined
+        ? this.db
+            .prepare(
+              'SELECT * FROM comprovantes_custo WHERE workspace = ? ORDER BY anexado_em, id',
+            )
+            .all(workspace)
+        : this.db
+            .prepare(
+              'SELECT * FROM comprovantes_custo WHERE workspace = ? AND numero = ? ORDER BY anexado_em, id',
+            )
+            .all(workspace, numeroProcesso)
+    ) as Linha[];
+    return linhas.map(paraComprovante);
+  }
+
+  async contarComprovantes(workspace: string, custoId: string): Promise<number> {
+    const r = this.db
+      .prepare(
+        'SELECT COUNT(*) AS n FROM comprovantes_custo WHERE workspace = ? AND custo_id = ?',
+      )
+      .get(workspace, custoId) as { n: number };
+    return Number(r.n);
+  }
+
+  async buscarComprovante(workspace: string, id: string): Promise<Comprovante | undefined> {
+    const l = this.db
+      .prepare('SELECT * FROM comprovantes_custo WHERE workspace = ? AND id = ?')
+      .get(workspace, id) as Linha | undefined;
+    return l ? paraComprovante(l) : undefined;
+  }
+
+  async inserirComprovante(
+    c: Comprovante,
+    maximo: number,
+    evento: EventoDoHistorico,
+  ): Promise<boolean> {
+    return this.transacao(() => {
+      const n = this.db
+        .prepare(
+          'SELECT COUNT(*) AS n FROM comprovantes_custo WHERE workspace = ? AND custo_id = ?',
+        )
+        .get(c.workspace, c.custoId) as { n: number };
+      if (Number(n.n) >= maximo) return false;
+      this.db
+        .prepare(
+          `INSERT INTO comprovantes_custo
+             (workspace, id, custo_id, numero, arquivo_id, link, nome, tipo, tamanho, anexado_em)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          c.workspace,
+          c.id,
+          c.custoId,
+          c.numeroProcesso,
+          c.arquivoId,
+          c.link,
+          c.nome,
+          c.tipo,
+          c.tamanho,
+          c.anexadoEm.toISOString(),
+        );
+      this.gravarEvento(evento);
+      return true;
+    });
+  }
+
+  async removerComprovante(
+    workspace: string,
+    id: string,
+    evento: EventoDoHistorico,
+  ): Promise<boolean> {
+    return this.transacao(() => {
+      const r = this.db
+        .prepare('DELETE FROM comprovantes_custo WHERE workspace = ? AND id = ?')
+        .run(workspace, id);
+      if (Number(r.changes) === 0) return false;
+      this.gravarEvento(evento);
+      return true;
+    });
+  }
+
   async categorias(workspace: string): Promise<CategoriaDeCusto[]> {
     const linhas = this.db
       .prepare(
@@ -318,6 +443,7 @@ export class RepositorioDeCustosSqlite implements RepositorioDeCustos {
       'recebimentos_processo',
       'categorias_custo',
       'historico_custos',
+      'comprovantes_custo',
     ]) {
       n += Number(
         this.db.prepare(`DELETE FROM ${tabela} WHERE workspace = ?`).run(workspace)
@@ -405,5 +531,35 @@ function paraEvento(l: Linha): EventoDoHistorico {
     quando: new Date(String(l['quando'])),
     campos,
     ...(motivo ? { motivo } : {}),
+  });
+}
+
+/** `AND data >= ? AND data <= ?` para o período (datas AAAA-MM-DD, inclusive). */
+function periodo(f: FiltroDePeriodo): { sql: string; args: string[] } {
+  const args: string[] = [];
+  let sql = '';
+  if (f.de !== undefined) {
+    sql += ' AND data >= ?';
+    args.push(f.de);
+  }
+  if (f.ate !== undefined) {
+    sql += ' AND data <= ?';
+    args.push(f.ate);
+  }
+  return { sql, args };
+}
+
+function paraComprovante(l: Linha): Comprovante {
+  return Object.freeze({
+    id: String(l['id']),
+    workspace: String(l['workspace']),
+    custoId: String(l['custo_id']),
+    numeroProcesso: String(l['numero']),
+    arquivoId: String(l['arquivo_id']),
+    link: String(l['link']),
+    nome: String(l['nome']),
+    tipo: String(l['tipo']) as TipoDeComprovante,
+    tamanho: Number(l['tamanho']),
+    anexadoEm: new Date(String(l['anexado_em'])),
   });
 }

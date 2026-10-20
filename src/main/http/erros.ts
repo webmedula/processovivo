@@ -20,6 +20,8 @@ import {
   DomainError,
   EmailJaCadastradoError,
   EventoDeCalendarioNaoEncontradoError,
+  ComprovanteInvalidoError,
+  ComprovanteNaoEnviadoError,
   CustoInvalidoError,
   CustoNaoEncontradoError,
   LimiteDeCustosError,
@@ -238,6 +240,28 @@ export function mapearErro(erro: unknown): RespostaDeErro {
         mensagem: FRASE_DO_GATEWAY[erro.motivoDoGateway],
         detalhes: { situacao: 'gateway_recusou', motivo: erro.motivoDoGateway },
       },
+    };
+  }
+
+  // Comprovantes de custo (v0.49.0): o corpo traz `motivo` para a tela escolher a frase. A mensagem é
+  // do sistema (nunca do Google, nunca o nome do arquivo).
+  if (erro instanceof ComprovanteInvalidoError) {
+    const status = { arquivo_vazio: 400, arquivo_grande: 413, tipo_nao_aceito: 415 } as const;
+    return {
+      status: status[erro.motivo],
+      corpo: { erro: erro.codigo, mensagem: erro.message, detalhes: { motivo: erro.motivo } },
+    };
+  }
+  if (erro instanceof ComprovanteNaoEnviadoError) {
+    const status = {
+      drive_cheio: 422,
+      limite_de_uso: 429,
+      drive_indisponivel: 503,
+      recusado: 422,
+    } as const;
+    return {
+      status: status[erro.motivo],
+      corpo: { erro: erro.codigo, mensagem: erro.message, detalhes: { motivo: erro.motivo } },
     };
   }
 

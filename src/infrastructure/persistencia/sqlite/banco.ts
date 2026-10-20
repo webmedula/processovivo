@@ -649,6 +649,23 @@ const ESQUEMA = [
      motivo      TEXT,
      PRIMARY KEY (workspace, id)
    )`,
+  // Comprovantes de custo (v0.49.0). O ARQUIVO mora no Drive do advogado: aqui só ficam o id dele, o
+  // link, o nome, o tamanho e a data. Tabela NOVA e aditiva. Remover apaga só esta linha (o vínculo).
+  `CREATE TABLE IF NOT EXISTS comprovantes_custo (
+     workspace    TEXT NOT NULL,
+     id           TEXT NOT NULL,
+     custo_id     TEXT NOT NULL,
+     numero       TEXT NOT NULL,
+     arquivo_id   TEXT NOT NULL,
+     link         TEXT NOT NULL,
+     nome         TEXT NOT NULL,
+     tipo         TEXT NOT NULL,
+     tamanho      INTEGER NOT NULL CHECK (tamanho > 0),
+     anexado_em   TEXT NOT NULL,
+     PRIMARY KEY (workspace, id)
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_comprovantes_custo
+     ON comprovantes_custo (workspace, numero, custo_id)`,
   `CREATE INDEX IF NOT EXISTS idx_historico_custos
      ON historico_custos (workspace, entidade, entidade_id, quando)`,
 

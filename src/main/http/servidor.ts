@@ -167,7 +167,7 @@ export function construirServidor(app: Aplicacao, config: Config): FastifyInstan
   void servidor.register(
     rotasDoCalendario(app.calendario, app.assinaturas, { urlBase: config.http.urlBase }),
   );
-  void servidor.register(rotasDeCustos(app.custos, app.assinaturas));
+  void servidor.register(rotasDeCustos(app.custos, app.assinaturas, app.custosPorCliente));
   void servidor.register(
     rotasDeAssinaturas(app.assinaturas, app.planos, {
       pagamentos: app.pagamentos,
@@ -213,6 +213,21 @@ export function construirServidor(app: Aplicacao, config: Config): FastifyInstan
       void resposta.code(429).send({
         erro: 'LIMITE_EXCEDIDO',
         mensagem: 'Muitas requisições. Tente novamente em instantes.',
+      });
+      return;
+    }
+
+    // Corpo maior que o teto da rota (o do comprovante é de 5 MB; o do resto da API é pequeno): o
+    // Fastify recusa ANTES de chamar a rota. 413 em JSON, com `motivo`, para a tela dizer a frase.
+    if (
+      typeof erro === 'object' &&
+      erro !== null &&
+      (erro as { code?: unknown }).code === 'FST_ERR_CTP_BODY_TOO_LARGE'
+    ) {
+      void resposta.code(413).send({
+        erro: 'CORPO_GRANDE_DEMAIS',
+        mensagem: 'O arquivo ou o pedido é maior que o permitido.',
+        detalhes: { motivo: 'arquivo_grande' },
       });
       return;
     }

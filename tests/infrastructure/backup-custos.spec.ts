@@ -76,6 +76,23 @@ describe('backup do banco com o centro de custos', () => {
       ),
       evento('e3', 'recebimento', 'r1'),
     );
+    // v0.49.0: o vínculo do comprovante (o ARQUIVO mora no Drive; aqui só id, link, nome, tamanho).
+    await repo.inserirComprovante(
+      {
+        id: 'k1',
+        workspace: 'ws-a',
+        custoId: 'c1',
+        numeroProcesso: base.numeroProcesso,
+        arquivoId: 'arquivo-no-drive',
+        link: 'https://drive.google.com/file/d/arquivo-no-drive/view',
+        nome: 'guia.pdf',
+        tipo: 'application/pdf',
+        tamanho: 1234,
+        anexadoEm: criadoEm,
+      },
+      5,
+      evento('e4', 'lancamento', 'c1'),
+    );
     await repo.inserirCategoria({
       id: 'k1',
       workspace: 'ws-a',
@@ -118,7 +135,14 @@ describe('backup do banco com o centro de custos', () => {
       copia
         .prepare('SELECT COUNT(*) AS n FROM historico_custos WHERE workspace = ?')
         .get('ws-a'),
-    ).toMatchObject({ n: 3 });
+    ).toMatchObject({ n: 4 });
+    expect(
+      copia
+        .prepare(
+          'SELECT arquivo_id AS a, tamanho AS t FROM comprovantes_custo WHERE id = ?',
+        )
+        .get('k1'),
+    ).toMatchObject({ a: 'arquivo-no-drive', t: 1234 });
     copia.close();
   });
 });

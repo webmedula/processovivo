@@ -1,9 +1,15 @@
+import type { Comprovante } from '../entities/Comprovante.js';
 import type { CategoriaDeCusto, Custo } from '../entities/Custo.js';
 import type {
   EntidadeDoHistorico,
   EventoDoHistorico,
 } from '../entities/HistoricoDeCustos.js';
 import type { Recebimento } from '../entities/Recebimento.js';
+
+export interface FiltroDePeriodo {
+  readonly de?: string;
+  readonly ate?: string;
+}
 
 /**
  * Persistência do centro de custos (v0.47.0, ampliada na v0.48.0).
@@ -40,6 +46,41 @@ export interface RepositorioDeCustos {
   inserirRecebimento(recebimento: Recebimento, evento: EventoDoHistorico): Promise<void>;
   atualizarRecebimento(
     recebimento: Recebimento,
+    evento: EventoDoHistorico,
+  ): Promise<boolean>;
+
+  /**
+   * Tudo o que é deste workspace, de TODOS os processos, para a visão por cliente e os relatórios.
+   * `de`/`ate` (AAAA-MM-DD, inclusive) filtram pela data do gasto/recebimento.
+   */
+  listarDoWorkspace(
+    workspace: string,
+    filtro: FiltroDePeriodo,
+    incluirCancelados: boolean,
+  ): Promise<Custo[]>;
+  listarRecebimentosDoWorkspace(
+    workspace: string,
+    filtro: FiltroDePeriodo,
+    incluirCancelados: boolean,
+  ): Promise<Recebimento[]>;
+
+  /** Comprovantes de um processo (ou, sem número, de todo o workspace). */
+  listarComprovantes(workspace: string, numeroProcesso?: string): Promise<Comprovante[]>;
+  contarComprovantes(workspace: string, custoId: string): Promise<number>;
+  buscarComprovante(workspace: string, id: string): Promise<Comprovante | undefined>;
+  /**
+   * Grava o vínculo e o evento "anexou" na mesma transação. `false` quando o lançamento já está no
+   * teto de comprovantes (conferido DENTRO da transação: duas requisições juntas não passam do teto).
+   */
+  inserirComprovante(
+    comprovante: Comprovante,
+    maximo: number,
+    evento: EventoDoHistorico,
+  ): Promise<boolean>;
+  /** Apaga SÓ o vínculo e grava o evento "removeu". `false` quando não existe neste workspace. */
+  removerComprovante(
+    workspace: string,
+    id: string,
     evento: EventoDoHistorico,
   ): Promise<boolean>;
 
