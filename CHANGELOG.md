@@ -9,6 +9,66 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.48.0] — 2026-10-21
+
+**Centro de custos, ampliação 1 de 2 (itens 1, 2, 3, 5 e 6):** recebimentos do cliente, quem pagou, depósitos e
+garantias fora das despesas, cancelar em vez de excluir (com histórico) e catálogo em dois níveis. A segunda parte
+(tela "Custos" por cliente com PDF e CSV, e comprovantes no Google Drive) vem na 0.49.0. Continua sendo o controle de
+custos para cobrar do cliente e prestar contas, de um advogado só: sem receita, honorário, multa, conta a pagar,
+vencimento, previsto, alerta, integração bancária, cálculo de custas, perfis, permissões nem multiusuário.
+Atualizações, Pasta, Calendário, IA, Drive, pagamentos, página de vendas e as regras de plano não mudaram.
+
+- **Recebimentos do cliente (item 1).** Tabela nova `recebimentos_processo` (data, `valor_centavos` inteiro > 0,
+  observação de até 200 caracteres, cancelamento). O reembolso deixa de ser alocado por lançamento: a caixa
+  "Ressarcido" e as rotas `PUT|DELETE /v1/custos/:id/ressarcimento` saíram. **Saldo a cobrar = reembolsável − recebido,
+  nunca negativo; o excedente aparece à parte como "Crédito do cliente".** Totais no topo: total de despesas, pago
+  pelo escritório, pago diretamente pelo cliente, reembolsável, recebido, saldo a cobrar e, se houver, crédito.
+  Rotas: `POST /v1/processos/:numero/recebimentos`, `PATCH /v1/recebimentos/:id`. Teto de 500 por processo.
+- **Migração dos dados (única, idempotente, marcada em `estado` como `migracao:custos-0.48.0`).** Cada lançamento
+  reembolsável com `ressarcido_em` gera UM recebimento (data do ressarcimento, valor do lançamento, observação
+  "Migrado da versão anterior"; id derivado do lançamento, então rodar de novo não duplica). A coluna `ressarcido_em`
+  **não é apagada**, só deixa de ser usada. Nada de `DROP`, nenhuma coluna ou tabela da 0.47.0 foi removida.
+- **Quem pagou (item 2).** Campo `pago_por` (`escritorio` por padrão, `cliente`). Despesa paga pelo cliente conta no
+  total de despesas mas não gera reembolsável nem saldo: o servidor desliga "Cobrar do cliente" à força, e a tela a
+  mostra desligada e desabilitada com a explicação escrita. "Pago por" é texto na linha. Lançamentos antigos viram
+  `escritorio` (padrão da coluna).
+- **Depósitos e garantias (item 3).** A natureza é DERIVADA do grupo: o Grupo 08 é depósito, todos os demais são
+  despesa; não existe campo solto que possa discordar do grupo. Depósitos têm bloco e totais próprios e **não entram no
+  total de despesas nem nos subtotais**. Depósito adiantado pelo escritório e marcado "Cobrar do cliente" entra no
+  saldo e aparece identificado ("dos quais depósitos e garantias"). Levantamento, restituição e conversão de depósito
+  **não** foram implementados (fora de escopo; use a descrição). Uma subcategoria própria com lançamentos não pode
+  passar de ou para o Grupo 08 (reclassificaria, calada, totais já prestados ao cliente).
+- **Cancelar em vez de excluir, com histórico (item 5).** Lançamentos e recebimentos não são mais apagados pela
+  interface nem pela API: `POST|DELETE …/cancelamento` (motivo opcional de até 200 caracteres; reativar). Cancelados
+  ficam fora de totais e PDFs, ocultos por padrão e visíveis em "Mostrar cancelados" (riscados e com o texto
+  "Cancelado"). "Excluído. Desfazer" virou "Cancelado. Desfazer" (6 s), que apenas reativa o MESMO registro. Tabela
+  `historico_custos`, **somente de acréscimo** (o repositório só insere e lê): criou, editou (campos alterados com o
+  valor anterior e o novo: valor, data, subcategoria, pago por, cobrar do cliente), cancelou e reativou; descrição e
+  observação são registradas como "alterada", sem copiar o texto. `GET /v1/custos/:id/historico` e
+  `GET /v1/recebimentos/:id/historico`; na tela, o botão "Histórico" por linha. Só a exclusão da conta apaga.
+- **Catálogo em dois níveis (item 6).** Dez grupos de código permanente (01 a 08, 11 e 12; **não** existem 09 Multas
+  nem 10 Honorários) e 45 subcategorias pré-cadastradas com os códigos do dono (CUS-001…OUT-002). O advogado cria
+  subcategorias próprias em qualquer grupo (até 60 ativas por conta, nome de até 60 caracteres, único dentro do
+  grupo), arquiva, reativa e move de grupo. Seletor com os grupos como títulos e busca por texto, sem acento. O grupo
+  08 mostra "Depósitos e garantias não entram no total de despesas." **O catálogo é um cadastro de classificação: não
+  afirma que uma cobrança seja exigível em um processo e não calcula custas.**
+- **Migração das categorias da 0.47.0:** Custas judiciais → CUS-020 · Perícia → PER-001 · Diligência → DIL-001 ·
+  Deslocamento → ADM-001 · Cópias e impressões → ADM-004 · Publicações → DIL-010 (a antiga era genérica) · Outros →
+  OUT-001. Categorias próprias viram subcategorias próprias do Grupo 12 (mesmo nome, mesmo código `c-<id>`); a chave
+  de unicidade passa a ser `<grupo>:<nome>`. O servidor ainda aceita os códigos antigos e os traduz.
+- **PDF da prestação de contas:** a categoria sai como "Grupo › Subcategoria", cada linha diz quem pagou, os
+  depósitos vão em bloco à parte, os recebimentos ganham a própria tabela e o quadro de totais traz o saldo e o
+  crédito. Cancelados não aparecem. Continua sem partes, sem texto de ato e sem gravar em disco.
+- **Tela** (`ui/custos.ts`; `script.ts` não cresceu): "Registrar recebimento", "Pago por", seletor Grupo ›
+  Subcategoria com busca, "Mostrar cancelados", "Reativar", "Histórico" e "Cancelado. Desfazer".
+- **Sem dependência nova.** Testes: domínio (saldo, crédito, depósito, pago por, cancelamento, histórico, catálogo),
+  migração (esquema da 0.47.0 → 0.48.0, rodando duas vezes), servidor (isolamento, planos, limites, Zod `.strict()`),
+  PDF (texto extraído com `pdftotext`) e navegador (fluxo completo, teclado, axe nos dois temas, seis larguras).
+  Reescritos, com o motivo: a caixa "Ressarcido" por lançamento, o "Excluído. Desfazer" que recriava o registro e as
+  categorias antigas — todos afirmavam comportamento que esta versão substitui de propósito.
+
+---
+
 ## [0.47.0] — 2026-10-20
 
 **Centro de custos do processo:** o advogado lança as despesas de cada processo, vê os totais e gera uma prestação
