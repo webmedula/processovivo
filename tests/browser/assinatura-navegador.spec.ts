@@ -161,7 +161,8 @@ describe.skipIf(sem)('Assinatura online, no navegador', { timeout: 90_000 }, () 
     const texto = await cartao().innerText();
     expect(texto).toMatch(/R\$\s49,90 por mês/);
     expect(texto).toContain('Renovação automática. Você pode cancelar quando quiser.');
-    expect(texto).toContain('conta de quem vai pagar');
+    // v0.49.5: a frase "entre com a conta de quem vai pagar" foi trocada — o e-mail do pagador agora é confirmado na tela seguinte.
+    expect(texto).toContain('Na próxima tela você confirma o e-mail da sua conta do Mercado Pago.');
     const termos = cartao().getByRole('link', { name: 'Termos de Uso' });
     expect(await termos.getAttribute('href')).toBe('https://exemplo.test/termos');
     expect(await termos.getAttribute('rel')).toContain('noopener');
@@ -229,7 +230,7 @@ describe.skipIf(sem)('Assinatura online, no navegador', { timeout: 90_000 }, () 
     expect(cenario.gateway.pedidos).toHaveLength(0);
   });
 
-  it('com o aceite, "Continuar para o pagamento" cria o checkout e leva à página HOSPEDADA do gateway (o pedido leva só o plano e o aceite)', async () => {
+  it('com o aceite, "Continuar para o pagamento" cria o checkout e leva à página HOSPEDADA do gateway (o pedido leva o plano, o aceite e o e-mail do pagador)', async () => {
     await abrir();
     await cartao().waitFor();
     await abrirConfirmacao();
@@ -238,9 +239,11 @@ describe.skipIf(sem)('Assinatura online, no navegador', { timeout: 90_000 }, () 
       (r) => r.url().endsWith('/v1/assinatura/checkout') && r.method() === 'POST',
     );
     await page.getByRole('button', { name: 'Continuar para o pagamento' }).click();
+    // v0.49.5: o pedido leva também o e-mail de quem paga (aqui, o pré-preenchido com o da conta).
     expect(JSON.parse((await pedido).postData() ?? '{}')).toEqual({
       plano: 'pecas',
       aceiteTermos: true,
+      emailDoPagador: 'ana@exemplo.test',
     });
     await page.waitForURL(
       /pagamento-falso\.exemplo\.invalid\/checkout\/fake-assinatura-1/,

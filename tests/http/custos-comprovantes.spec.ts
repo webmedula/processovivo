@@ -1,5 +1,12 @@
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import type { FastifyInstance } from 'fastify';
@@ -239,11 +246,23 @@ describe('Comprovantes — enviar ao Drive do advogado', () => {
     const arvore = (p: string): string[] =>
       readdirSync(p, { recursive: true }).map(String).sort();
     const antesLeitor = arvore(dir.caminho);
-    const antesTmp = readdirSync(tmpdir()).sort();
-    const r = await anexar(id, Buffer.from(pdf), { nome: 'sigilo-do-cliente.pdf' });
+    // O "tmp" do teste é uma pasta PRÓPRIA e vazia: durante o envio, `os.tmpdir()` aponta para ela (lê TMPDIR a cada
+    // chamada). Antes o teste comparava o /tmp inteiro do sistema, e outro teste em paralelo (pv-leitor-teste-*) criava
+    // e removia pastas ali — falso positivo. Agora só o que ESTE envio gravar poderia aparecer.
+    const tmpPropria = mkdtempSync(join(tmpdir(), 'pv-comprovante-isolado-'));
+    const tmpAntes = process.env['TMPDIR'];
+    process.env['TMPDIR'] = tmpPropria;
+    let r: Awaited<ReturnType<typeof anexar>>;
+    try {
+      r = await anexar(id, Buffer.from(pdf), { nome: 'sigilo-do-cliente.pdf' });
+    } finally {
+      if (tmpAntes === undefined) delete process.env['TMPDIR'];
+      else process.env['TMPDIR'] = tmpAntes;
+    }
     expect(r.statusCode).toBe(201);
     expect(arvore(dir.caminho)).toEqual(antesLeitor);
-    expect(readdirSync(tmpdir()).sort()).toEqual(antesTmp);
+    expect(readdirSync(tmpPropria)).toEqual([]);
+    rmSync(tmpPropria, { recursive: true, force: true });
 
     // E o código não importa nada de disco nos arquivos que tratam o comprovante.
     for (const f of [

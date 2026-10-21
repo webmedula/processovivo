@@ -161,6 +161,16 @@ export class RepositorioPagamentosSqlite implements RepositorioPagamentos {
     return l ? paraCobranca(l) : undefined;
   }
 
+  async pendentesDoWorkspace(workspace: string): Promise<readonly CobrancaRecorrente[]> {
+    const linhas = this.db
+      .prepare(
+        `SELECT * FROM cobrancas_recorrentes WHERE workspace = ? AND estado = 'pendente'
+          ORDER BY criada_em ASC, rowid ASC`,
+      )
+      .all(workspace) as unknown as LinhaCobranca[];
+    return linhas.map(paraCobranca);
+  }
+
   async abertas(): Promise<readonly CobrancaRecorrente[]> {
     const linhas = this.db
       .prepare(
