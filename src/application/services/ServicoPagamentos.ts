@@ -743,7 +743,7 @@ export class ServicoPagamentos {
         'A cobrança da renovação da sua assinatura não foi aprovada.',
         '',
         'O Mercado Pago pode tentar de novo nos próximos dias. Para evitar interrupção, confira',
-        'o cartão cadastrado na sua conta do Mercado Pago (limite, validade, dados).',
+        'o cartão usado na assinatura (limite, validade, dados).',
         '',
         `Seu plano continua valendo até ${await this.validoAte(workspace)}.`,
       ].join('\n'),

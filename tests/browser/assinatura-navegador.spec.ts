@@ -162,7 +162,8 @@ describe.skipIf(sem)('Assinatura online, no navegador', { timeout: 90_000 }, () 
     expect(texto).toMatch(/R\$\s49,90 por mês/);
     expect(texto).toContain('Renovação automática. Você pode cancelar quando quiser.');
     // v0.49.5: a frase "entre com a conta de quem vai pagar" foi trocada — o e-mail do pagador agora é confirmado na tela seguinte.
-    expect(texto).toContain('Na próxima tela você confirma o e-mail da sua conta do Mercado Pago.');
+    // v0.49.6: sem "conta do Mercado Pago" (pagar com cartão não exige conta).
+    expect(texto).toContain('Na próxima tela você confirma o e-mail para o pagamento.');
     const termos = cartao().getByRole('link', { name: 'Termos de Uso' });
     expect(await termos.getAttribute('href')).toBe('https://exemplo.test/termos');
     expect(await termos.getAttribute('rel')).toContain('noopener');
@@ -254,8 +255,11 @@ describe.skipIf(sem)('Assinatura online, no navegador', { timeout: 90_000 }, () 
     expect(dialogos).toEqual([]);
   });
 
-  const FRASES_DA_FALHA: Array<['email_pagador' | 'credencial' | 'parametro_invalido' | 'desconhecido', RegExp]> = [
-    ['email_pagador', /não aceitou o e-mail da sua conta como pagador/],
+  const FRASES_DA_FALHA: Array<
+    ['email_pagador' | 'credencial' | 'parametro_invalido' | 'desconhecido', RegExp]
+  > = [
+    // v0.49.6: o e-mail recusado é o INFORMADO para o pagamento, não o "da sua conta".
+    ['email_pagador', /não aceitou o e-mail informado para o pagamento/],
     ['credencial', /problema de configuração do nosso lado/],
     ['parametro_invalido', /Não conseguimos montar o pedido de pagamento/],
     ['desconhecido', /motivo que não conseguimos identificar/],
@@ -274,7 +278,9 @@ describe.skipIf(sem)('Assinatura online, no navegador', { timeout: 90_000 }, () 
       expect(await erro.innerText()).toMatch(frase);
       expect(page.url()).toContain(url);
       expect(
-        await page.getByRole('button', { name: 'Continuar para o pagamento' }).isEnabled(),
+        await page
+          .getByRole('button', { name: 'Continuar para o pagamento' })
+          .isEnabled(),
       ).toBe(true);
     });
   }
@@ -293,15 +299,22 @@ describe.skipIf(sem)('Assinatura online, no navegador', { timeout: 90_000 }, () 
     // O Easypanel devolve uma página HTML no lugar do JSON: só o status chega à tela.
     for (const status of [502, 503, 504]) {
       await page.route('**/v1/assinatura/checkout', (r) =>
-        r.fulfill({ status, contentType: 'text/html', body: '<html>Service Unavailable</html>' }),
+        r.fulfill({
+          status,
+          contentType: 'text/html',
+          body: '<html>Service Unavailable</html>',
+        }),
       );
       await page.getByRole('button', { name: 'Continuar para o pagamento' }).click();
       await page.waitForFunction(
-        () => !(document.getElementById('pgto-continuar') as HTMLButtonElement | null)?.disabled,
+        () =>
+          !(document.getElementById('pgto-continuar') as HTMLButtonElement | null)
+            ?.disabled,
       );
-      expect(await page.locator('.pgto-erro[role="alert"]').innerText(), String(status)).toMatch(
-        /fora do ar ou lento agora/,
-      );
+      expect(
+        await page.locator('.pgto-erro[role="alert"]').innerText(),
+        String(status),
+      ).toMatch(/fora do ar ou lento agora/);
       await page.unroute('**/v1/assinatura/checkout');
     }
   });

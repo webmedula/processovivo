@@ -9,6 +9,31 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.49.6] — 2026-10-21
+
+**Checkout: os textos não sugerem mais que é preciso ter conta no Mercado Pago.** Só textos; nenhuma regra, rota, campo de
+API (`emailDoPagador` segue), banco ou lógica mudou; sem migração e sem dependência nova. O Mercado Pago exige que o e-mail
+digitado na página de pagamento seja o mesmo informado ao criar a assinatura — não exige conta para pagar com cartão.
+
+- Rótulo do campo: "E-mail da sua conta do Mercado Pago" → **"E-mail para o pagamento"**.
+- Ajuda: → **"Use o e-mail que você vai digitar na página de pagamento. Você não precisa ter conta no Mercado Pago para pagar
+  com cartão. Se já tiver conta, use o e-mail dela."**
+- Aviso da pendente: → **"Se a página de pagamento avisou que o e-mail não corresponde, confirme abaixo o e-mail que você usou
+  e tente de novo."** (o título "Seu pagamento não foi concluído?" e os botões ficam).
+- Nota da lista de planos: → **"Na próxima tela você confirma o e-mail para o pagamento."**
+- Recusa do gateway por e-mail (`email_pagador`), na tela: → **"O Mercado Pago não aceitou o e-mail informado para o pagamento.
+  Confira o e-mail e tente de novo; se repetir, fale com a gente."**; na API: → **"O Mercado Pago não aceitou o e-mail informado
+  para o pagamento."** (antes falavam do "e-mail da sua conta/desta conta").
+- E-mail de cobrança recusada: "o cartão cadastrado na sua conta do Mercado Pago" → **"o cartão usado na assinatura"**.
+- O erro de e-mail inválido já não citava conta: segue "Informe um e-mail válido para o pagamento." (API) e "Informe um e-mail
+  válido, como nome@exemplo.com.br." (tela).
+- **Testes:** reescritos só os que conferiam os textos antigos (`pagamento-tela.spec.ts`, `email-do-pagador-navegador.spec.ts`,
+  `assinatura-navegador.spec.ts`); novos: a tela não contém "conta do Mercado Pago" e três testes que DOCUMENTAM o "Vale até"
+  depois do pagamento aprovado (sem conta anterior = 1 mês; no teste de 14 dias = fim do teste + 1 mês; com liberação manual
+  longa de outro plano = vencimento antigo + 1 mês, com o plano trocado — a origem do "Vale até 22/10/2029" visto em produção).
+
+---
+
 ## [0.49.5] — 2026-10-21
 
 **Checkout do Mercado Pago: o e-mail de quem paga é confirmado na tela, e quem errar tenta de novo sem ajuda.** Num teste real,

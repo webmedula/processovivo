@@ -1412,3 +1412,59 @@ describe('cobrança recorrente — e-mail do pagador e checkout que substitui o 
     expect(c.gateway.pedidos).toHaveLength(0);
   });
 });
+
+/*
+ * v0.49.6 (só INVESTIGAÇÃO, nenhum comportamento muda): quanto "Vale até" um pagamento aprovado dá. O serviço chama o
+ * MESMO `ServicoAssinaturas.liberar` do manual, com `meses = MESES_POR_CICLO[ciclo]` (mensal = 1), e `renovada` soma a
+ * partir do vencimento ATUAL quando ele ainda está no futuro (para quem renova cedo não perder dias).
+ */
+describe('cobrança recorrente — "Vale até" depois do pagamento aprovado (v0.49.6)', () => {
+  const umMesDepois = (d: Date): string => {
+    const x = new Date(d.getTime());
+    x.setMonth(x.getMonth() + 1);
+    return x.toISOString();
+  };
+
+  it('conta sem vigência anterior: o primeiro pagamento de um plano MENSAL vale 1 mês a partir de agora, com a carência padrão', async () => {
+    c = montarCenarioDePagamento();
+    await precificar(c, 'pecas', 4990);
+    const conta = await contaComCheckout();
+    expect(
+      await c.app.repositorioAssinaturas.porWorkspace(conta.workspace),
+    ).toBeUndefined();
+    expect((await aprovar(conta.gatewayId)).statusCode).toBe(200);
+    const a = (await c.app.repositorioAssinaturas.porWorkspace(conta.workspace))!;
+    expect(a.venceEm.toISOString()).toBe(umMesDepois(c.relogio.agora));
+    expect(a.diasDeCarencia).toBe(7);
+    expect(a.ehTeste).toBe(false);
+  });
+
+  it('conta no teste de 14 dias: o pagamento soma 1 mês AO FIM do teste (comportamento atual, documentado)', async () => {
+    c = montarCenarioDePagamento({ comAssinaturas: true });
+    await precificar(c, 'pecas', 4990);
+    const conta = await contaComCheckout();
+    const teste = (await c.app.repositorioAssinaturas.porWorkspace(conta.workspace))!;
+    expect(teste.ehTeste).toBe(true);
+    await aprovar(conta.gatewayId);
+    const a = (await c.app.repositorioAssinaturas.porWorkspace(conta.workspace))!;
+    expect(a.venceEm.toISOString()).toBe(umMesDepois(teste.venceEm));
+    expect(a.ehTeste).toBe(false);
+  });
+
+  it('conta com liberação manual LONGA de outro plano: o pagamento mensal soma 1 mês ao vencimento antigo e TROCA o plano (a origem do "Vale até 2029")', async () => {
+    c = montarCenarioDePagamento();
+    await precificar(c, 'pecas', 4990);
+    const conta = await contaComCheckout();
+    await c.app.assinaturas.liberar({
+      workspace: conta.workspace,
+      plano: 'acompanhamento',
+      meses: 36,
+    });
+    const antes = (await c.app.repositorioAssinaturas.porWorkspace(conta.workspace))!;
+    await aprovar(conta.gatewayId);
+    const a = (await c.app.repositorioAssinaturas.porWorkspace(conta.workspace))!;
+    expect(a.plano).toBe('pecas');
+    expect(a.venceEm.toISOString()).toBe(umMesDepois(antes.venceEm));
+    expect(a.venceEm.getUTCFullYear()).toBe(2029);
+  });
+});
