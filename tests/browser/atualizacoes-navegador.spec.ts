@@ -314,7 +314,7 @@ describe.skipIf(sem)(
       expect(await l.locator('.c-atu .nvt-selos .selo').count()).toBe(0);
     });
 
-    it('a célula Atualização é UMA linha de ato (tipo + etiqueta) e o link "Abrir processo": o texto do ato, de ~3.000 caracteres, não aparece na tabela (0.46.0)', async () => {
+    it('a célula Atualização é UMA linha de ato (tipo + selos), SEM o link "Abrir processo" na tabela: o texto do ato, de ~3.000 caracteres, não aparece nela (0.46.0; link retirado na 0.49.4)', async () => {
       const numero = numeroValido(2003);
       const g = grupo(numero, novidade(numero, 'Sentença', { conteudo: DECISAO }), [
         novidade(numero, 'Decisão interlocutória', {
@@ -335,7 +335,7 @@ describe.skipIf(sem)(
       expect(tabela).not.toContain(TEXTO_FIM);
       expect(tabela).not.toContain(DECISAO.slice(0, 40));
       expect(tabela).not.toContain('…');
-      // Sobra o tipo do ato (negrito) e o link, e só.
+      // Sobra o tipo do ato (negrito) e os selos, e só.
       expect((await celula.locator('.nvt-tit').textContent())?.trim()).toBe('Sentença');
       expect(
         await celula.locator('.nvt-tit').evaluate((e) => getComputedStyle(e).fontWeight),
@@ -346,8 +346,10 @@ describe.skipIf(sem)(
           .map((t) => t.trim())
           .filter(Boolean),
         // (0.46.1) O selo "não lidas" mudou de coluna: saiu da extinta "Cumprido" e fecha esta célula.
-      ).toEqual(['Sentença', 'Abrir processo', '3 não lidas']);
-      expect(await page.locator('.nvt-linha .nov-abrir').count()).toBe(1);
+        // (0.49.4) O link "Abrir processo" saiu da tabela: o número do processo e o ícone de Ações abrem o processo.
+      ).toEqual(['Sentença', '3 não lidas']);
+      // O botão existe no DOM só para os cartões (< 1024 px): na tabela está com display:none, fora da tela e do Tab.
+      expect(await page.locator('.nvt-linha .nov-abrir').isVisible()).toBe(false);
       expect(await page.locator('.nvt-linha').count()).toBe(1);
     });
 
@@ -419,7 +421,7 @@ describe.skipIf(sem)(
 
     it('a frase da regra de ouro é UMA, da página: aparece quando algum processo tem mais de uma atualização, sem contagem', async () => {
       const FRASE =
-        "Cada processo mostra a atualização mais recente. As anteriores estão em 'Abrir processo'.";
+        'Cada processo mostra a atualização mais recente. As anteriores estão no processo: clique no número.';
       const numero = numeroValido(3002);
       await abrir({
         grupos: [
@@ -1056,7 +1058,8 @@ describe.skipIf(sem)(
       expect(await sem.locator('.c-atu').innerText()).not.toContain(
         'Texto sintético do último ato conhecido.',
       );
-      expect(await sem.locator('.c-atu .nov-abrir').count()).toBe(1);
+      // (0.49.4) Sem link "Abrir processo" na tabela (o botão só aparece nos cartões).
+      expect(await sem.locator('.c-atu .nov-abrir').isVisible()).toBe(false);
       // Data do ato = data da movimentação; Detectado = "—" com texto acessível.
       expect(await sem.locator('.c-data time').count()).toBe(1);
       expect(await sem.locator('.c-det').innerText()).toContain('—');
@@ -1169,7 +1172,7 @@ describe.skipIf(sem)(
 
     /* ----------------------------------------------------------------- ações */
 
-    it('"Abrir processo" abre o processo; "Abrir pasta" pede a Pasta digital e abre o mesmo processo', async () => {
+    it('o número e o ícone "abrir" abrem o processo; "Abrir pasta" pede a Pasta digital e abre o mesmo processo (0.49.4: sem o link "Abrir processo" na tabela)', async () => {
       const numero = numeroValido(7001);
       await abrir({
         grupos: [grupo(numero, novidade(numero, 'A', { conteudo: DECISAO }))],
@@ -1177,10 +1180,9 @@ describe.skipIf(sem)(
       await espiar();
       await page.locator('[data-acao="abrir"].nvt-ic').click();
       await page.locator('.nvt-num').click();
-      await page.locator('.nov-abrir').click();
       await page.locator('[data-acao="pasta"]').click();
       const e = await espiao();
-      expect(e.abertos).toEqual([numero, numero, numero, numero]);
+      expect(e.abertos).toEqual([numero, numero, numero]);
       expect(e.pastas).toEqual([numero]);
     });
 

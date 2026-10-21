@@ -299,8 +299,8 @@ describe.skipIf(sem)('Atualizações, apresentação da tabela', { timeout: 120_
     // Ordem do Tab = ordem visual: copiar, caixa, abrir, pasta, IA.
     await copiar.focus();
     const ordem: string[] = [];
-    // O "Abrir processo" da célula Atualização vem entre o copiar e a caixa, na ordem visual.
-    for (let i = 0; i < 5; i++) {
+    // (0.49.4) O link "Abrir processo" saiu da célula Atualização: depois do copiar vem direto a caixa "Cumprido".
+    for (let i = 0; i < 4; i++) {
       await page.keyboard.press('Tab');
       ordem.push(
         await page.evaluate(
@@ -311,7 +311,7 @@ describe.skipIf(sem)('Atualizações, apresentação da tabela', { timeout: 120_
         ),
       );
     }
-    expect(ordem).toEqual(['abrir', 'cumprido', 'abrir', 'pasta', 'ia']);
+    expect(ordem).toEqual(['cumprido', 'abrir', 'pasta', 'ia']);
     // Espaço abre o painel de IA pelo ícone; Enter o fecha.
     await ia.focus();
     await page.keyboard.press('Space');

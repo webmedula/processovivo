@@ -1185,7 +1185,7 @@ Não são detalhes — moldam o código.
   Cada processo é UMA linha com a atualização mais recente e mais nada: saíram o
   expansor, a lista de anteriores, o "mostrar mais 20" e o "há anterior que pede
   providência". A regra de ouro ficou em UMA frase no nível da página ("Cada processo
-  mostra a atualização mais recente. As anteriores estão em 'Abrir processo'."), sem
+  mostra a atualização mais recente. As anteriores estão no processo: clique no número." desde a v0.49.4), sem
   contagem por processo, e só aparece quando algum processo da lista tem mais de uma
   atualização no período; a mensagem "N atualizações mais antigas não mostradas (fora
   dos últimos 15 dias) · Ver todas" continua. "Não lida" (atualização não vista do
@@ -1851,6 +1851,16 @@ Não são detalhes — moldam o código.
   linha de log `processo verificado` por item (sem partes nem texto de ato) e a `varredura concluída` com média e concorrência.
   (4) `acompanhamentos.tentado_em` (aditiva, sem retrocarga) ordena a fila por `COALESCE(tentado_em, sincronizado_em)`: quem falha
   sempre vai para o fim; `sincronizado_em` segue sendo só o último sucesso.
+- **Atualização em UMA linha na tabela, sem o link "Abrir processo"; o botão só nos cartões** (v0.49.4, decisões do dono; só apresentação —
+  detecção, "cumprido", filtros, contagens, `/v1/novidades`, `/v1/painel`, verificação e IA não mudaram; **substitui** o "link Abrir processo" da
+  célula Atualização das v0.46.0 e v0.49.2). (1) Na tabela (>= 1024 px) a célula é `nowrap`: ponto azul, tipo do ato (`.nvt-tipo`, com reticências
+  e `title` quando falta largura), etiqueta, selo "Não lida" e o aviso "Sem atualização detectada" (pequeno, secundário, cortado com reticências e
+  com o texto inteiro no `title`/DOM). Altura da linha de 48 a 56 px nos três tipos em 1920, 1366 e 1280 px. (2) **O número do processo (`a.nvt-num`)
+  é o link que abre o processo, e o ícone "abrir" de Ações também; o "Abrir processo" não existe na tabela** (o botão fica no DOM com `display:none`, fora
+  de tela, Tab e leitor). Nos **cartões (< 1024 px)** ele aparece com o texto e 44 px, e o selo e o aviso podem ocupar mais de uma linha; a célula
+  tem `height:auto` ali (o 48px da tabela a fazia transbordar sobre a seguinte). (3) A frase acima da tabela é "Cada processo mostra a atualização mais
+  recente. As anteriores estão no processo: clique no número." (4) Ordem do Tab: número, copiar, caixa "Cumprido", abrir, pasta, IA. O ponto azul é
+  pseudo-elemento (não é lido) e "Não lida" é o texto lido uma vez. Teste: `tests/browser/atualizacao-uma-linha-navegador.spec.ts`.
 - **Centro de custos do processo: valores sempre em centavos inteiros, custos independentes do acompanhamento, PDF que
   nunca grava e nunca traz dado do processo** (v0.47.0, decisões do dono; versão 1 é MANUAL — sem receita, honorário,
   parcela, integração bancária nem comprovante). **Ampliado na v0.48.0 — ver o item seguinte, que SUBSTITUI nesta
@@ -2080,8 +2090,8 @@ teste e carência** (v0.28.0), **visual novo a partir do logo** (v0.29.0),
 **tela do processo sem os blocos "Pede providência" e "Última movimentação", Partes logo abaixo das peças** (v0.41.1), **Google Drive: conectar a conta do advogado e salvar as peças da Pasta digital numa pasta "Processo Vivo", por botão, escopo `drive.file`, desligado por padrão, planos Peças e IA** (v0.42.0), **Drive: o retorno do OAuth usa o workspace do `state` assinado e a conta de chave de API também conecta** (v0.42.1), **testes estáveis no CI e a volta do Google sem corrida no console** (v0.42.2), **Atualizações: situação como texto e caixa "Cumprido" como único controle, com aviso para desfazer** (v0.43.0), **cobrança recorrente pelo Mercado Pago, parte 1: assinatura por cartão atrás da porta de pagamento, webhook idempotente, reconciliação e ciclo no plano** (v0.44.0), **ambiente do pagamento declarado em `PROCESSOVIVO_PAGAMENTO_AMBIENTE`, não deduzido do token** (v0.44.1),
 **página de vendas: vitrine pública `GET /v1/planos`, plano escolhido atravessando cadastro e login, confirmação de assinatura com aceite dos Termos obrigatório e trecho para o site** (v0.45.0), **recusa do gateway com motivo de lista fechada, log saneado, 422/503 em JSON e a última falha no /admin** (v0.45.1), **tabela de Atualizações mais limpa: Atualização em uma linha, datas estreitas e coluna "Cumprido" só com a caixa e a dica** (v0.46.0),
 **tabela de Atualizações: caixa "Cumprido" na coluna Ações, Partes mais larga, sem o selo "outro destinatário" na linha e sem a frase fixa sob o filtro** (v0.46.1),
-**centro de custos do processo: lançamentos manuais por processo, categorias próprias, totais no servidor, caixa "Ressarcido" e prestação de contas em PDF para o cliente** (v0.47.0), **custos: recebimentos do cliente com saldo e crédito, quem pagou, depósitos fora das despesas, cancelar com histórico e catálogo Grupo › Subcategoria** (v0.48.0), **custos por cliente: tela no menu, PDF consolidado, CSV, comprovantes no Google Drive do advogado e aviso ao deixar de acompanhar** (v0.49.0), **painel de Custos: colunas de conteúdo, ações em ícones com dica e formulário em grade** (v0.49.1), **Atualizações: linha compacta, número do processo sem quebra e Ações em ícones com dica, inclusive "Analisar com IA"** (v0.49.2), **sincronização mais rápida: pool de até 3 (máx. 4) processos, progresso real "Verificando X de N" e fila sem processo que sempre falha na frente** (v0.49.3),
-Dockerfile multi-stage, CI, 3192 testes.
+**centro de custos do processo: lançamentos manuais por processo, categorias próprias, totais no servidor, caixa "Ressarcido" e prestação de contas em PDF para o cliente** (v0.47.0), **custos: recebimentos do cliente com saldo e crédito, quem pagou, depósitos fora das despesas, cancelar com histórico e catálogo Grupo › Subcategoria** (v0.48.0), **custos por cliente: tela no menu, PDF consolidado, CSV, comprovantes no Google Drive do advogado e aviso ao deixar de acompanhar** (v0.49.0), **painel de Custos: colunas de conteúdo, ações em ícones com dica e formulário em grade** (v0.49.1), **Atualizações: linha compacta, número do processo sem quebra e Ações em ícones com dica, inclusive "Analisar com IA"** (v0.49.2), **sincronização mais rápida: pool de até 3 (máx. 4) processos, progresso real "Verificando X de N" e fila sem processo que sempre falha na frente** (v0.49.3), **Atualizações: coluna Atualização em uma linha, sem o link "Abrir processo" na tabela (só nos cartões)** (v0.49.4),
+Dockerfile multi-stage, CI, 3214 testes.
 
 **Pasta digital (v0.33.0, backend):** `GET /v1/processos/:numero/pasta` (lista +
 estado de cada peça + intervalos de página + totais SEM filtro + procedência
