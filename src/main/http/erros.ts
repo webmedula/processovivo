@@ -66,7 +66,7 @@ export interface RespostaDeErro {
 
 /** A frase de cada motivo da falha do gateway (v0.45.1). Nossa, nunca do gateway. */
 const FRASE_DO_GATEWAY: Readonly<Record<MotivoDoGateway, string>> = {
-  email_pagador: 'O Mercado Pago não aceitou o e-mail desta conta como pagador.',
+  email_pagador: 'O Mercado Pago não aceitou o e-mail informado para o pagamento.',
   credencial: 'O serviço de pagamento está com um problema de configuração do nosso lado.',
   parametro_invalido: 'O Mercado Pago não aceitou os dados do pedido de pagamento.',
   indisponivel: 'O serviço de pagamento está indisponível no momento. Tente novamente em instantes.',

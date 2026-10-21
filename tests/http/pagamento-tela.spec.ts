@@ -52,7 +52,9 @@ describe('tela da assinatura online', () => {
     expect(campos).toHaveLength(2);
     expect(campos.some((c) => c.includes('type="email"'))).toBe(true);
     expect(campos.some((c) => c.includes('type="checkbox"'))).toBe(true);
-    expect(SCRIPT_PAGAMENTO).not.toMatch(/card_?number|cvv|cvc|security|validade|numero do cart/i);
+    expect(SCRIPT_PAGAMENTO).not.toMatch(
+      /card_?number|cvv|cvc|security|validade|numero do cart/i,
+    );
   });
 
   it('só segue para o endereço do gateway se for https', () => {
@@ -72,11 +74,17 @@ describe('tela da assinatura online', () => {
     );
     // v0.49.5: a frase antiga ("o e-mail dela pode ser diferente do do Processo Vivo") ficou FALSA — o e-mail do
     // pagador tem de ser o da assinatura —, então saiu; entraram a ajuda do campo e o aviso da assinatura pendente.
-    expect(SCRIPT_PAGAMENTO).not.toContain('pode ser diferente do e-mail do Processo Vivo');
+    expect(SCRIPT_PAGAMENTO).not.toContain(
+      'pode ser diferente do e-mail do Processo Vivo',
+    );
     expect(SCRIPT_PAGAMENTO).toContain(
-      'Use o mesmo e-mail com o qual você vai entrar (ou pagar) no Mercado Pago. Se for outro, o Mercado Pago recusa o pagamento.',
+      // v0.49.6: a ajuda diz que não é preciso ter conta no Mercado Pago.
+      'Use o e-mail que você vai digitar na página de pagamento. Você não precisa ter conta no Mercado Pago para pagar com cartão. Se já tiver conta, use o e-mail dela.',
     );
     expect(SCRIPT_PAGAMENTO).toContain('Seu pagamento não foi concluído?');
+    // v0.49.6: nenhum texto da tela sugere que é preciso ter conta no Mercado Pago para pagar.
+    expect(SCRIPT_PAGAMENTO).not.toMatch(/conta do Mercado Pago|entrar \(ou pagar\)/);
+    expect(SCRIPT_PAGAMENTO).toContain('E-mail para o pagamento');
     expect(SCRIPT_PAGAMENTO).toContain('Tentar de novo');
     for (const motivo of [
       'plano_sem_preco',
@@ -98,17 +106,27 @@ describe('tela da assinatura online', () => {
     expect(SCRIPT_PAGAMENTO).toContain("(termosAceitos?'':' disabled')");
     expect(SCRIPT_PAGAMENTO).toContain('if(!termosAceitos||!codigo)return;');
     // O botão "Assinar" da lista NÃO chama o checkout: abre a confirmação.
-    expect(SCRIPT_PAGAMENTO).toContain("abrirConfirmacao(b.getAttribute('data-assinar'))");
+    expect(SCRIPT_PAGAMENTO).toContain(
+      "abrirConfirmacao(b.getAttribute('data-assinar'))",
+    );
     expect(SCRIPT_PAGAMENTO.match(/\/v1\/assinatura\/checkout/g)).toHaveLength(1);
     expect(SCRIPT_PAGAMENTO).toContain('Ambiente de teste, nenhuma cobrança real.');
     expect(SCRIPT_PAGAMENTO).toContain('Continuar para o pagamento');
-    expect(SCRIPT_PAGAMENTO).toContain('Para trocar de plano, cancele a renovação atual primeiro.');
+    expect(SCRIPT_PAGAMENTO).toContain(
+      'Para trocar de plano, cancele a renovação atual primeiro.',
+    );
     // Destaque por TEXTO, não só por cor.
     expect(SCRIPT_PAGAMENTO).toContain('Plano escolhido');
   });
 
   it('v0.45.1: uma frase NOSSA para cada motivo de falha do gateway, e o status sozinho (proxy com HTML) vale como indisponível', () => {
-    for (const motivo of ['email_pagador', 'credencial', 'parametro_invalido', 'indisponivel', 'desconhecido']) {
+    for (const motivo of [
+      'email_pagador',
+      'credencial',
+      'parametro_invalido',
+      'indisponivel',
+      'desconhecido',
+    ]) {
       expect(SCRIPT_PAGAMENTO).toContain(`${motivo}:'`);
     }
     expect(SCRIPT_PAGAMENTO).toContain(

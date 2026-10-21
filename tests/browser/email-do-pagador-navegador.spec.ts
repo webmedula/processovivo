@@ -104,7 +104,7 @@ describe.skipIf(sem)(
     }
 
     async function pagarCom(email: string): Promise<void> {
-      await painel().getByLabel('E-mail da sua conta do Mercado Pago').fill(email);
+      await painel().getByLabel('E-mail para o pagamento').fill(email);
       await painel().getByRole('checkbox').check();
       await painel().getByRole('button', { name: 'Continuar para o pagamento' }).click();
       await page.waitForURL(/pagamento-falso\.exemplo\.invalid\/checkout\//);
@@ -119,7 +119,7 @@ describe.skipIf(sem)(
     it('o campo vem pré-preenchido com o e-mail da conta, com rótulo, ajuda e aceite dos Termos junto do botão', async () => {
       await subir();
       await abrirConfirmacao();
-      const campo = painel().getByLabel('E-mail da sua conta do Mercado Pago');
+      const campo = painel().getByLabel('E-mail para o pagamento');
       expect(await campo.inputValue()).toBe(EMAIL);
       expect(await campo.getAttribute('type')).toBe('email');
       expect(await campo.getAttribute('required')).not.toBeNull();
@@ -129,7 +129,8 @@ describe.skipIf(sem)(
         )
         .innerText();
       expect(ajuda).toBe(
-        'Use o mesmo e-mail com o qual você vai entrar (ou pagar) no Mercado Pago. Se for outro, o Mercado Pago recusa o pagamento.',
+        // v0.49.6: o texto não sugere mais que é preciso ter conta no Mercado Pago.
+        'Use o e-mail que você vai digitar na página de pagamento. Você não precisa ter conta no Mercado Pago para pagar com cartão. Se já tiver conta, use o e-mail dela.',
       );
       expect(await painel().getByRole('checkbox').isChecked()).toBe(false);
       expect(
@@ -154,7 +155,7 @@ describe.skipIf(sem)(
     it('e-mail sem forma de e-mail: erro curto ligado ao campo por aria-describedby, foco no campo e NENHUM pedido', async () => {
       await subir();
       await abrirConfirmacao();
-      const campo = painel().getByLabel('E-mail da sua conta do Mercado Pago');
+      const campo = painel().getByLabel('E-mail para o pagamento');
       await campo.fill('isto-nao-e-email');
       await painel().getByRole('checkbox').check();
       await painel().getByRole('button', { name: 'Continuar para o pagamento' }).click();
@@ -182,7 +183,7 @@ describe.skipIf(sem)(
     it('teclado: do e-mail ao aceite, ao link dos Termos e ao botão; Espaço marca; Enter no botão paga', async () => {
       await subir();
       await abrirConfirmacao();
-      await painel().getByLabel('E-mail da sua conta do Mercado Pago').focus();
+      await painel().getByLabel('E-mail para o pagamento').focus();
       await page.keyboard.press('Tab');
       expect(await page.evaluate(() => document.activeElement?.id)).toBe('pgto-aceite');
       await page.keyboard.press('Space');
@@ -210,12 +211,18 @@ describe.skipIf(sem)(
         'Processando o pagamento',
       );
       expect(await pendente().innerText()).toContain(
-        'Se o Mercado Pago disse que o e-mail não corresponde, confirme abaixo o e-mail da sua conta do Mercado Pago e tente de novo.',
+        // v0.49.6: texto novo, sem "conta do Mercado Pago".
+        'Se a página de pagamento avisou que o e-mail não corresponde, confirme abaixo o e-mail que você usou e tente de novo.',
       );
       // O mesmo campo, pré-preenchido com o e-mail da conta; sem lista de planos nem "Assinar" enquanto há pendente.
-      const campo = pendente().getByLabel('E-mail da sua conta do Mercado Pago');
+      const campo = pendente().getByLabel('E-mail para o pagamento');
       expect(await campo.inputValue()).toBe(EMAIL);
       expect(await page.locator('[data-assinar]').count()).toBe(0);
+      // v0.49.6: o rótulo e a ajuda novos também aparecem no aviso da pendente.
+      expect(await pendente().innerText()).toContain(
+        'Você não precisa ter conta no Mercado Pago para pagar com cartão.',
+      );
+      expect(await pendente().innerText()).not.toContain('conta do Mercado Pago');
       const botao = pendente().getByRole('button', { name: 'Tentar de novo' });
       expect(await botao.isDisabled()).toBe(true);
       await campo.fill(EMAIL_DO_MP);
@@ -236,7 +243,7 @@ describe.skipIf(sem)(
       await abrirConfirmacao();
       await pagarCom('errado@exemplo.test');
       await voltarComPendente();
-      const campo = pendente().getByLabel('E-mail da sua conta do Mercado Pago');
+      const campo = pendente().getByLabel('E-mail para o pagamento');
       await campo.fill(EMAIL_DO_MP);
       await campo.focus();
       // A conferência automática (a cada 4 s) refaz a tela quando ninguém digita; com o foco no campo, espera.
@@ -264,16 +271,14 @@ describe.skipIf(sem)(
           );
         };
         expect(await axe()).toEqual([]);
-        await painel().getByLabel('E-mail da sua conta do Mercado Pago').fill('xx');
+        await painel().getByLabel('E-mail para o pagamento').fill('xx');
         await painel().getByRole('checkbox').check();
         await painel()
           .getByRole('button', { name: 'Continuar para o pagamento' })
           .click();
         await page.locator('#pgto-email-erro').waitFor();
         expect(await axe()).toEqual([]);
-        await painel()
-          .getByLabel('E-mail da sua conta do Mercado Pago')
-          .fill('errado@exemplo.test');
+        await painel().getByLabel('E-mail para o pagamento').fill('errado@exemplo.test');
         await painel()
           .getByRole('button', { name: 'Continuar para o pagamento' })
           .click();
@@ -287,18 +292,14 @@ describe.skipIf(sem)(
       it(`sem rolagem horizontal em ${w}px na confirmação (com erro) e no aviso da pendente`, async () => {
         await subir(w);
         await abrirConfirmacao();
-        await painel()
-          .getByLabel('E-mail da sua conta do Mercado Pago')
-          .fill('x'.repeat(150));
+        await painel().getByLabel('E-mail para o pagamento').fill('x'.repeat(150));
         await painel().getByRole('checkbox').check();
         await painel()
           .getByRole('button', { name: 'Continuar para o pagamento' })
           .click();
         await page.locator('#pgto-email-erro').waitFor();
         expect(await sobreRodagem()).toBe(false);
-        await painel()
-          .getByLabel('E-mail da sua conta do Mercado Pago')
-          .fill(EMAIL_DO_MP);
+        await painel().getByLabel('E-mail para o pagamento').fill(EMAIL_DO_MP);
         await painel()
           .getByRole('button', { name: 'Continuar para o pagamento' })
           .click();

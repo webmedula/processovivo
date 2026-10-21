@@ -22,7 +22,7 @@
  *   tela vem de dois lugares com o MESMO caminho: o botão "Assinar" do cartão e o plano escolhido no site
  *   (`window.__pvPagamento.preparar`, chamado por `ui/planoEscolhido.ts`);
  * - **o e-mail do pagador é confirmado na tela** (v0.49.5): o Mercado Pago recusa o pagamento quando o e-mail de
- *   quem paga não é o da assinatura, então a confirmação traz o campo "E-mail da sua conta do Mercado Pago",
+ *   quem paga não é o da assinatura, então a confirmação traz o campo "E-mail para o pagamento" (v0.49.6: o texto não sugere conta no Mercado Pago),
  *   pré-preenchido com o da conta e editável; o pedido leva `emailDoPagador`. Com uma assinatura PENDENTE, a conta
  *   vê o aviso "Seu pagamento não foi concluído?" com o mesmo campo e "Tentar de novo" (o servidor substitui a pendente);
  * - cancelar a renovação pede confirmação NA tela (sem `alert`/`confirm`) e diz que o plano segue até o
@@ -34,11 +34,11 @@
 export const SCRIPT_PAGAMENTO = String.raw`
 (function(){
 var RENOVACAO='Renovação automática. Você pode cancelar quando quiser.';
-var AJUDA_DO_EMAIL='Use o mesmo e-mail com o qual você vai entrar (ou pagar) no Mercado Pago. Se for outro, o Mercado Pago recusa o pagamento.';
-var AVISO_DA_LISTA='Na próxima tela você confirma o e-mail da sua conta do Mercado Pago.';
+var AJUDA_DO_EMAIL='Use o e-mail que você vai digitar na página de pagamento. Você não precisa ter conta no Mercado Pago para pagar com cartão. Se já tiver conta, use o e-mail dela.';
+var AVISO_DA_LISTA='Na próxima tela você confirma o e-mail para o pagamento.';
 var ERRO_DO_EMAIL='Informe um e-mail válido, como nome@exemplo.com.br.';
 var TITULO_DA_PENDENTE='Seu pagamento não foi concluído?';
-var CORPO_DA_PENDENTE='Se o Mercado Pago disse que o e-mail não corresponde, confirme abaixo o e-mail da sua conta do Mercado Pago e tente de novo.';
+var CORPO_DA_PENDENTE='Se a página de pagamento avisou que o e-mail não corresponde, confirme abaixo o e-mail que você usou e tente de novo.';
 var TROCA_DE_PLANO='Esta conta já tem uma renovação automática ativa. Para trocar de plano, cancele a renovação atual primeiro.';
 var FRASE_DO_MOTIVO={
   plano_sem_preco:'Este plano ainda não pode ser contratado pelo site. Fale com a gente.',
@@ -52,7 +52,7 @@ var FRASE_DO_MOTIVO={
   email_do_pagador_invalido:ERRO_DO_EMAIL,
   /* v0.45.1: por que o Mercado Pago falhou — uma frase para cada motivo, sempre NOSSA (a do servidor/gateway
      nunca é lida). 'indisponivel' também vale quando o proxy troca o corpo por uma página HTML. */
-  email_pagador:'O Mercado Pago não aceitou o e-mail da sua conta como pagador. Fale com a gente para concluir a assinatura.',
+  email_pagador:'O Mercado Pago não aceitou o e-mail informado para o pagamento. Confira o e-mail e tente de novo; se repetir, fale com a gente.',
   credencial:'O pagamento está com um problema de configuração do nosso lado. Fale com a gente para concluir a assinatura.',
   parametro_invalido:'Não conseguimos montar o pedido de pagamento. Fale com a gente para concluir a assinatura.',
   indisponivel:'O Mercado Pago está fora do ar ou lento agora. Tente de novo em instantes.',
@@ -244,7 +244,7 @@ function painelDeConfirmacao(p,pg){
 /* O campo do e-mail de quem vai pagar (v0.49.5): rótulo associado, ajuda e erro ligados por aria-describedby. */
 function campoDoEmail(pg){
   if(emailDoPagador==='')emailDoPagador=(pg&&pg.emailDaConta)||'';
-  return '<div class="pgto-campo"><label for="pgto-email">E-mail da sua conta do Mercado Pago</label>'+
+  return '<div class="pgto-campo"><label for="pgto-email">E-mail para o pagamento</label>'+
     '<input type="email" id="pgto-email" name="emailDoPagador" value="'+esc(emailDoPagador)+'" maxlength="200" autocomplete="email" '+
     'inputmode="email" required aria-required="true"'+(erroDoEmail?' aria-invalid="true"':'')+' aria-describedby="pgto-email-ajuda'+(erroDoEmail?' pgto-email-erro':'')+'">'+
     '<div class="nota" id="pgto-email-ajuda">'+esc(AJUDA_DO_EMAIL)+'</div>'+
