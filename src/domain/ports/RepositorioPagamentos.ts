@@ -64,6 +64,8 @@ export interface RepositorioPagamentos {
   porGatewayId(gatewayId: string): Promise<CobrancaRecorrente | undefined>;
   /** A recorrência mais recente do workspace (ou `undefined`). */
   maisRecenteDoWorkspace(workspace: string): Promise<CobrancaRecorrente | undefined>;
+  /** As recorrências deste workspace ainda `pendente` (checkout criado e não concluído), da mais antiga à mais nova. */
+  pendentesDoWorkspace(workspace: string): Promise<readonly CobrancaRecorrente[]>;
   /** Recorrências que ainda cobram (ou podem cobrar): pendentes, autorizadas e pausadas, com id no gateway. */
   abertas(): Promise<readonly CobrancaRecorrente[]>;
   todas(): Promise<readonly CobrancaRecorrente[]>;

@@ -44,6 +44,8 @@ export class GatewayFalso implements GatewayDePagamento {
   consultas = 0;
   /** Faz a PRÓXIMA chamada de rede falhar, uma vez (teste do caminho de indisponibilidade). */
   falharProximaChamada: 'indisponivel' | 'recusou' | undefined;
+  /** Faz TODO cancelamento falhar (a consulta segue normal), para testar a substituição de pendente. */
+  falharCancelamentos = false;
   /** O motivo da PRÓXIMA recusa simulada (v0.45.1). */
   motivoDaRecusa: MotivoDoGateway = 'desconhecido';
 
@@ -121,6 +123,7 @@ export class GatewayFalso implements GatewayDePagamento {
 
   async cancelarAssinatura(id: string): Promise<void> {
     this.disparaFalha();
+    if (this.falharCancelamentos) throw new GatewayDePagamentoIndisponivelError(this.nome, 'cancelamento simulado');
     this.achar(id).estado = 'cancelada';
     this.cancelamentos.push(id);
   }

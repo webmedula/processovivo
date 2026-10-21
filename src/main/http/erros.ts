@@ -212,6 +212,7 @@ export function mapearErro(erro: unknown): RespostaDeErro {
       plano_desconhecido: 400,
       termos_nao_aceitos: 422,
       plano_ja_vigente: 409,
+      email_do_pagador_invalido: 422,
     };
     return {
       status: status[erro.motivo],

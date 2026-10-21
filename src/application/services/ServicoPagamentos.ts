@@ -14,7 +14,9 @@ import {
   valorDoCicloEmCentavos,
 } from '../../domain/entities/Plano.js';
 import type { CicloDoPlano, Plano } from '../../domain/entities/Plano.js';
+import { normalizarEmail } from '../../domain/entities/Usuario.js';
 import {
+  EmailInvalidoError,
   GatewayDePagamentoIndisponivelError,
   GatewayDePagamentoRecusouError,
   PagamentoRecusadoError,
@@ -82,6 +84,11 @@ export interface VisaoDePagamento {
   readonly processando: boolean;
   /** Só conta com e-mail assina online: conta de chave de API não tem recibo nem aviso. */
   readonly contaComEmail: boolean;
+  /**
+   * O e-mail da PRÓPRIA conta, para a tela pré-preencher o campo do pagador (v0.49.5). Vai só na resposta
+   * autenticada da conta dona dele; nunca para o /admin, log ou rota pública.
+   */
+  readonly emailDaConta: string | null;
 }
 
 /** O que o /admin mostra da última falha do gateway: quando, onde, o código e o motivo. Nada do pagador. */
@@ -131,7 +138,11 @@ const FRASE_DO_MOTIVO: Readonly<Record<MotivoDePagamentoRecusado, string>> = {
   plano_desconhecido: 'Plano não encontrado.',
   termos_nao_aceitos: 'Para continuar, aceite os Termos de Uso.',
   plano_ja_vigente: 'Este plano já está vigente nesta conta.',
+  email_do_pagador_invalido: 'Informe um e-mail válido para o pagamento.',
 };
+
+/** Teto do e-mail do pagador: o mesmo do cadastro (`corpoCadastro`/login: 200 caracteres). */
+const TAMANHO_MAXIMO_DO_EMAIL = 200;
 
 const mascara = (id: string): string => (id.length > 8 ? `${id.slice(0, 4)}…${id.slice(-4)}` : '…');
 const brl = (centavos: number): string =>
@@ -198,10 +209,12 @@ export class ServicoPagamentos {
 
   async visaoDe(workspace: string): Promise<VisaoDePagamento> {
     const c = await this.repo.maisRecenteDoWorkspace(workspace);
+    const conta = await this.usuarios.porWorkspace(workspace);
     return {
       habilitado: true,
       ambiente: this.gateway.ambiente,
-      contaComEmail: (await this.usuarios.porWorkspace(workspace)) !== undefined,
+      contaComEmail: conta !== undefined,
+      emailDaConta: conta?.email ?? null,
       recorrencia: c ? this.paraVisivel(c) : null,
       processando:
         c !== undefined &&
@@ -232,7 +245,7 @@ export class ServicoPagamentos {
 
   /**
    * Cria a recorrência no gateway e devolve a URL HOSPEDADA do checkout. O sistema não recebe nem
-   * guarda dado de cartão; o e-mail da conta vai ao gateway (que o exige) e NÃO é gravado aqui.
+   * guarda dado de cartão; o e-mail do pagador vai ao gateway (que o exige) e NÃO é gravado aqui.
    *
    * @throws {PagamentoRecusadoError} antes de qualquer chamada ao gateway.
    * @throws {GatewayDePagamentoIndisponivelError | GatewayDePagamentoRecusouError}
@@ -242,6 +255,12 @@ export class ServicoPagamentos {
     readonly plano: string;
     /** Obrigatório (v0.45.0): sem `true` nada é gravado nem enviado ao gateway. */
     readonly aceiteTermos?: boolean;
+    /**
+     * O e-mail com o qual a pessoa vai pagar no Mercado Pago (v0.49.5). O gateway recusa o pagamento quando o
+     * e-mail de quem paga não é o da assinatura, então a pessoa o confirma na tela. Ausente = o e-mail da conta
+     * (clientes antigos). Vai ao gateway como `payer_email` e NÃO é gravado, nem logado.
+     */
+    readonly emailDoPagador?: string;
   }): Promise<{ readonly urlDeCheckout: string }> {
     const plano = await this.planos.porCodigo(opcoes.plano);
     if (!plano) throw this.recusa('plano_desconhecido');
@@ -266,11 +285,16 @@ export class ServicoPagamentos {
     // Por último entre as recusas, e ANTES de gravar ou chamar o gateway: sem o aceite não nasce nada.
     if (opcoes.aceiteTermos !== true) throw this.recusa('termos_nao_aceitos');
 
+    const emailDoPagador = this.emailParaPagar(opcoes.emailDoPagador, conta.email);
+
     const valor = valorDoCicloEmCentavos(plano);
     if (valor === null) throw this.recusa('plano_sem_preco');
     const ciclo = cicloDoPlano(plano);
     const referencia = this.gerarReferencia();
     const agora = this.agora();
+
+    // Um checkout novo SUBSTITUI o pendente: sem isso cada clique deixava mais uma assinatura viva no gateway.
+    await this.substituirPendentes(opcoes.workspace);
 
     await this.repo.registrarAceiteDeTermos({
       workspace: opcoes.workspace,
@@ -297,7 +321,7 @@ export class ServicoPagamentos {
       const criada = await this.gateway.criarAssinatura({
         referencia,
         motivo: `Processo Vivo — plano ${plano.nome}`,
-        emailDoPagador: conta.email,
+        emailDoPagador,
         valorEmCentavos: valor,
         ciclo,
         urlDeRetorno: `${this.urlBase}/${QUERY_DE_RETORNO}`,
@@ -327,6 +351,68 @@ export class ServicoPagamentos {
       await this.registrarFalhaDoGateway('criarAssinatura', erro, { workspace: opcoes.workspace, referencia });
       throw erro;
     }
+  }
+
+  /**
+   * O e-mail que vai como `payer_email`: o informado (aparado, na mesma regra do cadastro, até 200) ou, se a
+   * tela antiga não mandou nada, o da conta. Recusa ANTES de gravar ou chamar o gateway, sem repetir o valor.
+   */
+  private emailParaPagar(informado: string | undefined, daConta: string): string {
+    if (informado === undefined) return daConta;
+    const aparado = informado.trim();
+    if (aparado === '' || aparado.length > TAMANHO_MAXIMO_DO_EMAIL) {
+      throw this.recusa('email_do_pagador_invalido');
+    }
+    try {
+      return normalizarEmail(aparado);
+    } catch (erro) {
+      if (erro instanceof EmailInvalidoError) throw this.recusa('email_do_pagador_invalido');
+      throw erro;
+    }
+  }
+
+  /**
+   * Antes de abrir um checkout novo, encerra os pendentes da conta (o do e-mail errado, por exemplo) no
+   * gateway, para nunca haver duas assinaturas vivas. Três cuidados: (1) se o gateway diz que o pendente JÁ
+   * foi autorizado, a conta já assinou — sincroniza e recusa (`ja_assinante`) em vez de cancelar o que foi
+   * pago; (2) falha ao consultar ou cancelar NÃO impede o checkout novo: registra a falha (sem dado pessoal)
+   * e deixa a linha `pendente` para a reconciliação; (3) pendente sem id no gateway (a criação nunca
+   * terminou) só é encerrado aqui.
+   */
+  private async substituirPendentes(workspace: string): Promise<void> {
+    for (const antiga of await this.repo.pendentesDoWorkspace(workspace)) {
+      if (!antiga.gatewayId) {
+        await this.encerrarLocalmente(antiga);
+        continue;
+      }
+      try {
+        const remota = await this.gateway.consultarAssinatura(antiga.gatewayId);
+        if (remota.estado === 'autorizada') {
+          await this.sincronizarAssinatura(antiga.gatewayId);
+          throw this.recusa('ja_assinante');
+        }
+      } catch (erro) {
+        if (erro instanceof PagamentoRecusadoError) throw erro;
+        await this.registrarFalhaDoGateway('consultarAssinatura', erro, { workspace, referencia: antiga.referencia });
+        // Sem saber o estado dela, não se cancela: fica para a reconciliação.
+        await this.evento('pendente_nao_substituida', { workspace, referencia: antiga.referencia });
+        continue;
+      }
+      try {
+        await this.gateway.cancelarAssinatura(antiga.gatewayId);
+      } catch (erro) {
+        await this.registrarFalhaDoGateway('cancelarAssinatura', erro, { workspace, referencia: antiga.referencia });
+        await this.evento('pendente_nao_substituida', { workspace, referencia: antiga.referencia });
+        continue;
+      }
+      await this.encerrarLocalmente(antiga);
+      await this.evento('checkout_substituido', { workspace, referencia: antiga.referencia });
+    }
+  }
+
+  private async encerrarLocalmente(c: CobrancaRecorrente): Promise<void> {
+    const agora = this.agora();
+    await this.repo.atualizar({ ...c, estado: 'cancelada', renovacaoCanceladaEm: agora, atualizadaEm: agora });
   }
 
   // --- a última falha do gateway (para o /admin) -------------------------------------------------

@@ -33,13 +33,19 @@ function workspaceDe(requisicao: FastifyRequest): string {
 }
 
 /**
- * `.strict()`: nada além do código do plano e do aceite. Preço, valor e e-mail NUNCA vêm do cliente.
+ * `.strict()`: o código do plano, o aceite e (v0.49.5) o e-mail do pagador. Preço e valor NUNCA vêm do cliente.
  * `aceiteTermos` é OBRIGATÓRIO (v0.45.0) mas não é exigido pelo schema: ausente ou `false` chega ao
  * serviço e vira `termos_nao_aceitos` (422, com `detalhes.motivo`) — um erro claro, igual aos outros
  * motivos de recusa, e não um 400 genérico de validação.
  */
 const corpoDoCheckout = z
-  .object({ plano: z.string().trim().min(1).max(30), aceiteTermos: z.boolean().optional() })
+  .object({
+    plano: z.string().trim().min(1).max(30),
+    aceiteTermos: z.boolean().optional(),
+    // v0.49.5: o e-mail com o qual a pessoa vai pagar no Mercado Pago. O formato é conferido no serviço (mesma
+    // regra do cadastro) e vira `email_do_pagador_invalido`; aqui só um teto, para não aceitar texto sem fim.
+    emailDoPagador: z.string().max(400).optional(),
+  })
   .strict();
 
 const texto = (v: unknown): string | undefined =>
@@ -85,11 +91,12 @@ export function rotasDePagamentos(
         },
       },
       async (req) => {
-        const { plano, aceiteTermos } = corpoDoCheckout.parse(req.body);
+        const { plano, aceiteTermos, emailDoPagador } = corpoDoCheckout.parse(req.body);
         return pagamentos.iniciarCheckout({
           workspace: workspaceDe(req),
           plano,
           ...(aceiteTermos !== undefined ? { aceiteTermos } : {}),
+          ...(emailDoPagador !== undefined ? { emailDoPagador } : {}),
         });
       },
     );

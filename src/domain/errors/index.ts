@@ -1109,7 +1109,8 @@ export type MotivoDePagamentoRecusado =
   | 'sem_recorrencia'
   | 'plano_desconhecido'
   | 'termos_nao_aceitos'
-  | 'plano_ja_vigente';
+  | 'plano_ja_vigente'
+  | 'email_do_pagador_invalido';
 
 /**
  * O pedido de cobrança não se aplica, e a razão é da conta ou do plano — nenhum desses casos chamou o

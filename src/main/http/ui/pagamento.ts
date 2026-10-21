@@ -21,6 +21,10 @@
  *   `aceiteTermos: true` (o servidor o exige e registra o aceite); nada é cobrado sem esse clique. A
  *   tela vem de dois lugares com o MESMO caminho: o botão "Assinar" do cartão e o plano escolhido no site
  *   (`window.__pvPagamento.preparar`, chamado por `ui/planoEscolhido.ts`);
+ * - **o e-mail do pagador é confirmado na tela** (v0.49.5): o Mercado Pago recusa o pagamento quando o e-mail de
+ *   quem paga não é o da assinatura, então a confirmação traz o campo "E-mail da sua conta do Mercado Pago",
+ *   pré-preenchido com o da conta e editável; o pedido leva `emailDoPagador`. Com uma assinatura PENDENTE, a conta
+ *   vê o aviso "Seu pagamento não foi concluído?" com o mesmo campo e "Tentar de novo" (o servidor substitui a pendente);
  * - cancelar a renovação pede confirmação NA tela (sem `alert`/`confirm`) e diz que o plano segue até o
  *   fim do período já pago.
  *
@@ -30,8 +34,11 @@
 export const SCRIPT_PAGAMENTO = String.raw`
 (function(){
 var RENOVACAO='Renovação automática. Você pode cancelar quando quiser.';
-var AVISO_DA_CONTA_DO_GATEWAY='Na página do Mercado Pago, entre com a conta de quem vai pagar. '+
-  'O e-mail dela pode ser diferente do e-mail do Processo Vivo.';
+var AJUDA_DO_EMAIL='Use o mesmo e-mail com o qual você vai entrar (ou pagar) no Mercado Pago. Se for outro, o Mercado Pago recusa o pagamento.';
+var AVISO_DA_LISTA='Na próxima tela você confirma o e-mail da sua conta do Mercado Pago.';
+var ERRO_DO_EMAIL='Informe um e-mail válido, como nome@exemplo.com.br.';
+var TITULO_DA_PENDENTE='Seu pagamento não foi concluído?';
+var CORPO_DA_PENDENTE='Se o Mercado Pago disse que o e-mail não corresponde, confirme abaixo o e-mail da sua conta do Mercado Pago e tente de novo.';
 var TROCA_DE_PLANO='Esta conta já tem uma renovação automática ativa. Para trocar de plano, cancele a renovação atual primeiro.';
 var FRASE_DO_MOTIVO={
   plano_sem_preco:'Este plano ainda não pode ser contratado pelo site. Fale com a gente.',
@@ -42,6 +49,7 @@ var FRASE_DO_MOTIVO={
   sem_recorrencia:'Não há renovação automática para cancelar.',
   plano_desconhecido:'Plano não encontrado.',
   termos_nao_aceitos:'Para continuar, aceite os Termos de Uso.',
+  email_do_pagador_invalido:ERRO_DO_EMAIL,
   /* v0.45.1: por que o Mercado Pago falhou — uma frase para cada motivo, sempre NOSSA (a do servidor/gateway
      nunca é lida). 'indisponivel' também vale quando o proxy troca o corpo por uma página HTML. */
   email_pagador:'O Mercado Pago não aceitou o e-mail da sua conta como pagador. Fale com a gente para concluir a assinatura.',
@@ -61,6 +69,9 @@ var retorno=false;
 var confirmando=false;
 var confirmar='';
 var termosAceitos=false;
+var emailDoPagador='';
+var erroDoEmail='';
+var focarEmail=false;
 var escolhido='';
 var focarPainel=false;
 var aviso='';
@@ -114,7 +125,12 @@ function proximaVolta(){
   timer=setTimeout(function(){
     timer=null;tentativas++;
     if(!$('pv-pagamento'))return;
-    carregar().then(function(){desenhar()});
+    carregar().then(function(){
+      /* Quem está digitando o e-mail não perde o cursor: a tela só se refaz quando o campo largar o foco. */
+      var a=document.activeElement;
+      if(a&&(a.id==='pgto-email'||a.id==='pgto-aceite')){proximaVolta();return}
+      desenhar();
+    });
   },POLL_MS);
 }
 
@@ -153,7 +169,15 @@ function desenhar(){
     h+='<div class="pgto-estado" role="status"><span class="gira" aria-hidden="true"></span>'+
       'Processando o pagamento. Pode levar alguns minutos; esta tela confere sozinha.</div>'+
       '<div><button type="button" class="bt2" id="pgto-atualizar">Conferir agora</button></div>';
-  }else if(rec&&rec.renovacaoAutomatica){
+  }
+  var pend=pendenteContratavel(rec);
+  if(pend){
+    h+='<div class="pgto-pendente" role="group" aria-labelledby="pgto-pend-t">'+
+      '<h4 class="tt" id="pgto-pend-t">'+esc(TITULO_DA_PENDENTE)+'</h4>'+
+      '<div class="cp">'+esc(CORPO_DA_PENDENTE)+'</div>'+
+      campoDoEmail(pg)+caixaDeAceite(pg)+
+      '<div class="pgto-acoes"><button type="button" class="bt" id="pgto-continuar"'+(termosAceitos?'':' disabled')+'>Tentar de novo</button></div></div>';
+  }else if(!processando()&&rec&&rec.renovacaoAutomatica){
     h+='<div class="tt">Renovação automática ativa</div>'+
       '<div class="cp" style="margin-top:4px">'+(rec.proximaCobranca?'Próxima cobrança em '+esc(pv().dt(rec.proximaCobranca))+'. ':'')+
       (rec.meio==='cartao'?'Pagamento por cartão. ':'')+'</div>';
@@ -166,12 +190,12 @@ function desenhar(){
         '<div style="margin-top:8px"><button type="button" class="bt" id="pgto-cancelar-sim">Sim, cancelar a renovação</button> '+
         '<button type="button" class="bt2" id="pgto-cancelar-nao">Voltar</button></div></div>';
     }
-  }else if(rec&&rec.renovacaoCanceladaEm){
+  }else if(!processando()&&rec&&rec.renovacaoCanceladaEm){
     h+='<div class="cp">A renovação automática está encerrada. Seu plano vale'+(vence?' até '+esc(vence):' até o fim do período já pago')+
       '. Para continuar depois disso, assine de novo abaixo.</div>';
   }
 
-  var podeAssinar=!processando()&&!(rec&&rec.renovacaoAutomatica);
+  var podeAssinar=!processando()&&!pend&&!(rec&&rec.renovacaoAutomatica);
   var planos=(dados.planos||[]).filter(function(p){return p.contratavel});
   if(podeAssinar&&planos.length>0&&pg.contaComEmail){
     h+='<div class="pgto-planos">'+planos.map(function(p){
@@ -184,7 +208,7 @@ function desenhar(){
         '<button type="button" class="bt" data-assinar="'+esc(p.codigo)+'" aria-label="Assinar o plano '+esc(p.nome)+'">Assinar</button></div>';
     }).join('')+'</div>'+
     '<div class="nota">'+esc(RENOVACAO)+(pg.urlDosTermos?' <a href="'+esc(pg.urlDosTermos)+'" target="_blank" rel="noopener noreferrer">Termos de Uso</a>.':'')+'</div>'+
-    '<div class="nota">'+esc(AVISO_DA_CONTA_DO_GATEWAY)+'</div>';
+    '<div class="nota">'+esc(AVISO_DA_LISTA)+'</div>';
   }
   h+='</div>';
   alvo.innerHTML=h;
@@ -206,22 +230,47 @@ function jaVigente(codigo){
 
 /* A tela de confirmação: tudo o que a pessoa vai contratar, antes de qualquer cobrança. */
 function painelDeConfirmacao(p,pg){
-  var termos=pg.urlDosTermos?'<a href="'+esc(pg.urlDosTermos)+'" target="_blank" rel="noopener noreferrer">Termos de Uso</a>':'Termos de Uso';
   return '<div class="pgto-conf" role="group" aria-labelledby="pgto-conf-t">'+
     '<h4 class="tt" id="pgto-conf-t" tabindex="-1">Confirmar assinatura</h4>'+
     ((pg.ambiente==='teste'||pg.ambiente==='falso')?'<div class="nota pgto-aviso-teste" role="note">'+esc(AMBIENTE_DE_TESTE)+'</div>':'')+
     '<div class="cp">Plano <strong>'+esc(p.nome)+'</strong></div>'+
     '<div class="pgto-preco">'+esc(reais(p.valorDoCicloCentavos))+' por '+(p.ciclo==='mensal'?'mês':esc(p.ciclo))+'</div>'+
     '<div class="nota">'+esc(RENOVACAO)+'</div>'+
-    '<label class="pgto-aceite"><input type="checkbox" id="pgto-aceite"'+(termosAceitos?' checked':'')+'> '+
-    '<span>Li e aceito os '+termos+'.</span></label>'+
+    campoDoEmail(pg)+caixaDeAceite(pg)+
     '<div class="pgto-acoes"><button type="button" class="bt" id="pgto-continuar"'+(termosAceitos?'':' disabled')+'>Continuar para o pagamento</button> '+
-    '<button type="button" class="bt2" id="pgto-voltar">Voltar</button></div>'+
-    '<div class="nota">'+esc(AVISO_DA_CONTA_DO_GATEWAY)+'</div></div>';
+    '<button type="button" class="bt2" id="pgto-voltar">Voltar</button></div></div>';
+}
+
+/* O campo do e-mail de quem vai pagar (v0.49.5): rótulo associado, ajuda e erro ligados por aria-describedby. */
+function campoDoEmail(pg){
+  if(emailDoPagador==='')emailDoPagador=(pg&&pg.emailDaConta)||'';
+  return '<div class="pgto-campo"><label for="pgto-email">E-mail da sua conta do Mercado Pago</label>'+
+    '<input type="email" id="pgto-email" name="emailDoPagador" value="'+esc(emailDoPagador)+'" maxlength="200" autocomplete="email" '+
+    'inputmode="email" required aria-required="true"'+(erroDoEmail?' aria-invalid="true"':'')+' aria-describedby="pgto-email-ajuda'+(erroDoEmail?' pgto-email-erro':'')+'">'+
+    '<div class="nota" id="pgto-email-ajuda">'+esc(AJUDA_DO_EMAIL)+'</div>'+
+    (erroDoEmail?'<div class="pgto-erro-campo" id="pgto-email-erro" role="alert">'+esc(erroDoEmail)+'</div>':'')+'</div>';
+}
+
+function caixaDeAceite(pg){
+  var termos=pg.urlDosTermos?'<a href="'+esc(pg.urlDosTermos)+'" target="_blank" rel="noopener noreferrer">Termos de Uso</a>':'Termos de Uso';
+  return '<label class="pgto-aceite"><input type="checkbox" id="pgto-aceite"'+(termosAceitos?' checked':'')+'> '+
+    '<span>Li e aceito os '+termos+'.</span></label>';
+}
+
+/* A assinatura pendente cujo plano ainda se pode contratar: é o que o "Tentar de novo" refaz. */
+function pendenteContratavel(rec){
+  return (rec&&rec.estado==='pendente'&&planoDe(rec.plano))?rec:null;
+}
+
+/* Mesma regra do servidor (e do cadastro): uma @, algo antes, um ponto no domínio, sem espaço, até 200. */
+function emailValido(t){
+  if(!t||t.length>200||/\s/.test(t))return false;
+  var p=t.split('@');
+  return p.length===2&&p[0].length>0&&p[1].indexOf('.')>=0;
 }
 
 function abrirConfirmacao(codigo){
-  confirmar=codigo;termosAceitos=false;aviso='';confirmando=false;focarPainel=true;
+  confirmar=codigo;termosAceitos=false;aviso='';erroDoEmail='';confirmando=false;focarPainel=true;
   desenhar();
 }
 
@@ -234,6 +283,9 @@ function preparar(codigo,assinar){
 }
 
 function ligarBotoes(){
+  var em=$('pgto-email');
+  if(em)em.addEventListener('input',function(){emailDoPagador=em.value});
+  if(focarEmail){focarEmail=false;if(em)em.focus()}
   var ac=$('pgto-aceite');
   if(ac)ac.addEventListener('change',function(){
     termosAceitos=ac.checked;
@@ -268,13 +320,23 @@ function ligarBotoes(){
 }
 
 function continuar(botao){
+  var pend=pendenteContratavel(dados&&dados.pagamento&&dados.pagamento.recorrencia);
+  var codigo=confirmar||(pend?pend.plano:'');
   /* Sem o aceite não há pedido: o botão já nasce desabilitado, e isto fecha o caminho do teclado. */
-  if(!termosAceitos||!confirmar)return;
-  var codigo=confirmar;
+  if(!termosAceitos||!codigo)return;
+  /* O e-mail do pagador: conferido aqui (a mesma regra do servidor) para a pessoa corrigir sem esperar a rede. */
+  var em=$('pgto-email');
+  var email=(em?em.value:emailDoPagador).trim();
+  emailDoPagador=email;
+  if(!emailValido(email)){
+    erroDoEmail=ERRO_DO_EMAIL;focarEmail=true;desenhar();
+    return;
+  }
+  erroDoEmail='';
   botao.disabled=true;
   aviso='';
-  /* Só o CÓDIGO do plano e o aceite saem daqui: preço, valor e e-mail vêm do servidor. */
-  pv().api('/v1/assinatura/checkout',{method:'POST',body:{plano:codigo,aceiteTermos:true}}).then(function(r){
+  /* O CÓDIGO do plano, o aceite e o e-mail de quem vai pagar saem daqui: preço e valor vêm do servidor. */
+  pv().api('/v1/assinatura/checkout',{method:'POST',body:{plano:codigo,aceiteTermos:true,emailDoPagador:email}}).then(function(r){
     if(r&&typeof r.urlDeCheckout==='string'&&/^https:\/\//i.test(r.urlDeCheckout)){
       window.location.assign(r.urlDeCheckout);
       return;
@@ -284,6 +346,7 @@ function continuar(botao){
     var motivo=e&&e.detalhes&&e.detalhes.motivo;
     /* Sem JSON (o proxy troca 502/503/504 por uma página HTML), só o status sobra: é o gateway fora do ar. */
     if(!motivo&&e&&(e.status===502||e.status===503||e.status===504))motivo='indisponivel';
+    if(motivo==='email_do_pagador_invalido'){erroDoEmail=ERRO_DO_EMAIL;focarEmail=true;aviso='';desenhar();return}
     aviso=(motivo&&FRASE_DO_MOTIVO[motivo])||FALHA;
     /* Recusa que não se resolve repetindo: sai da confirmação e relê o estado verdadeiro. */
     if(motivo==='ja_assinante'||motivo==='plano_ja_vigente'||motivo==='plano_nao_vendavel'||motivo==='plano_sem_preco'||motivo==='plano_desconhecido'||motivo==='ciclo_nao_suportado'||motivo==='conta_sem_email'){
@@ -314,6 +377,12 @@ export const ESTILOS_PAGAMENTO = `
 .pgto-conf .pgto-preco{font-size:1.15em}
 .pgto-aceite{display:flex;align-items:flex-start;gap:10px;min-height:44px;cursor:pointer}
 .pgto-aceite input{width:22px;height:22px;margin:0;flex:none}
+.pgto-campo{display:grid;gap:6px;min-width:0}
+.pgto-campo label{font-weight:700}
+.pgto-campo input{width:100%;min-width:0;min-height:44px;padding:0 12px;border:1px solid var(--linha);border-radius:var(--r);background:var(--papel);color:var(--tinta);font:inherit;box-sizing:border-box}
+.pgto-campo input[aria-invalid="true"]{border:2px solid var(--erro)}
+.pgto-erro-campo{color:var(--erro);font-size:13.5px;font-weight:600}
+.pgto-pendente{display:grid;gap:10px;margin:12px 0 4px;padding:14px;border:1px solid var(--linha);border-radius:var(--r);min-width:0;overflow-wrap:anywhere}
 .pgto-aviso-teste{color:var(--tinta);font-weight:600}
 .pgto-plano-escolhido{border:2px solid var(--acento)}
 .pgto-escolhido{display:inline-block;margin-bottom:4px;padding:1px 8px;border:1px solid var(--acento);border-radius:999px;font-size:12.5px;font-weight:700;color:var(--tinta)}

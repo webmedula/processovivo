@@ -36,17 +36,22 @@ describe('tela da assinatura online', () => {
     ]);
   });
 
-  it('o pedido de checkout leva SÓ o código do plano e o aceite: preço, valor e e-mail nunca saem da tela', () => {
-    expect(SCRIPT_PAGAMENTO).toContain('body:{plano:codigo,aceiteTermos:true}');
+  // v0.49.5: o pedido passou a levar também o e-mail de quem vai pagar (o Mercado Pago recusa o pagamento quando o
+  // e-mail do pagador não é o da assinatura); preço e valor continuam vindo só do servidor.
+  it('o pedido de checkout leva o código do plano, o aceite e o e-mail do pagador: preço e valor nunca saem da tela', () => {
+    expect(SCRIPT_PAGAMENTO).toContain(
+      'body:{plano:codigo,aceiteTermos:true,emailDoPagador:email}',
+    );
     // (as chaves `plano_sem_preco` e `conta_sem_email` são MOTIVOS de recusa, não campos do pedido)
     expect(SCRIPT_PAGAMENTO).not.toMatch(/\bvalor:|\bpreco:|\bemail:|payer/i);
   });
 
   it('o sistema nunca vê cartão: nenhum campo de número, validade ou código de segurança', () => {
-    // O único campo da tela é a caixa de aceite dos Termos (v0.45.0).
+    // Os únicos campos da tela são o e-mail de quem paga (v0.49.5) e a caixa de aceite dos Termos (v0.45.0).
     const campos = SCRIPT_PAGAMENTO.match(/<input[^>]*>/g) ?? [];
-    expect(campos).toHaveLength(1);
-    expect(campos[0]).toContain('type="checkbox"');
+    expect(campos).toHaveLength(2);
+    expect(campos.some((c) => c.includes('type="email"'))).toBe(true);
+    expect(campos.some((c) => c.includes('type="checkbox"'))).toBe(true);
     expect(SCRIPT_PAGAMENTO).not.toMatch(/card_?number|cvv|cvc|security|validade|numero do cart/i);
   });
 
@@ -65,7 +70,14 @@ describe('tela da assinatura online', () => {
     expect(SCRIPT_PAGAMENTO).toContain(
       'Renovação automática. Você pode cancelar quando quiser.',
     );
-    expect(SCRIPT_PAGAMENTO).toContain('entre com a conta de quem vai pagar');
+    // v0.49.5: a frase antiga ("o e-mail dela pode ser diferente do do Processo Vivo") ficou FALSA — o e-mail do
+    // pagador tem de ser o da assinatura —, então saiu; entraram a ajuda do campo e o aviso da assinatura pendente.
+    expect(SCRIPT_PAGAMENTO).not.toContain('pode ser diferente do e-mail do Processo Vivo');
+    expect(SCRIPT_PAGAMENTO).toContain(
+      'Use o mesmo e-mail com o qual você vai entrar (ou pagar) no Mercado Pago. Se for outro, o Mercado Pago recusa o pagamento.',
+    );
+    expect(SCRIPT_PAGAMENTO).toContain('Seu pagamento não foi concluído?');
+    expect(SCRIPT_PAGAMENTO).toContain('Tentar de novo');
     for (const motivo of [
       'plano_sem_preco',
       'plano_nao_vendavel',
@@ -84,7 +96,7 @@ describe('tela da assinatura online', () => {
     expect(SCRIPT_PAGAMENTO).toContain('var termosAceitos=false;');
     expect(SCRIPT_PAGAMENTO).toContain("(termosAceitos?' checked':'')");
     expect(SCRIPT_PAGAMENTO).toContain("(termosAceitos?'':' disabled')");
-    expect(SCRIPT_PAGAMENTO).toContain('if(!termosAceitos||!confirmar)return;');
+    expect(SCRIPT_PAGAMENTO).toContain('if(!termosAceitos||!codigo)return;');
     // O botão "Assinar" da lista NÃO chama o checkout: abre a confirmação.
     expect(SCRIPT_PAGAMENTO).toContain("abrirConfirmacao(b.getAttribute('data-assinar'))");
     expect(SCRIPT_PAGAMENTO.match(/\/v1\/assinatura\/checkout/g)).toHaveLength(1);

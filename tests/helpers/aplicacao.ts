@@ -40,6 +40,7 @@ import { RepositorioCredenciaisSqlite } from '../../src/infrastructure/persisten
 import { Cofre } from '../../src/infrastructure/seguranca/cofre.js';
 import type { Notificador } from '../../src/domain/ports/Notificador.js';
 import { Agendador } from '../../src/infrastructure/agenda/Agendador.js';
+import type { Logger } from '../../src/domain/ports/Logger.js';
 import { loggerSilencioso } from '../../src/infrastructure/logging/ConsoleLogger.js';
 import { abrirBanco } from '../../src/infrastructure/persistencia/sqlite/banco.js';
 import { RepositorioAcompanhamentosSqlite } from '../../src/infrastructure/persistencia/sqlite/RepositorioAcompanhamentosSqlite.js';
@@ -131,6 +132,8 @@ export interface OpcoesAplicacaoDeTeste {
     readonly urlBase?: string;
     readonly emailDoOperador?: string;
     readonly gerarReferencia?: () => string;
+    /** Para o teste ler o que o serviço de pagamento registra no log (v0.49.5). Padrão: silencioso. */
+    readonly logger?: Logger;
   };
   /** Fonte da vigilância por OAB. Sem ela, `vigilancia` fica indefinida. */
   readonly buscaOab?: BuscaPorOabComPeriodo;
@@ -491,7 +494,7 @@ export function aplicacaoDeTeste(
         planos: repositorioPlanos,
         assinaturas,
         usuarios,
-        logger: loggerSilencioso,
+        logger: opcoes.pagamentos.logger ?? loggerSilencioso,
         notificador: opcoes.notificador ?? new NotificadorEspiao(),
         urlBase: opcoes.pagamentos.urlBase ?? 'https://app.exemplo.test',
         versaoDosTermos: '1.1',

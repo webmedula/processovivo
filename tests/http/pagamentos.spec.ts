@@ -280,10 +280,7 @@ describe('cobrança recorrente — checkout', () => {
     c = montarCenarioDePagamento();
     await precificar(c, 'pecas', 4990);
     const conta = await cadastrar(c, 'ana@exemplo.test');
-    for (const payload of [
-      { plano: 'pecas' },
-      { plano: 'pecas', aceiteTermos: false },
-    ]) {
+    for (const payload of [{ plano: 'pecas' }, { plano: 'pecas', aceiteTermos: false }]) {
       const r = await c.servidor.inject({
         method: 'POST',
         url: '/v1/assinatura/checkout',
@@ -320,7 +317,12 @@ describe('cobrança recorrente — checkout', () => {
     expect(r.statusCode).toBe(200);
     const aceites = await c.app.pagamentos!.aceitesDe(conta.workspace);
     expect(aceites).toEqual([
-      { workspace: conta.workspace, versao: '1.1', plano: 'pecas', aceitoEm: c.relogio.agora },
+      {
+        workspace: conta.workspace,
+        versao: '1.1',
+        plano: 'pecas',
+        aceitoEm: c.relogio.agora,
+      },
     ]);
     expect(JSON.stringify(aceites)).not.toMatch(/ana@|127\.0\.0\.1/);
   });
@@ -340,7 +342,11 @@ describe('cobrança recorrente — checkout', () => {
     // Em teste (a conta nova está no plano do teste): assina normalmente.
     const emTeste = (await c.app.repositorioAssinaturas.porWorkspace(conta.workspace))!;
     expect(emTeste.ehTeste).toBe(true);
-    await c.app.assinaturas.liberar({ workspace: conta.workspace, plano: 'pecas', meses: 2 });
+    await c.app.assinaturas.liberar({
+      workspace: conta.workspace,
+      plano: 'pecas',
+      meses: 2,
+    });
     const vigente = await pedir('pecas');
     expect(vigente.statusCode).toBe(409);
     expect(json(vigente)['detalhes'].motivo).toBe('plano_ja_vigente');
@@ -890,7 +896,12 @@ describe('cobrança recorrente — recusa, cancelamento, pausa e estorno', () =>
 });
 
 describe('cobrança recorrente — falha do gateway (v0.45.1)', () => {
-  const MOTIVOS = ['email_pagador', 'credencial', 'parametro_invalido', 'desconhecido'] as const;
+  const MOTIVOS = [
+    'email_pagador',
+    'credencial',
+    'parametro_invalido',
+    'desconhecido',
+  ] as const;
 
   async function pedirCheckout(cookie: string) {
     return c.servidor.inject({
@@ -958,7 +969,9 @@ describe('cobrança recorrente — falha do gateway (v0.45.1)', () => {
       status: null,
       codigo: null,
     });
-    const eventos = await c.app.pagamentos!.eventosDe(c.gateway.pedidos.at(-1)?.referencia ?? 'x');
+    const eventos = await c.app.pagamentos!.eventosDe(
+      c.gateway.pedidos.at(-1)?.referencia ?? 'x',
+    );
     expect(JSON.stringify(eventos)).not.toContain('ana@');
   });
 
@@ -975,7 +988,10 @@ describe('cobrança recorrente — falha do gateway (v0.45.1)', () => {
       headers: { cookie: conta.cookie },
     });
     expect(r.statusCode).toBe(422);
-    expect(json(r)['detalhes']).toEqual({ situacao: 'gateway_recusou', motivo: 'credencial' });
+    expect(json(r)['detalhes']).toEqual({
+      situacao: 'gateway_recusou',
+      motivo: 'credencial',
+    });
     expect(await c.app.pagamentos!.ultimaFalhaDoGateway()).toMatchObject({
       operacao: 'cancelarAssinatura',
       motivo: 'credencial',
@@ -1081,7 +1097,14 @@ describe('cobrança recorrente — cancelar a renovação (pela conta)', () => {
     });
     expect(r.body).not.toContain(conta.gatewayId);
     expect(r.body).not.toContain(conta.referencia);
-    expect(r.body).not.toContain('ana@exemplo.test');
+    // v0.49.5: a resposta devolve o e-mail da PRÓPRIA conta, e só no campo `emailDaConta`, para a tela pré-preencher o
+    // campo do pagador (antes o teste exigia que o e-mail não aparecesse em lugar nenhum). Em qualquer outro lugar,
+    // continua proibido.
+    const corpo = json(r)['pagamento'] as Record<string, unknown>;
+    expect(corpo['emailDaConta']).toBe('ana@exemplo.test');
+    expect(
+      JSON.stringify({ ...json(r), pagamento: { ...corpo, emailDaConta: null } }),
+    ).not.toContain('ana@exemplo.test');
   });
 });
 
@@ -1137,5 +1160,255 @@ describe('cobrança recorrente — reconciliação (aviso perdido)', () => {
   it('a CLI/rota de reconciliar sem a cobrança habilitada não existe como serviço', async () => {
     c = montarCenarioDePagamento({ comPagamento: false });
     expect(c.app.pagamentos).toBeUndefined();
+  });
+});
+
+/*
+ * v0.49.5: o e-mail de quem paga no Mercado Pago é informado na confirmação (o Mercado Pago recusa o pagamento quando
+ * o e-mail do pagador não é o da assinatura), e um checkout novo SUBSTITUI o pendente. Tudo sintético e sem rede.
+ */
+describe('cobrança recorrente — e-mail do pagador e checkout que substitui o pendente (v0.49.5)', () => {
+  const checkout = (cookie: string, extra: Record<string, unknown> = {}) =>
+    c.servidor.inject({
+      method: 'POST',
+      url: '/v1/assinatura/checkout',
+      headers: { cookie },
+      payload: { plano: 'pecas', aceiteTermos: true, ...extra },
+    });
+
+  it('o e-mail informado vai ao gateway como pagador (aparado, em minúsculas); a conta continua com o dela', async () => {
+    c = montarCenarioDePagamento();
+    await precificar(c, 'pecas', 4990);
+    const conta = await cadastrar(c, 'ana@exemplo.test');
+    const r = await checkout(conta.cookie, {
+      emailDoPagador: '  Pagadora.MP@Exemplo.Test ',
+    });
+    expect(r.statusCode).toBe(200);
+    expect(c.gateway.pedidos[0]!.emailDoPagador).toBe('pagadora.mp@exemplo.test');
+    expect((await c.app.usuarios.porEmail('ana@exemplo.test'))!.usuario.email).toBe(
+      'ana@exemplo.test',
+    );
+  });
+
+  it('sem o campo (cliente antigo) usa o e-mail da conta, como antes', async () => {
+    c = montarCenarioDePagamento();
+    await precificar(c, 'pecas', 4990);
+    const conta = await cadastrar(c, 'ana@exemplo.test');
+    expect((await checkout(conta.cookie)).statusCode).toBe(200);
+    expect(c.gateway.pedidos[0]!.emailDoPagador).toBe('ana@exemplo.test');
+  });
+
+  it.each([
+    ['sem arroba', 'pagadora.exemplo.test'],
+    ['com espaço no meio', 'pag adora@exemplo.test'],
+    ['sem ponto no domínio', 'pagadora@exemplo'],
+    ['vazio', '   '],
+    ['maior que 200 caracteres', `${'a'.repeat(195)}@e.test`],
+  ])(
+    'e-mail do pagador inválido (%s): 422 em português, sem chamar o gateway, sem gravar nada e sem repetir o valor',
+    async (_nome, email) => {
+      c = montarCenarioDePagamento();
+      await precificar(c, 'pecas', 4990);
+      const conta = await cadastrar(c, 'ana@exemplo.test');
+      const r = await checkout(conta.cookie, { emailDoPagador: email });
+      expect(r.statusCode).toBe(422);
+      expect(json(r)['detalhes'].motivo).toBe('email_do_pagador_invalido');
+      expect(json(r)['mensagem']).toBe('Informe um e-mail válido para o pagamento.');
+      if (email.trim()) expect(r.body).not.toContain(email.trim());
+      expect(c.gateway.pedidos).toHaveLength(0);
+      expect(await c.app.pagamentos!.cobrancaDe(conta.workspace)).toBeUndefined();
+      expect(await c.app.pagamentos!.aceitesDe(conta.workspace)).toHaveLength(0);
+    },
+  );
+
+  it('o campo só aceita texto (não-string é 400) e o corpo continua `.strict()`', async () => {
+    c = montarCenarioDePagamento();
+    await precificar(c, 'pecas', 4990);
+    const conta = await cadastrar(c, 'ana@exemplo.test');
+    expect((await checkout(conta.cookie, { emailDoPagador: 42 })).statusCode).toBe(400);
+    expect(
+      (await checkout(conta.cookie, { emailDoPagador: 'a@b.test', outro: 1 })).statusCode,
+    ).toBe(400);
+    expect(c.gateway.pedidos).toHaveLength(0);
+  });
+
+  it('novo checkout (com outro e-mail) CANCELA a pendente no gateway e nunca deixa duas vivas', async () => {
+    c = montarCenarioDePagamento();
+    await precificar(c, 'pecas', 4990);
+    const conta = await cadastrar(c, 'ana@exemplo.test');
+    expect(
+      (await checkout(conta.cookie, { emailDoPagador: 'errado@exemplo.test' }))
+        .statusCode,
+    ).toBe(200);
+    const primeira = (await c.app.pagamentos!.cobrancaDe(conta.workspace))!;
+    expect(c.gateway.cancelamentos).toEqual([]);
+
+    expect(
+      (await checkout(conta.cookie, { emailDoPagador: 'certo@exemplo.test' })).statusCode,
+    ).toBe(200);
+    expect(c.gateway.cancelamentos).toEqual([primeira.gatewayId]);
+    expect(c.gateway.pedidos.map((p) => p.emailDoPagador)).toEqual([
+      'errado@exemplo.test',
+      'certo@exemplo.test',
+    ]);
+    const todas = await c.app.pagamentos!.todasAsCobrancas();
+    const pendentes = todas.filter(
+      (x) => x.workspace === conta.workspace && x.estado === 'pendente',
+    );
+    expect(pendentes).toHaveLength(1);
+    expect(pendentes[0]!.gatewayId).not.toBe(primeira.gatewayId);
+    expect(todas.find((x) => x.referencia === primeira.referencia)!.estado).toBe(
+      'cancelada',
+    );
+    // A conta vê só a nova, ainda "processando".
+    const ver = json(
+      await c.servidor.inject({
+        method: 'GET',
+        url: '/v1/assinatura',
+        headers: { cookie: conta.cookie },
+      }),
+    )['pagamento'];
+    expect(ver.processando).toBe(true);
+    expect(ver.recorrencia.estado).toBe('pendente');
+    // O aviso (webhook) da assinatura cancelada de propósito não avisa a conta de "renovação encerrada".
+    c.notificador.enviadas.length = 0;
+    await avisar(c, { topico: 'subscription_preapproval', id: primeira.gatewayId! });
+    expect(c.notificador.enviadas).toHaveLength(0);
+  });
+
+  it('se o cancelamento da pendente falha, o checkout novo sai do mesmo jeito; a falha vai à trilha sem dado pessoal e a pendente fica para a reconciliação', async () => {
+    c = montarCenarioDePagamento();
+    await precificar(c, 'pecas', 4990);
+    const conta = await cadastrar(c, 'ana@exemplo.test');
+    await checkout(conta.cookie, { emailDoPagador: 'errado@exemplo.test' });
+    const primeira = (await c.app.pagamentos!.cobrancaDe(conta.workspace))!;
+    c.gateway.falharCancelamentos = true;
+    const r = await checkout(conta.cookie, { emailDoPagador: 'certo@exemplo.test' });
+    expect(r.statusCode).toBe(200);
+    expect(c.gateway.pedidos).toHaveLength(2);
+    expect(
+      (await c.app.pagamentos!.todasAsCobrancas()).find(
+        (x) => x.referencia === primeira.referencia,
+      )!.estado,
+    ).toBe('pendente');
+    const eventos = await c.app.pagamentos!.eventosDe(primeira.referencia);
+    expect(eventos.map((e) => e.tipo)).toContain('pendente_nao_substituida');
+    expect(eventos.map((e) => e.tipo)).toContain('gateway_falhou');
+    expect(JSON.stringify(eventos)).not.toMatch(/errado@|certo@|ana@/);
+    // A reconciliação (inalterada) consulta as abertas, inclusive a que ficou.
+    c.gateway.falharCancelamentos = false;
+    const rec = await c.app.pagamentos!.reconciliar({ workspace: conta.workspace });
+    expect(rec.verificadas).toBe(2);
+  });
+
+  it('se não dá nem para consultar a pendente, o checkout novo sai e nada é cancelado às cegas', async () => {
+    c = montarCenarioDePagamento();
+    await precificar(c, 'pecas', 4990);
+    const conta = await cadastrar(c, 'ana@exemplo.test');
+    await checkout(conta.cookie);
+    c.gateway.falharProximaChamada = 'indisponivel';
+    expect((await checkout(conta.cookie)).statusCode).toBe(200);
+    expect(c.gateway.cancelamentos).toEqual([]);
+    expect(c.gateway.pedidos).toHaveLength(2);
+  });
+
+  it('se o gateway diz que a pendente JÁ foi autorizada, a conta já assinou: 409, nada é cancelado nem criado', async () => {
+    c = montarCenarioDePagamento();
+    await precificar(c, 'pecas', 4990);
+    const conta = await contaComCheckout();
+    c.gateway.definirEstado(
+      conta.gatewayId,
+      'autorizada',
+      new Date('2026-11-20T12:00:00.000Z'),
+    );
+    // (sem nenhum aviso chegar: o webhook ainda não veio)
+    const r = await checkout(conta.cookie, { emailDoPagador: 'outro@exemplo.test' });
+    expect(r.statusCode).toBe(409);
+    expect(json(r)['detalhes'].motivo).toBe('ja_assinante');
+    expect(c.gateway.cancelamentos).toEqual([]);
+    expect(c.gateway.pedidos).toHaveLength(1);
+    expect((await c.app.pagamentos!.cobrancaDe(conta.workspace))!.estado).toBe(
+      'autorizada',
+    );
+  });
+
+  it('isolamento: o checkout de uma conta nunca cancela a pendente de outra', async () => {
+    c = montarCenarioDePagamento();
+    await precificar(c, 'pecas', 4990);
+    const a = await cadastrar(c, 'ana@exemplo.test');
+    const b = await cadastrar(c, 'bruno@exemplo.test');
+    await checkout(a.cookie);
+    await checkout(b.cookie);
+    const deA = (await c.app.pagamentos!.cobrancaDe(a.workspace))!;
+    await checkout(b.cookie, { emailDoPagador: 'outro@exemplo.test' });
+    expect(c.gateway.cancelamentos).not.toContain(deA.gatewayId);
+    expect(c.gateway.cancelamentos).toHaveLength(1);
+    expect(
+      (await c.app.pagamentos!.todasAsCobrancas()).find(
+        (x) => x.referencia === deA.referencia,
+      )!.estado,
+    ).toBe('pendente');
+  });
+
+  it('a tela recebe o e-mail da PRÓPRIA conta para pré-preencher, e nunca o do pagador digitado nem o de outra conta', async () => {
+    c = montarCenarioDePagamento();
+    await precificar(c, 'pecas', 4990);
+    const a = await cadastrar(c, 'ana@exemplo.test');
+    const b = await cadastrar(c, 'bruno@exemplo.test');
+    await checkout(a.cookie, { emailDoPagador: 'pagadora@exemplo.test' });
+    const ler = async (cookie: string) =>
+      c.servidor.inject({ method: 'GET', url: '/v1/assinatura', headers: { cookie } });
+    const deA = await ler(a.cookie);
+    expect(json(deA)['pagamento'].emailDaConta).toBe('ana@exemplo.test');
+    expect(deA.body).not.toContain('pagadora@');
+    expect(deA.body).not.toContain('bruno@');
+    const deB = await ler(b.cookie);
+    expect(json(deB)['pagamento'].emailDaConta).toBe('bruno@exemplo.test');
+    expect(deB.body).not.toMatch(/ana@|pagadora@/);
+  });
+
+  it('o e-mail do pagador não vai ao log, à trilha, ao registro da cobrança nem ao /admin', async () => {
+    const linhas: string[] = [];
+    const logger = {
+      debug: (m: string, x?: unknown) => void linhas.push(m + JSON.stringify(x ?? {})),
+      info: (m: string, x?: unknown) => void linhas.push(m + JSON.stringify(x ?? {})),
+      warn: (m: string, x?: unknown) => void linhas.push(m + JSON.stringify(x ?? {})),
+      error: (m: string, x?: unknown) => void linhas.push(m + JSON.stringify(x ?? {})),
+      child: () => logger,
+    };
+    c = montarCenarioDePagamento({ logger } as never);
+    await precificar(c, 'pecas', 4990);
+    const conta = await cadastrar(c, 'ana@exemplo.test');
+    await checkout(conta.cookie, { emailDoPagador: 'secreto.pagador@exemplo.test' });
+    c.gateway.falharCancelamentos = true;
+    await checkout(conta.cookie, { emailDoPagador: 'secreto.pagador@exemplo.test' });
+    const cob = (await c.app.pagamentos!.cobrancaDe(conta.workspace))!;
+    const tudo = JSON.stringify({
+      cob,
+      eventos: await c.app.pagamentos!.eventosDe(cob.referencia),
+      todas: await c.app.pagamentos!.todasAsCobrancas(),
+      ultima: await c.app.pagamentos!.ultimaFalhaDoGateway(),
+      log: linhas,
+    });
+    expect(tudo).not.toContain('secreto.pagador');
+    expect(linhas.join('\n')).not.toContain('secreto.pagador');
+  });
+
+  it('conta de chave de API (sem e-mail) continua recusada no checkout, mesmo informando um e-mail', async () => {
+    c = montarCenarioDePagamento();
+    await precificar(c, 'pecas', 4990);
+    const r = await c.servidor.inject({
+      method: 'POST',
+      url: '/v1/assinatura/checkout',
+      headers: { 'x-api-key': CHAVE_DE_API },
+      payload: {
+        plano: 'pecas',
+        aceiteTermos: true,
+        emailDoPagador: 'qualquer@exemplo.test',
+      },
+    });
+    expect(r.statusCode).toBe(403);
+    expect(json(r)['detalhes'].motivo).toBe('conta_sem_email');
+    expect(c.gateway.pedidos).toHaveLength(0);
   });
 });

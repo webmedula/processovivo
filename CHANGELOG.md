@@ -9,6 +9,41 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.49.5] — 2026-10-21
+
+**Checkout do Mercado Pago: o e-mail de quem paga é confirmado na tela, e quem errar tenta de novo sem ajuda.** Num teste real,
+o Mercado Pago recusou o pagamento com "Seu e-mail não corresponde ao da assinatura": o sistema mandava como `payer_email` o
+e-mail da conta no Processo Vivo, e o Mercado Pago exige que quem paga use o MESMO e-mail da assinatura — e a página dele não
+deixa trocar. **Não mudaram:** preços e valores, `/admin`, o plano "Teste", carência, teste de 14 dias, fluxo manual, webhook
+(inclusive a validação da assinatura), idempotência, reconciliação, `exigir()`, a página de vendas e `GET /v1/planos`; sem
+migração e sem dependência nova; `script.ts` não cresceu.
+
+- **Campo "E-mail da sua conta do Mercado Pago"** na confirmação do checkout, obrigatório, pré-preenchido com o e-mail da conta
+  e editável, com a ajuda "Use o mesmo e-mail com o qual você vai entrar (ou pagar) no Mercado Pago. Se for outro, o Mercado
+  Pago recusa o pagamento." Rótulo associado, `aria-describedby` para a ajuda e para o erro, foco no campo com erro, temas
+  claro e escuro, sem rolagem horizontal de 390 a 1920 px. A frase antiga ("o e-mail dela pode ser diferente do e-mail do
+  Processo Vivo") ficou falsa e saiu.
+- **`POST /v1/assinatura/checkout`** aceita `emailDoPagador` (aditivo; corpo continua `.strict()`). Ausente = o e-mail da conta
+  (clientes antigos). O e-mail é aparado, validado pela mesma regra do cadastro (`normalizarEmail`), tem até 200 caracteres e
+  vai como `payer_email`. Inválido: 422 `email_do_pagador_invalido`, "Informe um e-mail válido para o pagamento.", antes de
+  gravar o aceite ou chamar o gateway, sem repetir o valor. **O e-mail do pagador NÃO é gravado em lugar nenhum** (nem na cobrança,
+  nem na trilha, nem no `/admin`, nem em log): o gateway é quem o guarda.
+- **Checkout novo substitui o pendente.** Antes, cada clique em pagar criava mais uma assinatura pendente no Mercado Pago
+  (sem limite) e a tela ficava em "processando" por até 2 horas, sem saída. Agora o serviço consulta cada pendente da conta:
+  se o gateway diz que ela JÁ foi autorizada, responde 409 `ja_assinante` (nada é cancelado nem criado); se não, cancela no
+  gateway (`PUT /preapproval/{id}` com `status: cancelled`) e marca a linha como cancelada. Falha ao consultar ou cancelar NÃO
+  impede o checkout novo: vai para a trilha (operação, status e motivo; nunca dado pessoal) com `pendente_nao_substituida`, e a
+  linha fica `pendente` para a reconciliação, que não mudou.
+- **Tela:** com pendente, "Seu pagamento não foi concluído? Se o Mercado Pago disse que o e-mail não corresponde, confirme
+  abaixo o e-mail da sua conta do Mercado Pago e tente de novo.", com o mesmo campo, o aceite dos Termos e "Tentar de novo".
+  A conferência automática não refaz a tela enquanto a pessoa digita. `GET /v1/assinatura` devolve `pagamento.emailDaConta`
+  (o e-mail da PRÓPRIA conta, só para pré-preencher).
+- **Testes:** `tests/browser/email-do-pagador-navegador.spec.ts` (novo) e um bloco novo em `tests/http/pagamentos.spec.ts`;
+  reescritos só `pagamento-tela.spec.ts` (o pedido agora leva o e-mail; dois campos na tela; a frase antiga trocada; o clique
+  confere o código do plano, que também vem da pendente), `assinatura-navegador.spec.ts` (a frase antiga da lista e o corpo do pedido) e o teste de `GET /v1/assinatura` que exigia o e-mail da conta ausente da resposta.
+
+---
+
 ## [0.49.4] — 2026-10-21
 
 **Tabela de Atualizações, só apresentação:** a coluna Atualização fica em UMA linha, sem o link "Abrir processo" na
