@@ -52,6 +52,11 @@ export function estadoDaVerificacaoJson(e: EstadoDaVerificacao): Record<string, 
     pendentes: e.pendentes,
     desde: e.desde?.toISOString() ?? null,
     demorando: e.demorando,
+    // v0.49.3, aditivos: clientes antigos ignoram. Só da PRÓPRIA conta, como o resto.
+    situacao: e.situacao,
+    total: e.total,
+    concluidos: e.concluidos,
+    ultimoProgressoEm: e.ultimoProgressoEm?.toISOString() ?? null,
   };
 }
 

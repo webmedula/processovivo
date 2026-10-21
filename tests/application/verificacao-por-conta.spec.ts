@@ -111,11 +111,16 @@ describe('estado da verificação por conta', () => {
     const e = servico.estadoDa(A);
     expect(e.pendentes).toBe(1); // nunca 2, o total da fila
     expect(JSON.stringify(e)).not.toContain(B);
+    // v0.49.3: o estado ganhou situação, total, concluídos e último progresso (aditivos); fora de andamento, tudo zerado.
     expect(servico.estadoDa('ws-sem-processos')).toEqual({
       emAndamento: false,
       pendentes: 0,
       desde: null,
       demorando: false,
+      situacao: 'ociosa',
+      total: 0,
+      concluidos: 0,
+      ultimoProgressoEm: null,
     });
     await liberar(nA);
     await liberar(nB);

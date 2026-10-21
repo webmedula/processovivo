@@ -281,6 +281,7 @@ function verNovidades(){
     h+='<button class="bt bt2" id="sincronizar">'+ICONE_ATUALIZAR+'Verificar agora</button></div></div></div>'+
       '<div id="nv-tabela"></div>';
     alvo.innerHTML=h;
+    if(ver.emAndamento)window.__pvVerificacao.iniciar(null,null,function(){atualizarBolha();verNovidades()});/* rodada em curso ao abrir: o selo acompanha */
 
     window.__pvAtualizacoes.montar($('nv-tabela'),r,{
       tribunais:estado.facetas.tribunais,
@@ -305,28 +306,9 @@ function verNovidades(){
 function dispararSync(){
   var b=$('sincronizar'); if(!b)return;
   b.disabled=true;b.innerHTML='<span class="gira"></span>Verificando';
+  /* O estado é o DESTA conta; botão, aviso e progresso ("Verificando X de N", "Na fila", "demorando" só sem avanço) vivem em ui/verificacao.ts. */
   api('/v1/sincronizar',{method:'POST',body:{}})
-    .then(function(r){
-      b.innerHTML=r.jaEmAndamento?'Verificação em andamento':'Verificação iniciada';
-      var aviso=document.createElement('div');
-      aviso.className='aviso';aviso.style.marginTop='10px';aviso.setAttribute('role','status');
-      aviso.innerHTML='Verificando os seus processos. Cada um leva alguns segundos '+
-        '(a base do CNJ é lenta), então as novidades vão aparecendo aos poucos. '+
-        'Pode fechar a página — ela continua rodando no servidor.';
-      b.parentNode.parentNode.appendChild(aviso);
-      /* O estado é o DESTA conta (v0.37.3): a varredura dos outros assinantes não
-         faz esta tela girar. Passado o limite do servidor, para de girar e diz por quê. */
-      var t=setInterval(function(){
-        api('/v1/sincronizacao').then(function(s){
-          if(!s.emAndamento){clearInterval(t);atualizarBolha();verNovidades();return}
-          if(s.demorando){
-            b.innerHTML='Verificação demorando';
-            aviso.textContent='Verificação demorando: as fontes do tribunal estão lentas. '+
-              'Os processos continuam sendo verificados e a tela atualiza quando terminar.';
-          }})
-          .catch(function(){clearInterval(t)});
-      },4000);
-    })
+    .then(function(r){window.__pvVerificacao.iniciar(b,r,function(){atualizarBolha();verNovidades()})})
     .catch(function(e){b.disabled=false;b.textContent='Verificar agora';alert(explicar(e))});
 }
 
@@ -363,12 +345,9 @@ function resumoDaVerificacao(ver,acomp,r){
  * verificação estiver de pé.
  */
 function seloDeVerificacao(ver,acomp){
+  window.__pvVerificacao.ultimaEm=ver.ultimaEm||'';/* o aviso de "demorando" diz a última verificação */
   if(!acomp)return '';
-  if(ver.emAndamento&&ver.demorando){
-    return '<span class="vigia atencao"><span class="ponto-vivo"></span>Verificação demorando: as fontes do tribunal estão lentas.'+
-      (ver.ultimaEm?' Última verificação às '+esc(horaDe(ver.ultimaEm))+'.':'')+'</span>';
-  }
-  if(ver.emAndamento)return '<span class="vigia neutro"><span class="gira"></span>Verificando agora</span>';
+  if(ver.emAndamento)return window.__pvVerificacao.selo(ver);/* "Verificando X de N", "Na fila" ou "demorando" (só sem avanço): ui/verificacao.ts */
   if(ver.naoVerificados>0){
     return '<span class="vigia atencao"><span class="ponto-vivo"></span>'+
       ver.naoVerificados+' sem verificação</span>';

@@ -296,12 +296,20 @@ describe('GET /v1/sincronizacao e POST /v1/sincronizar — por conta', () => {
     ).json() as Record<string, unknown>;
     expect(sa['emAndamento']).toBe(true);
     expect(sa['pendentes']).toBe(1); // nunca 2: a fila global não sai
+    // v0.49.3: campos ADITIVOS (situação, total, concluídos, último progresso); os quatro de antes seguem, e nada
+    // aqui fala da fila dos outros.
     expect(Object.keys(sa).sort()).toEqual([
+      'concluidos',
       'demorando',
       'desde',
       'emAndamento',
       'pendentes',
+      'situacao',
+      'total',
+      'ultimoProgressoEm',
     ]);
+    expect(sa['situacao']).toBe('em_andamento');
+    expect(sa['total']).toBe(1);
 
     // Uma conta sem nada na fila não herda o "verificando" dos outros.
     atual = 'ws-sem-processos';

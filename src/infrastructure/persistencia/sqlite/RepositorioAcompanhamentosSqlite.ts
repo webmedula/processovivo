@@ -247,28 +247,27 @@ export class RepositorioAcompanhamentosSqlite implements RepositorioAcompanhamen
     limite: number,
     workspace?: string,
   ): Promise<Acompanhamento[]> {
-    // Nunca sincronizados primeiro, depois os mais antigos. Assim quem acabou
+    // Nunca tentados primeiro, depois os de tentativa mais antiga. Assim quem acabou
     // de ser adicionado recebe o primeiro retrato logo.
+    //
+    // A chave é a ÚLTIMA TENTATIVA (`tentado_em`, v0.49.3), não o último sucesso: antes, o
+    // processo que sempre falha (arquivado, "não encontrado") mantinha `sincronizado_em` velho
+    // ou nulo e ficava na frente de TODA varredura, consumindo o limite de 200 e a espera de
+    // quem funciona. Linha sem `tentado_em` (anterior à 0.49.3) cai em `sincronizado_em`, a
+    // ordem de sempre. Quem a tela mostra como "última verificação" segue sendo o sucesso.
     //
     // Sem `workspace` é a varredura agendada, que precisa ver todo mundo. COM
     // `workspace` é alguém clicando em "verificar agora", e aí só os processos
     // dele — senão uma conta dispara consulta ao tribunal sobre a carteira
     // alheia e gasta a cota compartilhada do CNJ em nome dos outros.
+    const chave = 'COALESCE(tentado_em, sincronizado_em)';
+    const ordem = `ORDER BY (${chave} IS NULL) DESC, ${chave} ASC`;
     const linhas = workspace
       ? (this.db
-          .prepare(
-            `SELECT * FROM acompanhamentos
-              WHERE workspace = ?
-              ORDER BY (sincronizado_em IS NULL) DESC, sincronizado_em ASC
-              LIMIT ?`,
-          )
+          .prepare(`SELECT * FROM acompanhamentos WHERE workspace = ? ${ordem} LIMIT ?`)
           .all(workspace, limite) as Linha[])
       : (this.db
-          .prepare(
-            `SELECT * FROM acompanhamentos
-              ORDER BY (sincronizado_em IS NULL) DESC, sincronizado_em ASC
-              LIMIT ?`,
-          )
+          .prepare(`SELECT * FROM acompanhamentos ${ordem} LIMIT ?`)
           .all(limite) as Linha[]);
     return linhas.map((l) => this.paraAcompanhamento(l));
   }
@@ -291,13 +290,14 @@ export class RepositorioAcompanhamentosSqlite implements RepositorioAcompanhamen
       this.db
         .prepare(
           `UPDATE acompanhamentos
-              SET processo = ?, sincronizado_em = ?, erro = NULL,
+              SET processo = ?, sincronizado_em = ?, tentado_em = ?, erro = NULL,
                   tribunal = ?, classe = ?, ultima_mov_data = ?,
                   partes_texto = ?
             WHERE workspace = ? AND numero = ?`,
         )
         .run(
           serializado,
+          agora,
           agora,
           processo.tribunal,
           processo.classe ?? null,
@@ -332,14 +332,15 @@ export class RepositorioAcompanhamentosSqlite implements RepositorioAcompanhamen
   }
 
   async registrarFalha(workspace: string, numero: string, erro: string): Promise<void> {
-    // `sincronizado_em` NÃO avança numa falha — ele é "último sucesso". Mas
-    // registramos a tentativa para a fila não ficar presa no mesmo item.
+    // `sincronizado_em` NÃO avança numa falha — ele é "último sucesso". Mas a TENTATIVA é
+    // registrada em `tentado_em` (v0.49.3): é ela que manda o item para o fim da fila, em vez
+    // de deixá-lo na frente de toda varredura.
     this.db
       .prepare(
-        `UPDATE acompanhamentos SET erro = ?
+        `UPDATE acompanhamentos SET erro = ?, tentado_em = ?
           WHERE workspace = ? AND numero = ?`,
       )
-      .run(erro.slice(0, 500), workspace, numero);
+      .run(erro.slice(0, 500), new Date().toISOString(), workspace, numero);
   }
 
   async listarNovidades(

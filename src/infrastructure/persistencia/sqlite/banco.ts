@@ -922,6 +922,13 @@ const COLUNAS_ACRESCENTADAS: ReadonlyArray<{
   { tabela: 'custos_processo', coluna: 'cancelado_em', tipo: 'TEXT' },
   { tabela: 'custos_processo', coluna: 'cancelado_motivo', tipo: 'TEXT' },
   { tabela: 'categorias_custo', coluna: 'grupo', tipo: "TEXT NOT NULL DEFAULT '12'" },
+  /*
+   * v0.49.3: `tentado_em` — quando a varredura TENTOU este processo pela última vez (sucesso ou falha). Só ordena a
+   * fila: `sincronizado_em` continua sendo o ÚLTIMO SUCESSO (é ele que a tela mostra como "última verificação").
+   * SEM retrocarga, de propósito: NULL significa "nenhuma tentativa registrada" e a fila cai no `sincronizado_em`
+   * (`COALESCE`), que é exatamente a ordem de antes — então nada muda até o processo ser tentado de novo.
+   */
+  { tabela: 'acompanhamentos', coluna: 'tentado_em', tipo: 'TEXT' },
 ];
 
 function migrarColunas(db: DatabaseSync): void {
