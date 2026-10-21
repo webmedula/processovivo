@@ -12,7 +12,7 @@
  *   injetadas aqui por `toString()` e exercitadas pelos testes);
  * - uma linha por processo, com a atualização mais recente e mais nada: não há
  *   "+N anteriores" nem aviso por linha (v0.37.1). A regra de ouro vira UMA frase no
- *   nível da página ("as anteriores estão em 'Abrir processo'"), só quando algum
+ *   nível da página ("as anteriores estão no processo: clique no número"), só quando algum
  *   processo tem mais de uma atualização no período;
  * - quem esconde linha diz quantas escondeu: "mostrando X de Y processos" e "N
  *   atualizações mais antigas não mostradas", sempre com a saída ao lado;
@@ -125,8 +125,12 @@ function detectadoHa(iso){
   return c?'detectado '+c:'';
 }
 
-/* A célula Atualização é UMA linha de ato (v0.46.0, decisão do dono): tipo, etiqueta e este link. O texto
-   do ato NÃO aparece na tabela — continua guardado e é lido na tela do processo, na Pasta e na análise por IA. */
+/* A célula Atualização é UMA linha de ato (v0.46.0, decisão do dono): tipo, etiqueta e selos. O texto
+   do ato NÃO aparece na tabela — continua guardado e é lido na tela do processo, na Pasta e na análise por IA.
+   v0.49.4 (decisão do dono): na TABELA (>= 1024 px) o "Abrir processo" não existe — o número do processo já é um link e o
+   ícone "abrir" de Ações continua. O botão segue no DOM só para os CARTÕES (< 1024 px), onde não há dica e sobra espaço;
+   display:none na tabela o tira da tela, da ordem de Tab e da leitura por leitor de tela (não fica "escondido" a
+   quem enxerga, mas aparece para quem lê). */
 function linkAbrir(n){
   return '<span class="nvt-abrir"><button type="button" class="lnh nov-abrir" data-acao="abrir" data-num="'+esc(n.numero)+
     '" data-foco="abrir-ato-'+esc(n.numero)+'" aria-label="Abrir o processo '+esc(pv().mascara(n.numero))+'">Abrir processo</button></span>';
@@ -189,10 +193,10 @@ function celulaSemNovidade(g){
      só desce quando falta largura; o aviso deixou de ter linha própria acima do ato. O texto visível é "Sem atualização
      detectada" nos dois casos; "Última movimentação conhecida" (quando o ato da linha é só o último andamento) vai no
      title e em texto para leitor de tela, para o aviso caber numa linha. */
-  h+='<div class="nvt-ato"><span class="nvt-tit"'+(enxuto!==a.rotulo?' title="'+esc(a.rotulo)+'"':'')+'>'+esc(enxuto)+seloDoAto(a)+'</span>'+
-    linkAbrir(n)+(a.daProvidencia?'<span class="nvt-sem">Sem atualização detectada</span>':
+  h+='<div class="nvt-ato"><span class="nvt-tit" title="'+esc(a.rotulo)+'"><span class="nvt-tipo">'+esc(enxuto)+'</span>'+seloDoAto(a)+'</span>'+
+    selosDaLinha(g)+(a.daProvidencia?'<span class="nvt-sem" title="Sem atualização detectada">Sem atualização detectada</span>':
       '<span class="nvt-sem" title="Última movimentação conhecida: o acompanhamento ainda não detectou atualização neste processo."><span class="nvt-sr">Última movimentação conhecida · </span>Sem atualização detectada</span>')+
-    selosDaLinha(g)+'</div>';
+    linkAbrir(n)+'</div>';
   if(g.segredoJustica)
     h+='<div class="nota nvt-sem"><span class="selo al">segredo de justiça</span> O texto do ato não é exibido aqui.</div>';
   return h+linhaUltimoAndamento(a)+'</td>';
@@ -203,9 +207,8 @@ function celulaAtualizacao(g){
   var a=atoExibido(g);
   /* Só a exibição perde a repetição do tipo; o original fica no title. */
   var enxuto=descricaoDoAto(a.rotulo);
-  return '<td class="c-atu" data-rotulo="Atualização"><div class="nvt-ato"><span class="nvt-tit'+(n.vista?'':' nl')+'"'+
-    (enxuto!==a.rotulo?' title="'+esc(a.rotulo)+'"':'')+'>'+esc(enxuto)+seloDoAto(a)+'</span>'+
-    linkAbrir(n)+selosDaLinha(g)+'</div>'+linhaUltimoAndamento(a)+'</td>';
+  return '<td class="c-atu" data-rotulo="Atualização"><div class="nvt-ato"><span class="nvt-tit'+(n.vista?'':' nl')+'" title="'+esc(a.rotulo)+'"><span class="nvt-tipo">'+esc(enxuto)+'</span>'+seloDoAto(a)+'</span>'+
+    selosDaLinha(g)+linkAbrir(n)+'</div>'+linhaUltimoAndamento(a)+'</td>';
 }
 
 /* Os selos de OUTRA informação (v0.46.1): "Não lida" e "sem marca há mais de N dias" moravam na célula da coluna
@@ -388,7 +391,7 @@ function avisoDeOcultas(){
    alarme. Só existe se algum processo da lista tem mais de uma atualização no período. */
 function avisoDeAnteriores(linhas){
   if(!linhas.some(function(g){return g.quantidade>1}))return '';
-  return "<div class='nota nov-ant'>Cada processo mostra a atualização mais recente. As anteriores estão em 'Abrir processo'.</div>";
+  return "<div class='nota nov-ant'>Cada processo mostra a atualização mais recente. As anteriores estão no processo: clique no número.</div>";
 }
 
 function rodape(pg){

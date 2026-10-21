@@ -9,6 +9,32 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.49.4] — 2026-10-21
+
+**Tabela de Atualizações, só apresentação:** a coluna Atualização fica em UMA linha, sem o link "Abrir processo" na
+tabela. Detecção, "pede providência", "cumprido", filtros, contagens, busca, ordenação, paginação, `GET /v1/novidades`,
+`/v1/painel`, a verificação (0.49.3), a análise por IA, o calendário, a Pasta, os Custos e os planos **não mudaram**; sem
+migração e sem dependência nova; `script.ts` não cresceu.
+
+- **Uma linha só na tabela (>= 1024 px):** ponto azul (não lida), tipo do ato (negrito quando não lida), etiqueta
+  ("Intimação"), selo "Não lida" e o aviso "Sem atualização detectada" (letra pequena, cor secundária) na mesma linha.
+  Faltando largura, o tipo do ato e o aviso são cortados com reticências, com o texto inteiro no `title` e no DOM (o
+  leitor de tela lê tudo); a etiqueta e os selos não encolhem. As regras de quando cada coisa aparece são as de antes.
+- **Sem "Abrir processo" na tabela:** o número do processo (link) e o ícone "abrir" de Ações continuam abrindo o processo.
+  O botão segue no DOM só para os **cartões** (< 1024 px), onde aparece com o texto e alvo de 44 px; na tabela está com
+  `display:none` (fora da tela, do Tab e da leitura). Ordem do Tab: número, copiar, caixa "Cumprido", abrir, pasta, IA.
+- **Frase acima da tabela:** "Cada processo mostra a atualização mais recente. As anteriores estão no processo: clique no
+  número."
+- **Correção nos cartões:** a célula Atualização tinha `height:48px` herdado da tabela e, quando o selo e o botão ocupavam
+  mais de uma linha, transbordava sobre a célula seguinte (o botão "Abrir processo" ficava coberto em 390 px); nos cartões
+  a altura agora é automática.
+- **Alturas medidas** (lida / "Não lida" com Intimação / "Sem atualização detectada"), antes → depois: 1920 px
+  48/48/48 → 48/48/48; 1366 px 50/63/58 → 50/51/51; 1280 px 50/63/58 → 50/51/51; 1024 px 57/122/134 → 50/51/51.
+- **Testes:** novo `tests/browser/atualizacao-uma-linha-navegador.spec.ts`; reescritos só os que procuravam o link na
+  tabela, a frase antiga ou a ordem de Tab com o link (`atualizacoes-navegador`, `atualizacoes-layout-navegador`).
+
+---
+
 ## [0.49.3] — 2026-10-21
 
 **Sincronização mais rápida e com informação na espera.** Antes, a verificação dos processos andava um por vez (40 a 60 s

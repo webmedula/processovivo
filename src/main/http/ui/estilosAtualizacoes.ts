@@ -113,8 +113,7 @@ export const ESTILOS_TABELA_ATUALIZACOES = `
 .nvt-ult strong{font-weight:600;color:var(--tinta)}
 .nvt-sem-nov .nvt-tit{font-weight:500}
 .nvt-tit{font-weight:700;font-size:14px;line-height:1.3;overflow-wrap:anywhere;min-width:0}
-/* A célula Atualização (v0.49.2): ato, etiqueta, link "Abrir processo" e selos NUMA linha, que só quebra quando falta
-   largura. O aviso "sem atualização detectada" (mesmo texto) é um texto pequeno na mesma linha, sem linha própria. */
+/* A célula Atualização (v0.49.2; v0.49.4 sem o link na tabela): ato, etiqueta e selos NUMA linha. O aviso "sem atualização detectada" (mesmo texto) é um texto pequeno na mesma linha, sem linha própria. */
 .nvt-ato{display:flex;flex-wrap:wrap;align-items:center;gap:2px 8px;min-width:0}
 .nvt-tit.nl::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;
   background:var(--novo);margin-right:7px;vertical-align:2px}
@@ -122,11 +121,26 @@ export const ESTILOS_TABELA_ATUALIZACOES = `
 .nvt-tabela .nvt-selos .selo{display:inline-block;margin:0;font-size:11px;line-height:16px;padding:0 7px}
 .c-data,.c-det{font-variant-numeric:tabular-nums;color:var(--tinta2)}
 
-/* A célula Atualização é uma linha de ato + este link (v0.46.0); o texto do ato não aparece aqui. */
-.nvt-abrir{white-space:nowrap;line-height:1.3}
+/* Na TABELA (>= 1024 px) o "Abrir processo" não existe (v0.49.4, decisão do dono): o número do processo é um link e o ícone
+   "abrir" de Ações continua. display:none tira o botão da tela, da ordem de Tab e da leitura por leitor de tela. Nos CARTÕES
+   (< 1024 px) ele aparece de novo — sem mouse não há dica — e os selos podem ocupar mais de uma linha. */
+.nvt-abrir{display:none;white-space:nowrap;line-height:1.3}
 .nvt-abrir .nov-abrir{color:var(--acento);font-weight:600;background:none;border:0;padding:2px 0;cursor:pointer;
   font-family:inherit;font-size:13px}
 .nvt-abrir .nov-abrir:hover{text-decoration:underline}
+
+/* A célula Atualização na tabela (v0.49.4): ponto azul (não lida), tipo do ato, etiqueta, selos e o aviso "Sem atualização
+   detectada" SEMPRE numa linha só. Falta de largura corta o tipo do ato e o aviso com reticências (texto inteiro no title
+   e no DOM, então o leitor de tela lê tudo); a etiqueta e os selos não encolhem. */
+@media (min-width:1024px){
+  .nvt-ato{flex-wrap:nowrap;gap:0 8px}
+  .nvt-tit{display:inline-flex;align-items:center;white-space:nowrap;min-width:0;flex:0 1 auto}
+  .nvt-tit.nl::before{flex:none}
+  .nvt-tipo{overflow:hidden;text-overflow:ellipsis;min-width:0}
+  .nvt-tit .selo{flex:none;margin-left:6px}
+  .nvt-selos{flex:none;flex-wrap:nowrap;gap:0 4px}
+  .nvt-ato .nvt-sem{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+}
 
 /* ---------- ações ---------- */
 /* UMA fileira (v0.49.2): caixa "Cumprido", abrir, pasta e "Analisar com IA", todos de 28 px (alvo mínimo de 24), cada
@@ -200,13 +214,15 @@ export const ESTILOS_TABELA_ATUALIZACOES = `
   .nvt-acoes .sit-dica:not([id^="dica-cumprido-"]),.nvt-proc .sit-dica{display:none}
   .nvt-tabela td.c-trib{white-space:normal}
   .nvt-classe{white-space:normal}
+  .nvt-abrir{display:block}
   .nvt-abrir .nov-abrir{min-height:44px}
   .nvt-wrap{border:0;background:transparent;box-shadow:none}
   .nvt-tabela,.nvt-tabela tbody,.nvt-tabela tr,.nvt-tabela td{display:block}
   .nvt-tabela thead{display:none}
   .nvt-tabela tr.nvt-linha{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 16px;
     background:var(--papel);border:1px solid var(--linha);border-radius:var(--r);padding:14px;margin-bottom:10px}
-  .nvt-tabela tr.nvt-linha td{border:0;padding:0;min-width:0}
+  /* height:auto — o 48px da tabela fazia a célula Atualização transbordar sobre a seguinte quando o selo e o botão ocupam mais de uma linha */
+  .nvt-tabela tr.nvt-linha td{border:0;padding:0;min-width:0;height:auto}
   .nvt-tabela tbody tr.nvt-linha:hover td{background:transparent}
   .nvt-tabela td::before{content:attr(data-rotulo);display:block;font-size:11px;font-weight:700;
     text-transform:uppercase;letter-spacing:.04em;color:var(--tinta2);margin-bottom:2px}
