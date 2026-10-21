@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { carregarConfig } from '../../src/infrastructure/config/env.js';
 import { paginaConsole } from '../../src/main/http/ui/pagina.js';
 import { SCRIPT } from '../../src/main/http/ui/script.js';
+import { SCRIPT_VERIFICACAO } from '../../src/main/http/ui/verificacao.js';
 import {
   ESTILOS_ATUALIZACOES,
   SCRIPT_ATUALIZACOES,
@@ -174,21 +175,40 @@ describe('janela de pendência em um único lugar', () => {
   });
 });
 
-describe('selo de verificação por conta (v0.37.3)', () => {
-  it('"demorando" para de girar e diz que as fontes estão lentas, com a última verificação', () => {
+describe('selo de verificação por conta (v0.37.3; progresso e "demorando" só sem avanço na v0.49.3)', () => {
+  it('o selo de uma rodada em curso vem do módulo da verificação, que o atualiza com o progresso', () => {
+    // Reescrito na 0.49.3: antes o texto "demorando" morava aqui, preso a `ver.demorando`; agora `ui/verificacao.ts`
+    // decide (e o servidor só marca `demorando` quando a fila PAROU de avançar).
     const selo = corpoDe('seloDeVerificacao');
-    expect(selo).toContain('ver.demorando');
-    expect(selo).toContain('Verificação demorando: as fontes do tribunal estão lentas.');
-    expect(selo).toContain('Última verificação às ');
-    // O spinner só vem depois do caso "demorando".
-    expect(selo.indexOf('ver.demorando')).toBeLessThan(selo.indexOf('Verificando agora'));
+    expect(selo).toContain('window.__pvVerificacao.selo(ver)');
+    expect(selo).not.toContain('as fontes do tribunal estão lentas');
+    expect(selo.indexOf('ver.emAndamento')).toBeLessThan(selo.indexOf('sem verificação'));
   });
 
-  it('o clique lê o estado DA CONTA e não desiste nem dispara de novo', () => {
+  it('o clique delega ao módulo, que lê o estado DA CONTA, mostra "Na fila" e não dispara de novo', () => {
+    // Reescrito na 0.49.3: o laço de consulta saiu de `dispararSync` (script.ts não cresce) e foi para ui/verificacao.ts.
     const disparo = corpoDe('dispararSync');
-    expect(disparo).toContain('/v1/sincronizacao');
-    expect(disparo).toContain('jaEmAndamento');
-    expect(disparo).toContain('s.demorando');
+    expect(disparo).toContain('/v1/sincronizar');
+    expect(disparo).toContain('window.__pvVerificacao.iniciar(b,r');
+    expect(SCRIPT_VERIFICACAO).toContain('/v1/sincronizacao');
+    expect(SCRIPT_VERIFICACAO).toContain('resposta.naFila');
+    expect(SCRIPT_VERIFICACAO).toContain(
+      "'Verificando '+est.concluidos+' de '+est.total",
+    );
+  });
+
+  it('as frases do aviso: fila, progresso e demora sem culpar o tribunal; região viva discreta', () => {
+    for (const f of [
+      'Na fila: sua verificação começa quando a rodada atual terminar.',
+      'A verificação está sem avançar há alguns minutos. As fontes dos tribunais podem estar lentas.',
+      ' Última verificação às ',
+      "aria-live','polite'",
+      'ANUNCIO_MIN_MS=10000',
+    ]) {
+      expect(SCRIPT_VERIFICACAO, f).toContain(f);
+    }
+    expect(SCRIPT_VERIFICACAO).not.toContain('localStorage');
+    expect(SCRIPT_VERIFICACAO.toLowerCase()).not.toContain('prazo');
   });
 });
 

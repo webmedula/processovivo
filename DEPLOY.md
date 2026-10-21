@@ -266,6 +266,11 @@ PROCESSOVIVO_DB_PATH=/dados/processovivo.db
 # Varredura automática dos processos acompanhados. 0 desliga.
 SYNC_INTERVALO_HORAS=12
 SYNC_PAUSA_MS=1500
+# Quantos processos são verificados ao mesmo tempo (v0.49.3). Padrão 3, máximo 4; 1 = um por vez (como antes).
+# Valor inválido (zero, negativo, texto, acima de 4) NÃO derruba o serviço: usa 3 e registra um aviso no arranque.
+# Não altera o limite de requisições por fonte (DATAJUD_RATE_LIMIT_PER_MINUTE etc.): só tira a espera ociosa.
+# SYNC_PAUSA_MS vale por trabalhador, depois de cada processo.
+SYNC_CONCORRENCIA=3
 
 # Backup automático do banco. Ligado por padrão; 0 desliga.
 # As cópias vão para /dados/backups — dentro do MESMO volume. Leia a seção

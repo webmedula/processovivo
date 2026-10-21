@@ -22,6 +22,34 @@ function inteiroPositivo(padrao: number): z.ZodDefault<z.ZodNumber> {
   return z.coerce.number().int().positive().default(padrao);
 }
 
+/** Os mesmos números de `ServicoAcompanhamento` (`CONCORRENCIA_PADRAO`/`CONCORRENCIA_MAXIMA`): a configuração não importa a aplicação. */
+const CONCORRENCIA_SYNC_PADRAO = 3;
+const CONCORRENCIA_SYNC_MAXIMA = 4;
+
+/**
+ * `SYNC_CONCORRENCIA` (v0.49.3). Ausente = padrão, sem aviso. Presente e fora de 1..4 (zero, negativa, decimal, texto
+ * ou acima do máximo) = padrão COM aviso — nunca derruba o arranque: um servidor que não sobe por causa de um
+ * ajuste de velocidade é pior que um servidor na velocidade de sempre. O aviso diz a regra, não ecoa o valor.
+ */
+export function interpretarConcorrenciaDaSincronizacao(valor: string | undefined): {
+  concorrencia: number;
+  avisoDaConcorrencia?: string;
+} {
+  if (valor === undefined || valor.trim() === '') {
+    return { concorrencia: CONCORRENCIA_SYNC_PADRAO };
+  }
+  const n = Number(valor.trim());
+  if (Number.isInteger(n) && n >= 1 && n <= CONCORRENCIA_SYNC_MAXIMA) {
+    return { concorrencia: n };
+  }
+  return {
+    concorrencia: CONCORRENCIA_SYNC_PADRAO,
+    avisoDaConcorrencia:
+      `SYNC_CONCORRENCIA deve ser um inteiro de 1 a ${CONCORRENCIA_SYNC_MAXIMA}; ` +
+      `usando o padrão ${CONCORRENCIA_SYNC_PADRAO}.`,
+  };
+}
+
 const schema = z.object({
   /**
    * Ordem das fontes. O DataJud vem primeiro porque só ele tem a linha do tempo
@@ -165,6 +193,9 @@ const schema = z.object({
   SYNC_MAXIMO_POR_VARREDURA: inteiroPositivo(200),
   // Pausa entre consultas. A chave do CNJ é compartilhada por todo o país.
   SYNC_PAUSA_MS: z.coerce.number().int().min(0).default(1500),
+  // Quantos processos a varredura verifica AO MESMO TEMPO (v0.49.3). Lida como TEXTO de propósito: valor inválido,
+  // zero ou acima do máximo não derruba o servidor — cai no padrão (3) e o arranque registra um aviso.
+  SYNC_CONCORRENCIA: z.string().optional(),
 
   // --- HTTP ---------------------------------------------------------------
   // 0.0.0.0 e não 127.0.0.1: dentro de um contêiner, escutar só em loopback
@@ -343,6 +374,10 @@ export interface Config {
     readonly intervaloHoras: number;
     readonly maximoPorVarredura: number;
     readonly pausaMs: number;
+    /** Processos verificados ao mesmo tempo (1..4). Padrão 3 (v0.49.3). */
+    readonly concorrencia: number;
+    /** Preenchido quando `SYNC_CONCORRENCIA` veio inválida e o padrão foi usado: o arranque o põe no log. */
+    readonly avisoDaConcorrencia?: string;
   };
   readonly vigilancia: {
     readonly intervaloHoras: number;
@@ -579,6 +614,7 @@ export function carregarConfig(fonte: NodeJS.ProcessEnv = process.env): Config {
       intervaloHoras: env.SYNC_INTERVALO_HORAS,
       maximoPorVarredura: env.SYNC_MAXIMO_POR_VARREDURA,
       pausaMs: env.SYNC_PAUSA_MS,
+      ...interpretarConcorrenciaDaSincronizacao(env.SYNC_CONCORRENCIA),
     },
     vigilancia: {
       intervaloHoras: env.VIGILANCIA_INTERVALO_HORAS,
@@ -628,7 +664,9 @@ export function carregarConfig(fonte: NodeJS.ProcessEnv = process.env): Config {
       resumoMaxPorHora: env.PROCESSOVIVO_IA_RESUMO_MAX_POR_HORA,
       resumoMaxTokens: env.PROCESSOVIVO_IA_RESUMO_MAX_TOKENS,
       resumoTimeoutMs: env.PROCESSOVIVO_IA_RESUMO_TIMEOUT_MS,
-      workspacesLiberados: lerWorkspacesLiberados(env.PROCESSOVIVO_IA_WORKSPACES_LIBERADOS),
+      workspacesLiberados: lerWorkspacesLiberados(
+        env.PROCESSOVIVO_IA_WORKSPACES_LIBERADOS,
+      ),
       chave: env.PROCESSOVIVO_IA_HABILITADA ? env.OPENROUTER_API_KEY.trim() : '',
     },
     drive: {
@@ -650,11 +688,13 @@ export function carregarConfig(fonte: NodeJS.ProcessEnv = process.env): Config {
         ? lerAmbienteDoPagamento(env.PROCESSOVIVO_PAGAMENTO_AMBIENTE)
         : null,
       accessToken:
-        env.PROCESSOVIVO_PAGAMENTO_HABILITADO && env.PROCESSOVIVO_PAGAMENTO_GATEWAY === 'mercadopago'
+        env.PROCESSOVIVO_PAGAMENTO_HABILITADO &&
+        env.PROCESSOVIVO_PAGAMENTO_GATEWAY === 'mercadopago'
           ? env.MERCADOPAGO_ACCESS_TOKEN.trim()
           : '',
       segredoDoWebhook:
-        env.PROCESSOVIVO_PAGAMENTO_HABILITADO && env.PROCESSOVIVO_PAGAMENTO_GATEWAY === 'mercadopago'
+        env.PROCESSOVIVO_PAGAMENTO_HABILITADO &&
+        env.PROCESSOVIVO_PAGAMENTO_GATEWAY === 'mercadopago'
           ? env.MERCADOPAGO_WEBHOOK_SECRET.trim()
           : '',
       emailDoOperador: env.PROCESSOVIVO_PAGAMENTO_AVISO_EMAIL.trim(),
@@ -735,7 +775,9 @@ function validarConfiguracaoDoPagamento(
     !/^https:\/\//i.test(base) &&
     !/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(base)
   ) {
-    problemas.push('PROCESSOVIVO_URL_BASE: o gateway só aceita endereço em https (ou localhost)');
+    problemas.push(
+      'PROCESSOVIVO_URL_BASE: o gateway só aceita endereço em https (ou localhost)',
+    );
   }
   const ambiente = lerAmbienteDoPagamento(env.PROCESSOVIVO_PAGAMENTO_AMBIENTE);
   if (env.PROCESSOVIVO_PAGAMENTO_AMBIENTE.trim() === '') {
@@ -744,8 +786,14 @@ function validarConfiguracaoDoPagamento(
         '(valores: teste ou producao; não há padrão)',
     );
   } else if (ambiente === null) {
-    problemas.push('PROCESSOVIVO_PAGAMENTO_AMBIENTE: valor inválido; use teste ou producao');
-  } else if (ambiente === 'teste' && emProducao && !env.PROCESSOVIVO_PAGAMENTO_PERMITIR_TESTE) {
+    problemas.push(
+      'PROCESSOVIVO_PAGAMENTO_AMBIENTE: valor inválido; use teste ou producao',
+    );
+  } else if (
+    ambiente === 'teste' &&
+    emProducao &&
+    !env.PROCESSOVIVO_PAGAMENTO_PERMITIR_TESTE
+  ) {
     problemas.push(
       'PROCESSOVIVO_PAGAMENTO_AMBIENTE: "teste" com o servidor em produção; use producao, ' +
         'ou defina PROCESSOVIVO_PAGAMENTO_PERMITIR_TESTE=true se for proposital',
@@ -772,9 +820,13 @@ function validarConfiguracaoDoPagamento(
     const token = env.MERCADOPAGO_ACCESS_TOKEN.trim();
     const segredo = env.MERCADOPAGO_WEBHOOK_SECRET.trim();
     if (token === '') {
-      problemas.push('MERCADOPAGO_ACCESS_TOKEN: obrigatório com PROCESSOVIVO_PAGAMENTO_HABILITADO=true');
+      problemas.push(
+        'MERCADOPAGO_ACCESS_TOKEN: obrigatório com PROCESSOVIVO_PAGAMENTO_HABILITADO=true',
+      );
     } else if (pareceValorDeExemplo(token)) {
-      problemas.push('MERCADOPAGO_ACCESS_TOKEN: parece um valor de exemplo; coloque o token real');
+      problemas.push(
+        'MERCADOPAGO_ACCESS_TOKEN: parece um valor de exemplo; coloque o token real',
+      );
     } else if (ambiente === 'producao' && token.startsWith(PREFIXO_DO_TOKEN_DE_TESTE)) {
       problemas.push(
         'MERCADOPAGO_ACCESS_TOKEN: começa por TEST-, que é credencial de teste, mas ' +
@@ -782,13 +834,19 @@ function validarConfiguracaoDoPagamento(
       );
     }
     if (segredo === '') {
-      problemas.push('MERCADOPAGO_WEBHOOK_SECRET: obrigatória com PROCESSOVIVO_PAGAMENTO_HABILITADO=true');
+      problemas.push(
+        'MERCADOPAGO_WEBHOOK_SECRET: obrigatória com PROCESSOVIVO_PAGAMENTO_HABILITADO=true',
+      );
     } else if (pareceValorDeExemplo(segredo)) {
-      problemas.push('MERCADOPAGO_WEBHOOK_SECRET: parece um valor de exemplo; coloque a chave real');
+      problemas.push(
+        'MERCADOPAGO_WEBHOOK_SECRET: parece um valor de exemplo; coloque a chave real',
+      );
     }
   }
   if (problemas.length > 0) {
-    throw new Error(`Configuração inválida:\n${problemas.map((p) => `  - ${p}`).join('\n')}`);
+    throw new Error(
+      `Configuração inválida:\n${problemas.map((p) => `  - ${p}`).join('\n')}`,
+    );
   }
 }
 

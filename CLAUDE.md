@@ -1840,6 +1840,17 @@ Não são detalhes — moldam o código.
   advogado mexeu. (6) **Privacidade:** o título sai só de campos estruturados ("Prazo de 15 dias úteis
   (a conferir)"), sem texto da IA e sem nome de parte; o feed continua levando só tipo e número do
   processo (ou "sigiloso"), nunca título, observação nem trecho. Ver `PrazoNaoCalculavelError`.
+- **Sincronização em pool pequeno, progresso real na tela e aviso de "demorando" só sem avanço** (v0.49.3, decisões do dono).
+  (1) `ServicoAcompanhamento.executar` roda um pool de `SYNC_CONCORRENCIA` trabalhadores (padrão 3, MÁXIMO 4; inválida →
+  padrão + aviso no log, nunca derruba): continua UMA rodada por vez (flag `sincronizando`), a mesma ordem da fila, 200 por
+  varredura, `SYNC_PAUSA_MS` por trabalhador após cada item e limitadores/cache compartilhados — o teto por fonte NÃO muda. O mesmo
+  número de processo nunca é buscado em paralelo. Fora de escopo, por decisão: disjuntor por fonte, prioridade da conta que clicou
+  e mudança do cache de 15 min. (2) `GET /v1/sincronizacao` ganhou `situacao` (`ociosa|na_fila|em_andamento`), `total`, `concluidos`,
+  `ultimoProgressoEm`; **`demorando` só quando nada avançou por mais de 5 min**. A tela (`ui/verificacao.ts`,
+  `window.__pvVerificacao`) mostra "Verificando X de N" / "Na fila" e a região `aria-live` anuncia o X no máximo a cada 10 s. (3) Uma
+  linha de log `processo verificado` por item (sem partes nem texto de ato) e a `varredura concluída` com média e concorrência.
+  (4) `acompanhamentos.tentado_em` (aditiva, sem retrocarga) ordena a fila por `COALESCE(tentado_em, sincronizado_em)`: quem falha
+  sempre vai para o fim; `sincronizado_em` segue sendo só o último sucesso.
 - **Centro de custos do processo: valores sempre em centavos inteiros, custos independentes do acompanhamento, PDF que
   nunca grava e nunca traz dado do processo** (v0.47.0, decisões do dono; versão 1 é MANUAL — sem receita, honorário,
   parcela, integração bancária nem comprovante). **Ampliado na v0.48.0 — ver o item seguinte, que SUBSTITUI nesta
@@ -2069,8 +2080,8 @@ teste e carência** (v0.28.0), **visual novo a partir do logo** (v0.29.0),
 **tela do processo sem os blocos "Pede providência" e "Última movimentação", Partes logo abaixo das peças** (v0.41.1), **Google Drive: conectar a conta do advogado e salvar as peças da Pasta digital numa pasta "Processo Vivo", por botão, escopo `drive.file`, desligado por padrão, planos Peças e IA** (v0.42.0), **Drive: o retorno do OAuth usa o workspace do `state` assinado e a conta de chave de API também conecta** (v0.42.1), **testes estáveis no CI e a volta do Google sem corrida no console** (v0.42.2), **Atualizações: situação como texto e caixa "Cumprido" como único controle, com aviso para desfazer** (v0.43.0), **cobrança recorrente pelo Mercado Pago, parte 1: assinatura por cartão atrás da porta de pagamento, webhook idempotente, reconciliação e ciclo no plano** (v0.44.0), **ambiente do pagamento declarado em `PROCESSOVIVO_PAGAMENTO_AMBIENTE`, não deduzido do token** (v0.44.1),
 **página de vendas: vitrine pública `GET /v1/planos`, plano escolhido atravessando cadastro e login, confirmação de assinatura com aceite dos Termos obrigatório e trecho para o site** (v0.45.0), **recusa do gateway com motivo de lista fechada, log saneado, 422/503 em JSON e a última falha no /admin** (v0.45.1), **tabela de Atualizações mais limpa: Atualização em uma linha, datas estreitas e coluna "Cumprido" só com a caixa e a dica** (v0.46.0),
 **tabela de Atualizações: caixa "Cumprido" na coluna Ações, Partes mais larga, sem o selo "outro destinatário" na linha e sem a frase fixa sob o filtro** (v0.46.1),
-**centro de custos do processo: lançamentos manuais por processo, categorias próprias, totais no servidor, caixa "Ressarcido" e prestação de contas em PDF para o cliente** (v0.47.0), **custos: recebimentos do cliente com saldo e crédito, quem pagou, depósitos fora das despesas, cancelar com histórico e catálogo Grupo › Subcategoria** (v0.48.0), **custos por cliente: tela no menu, PDF consolidado, CSV, comprovantes no Google Drive do advogado e aviso ao deixar de acompanhar** (v0.49.0), **painel de Custos: colunas de conteúdo, ações em ícones com dica e formulário em grade** (v0.49.1), **Atualizações: linha compacta, número do processo sem quebra e Ações em ícones com dica, inclusive "Analisar com IA"** (v0.49.2),
-Dockerfile multi-stage, CI, 2961 testes.
+**centro de custos do processo: lançamentos manuais por processo, categorias próprias, totais no servidor, caixa "Ressarcido" e prestação de contas em PDF para o cliente** (v0.47.0), **custos: recebimentos do cliente com saldo e crédito, quem pagou, depósitos fora das despesas, cancelar com histórico e catálogo Grupo › Subcategoria** (v0.48.0), **custos por cliente: tela no menu, PDF consolidado, CSV, comprovantes no Google Drive do advogado e aviso ao deixar de acompanhar** (v0.49.0), **painel de Custos: colunas de conteúdo, ações em ícones com dica e formulário em grade** (v0.49.1), **Atualizações: linha compacta, número do processo sem quebra e Ações em ícones com dica, inclusive "Analisar com IA"** (v0.49.2), **sincronização mais rápida: pool de até 3 (máx. 4) processos, progresso real "Verificando X de N" e fila sem processo que sempre falha na frente** (v0.49.3),
+Dockerfile multi-stage, CI, 3192 testes.
 
 **Pasta digital (v0.33.0, backend):** `GET /v1/processos/:numero/pasta` (lista +
 estado de cada peça + intervalos de página + totais SEM filtro + procedência

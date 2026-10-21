@@ -343,7 +343,16 @@ export function montarAplicacao(config: Config): Aplicacao {
     logger,
     maximoPorVarredura: config.sincronizacao.maximoPorVarredura,
     pausaEntreConsultasMs: config.sincronizacao.pausaMs,
+    // v0.49.3: o pool de trabalhadores da varredura. Os limitadores de cada fonte (dentro dos adapters) seguem
+    // compartilhados por todos eles — a trava dura da cota do CNJ não muda.
+    concorrencia: config.sincronizacao.concorrencia,
+    fontePrimaria: config.cadeiaDeProviders[0] ?? 'datajud',
   });
+  if (config.sincronizacao.avisoDaConcorrencia) {
+    logger.warn('configuração da sincronização ajustada', {
+      aviso: config.sincronizacao.avisoDaConcorrencia,
+    });
+  }
 
   // Contas. O scrypt e o gerador de token entram como PORTA — é no composition
   // root que a escolha concreta vive, e é o que deixa trocar scrypt por argon2

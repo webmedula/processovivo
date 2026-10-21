@@ -9,6 +9,39 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.49.3] — 2026-10-21
+
+**Sincronização mais rápida e com informação na espera.** Antes, a verificação dos processos andava um por vez (40 a 60 s
+cada) e a tela só dizia "verificando". Agora até 3 processos são verificados ao mesmo tempo (máximo 4) e a tela mostra o
+progresso real. **Não mudaram:** limite de requisições por fonte, timeouts e tentativas do DataJud e do DJEN, ordem do
+fallback, cache de 15 min, vigilância por OAB, planos, Custos, Pasta e calendário; sem dependência nova.
+
+- **Pool de trabalhadores** em `ServicoAcompanhamento.executar`: `SYNC_CONCORRENCIA` (padrão 3, máximo 4; inválida →
+  padrão e aviso no log, nunca derruba). Continua UMA rodada por vez (a flag `sincronizando`), a mesma ordem da fila, o
+  limite de 200 por varredura, `SYNC_PAUSA_MS` após cada item (por trabalhador) e os limitadores e o cache compartilhados.
+  Falha de um item não derruba os outros; nenhum item é pego duas vezes; a flag só cai quando todos os trabalhadores
+  terminam, mesmo com exceção. O mesmo número de processo (contas que o compartilham) nunca é buscado em paralelo, para
+  manter o proveito do cache. Com 1 trabalhador o comportamento é o de antes.
+- **Estado em `GET /v1/sincronizacao`** (aditivo): `situacao` (`ociosa` | `na_fila` | `em_andamento`), `total`,
+  `concluidos`, `ultimoProgressoEm`; `pendentes` e o resto seguem. `demorando` = nenhum sinal de vida por mais de 5 min
+  (a conta ou a rodada); rodada que avança nunca é "demorando".
+- **Tela** (`ui/verificacao.ts`, `window.__pvVerificacao`; `script.ts` encolheu): botão "Na fila: sua verificação começa
+  quando a rodada atual terminar." / "Verificando X de N" (consulta a cada 4 s) / volta a "Verificar agora" com a
+  última verificação nova; selo "Verificando 3 de 12"; aviso "A verificação está sem avançar há alguns minutos. As fontes
+  dos tribunais podem estar lentas. Última verificação às HH:MM." só sem avanço. Região `aria-live` educada: anuncia mudança
+  de situação na hora e o X no máximo a cada 10 s. Temas claro e escuro, sem rolagem horizontal.
+- **Log:** uma linha `processo verificado` por item (número, fonte, duração, fontes tentadas, resultado
+  ok/fallback/falha; nunca partes nem texto de ato) e a `varredura concluída` com total, falhas, duração, média por
+  item e concorrência.
+- **Processo que sempre falha não fica mais no começo da fila:** coluna aditiva `acompanhamentos.tentado_em` (sem
+  retrocarga); a fila ordena por `COALESCE(tentado_em, sincronizado_em)`. `sincronizado_em` ("Última verificação") continua
+  sendo só o último SUCESSO.
+- **Testes:** `tests/application/sincronizacao-pool.spec.ts` e `tests/browser/verificacao-navegador.spec.ts` novos;
+  reescritas só as expectativas que supunham ordem estritamente sequencial, o texto antigo do aviso ou "Verificação
+  iniciada" para `na_fila` (`verificacao-por-conta`, `atualizacoes-sem-novidade`, `atualizacoes-tela`).
+
+---
+
 ## [0.49.2] — 2026-10-21
 
 **Tabela de Atualizações, só apresentação:** linha compacta, número do processo sem quebra, Ações numa fileira de

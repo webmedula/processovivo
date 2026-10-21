@@ -10,6 +10,7 @@ import {
   AtoDaProvidenciaInvalidoError,
   DomainError,
   ProcessoNaoEncontradoError,
+  TodasAsFontesFalharamError,
 } from '../../domain/errors/index.js';
 import type { Logger } from '../../domain/ports/Logger.js';
 import type { ProcessoProvider } from '../../domain/ports/ProcessoProvider.js';
@@ -26,6 +27,12 @@ export interface ResultadoSincronizacao {
   readonly novidades: number;
   readonly falhas: number;
   readonly duracaoMs: number;
+  /** Itens que a rodada tentou (v0.49.3): `verificados + falhas`. */
+  readonly total?: number;
+  /** Média da duração de UM item, do começo ao fim da consulta (v0.49.3): é a medida que o pool não esconde. */
+  readonly duracaoMediaPorItemMs?: number;
+  /** Quantos itens a rodada verificou ao mesmo tempo, no máximo (v0.49.3). */
+  readonly concorrencia?: number;
 }
 
 export interface OpcoesServicoAcompanhamento {
@@ -39,9 +46,27 @@ export interface OpcoesServicoAcompanhamento {
   readonly pausaEntreConsultasMs?: number;
   /** Relógio injetável: o limite de espera se testa sem tempo real. */
   readonly agora?: () => Date;
-  /** Passado esse tempo, a verificação da conta é dita "demorando". Padrão: 5 min. */
+  /** Sem NENHUM progresso por este tempo, a verificação é dita "demorando". Padrão: 5 min. */
   readonly limiteVerificacaoDemoradaMs?: number;
+  /**
+   * Quantos processos a varredura verifica AO MESMO TEMPO (v0.49.3). Padrão do SERVIÇO: 1, o comportamento de antes —
+   * quem quer mais passa pela configuração (`SYNC_CONCORRENCIA`, padrão 3). Fora de 1..`CONCORRENCIA_MAXIMA`, é
+   * ajustado: o serviço nunca fica sem trabalhador nem passa do teto.
+   */
+  readonly concorrencia?: number;
+  /** A fonte primeira da cadeia, só para o registro por item dizer "fallback". Opcional. */
+  readonly fontePrimaria?: string;
+  /** Espera injetável: a pausa por item se testa sem tempo real. */
+  readonly dormir?: (ms: number) => Promise<void>;
 }
+
+/** O que a configuração usa quando a variável não diz nada (v0.49.3). */
+export const CONCORRENCIA_PADRAO = 3;
+/**
+ * O teto, que nenhuma configuração ultrapassa. Não é limite do CNJ (não há número publicado): é a escolha de projeto
+ * que mantém a carga abaixo do que os limitadores de 60 requisições por minuto por fonte já impedem de passar.
+ */
+export const CONCORRENCIA_MAXIMA = 4;
 
 /** Quanto a tela espera antes de dizer que as fontes estão lentas (v0.37.3). */
 export const LIMITE_VERIFICACAO_DEMORADA_MS = 5 * 60_000;
@@ -56,11 +81,25 @@ export interface EstadoDaVerificacao {
   readonly pendentes: number;
   /** Quando a verificação desta conta começou a valer; `null` fora de andamento. */
   readonly desde: Date | null;
-  /** Passou do limite de espera: a tela para de girar e diz que as fontes estão lentas. */
+  /**
+   * A verificação PAROU de avançar (v0.49.3): nenhum item de ninguém foi concluído há mais que o limite. Antes bastava
+   * passar o limite desde o início da rodada global para toda conta ficar "demorando", mesmo com a fila andando.
+   */
   readonly demorando: boolean;
+  /** `na_fila` (esperando outra rodada) e `em_andamento` se distinguem aqui (v0.49.3). */
+  readonly situacao: SituacaoDaVerificacao;
+  /** Processos DESTA conta nesta rodada; 0 enquanto `na_fila` (a fila ainda não foi montada). */
+  readonly total: number;
+  /** Quantos deles já foram concluídos nesta rodada (verificados ou com falha registrada). */
+  readonly concluidos: number;
+  /** O instante do último item concluído desta conta nesta rodada; `null` antes do primeiro. */
+  readonly ultimoProgressoEm: Date | null;
 }
 
 export type ResultadoDoPedido = 'iniciada' | 'ja_em_andamento' | 'na_fila';
+
+/** `ociosa` não há verificação desta conta; `na_fila` espera a rodada de outra conta terminar; `em_andamento` roda. */
+export type SituacaoDaVerificacao = 'ociosa' | 'na_fila' | 'em_andamento';
 
 /**
  * Acompanhamento de processos: adicionar, listar e manter atualizado.
@@ -89,8 +128,19 @@ export class ServicoAcompanhamento {
   /** Contas que pediram "verificar agora" com a varredura de outro rodando. */
   private readonly aguardando = new Set<string>();
   private readonly desde = new Map<string, Date>();
+  /** Contas que pediram com a rodada de OUTRA conta ocupando o serviço (distingue `na_fila` de `em_andamento`). */
+  private readonly esperandoAVez = new Set<string>();
+  /** Por conta, nesta rodada: quantos processos ela tem e quantos já terminaram (v0.49.3). */
+  private readonly totais = new Map<string, number>();
+  private readonly concluidosPorConta = new Map<string, number>();
+  private readonly progressoDaConta = new Map<string, Date>();
+  /** Quando QUALQUER item foi concluído pela última vez: se a fila anda, ninguém está "demorando". */
+  private progressoGlobal: Date | null = null;
   private readonly relogio: () => Date;
   private readonly limiteDemoradaMs: number;
+  private readonly concorrencia: number;
+  private readonly fontePrimaria: string | undefined;
+  private readonly dormirFn: (ms: number) => Promise<void>;
 
   constructor(opcoes: OpcoesServicoAcompanhamento) {
     this.repo = opcoes.repositorio;
@@ -101,6 +151,13 @@ export class ServicoAcompanhamento {
     this.relogio = opcoes.agora ?? (() => new Date());
     this.limiteDemoradaMs =
       opcoes.limiteVerificacaoDemoradaMs ?? LIMITE_VERIFICACAO_DEMORADA_MS;
+    const pedida = Math.floor(opcoes.concorrencia ?? 1);
+    this.concorrencia = Math.min(
+      CONCORRENCIA_MAXIMA,
+      Number.isFinite(pedida) ? Math.max(1, pedida) : 1,
+    );
+    this.fontePrimaria = opcoes.fontePrimaria;
+    this.dormirFn = opcoes.dormir ?? dormir;
   }
 
   /**
@@ -295,6 +352,7 @@ export class ServicoAcompanhamento {
     if (this.estadoDa(workspace).emAndamento) return 'ja_em_andamento';
     if (this.sincronizando) {
       this.aguardando.add(workspace);
+      this.esperandoAVez.add(workspace);
       this.desde.set(workspace, this.relogio());
       return 'na_fila';
     }
@@ -308,20 +366,48 @@ export class ServicoAcompanhamento {
       })
       .finally(() => {
         this.aguardando.delete(workspace);
+        this.esperandoAVez.delete(workspace);
         this.desde.delete(workspace);
         void this.drenarPedidos();
       });
     return 'iniciada';
   }
 
-  /** O estado desta conta e só dela (v0.37.3). */
+  /** O estado desta conta e só dela (v0.37.3; progresso e situação na v0.49.3). */
   estadoDa(workspace: string): EstadoDaVerificacao {
     const pendentes = this.pendentes.get(workspace)?.size ?? 0;
     const emAndamento = pendentes > 0 || this.aguardando.has(workspace);
+    const situacao: SituacaoDaVerificacao =
+      pendentes > 0
+        ? 'em_andamento'
+        : this.esperandoAVez.has(workspace)
+          ? 'na_fila'
+          : emAndamento
+            ? 'em_andamento'
+            : 'ociosa';
     const desde = emAndamento ? (this.desde.get(workspace) ?? null) : null;
+    const daConta = emAndamento ? (this.progressoDaConta.get(workspace) ?? null) : null;
+    // "Demorando" é "parou de avançar": o último sinal de vida é o mais recente entre o início desta conta, o último
+    // item dela e o último item de QUALQUER conta. Rodada longa com a fila andando não é demora.
+    const sinais = [desde, daConta, desde ? this.progressoGlobal : null].filter(
+      (d): d is Date => d !== null,
+    );
+    const ultimoSinal = sinais.length
+      ? Math.max(...sinais.map((d) => d.getTime()))
+      : null;
     const demorando =
-      desde !== null && this.relogio().getTime() - desde.getTime() > this.limiteDemoradaMs;
-    return { emAndamento, pendentes, desde, demorando };
+      ultimoSinal !== null &&
+      this.relogio().getTime() - ultimoSinal > this.limiteDemoradaMs;
+    return {
+      emAndamento,
+      pendentes,
+      desde,
+      demorando,
+      situacao,
+      total: emAndamento ? (this.totais.get(workspace) ?? 0) : 0,
+      concluidos: emAndamento ? (this.concluidosPorConta.get(workspace) ?? 0) : 0,
+      ultimoProgressoEm: daConta,
+    };
   }
 
   private async drenarPedidos(): Promise<void> {
@@ -329,11 +415,15 @@ export class ServicoAcompanhamento {
       const proximo = this.aguardando.values().next();
       if (proximo.done) return;
       // Fica na lista até terminar: a conta segue "em andamento" sem intervalo.
+      this.esperandoAVez.delete(proximo.value);
       try {
         await this.executar({ workspace: proximo.value });
       } catch (erro) {
         // Outra varredura tomou a vez: o pedido continua na fila para a próxima.
-        if (erro instanceof SincronizacaoEmAndamentoError) return;
+        if (erro instanceof SincronizacaoEmAndamentoError) {
+          this.esperandoAVez.add(proximo.value);
+          return;
+        }
       }
       this.aguardando.delete(proximo.value);
       this.desde.delete(proximo.value);
@@ -349,82 +439,174 @@ export class ServicoAcompanhamento {
     this.sincronizando = true;
     const inicio = Date.now();
 
-    let verificados = 0;
-    let comNovidade = 0;
-    let novidades = 0;
-    let falhas = 0;
+    const contagem = {
+      verificados: 0,
+      comNovidade: 0,
+      novidades: 0,
+      falhas: 0,
+      somaDuracoesMs: 0,
+    };
+    let total = 0;
+    let usadas = 0;
 
     try {
       const fila = await this.repo.listarParaSincronizar(this.maximo, opcoes.workspace);
-      this.log.info('varredura iniciada', { total: fila.length });
+      total = fila.length;
+      usadas = Math.min(this.concorrencia, fila.length);
+      this.log.info('varredura iniciada', {
+        total: fila.length,
+        concorrencia: this.concorrencia,
+      });
       const inicioDaRodada = this.relogio();
+      this.progressoGlobal = inicioDaRodada;
       for (const item of fila) {
         let set = this.pendentes.get(item.workspace);
         if (!set) {
           set = new Set<string>();
           this.pendentes.set(item.workspace, set);
           // Quem já esperava na fila mantém a hora do pedido.
-          if (!this.desde.has(item.workspace)) this.desde.set(item.workspace, inicioDaRodada);
+          if (!this.desde.has(item.workspace))
+            this.desde.set(item.workspace, inicioDaRodada);
         }
         set.add(item.numero);
+        this.totais.set(item.workspace, (this.totais.get(item.workspace) ?? 0) + 1);
       }
 
-      for (const item of fila) {
-        try {
-          const atual = await this.provider.buscarPorNumero(item.numero);
-          const novas = detectarNovidades(item.processo, atual);
-
-          await this.repo.registrarSincronizacao(
-            item.workspace,
-            item.numero,
-            atual,
-            novas,
-          );
-
-          verificados++;
-          if (novas.length > 0) {
-            comNovidade++;
-            novidades += novas.length;
-            this.log.info('novidade detectada', {
-              numero: item.numero,
-              quantas: novas.length,
-            });
+      // POOL (v0.49.3): `concorrencia` trabalhadores tiram da MESMA fila, na MESMA ordem (nunca sincronizados
+      // primeiro, depois os de tentativa mais antiga). Cada um pega o próximo índice de forma síncrona, então um item
+      // nunca é pego por dois. O número do processo vale mais que o item: duas contas podem acompanhar o MESMO
+      // processo, e consultar o CNJ duas vezes ao mesmo tempo desperdiçaria o cache — quem chega depois espera o
+      // primeiro terminar e a segunda consulta sai da memória, como na varredura de um só trabalhador.
+      let proximo = 0;
+      const emVoo = new Map<string, Promise<void>>();
+      const trabalhador = async (): Promise<void> => {
+        for (;;) {
+          const item = fila[proximo++];
+          if (!item) return;
+          for (
+            let anterior = emVoo.get(item.numero);
+            anterior;
+            anterior = emVoo.get(item.numero)
+          ) {
+            await anterior;
           }
-        } catch (erro) {
-          falhas++;
-          // "Não encontrado" também é falha do ponto de vista da varredura, mas
-          // não é ruído de sistema: o processo pode ter sido arquivado ou o
-          // tribunal saído da cobertura. Registramos e seguimos.
-          const nivel = erro instanceof ProcessoNaoEncontradoError ? 'debug' : 'warn';
-          this.log[nivel]('falha ao sincronizar processo', {
-            numero: item.numero,
-            erro: descrever(erro),
-          });
-          await this.repo.registrarFalha(item.workspace, item.numero, descrever(erro));
-        } finally {
-          this.concluirItem(item.workspace, item.numero);
+          const feito = this.verificarItem(item, contagem);
+          emVoo.set(item.numero, feito);
+          await feito;
+          emVoo.delete(item.numero);
+          // A pausa é de CADA trabalhador, depois de cada item (falha e cache incluídos), como antes.
+          try {
+            if (this.pausaMs > 0) await this.dormirFn(this.pausaMs);
+          } catch {
+            /* uma espera que falha não pode derrubar o trabalhador */
+          }
         }
-
-        if (this.pausaMs > 0) await dormir(this.pausaMs);
-      }
+      };
+      // allSettled: um trabalhador que morresse não interrompe os outros, e a varredura só acaba quando todos acabam.
+      await Promise.allSettled(Array.from({ length: usadas }, () => trabalhador()));
     } finally {
       this.sincronizando = false;
       // Falha no meio da fila não pode deixar conta "verificando" para sempre.
       this.pendentes.clear();
+      this.totais.clear();
+      this.concluidosPorConta.clear();
+      this.progressoDaConta.clear();
       for (const ws of [...this.desde.keys()]) {
         if (!this.aguardando.has(ws)) this.desde.delete(ws);
       }
     }
 
+    const itens = contagem.verificados + contagem.falhas;
     const resultado = {
-      verificados,
-      comNovidade,
-      novidades,
-      falhas,
+      verificados: contagem.verificados,
+      comNovidade: contagem.comNovidade,
+      novidades: contagem.novidades,
+      falhas: contagem.falhas,
       duracaoMs: Date.now() - inicio,
+      total,
+      duracaoMediaPorItemMs: itens > 0 ? Math.round(contagem.somaDuracoesMs / itens) : 0,
+      concorrencia: usadas,
     };
     this.log.info('varredura concluída', resultado);
     return resultado;
+  }
+
+  /**
+   * Verifica UM item e nunca lança: o erro de um processo não pode parar os outros trabalhadores.
+   * Deixa um registro `info` por item (v0.49.3) — número, fonte que respondeu, duração e resultado —, que é o que
+   * permite medir em produção quanto cada consulta leva de verdade. Sem nome de parte, sem texto de ato.
+   */
+  private async verificarItem(
+    item: Acompanhamento,
+    contagem: {
+      verificados: number;
+      comNovidade: number;
+      novidades: number;
+      falhas: number;
+      somaDuracoesMs: number;
+    },
+  ): Promise<void> {
+    const inicio = Date.now();
+    try {
+      const atual = await this.provider.buscarPorNumero(item.numero);
+      const novas = detectarNovidades(item.processo, atual);
+
+      await this.repo.registrarSincronizacao(item.workspace, item.numero, atual, novas);
+
+      contagem.verificados++;
+      if (novas.length > 0) {
+        contagem.comNovidade++;
+        contagem.novidades += novas.length;
+        this.log.info('novidade detectada', {
+          numero: item.numero,
+          quantas: novas.length,
+        });
+      }
+      const duracaoMs = Date.now() - inicio;
+      contagem.somaDuracoesMs += duracaoMs;
+      const fonte = atual.procedencia.provider;
+      const fontes = fonte.split('+').filter(Boolean);
+      this.log.info('processo verificado', {
+        numero: item.numero,
+        resultado:
+          this.fontePrimaria && !fontes.includes(this.fontePrimaria) ? 'fallback' : 'ok',
+        fonte,
+        fontes: fontes.length,
+        deCache: atual.procedencia.deCache,
+        duracaoMs,
+      });
+    } catch (erro) {
+      contagem.falhas++;
+      const duracaoMs = Date.now() - inicio;
+      contagem.somaDuracoesMs += duracaoMs;
+      // "Não encontrado" também é falha do ponto de vista da varredura, mas
+      // não é ruído de sistema: o processo pode ter sido arquivado ou o
+      // tribunal saído da cobertura. Registramos e seguimos.
+      const nivel = erro instanceof ProcessoNaoEncontradoError ? 'debug' : 'warn';
+      this.log[nivel]('falha ao sincronizar processo', {
+        numero: item.numero,
+        erro: descrever(erro),
+      });
+      this.log.info('processo verificado', {
+        numero: item.numero,
+        resultado: 'falha',
+        ...(erro instanceof DomainError ? { codigo: erro.codigo } : {}),
+        ...(erro instanceof TodasAsFontesFalharamError
+          ? { fontesTentadas: erro.tentativas.length }
+          : {}),
+        duracaoMs,
+      });
+      try {
+        await this.repo.registrarFalha(item.workspace, item.numero, descrever(erro));
+      } catch (falhaAoRegistrar) {
+        this.log.warn('não foi possível registrar a falha do processo', {
+          numero: item.numero,
+          erro: descrever(falhaAoRegistrar),
+        });
+      }
+    } finally {
+      this.concluirItem(item.workspace, item.numero);
+    }
   }
 
   /** Há varredura rodando (de qualquer conta). Uso interno e do guarda de reentrância — a API pública usa `estadoDa`. */
@@ -433,11 +615,21 @@ export class ServicoAcompanhamento {
   }
 
   private concluirItem(workspace: string, numero: string): void {
+    const agora = this.relogio();
+    this.progressoGlobal = agora;
+    this.progressoDaConta.set(workspace, agora);
+    this.concluidosPorConta.set(
+      workspace,
+      (this.concluidosPorConta.get(workspace) ?? 0) + 1,
+    );
     const set = this.pendentes.get(workspace);
     if (!set) return;
     set.delete(numero);
     if (set.size === 0) {
       this.pendentes.delete(workspace);
+      this.totais.delete(workspace);
+      this.concluidosPorConta.delete(workspace);
+      this.progressoDaConta.delete(workspace);
       if (!this.aguardando.has(workspace)) this.desde.delete(workspace);
     }
   }
