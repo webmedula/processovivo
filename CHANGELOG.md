@@ -9,6 +9,33 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.52.0] — 2026-10-22
+
+**Infraestrutura de medição e comparação da análise por IA.** Modelo, prompt (`ato-1.2.0`, `resumo-1.0.0`), regras de
+verificação, ZDR, redação e segredo de justiça **não mudaram**. Nenhuma dependência nova; a coluna nova é aditiva.
+
+- **Conjunto de avaliação** (`tests/fixtures/ia-avaliacao/casos.json`): 48 casos 100% sintéticos (decisão, despacho,
+  intimação, sentença, audiência, valor, prazo escrito, cartório, ambíguo, curtíssimo, longo e armadilhas), cada um com
+  o que a resposta deve cobrir e o que não pode fazer. Teste confere o formato, a coerência com a regra de "texto
+  suficiente" do produto e a ausência de qualquer padrão de dado real.
+- **Comparador de modelos** (`scripts/ia-comparar-modelos.mjs`, núcleo em `src/main/sonda/`): manual, fora do CI,
+  só casos sintéticos. Reaproveita as peças da sonda (sem alterá-la). Sem `--executar` só estima; só roda modelo
+  aprovado pela lista oficial de ZDR na hora (falha fechada, inclusive para o modelo de produção, que é sempre a
+  referência); **teto de gasto padrão de US$ 1,00 por rodada** (`--teto-usd`); chave só por variável de ambiente.
+  Mede citação verificada, pontos obrigatórios cobertos, violações (calcular prazo, inventar valor/data/nome, dar
+  conselho, prazo estruturado inventado), falhas de formato, latência p50/p95 e custo médio/p95/máximo/total. Relatório
+  em Markdown, métricas em CSV e CSV de revisão humana. **Preços são estimativa, não confirmados**, e o relatório diz a
+  origem de cada custo.
+- **Avaliação com motivo:** ao marcar Errado ou Perigoso, a pessoa pode (opcional) escolher o motivo — erro de fato,
+  citação inventada, concluiu prazo, deixou de fora algo importante, outro. Coluna `motivo_avaliacao` em `analises_ia` e
+  `resumos_ia` (migração aditiva, sem retrocarga). Nunca texto livre; Útil nunca guarda motivo.
+- **Linha de avaliação logo abaixo do cabeçalho do resultado**, com "Esta análise foi útil?" / "Este resumo foi útil?".
+  Teste de navegador em 1920, 1366, 1280, 1024, 768 e 390 px.
+- **`scripts/ia-avaliacoes.mjs` (v1.1.0):** custo p50, p95 e máximo por modelo e prompt, e contagem por motivo entre as
+  avaliações Errado/Perigoso. Continua só leitura e sem texto.
+- **Resumo no teto técnico diário compartilhado:** análise de ato e resumo de processo somam no mesmo teto por conta
+  (`PROCESSOVIVO_IA_MAX_POR_DIA`). O freio de 6 por hora do resumo e a mensagem neutra seguem.
+
 ## [0.51.0] — 2026-10-22
 
 **Calendário: lembretes no feed ICS e resumo por e-mail dos eventos a confirmar.** Detecção de eventos, estados

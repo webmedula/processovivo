@@ -20,7 +20,8 @@
  *   abre a PRÉVIA (data calculada no servidor, premissas e o aviso "a conferir") e só o clique em
  *   Confirmar cria o evento; sem clique, nada grava. Ato fora do Diário não calcula;
  * - avaliação sem texto livre: Útil / Errado / Perigoso, com confirmação visível e dá para
- *   corrigir.
+ *   corrigir. Desde a v0.52.0 a linha "Esta análise foi útil?" fica logo no TOPO do resultado (visível sem
+ *   rolar) e, em Errado/Perigoso, aparece o motivo OPCIONAL de lista fechada (nunca texto livre).
  *
  * Mesmo regime de `script.ts`: JavaScript dentro de uma string, invisível ao tsc;
  * `tests/http/console-script.spec.ts` roda o ESLint aqui dentro. Todo texto vindo do
@@ -72,6 +73,8 @@ var MSG_AVISO={
   sem_plano:RECUSAS.sem_plano
 };
 var AVALIACOES=[['util','Útil'],['errado','Errado'],['perigoso','Perigoso']];
+var MOTIVOS=[['erro_de_fato','Erro de fato'],['citacao_inventada','Citação inventada'],['concluiu_prazo','Concluiu prazo'],
+  ['deixou_de_fora','Deixou de fora algo importante'],['outro','Outro']];
 var SEM_PLANO_CHAVE=' Fale com a gente para contratar.';
 
 /* A frase de "sem plano" com a oferta que o servidor indicou (v0.50.0). Conta de chave de API não assina
@@ -133,8 +136,30 @@ function citacao(t){
   return '<blockquote class="pvia-cit"><mark>'+esc(t)+'</mark></blockquote>';
 }
 
+/* A linha de avaliação (v0.52.0): no topo do resultado, com o texto "Esta análise foi útil?" e os três botões. Em
+   Errado/Perigoso aparece o motivo OPCIONAL (lista fechada, sem texto livre); clicar de novo no motivo marcado o
+   tira (reenvia a avaliação sem motivo). */
+function avaliacaoHtml(n,e){
+  var h='<div class="pvia-aval" role="group" aria-label="Esta análise foi útil?"><span class="pvia-rot">Esta análise foi útil?</span>'+
+    AVALIACOES.map(function(a){
+      var on=e.aval===a[0];
+      return '<button type="button" class="nov-btn pvia-av'+(on?' on':'')+'" data-acao="ia-aval" data-num="'+esc(n)+'" data-aval="'+a[0]+
+        '" data-foco="iaav-'+esc(n)+'-'+a[0]+'" aria-pressed="'+(on?'true':'false')+'">'+a[1]+'</button>';
+    }).join('')+
+    '<span class="pvia-ok" role="status">'+(e.aval?'✓ Avaliação registrada.':'')+(e.avalErro?esc(e.avalErro):'')+'</span></div>';
+  if(e.aval==='errado'||e.aval==='perigoso'){
+    h+='<div class="pvia-aval pvia-motivo" role="group" aria-label="Qual foi o problema? (opcional)"><span class="pvia-rot">Qual foi o problema? (opcional)</span>'+
+      MOTIVOS.map(function(m){
+        var on=e.motivoAval===m[0];
+        return '<button type="button" class="nov-btn pvia-av'+(on?' on':'')+'" data-acao="ia-motivo" data-num="'+esc(n)+'" data-motivo="'+m[0]+
+          '" data-foco="iamo-'+esc(n)+'-'+m[0]+'" aria-pressed="'+(on?'true':'false')+'">'+m[1]+'</button>';
+      }).join('')+'</div>';
+  }
+  return h;
+}
+
 function blocoResultado(n,e){
-  var d=e.dados,h='';
+  var d=e.dados,h=avaliacaoHtml(n,e);
   h+='<p class="pvia-parece">Parece pedir: <strong>'+esc(PARECE[d.parecePedir]||PARECE.indeterminado)+'</strong></p>';
   if(d.resumo)h+='<p class="pvia-resumo">'+esc(d.resumo)+'</p>';
   if(d.trechoChave)h+='<div class="pvia-sec"><span class="pvia-rot">Trecho do ato em que se baseia</span>'+citacao(d.trechoChave)+'</div>';
@@ -150,13 +175,6 @@ function blocoResultado(n,e){
       d.pontosDeAtencao.map(function(p){return '<li>'+esc(ATENCAO[p]||'')+'</li>'}).join('')+'</ul></div>';
   }
   h+='<div class="pvia-proc">'+seloIA(d)+'<span>Gerado por IA em '+esc(pv().dth(d.criadaEm))+'. Confira no ato.</span></div>';
-  h+='<div class="pvia-aval" role="group" aria-label="Como foi esta análise?"><span class="pvia-rot">Como foi esta análise?</span>'+
-    AVALIACOES.map(function(a){
-      var on=e.aval===a[0];
-      return '<button type="button" class="nov-btn pvia-av'+(on?' on':'')+'" data-acao="ia-aval" data-num="'+esc(n)+'" data-aval="'+a[0]+
-        '" data-foco="iaav-'+esc(n)+'-'+a[0]+'" aria-pressed="'+(on?'true':'false')+'">'+a[1]+'</button>';
-    }).join('')+
-    '<span class="pvia-ok" role="status">'+(e.aval?'✓ Avaliação registrada.':'')+(e.avalErro?esc(e.avalErro):'')+'</span></div>';
   return h;
 }
 
@@ -275,7 +293,7 @@ function cabecalhos(){
 function iniciar(n){
   var e=E[n];
   var ctrl=typeof AbortController!=='undefined'?new AbortController():null;
-  e.ctrl=ctrl;e.fase='analisando';e.dados=null;e.aval='';e.avalErro='';
+  e.ctrl=ctrl;e.fase='analisando';e.dados=null;e.aval='';e.motivoAval='';e.avalErro='';
   fetch('/v1/acompanhamentos/'+encodeURIComponent(n)+'/analise',{method:'POST',headers:cabecalhos(),
     body:JSON.stringify({chaveDoAto:e.chave}),signal:ctrl?ctrl.signal:undefined})
     .then(function(r){return r.json().catch(function(){return {}}).then(function(b){return {ok:r.ok,b:b}})})
@@ -362,27 +380,30 @@ function fechar(n,anuncio){
 function alternar(num,chave){
   var n=digitos(num);
   if(aberto(n)){fechar(n,'');return}
-  E[n]={aberto:true,chave:chave,fase:'analisando',ctrl:null,dados:null,aval:'',avalErro:'',motivo:''};
+  E[n]={aberto:true,chave:chave,fase:'analisando',ctrl:null,dados:null,aval:'',motivoAval:'',avalErro:'',motivo:''};
   iniciar(n);
   L.redesenhar('iap-'+n);
   L.anunciar('Analisando o ato. Isso pode levar até um minuto.');
 }
 
-function avaliar(n,valor){
+function avaliar(n,valor,motivo){
   var e=E[n];
   if(!e||!e.dados||e.ocupadoAval)return;
   e.ocupadoAval=true;e.avalErro='';
+  var foco=motivo?'iamo-'+n+'-'+motivo:'iaav-'+n+'-'+valor;
+  var corpo={avaliacao:valor};
+  if(motivo)corpo.motivo=motivo;
   fetch('/v1/analises/'+encodeURIComponent(e.dados.id)+'/avaliacao',{method:'POST',headers:cabecalhos(),
-    body:JSON.stringify({avaliacao:valor})})
+    body:JSON.stringify(corpo)})
     .then(function(r){
       e.ocupadoAval=false;
       if(E[n]!==e)return;
-      if(r.ok){e.aval=valor;refrescar(n,'Avaliação registrada.','iaav-'+n+'-'+valor);}
-      else{e.avalErro='Não foi possível registrar. Tente de novo.';refrescar(n,e.avalErro,'iaav-'+n+'-'+valor);}
+      if(r.ok){e.aval=valor;e.motivoAval=motivo||'';refrescar(n,'Avaliação registrada.',foco);}
+      else{e.avalErro='Não foi possível registrar. Tente de novo.';refrescar(n,e.avalErro,foco);}
     },function(){
       e.ocupadoAval=false;
       if(E[n]!==e)return;
-      e.avalErro='Não foi possível registrar. Tente de novo.';refrescar(n,e.avalErro,'iaav-'+n+'-'+valor);
+      e.avalErro='Não foi possível registrar. Tente de novo.';refrescar(n,e.avalErro,foco);
     });
 }
 
@@ -398,6 +419,11 @@ function clicar(acao,el){
     return;
   }
   if(acao==='ia-aval'){avaliar(n,el.getAttribute('data-aval'));return}
+  if(acao==='ia-motivo'){
+    var ev=E[n],m=el.getAttribute('data-motivo');
+    if(!ev||(ev.aval!=='errado'&&ev.aval!=='perigoso'))return;
+    avaliar(n,ev.aval,ev.motivoAval===m?'':m);return;
+  }
   if(acao==='ia-aviso'){
     var e=E[n];
     if(!e||!e.dados||!e.dados.prazo||!e.dados.prazo.calculavel)return;
@@ -490,6 +516,8 @@ export const ESTILOS_ANALISE_IA = `
   background:var(--acento-bg);color:var(--acento);border:1px solid var(--acento);cursor:help}
 .pvia-aval{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;margin-top:8px}
 .pvia-aval .pvia-rot{margin:0 4px 0 0}
+.pvia-aval{margin:0 0 10px}
+.pvia-motivo{margin-top:-4px}
 .pvia-av.on{background:var(--acento-bg);color:var(--acento);border-color:var(--acento);box-shadow:inset 0 0 0 1px var(--acento)}
 .pvia-ok{font-size:12.5px;color:var(--verde-tinta);font-weight:700}
 .pvia-aviso{margin:10px 0 0;font-size:12.5px;color:var(--tinta2)}

@@ -2,6 +2,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import {
   AVALIACOES_DA_ANALISE,
   type AvaliacaoDaAnalise,
+  type MotivoDaAvaliacao,
 } from '../../../domain/entities/AnaliseDoAto.js';
 import type {
   AtoEnviadoAoResumo,
@@ -108,10 +109,15 @@ export class RepositorioResumosSqlite implements RepositorioResumos {
     workspace: string,
     id: string,
     avaliacao: AvaliacaoDaAnalise,
+    motivo?: MotivoDaAvaliacao,
   ): Promise<boolean> {
+    // O motivo só acompanha "errado" e "perigoso"; avaliar de novo (inclusive como "útil") o apaga ou troca.
+    const guardado = avaliacao === 'util' ? null : (motivo ?? null);
     const r = this.db
-      .prepare('UPDATE resumos_ia SET avaliacao = ? WHERE workspace = ? AND id = ?')
-      .run(avaliacao, workspace, id);
+      .prepare(
+        'UPDATE resumos_ia SET avaliacao = ?, motivo_avaliacao = ? WHERE workspace = ? AND id = ?',
+      )
+      .run(avaliacao, guardado, workspace, id);
     return Number(r.changes) > 0;
   }
 }

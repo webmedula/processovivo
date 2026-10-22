@@ -1,3 +1,5 @@
+import { MOTIVOS_DA_AVALIACAO } from '../../domain/entities/AnaliseDoAto.js';
+import type { MotivoDaAvaliacao } from '../../domain/entities/AnaliseDoAto.js';
 import { abrirSomenteLeitura } from '../../infrastructure/persistencia/diagnosticoDeProvidencia.js';
 import { media, percentil } from './sondaIaAto.js';
 
@@ -5,12 +7,13 @@ import { media, percentil } from './sondaIaAto.js';
  * Avaliações da análise por IA (`scripts/ia-avaliacoes.mjs`, v1.0.0) — SOMENTE LEITURA.
  *
  * Por modelo e por versão do prompt: quantas análises, quantas avaliações (útil / errado /
- * perigoso), taxa de "não verificado", latência p50/p95 e custo médio. Lê só colunas
+ * perigoso), taxa de "não verificado", latência p50/p95, custo médio, p50, p95 e máximo (v1.1.0) e a
+ * contagem por MOTIVO das avaliações errado/perigoso (v1.1.0). Lê só colunas
  * numéricas e rótulos de `analises_ia`: nunca o resultado, nunca número de processo,
  * nunca workspace. O banco é aberto com `readOnly` + `query_only` e nunca por `abrirBanco`
  * (que cria esquema e migra).
  */
-export const VERSAO_DE_AVALIACOES_DE_IA = '1.0.0';
+export const VERSAO_DE_AVALIACOES_DE_IA = '1.1.0';
 
 export const USO_DE_AVALIACOES_DE_IA = `Uso: node scripts/ia-avaliacoes.mjs
 Mostra, por modelo e versão do prompt, as análises de ato e os resumos de processo, e as avaliações das contas (útil / errado / perigoso). As duas tabelas ficam em seções separadas.`;
@@ -29,6 +32,12 @@ export interface LinhaDeAvaliacoes {
   readonly custoMedioUsd: number | undefined;
   /** Quantas análises tinham o custo informado (a média é só sobre elas). */
   readonly comCusto: number;
+  readonly custoP50Usd: number | undefined;
+  readonly custoP95Usd: number | undefined;
+  readonly custoMaximoUsd: number | undefined;
+  /** Motivos das avaliações errado/perigoso (lista fechada); `semMotivo` = avaliou e não escolheu. */
+  readonly motivos: Readonly<Record<MotivoDaAvaliacao, number>>;
+  readonly semMotivo: number;
 }
 
 interface Linha {
@@ -38,6 +47,8 @@ interface Linha {
   nao_verificada: number;
   latencia_ms: number;
   custo_usd: number | null;
+  /** Ausente em banco de antes da v0.52.0 (a coluna ainda não existe). */
+  motivo_avaliacao?: string | null;
 }
 
 export function agruparAvaliacoes(linhas: readonly Linha[]): LinhaDeAvaliacoes[] {
@@ -54,6 +65,15 @@ export function agruparAvaliacoes(linhas: readonly Linha[]): LinhaDeAvaliacoes[]
       );
       const latencias = g.map((l) => Number(l.latencia_ms));
       const conta = (v: string): number => g.filter((l) => l.avaliacao === v).length;
+      const dosMotivos = g.filter(
+        (l) => l.avaliacao === 'errado' || l.avaliacao === 'perigoso',
+      );
+      const motivos = Object.fromEntries(
+        MOTIVOS_DA_AVALIACAO.map((m) => [
+          m,
+          dosMotivos.filter((l) => l.motivo_avaliacao === m).length,
+        ]),
+      ) as Record<MotivoDaAvaliacao, number>;
       return {
         modelo: primeira.modelo,
         versaoPrompt: primeira.versao_prompt,
@@ -67,6 +87,16 @@ export function agruparAvaliacoes(linhas: readonly Linha[]): LinhaDeAvaliacoes[]
         latenciaP95Ms: percentil(latencias, 0.95),
         custoMedioUsd: media(custos),
         comCusto: custos.length,
+        custoP50Usd: percentil(custos, 0.5),
+        custoP95Usd: percentil(custos, 0.95),
+        custoMaximoUsd: custos.length === 0 ? undefined : Math.max(...custos),
+        motivos,
+        semMotivo: dosMotivos.filter(
+          (l) =>
+            l.motivo_avaliacao === null ||
+            l.motivo_avaliacao === undefined ||
+            !(MOTIVOS_DA_AVALIACAO as readonly string[]).includes(l.motivo_avaliacao),
+        ).length,
       };
     })
     .sort(
@@ -79,6 +109,13 @@ const pct = (parte: number, total: number): string =>
   total === 0 ? '—' : `${((parte / total) * 100).toFixed(0)}%`;
 const ms = (v: number | undefined): string =>
   v === undefined ? '—' : `${(v / 1000).toFixed(1)} s`;
+const ROTULO_DO_MOTIVO: Readonly<Record<MotivoDaAvaliacao, string>> = {
+  erro_de_fato: 'erro de fato',
+  citacao_inventada: 'citação inventada',
+  concluiu_prazo: 'concluiu prazo',
+  deixou_de_fora: 'deixou de fora algo importante',
+  outro: 'outro',
+};
 const usd = (v: number | undefined): string =>
   v === undefined ? 'não informado' : `US$ ${v.toFixed(5)}`;
 
@@ -94,8 +131,14 @@ export function linhasDeAvaliacoes(grupos: readonly LinhaDeAvaliacoes[]): string
       `  Não verificadas: ${g.naoVerificadas} (${pct(g.naoVerificadas, g.analises)})`,
       `  Latência: p50 ${ms(g.latenciaP50Ms)} · p95 ${ms(g.latenciaP95Ms)}`,
       `  Custo médio por análise: ${usd(g.custoMedioUsd)}${g.comCusto < g.analises ? ` (informado em ${g.comCusto} de ${g.analises})` : ''}`,
-      '',
+      `  Custo p50 ${usd(g.custoP50Usd)} · p95 ${usd(g.custoP95Usd)} · máximo ${usd(g.custoMaximoUsd)}`,
     );
+    if (g.errado + g.perigoso > 0) {
+      saida.push(
+        `  Motivos (Errado/Perigoso): ${MOTIVOS_DA_AVALIACAO.map((m) => `${ROTULO_DO_MOTIVO[m]} ${g.motivos[m]}`).join(' · ')} · sem motivo ${g.semMotivo}`,
+      );
+    }
+    saida.push('');
   }
   return saida;
 }
@@ -142,7 +185,7 @@ export function executarAvaliacoesDeIa(
     if (existe) {
       const linhas = db
         .prepare(
-          `SELECT modelo, versao_prompt, avaliacao, latencia_ms, custo_usd,
+          `SELECT modelo, versao_prompt, avaliacao, latencia_ms, custo_usd, ${colunaDoMotivo(db, 'analises_ia')},
                   CASE WHEN json_extract(resultado, '$.estado') = 'nao_verificada' THEN 1 ELSE 0 END AS nao_verificada
              FROM analises_ia`,
         )
@@ -155,7 +198,7 @@ export function executarAvaliacoesDeIa(
     if (existeResumo) {
       const linhas = db
         .prepare(
-          `SELECT modelo, versao_prompt, avaliacao, latencia_ms, custo_usd,
+          `SELECT modelo, versao_prompt, avaliacao, latencia_ms, custo_usd, ${colunaDoMotivo(db, 'resumos_ia')},
                   CASE WHEN json_extract(resultado, '$.estado') = 'nao_verificado' THEN 1 ELSE 0 END AS nao_verificada
              FROM resumos_ia`,
         )
@@ -171,6 +214,19 @@ export function executarAvaliacoesDeIa(
   } finally {
     db.close();
   }
+}
+
+/** Banco de antes da v0.52.0 não tem a coluna: o relatório continua funcionando, sem os motivos. */
+function colunaDoMotivo(
+  db: ReturnType<typeof abrirSomenteLeitura>,
+  tabela: string,
+): string {
+  const colunas = db.prepare(`PRAGMA table_info(${tabela})`).all() as Array<{
+    name: string;
+  }>;
+  return colunas.some((c) => c.name === 'motivo_avaliacao')
+    ? 'motivo_avaliacao'
+    : 'NULL AS motivo_avaliacao';
 }
 
 function tabelaExiste(db: ReturnType<typeof abrirSomenteLeitura>, nome: string): boolean {

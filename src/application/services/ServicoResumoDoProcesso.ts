@@ -1,5 +1,8 @@
 import { atosQuePedemProvidencia } from '../../domain/entities/estadoDaPasta.js';
-import type { AvaliacaoDaAnalise } from '../../domain/entities/AnaliseDoAto.js';
+import type {
+  AvaliacaoDaAnalise,
+  MotivoDaAvaliacao,
+} from '../../domain/entities/AnaliseDoAto.js';
 import type {
   ContagensDoResumo,
   ResultadoDoResumo,
@@ -284,8 +287,9 @@ export class ServicoResumoDoProcesso {
     workspace: string,
     id: string,
     avaliacao: AvaliacaoDaAnalise,
+    motivo?: MotivoDaAvaliacao,
   ): Promise<void> {
-    const ok = await this.o.resumos.avaliar(workspace, id, avaliacao);
+    const ok = await this.o.resumos.avaliar(workspace, id, avaliacao, motivo);
     if (!ok) throw new AnaliseNaoEncontradaError();
   }
 }

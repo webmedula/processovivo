@@ -3,6 +3,7 @@ import { atoDoDiario } from '../../domain/entities/atoDoDiario.js';
 import type {
   AnaliseDoAto,
   AvaliacaoDaAnalise,
+  MotivoDaAvaliacao,
   ResultadoDaAnalise,
 } from '../../domain/entities/AnaliseDoAto.js';
 import { NumeroCNJ } from '../../domain/entities/NumeroCNJ.js';
@@ -280,8 +281,9 @@ export class ServicoAnaliseDoAto {
     workspace: string,
     id: string,
     avaliacao: AvaliacaoDaAnalise,
+    motivo?: MotivoDaAvaliacao,
   ): Promise<void> {
-    const ok = await this.o.analises.avaliar(workspace, id, avaliacao);
+    const ok = await this.o.analises.avaliar(workspace, id, avaliacao, motivo);
     if (!ok) throw new AnaliseNaoEncontradaError();
   }
 }

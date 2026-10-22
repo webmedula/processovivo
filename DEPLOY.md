@@ -786,6 +786,55 @@ O plano IA (Peças + análise com IA) é vendido pelo mesmo caminho dos outros: 
    A coluna de custo médio é por modelo e versão do prompt. Análise que falhou antes de chegar ao modelo (sem plano,
    sigilo, teto) não gera linha; análise que o modelo não concluiu (erro) também não.
 
+## Medir e comparar a análise por IA (v0.52.0)
+
+Nada aqui muda a produção: o modelo, o prompt e as regras de verificação continuam os de sempre. São três ferramentas
+**manuais** (nunca rodam sozinhas, nem no CI, nem no servidor), todas fora do repositório.
+
+1. **Relatório da produção** (só lê o banco; nenhum texto de ato, nome ou número de processo):
+
+   ```bash
+   node scripts/ia-avaliacoes.mjs
+   ```
+
+   Por modelo e versão do prompt: análises, avaliações (Útil / Errado / Perigoso), não verificadas, latência p50/p95,
+   custo médio, p50, p95 e máximo (só onde o OpenRouter informou) e, entre as avaliadas Errado/Perigoso, a contagem
+   por **motivo** (erro de fato, citação inventada, concluiu prazo, deixou de fora algo importante, outro, sem motivo).
+   O resumo de processo aparece em seção separada.
+
+2. **Comparar modelos com casos inventados** (48 casos sintéticos em `tests/fixtures/ia-avaliacao/casos.json`).
+   Precisa de `OPENROUTER_API_KEY` (só na variável de ambiente; nunca é impressa nem gravada) e de
+   `PROCESSOVIVO_IA_MODELO` (o modelo de produção, que entra sempre como referência). Requer `npm run build`.
+
+   ```bash
+   # 1) só ESTIMA: nada é enviado ao modelo
+   node scripts/ia-comparar-modelos.mjs --modelos=fabricante/modelo-a,fabricante/modelo-b
+   # 2) roda de verdade (teto de gasto padrão: US$ 1,00 por rodada)
+   node scripts/ia-comparar-modelos.mjs --modelos=fabricante/modelo-a,fabricante/modelo-b --executar
+   # 3) com outro teto, ou só algumas categorias de caso
+   node scripts/ia-comparar-modelos.mjs --modelos=fabricante/modelo-a --executar --teto-usd=2 --categorias=prazo_escrito,armadilha
+   ```
+
+   - Só roda modelo que a **lista oficial de ZDR** do OpenRouter aprova na hora; o resto é recusado. Lista
+     inalcançável ou modelo de produção fora dela: nada é enviado.
+   - Se a estimativa já passa do teto, o comando recusa executar. Durante a rodada, o gasto é somado e a rodada
+     **para** quando o teto é atingido (o relatório diz que ficou incompleta).
+   - **Os preços são estimativas** (preço de lista do OpenRouter × tokens) quando a resposta não traz o custo; o
+     relatório diz a origem de cada custo. Confirme com o provedor antes de decidir qualquer coisa.
+   - Saída em `dados/comparador-ia/` (ou `--saida=`; dentro do repositório é recusada): `comparacao-<data>-<hora>.md`
+     (relatório), `-metricas.csv` e `-revisao-humana.csv` (uma linha por caso e modelo, com a coluna `avaliacao`
+     vazia para uma pessoa preencher). A avaliação automática é um filtro; quem decide é a revisão humana.
+   - **Nenhum modelo entra em produção por este relatório.** A troca é decisão do dono (variável
+     `PROCESSOVIVO_IA_MODELO` no Easypanel).
+
+3. **Avaliação na tela** (produção): depois do cabeçalho do resultado, "Esta análise foi útil?" / "Este resumo foi
+   útil?" com Útil, Errado e Perigoso. Ao marcar Errado ou Perigoso aparece o motivo (opcional, uma escolha fixa; nunca
+   texto livre). A coluna nova `motivo_avaliacao` é aditiva e nasce vazia; nada é apagado.
+
+O resumo de processo agora conta no mesmo **teto técnico diário por conta** da análise de ato
+(`PROCESSOVIVO_IA_MAX_POR_DIA`, padrão 200): uma análise ou um resumo, cada um conta 1. O freio de 6 por hora do resumo
+(`PROCESSOVIVO_IA_RESUMO_MAX_POR_HORA`) e a mensagem neutra continuam.
+
 ## Calendário: lembretes no feed e resumo por e-mail (v0.51.0)
 
 Duas coisas novas, com controles diferentes.

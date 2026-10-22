@@ -20,7 +20,8 @@
  * - NÃO há "reabrir o último resumo": o estado vive na página, só enquanto a pessoa fica
  *   neste processo; sair da tela do processo o apaga;
  * - o rodapé não mostra o modelo (continua gravado em `resumos_ia`);
- * - avaliação sem texto livre: Útil / Errado / Perigoso.
+ * - avaliação sem texto livre: Útil / Errado / Perigoso. Desde a v0.52.0 a linha "Este resumo foi útil?" fica logo
+ *   no TOPO do resultado (visível sem rolar) e, em Errado/Perigoso, aparece o motivo OPCIONAL de lista fechada.
  *
  * Mesmo regime de `script.ts`: JavaScript dentro de uma string, invisível ao tsc;
  * `tests/http/console-script.spec.ts` roda o ESLint aqui dentro. Todo texto vindo do
@@ -53,6 +54,8 @@ var NAO_VERIFICADO='Não foi possível resumir com segurança. Leia os atos.';
 var ERRO='Não foi possível resumir agora. Tente de novo em alguns minutos.';
 var AVISO_FIXO='Apoio à leitura, não substitui a leitura dos atos nem a contagem de prazo.';
 var AVALIACOES=[['util','Útil'],['errado','Errado'],['perigoso','Perigoso']];
+var MOTIVOS=[['erro_de_fato','Erro de fato'],['citacao_inventada','Citação inventada'],['concluiu_prazo','Concluiu prazo'],
+  ['deixou_de_fora','Deixou de fora algo importante'],['outro','Outro']];
 
 function pl(n,um,varios){return n+' '+(n===1?um:varios)}
 
@@ -110,8 +113,29 @@ function contagensHtml(c){
   return h+'</ul>';
 }
 
+/* A linha de avaliação (v0.52.0): no topo do resultado. Em Errado/Perigoso aparece o motivo OPCIONAL (lista fechada,
+   sem texto livre); clicar de novo no motivo marcado o tira (reenvia a avaliação sem motivo). */
+function avaliacaoHtml(){
+  var h='<div class="pvres-aval" role="group" aria-label="Este resumo foi útil?"><span class="pvres-rot">Este resumo foi útil?</span>'+
+    AVALIACOES.map(function(a){
+      var on=S.aval===a[0];
+      return '<button type="button" class="nov-btn pvres-av'+(on?' on':'')+'" data-pvres="aval" data-aval="'+a[0]+
+        '" id="pvres-av-'+a[0]+'" aria-pressed="'+(on?'true':'false')+'">'+a[1]+'</button>';
+    }).join('')+
+    '<span class="pvres-ok" role="status">'+(S.aval?'✓ Avaliação registrada.':'')+(S.avalErro?esc(S.avalErro):'')+'</span></div>';
+  if(S.aval==='errado'||S.aval==='perigoso'){
+    h+='<div class="pvres-aval pvres-motivo" role="group" aria-label="Qual foi o problema? (opcional)"><span class="pvres-rot">Qual foi o problema? (opcional)</span>'+
+      MOTIVOS.map(function(m){
+        var on=S.motivoAval===m[0];
+        return '<button type="button" class="nov-btn pvres-av'+(on?' on':'')+'" data-pvres="motivo" data-motivo="'+m[0]+
+          '" id="pvres-mo-'+m[0]+'" aria-pressed="'+(on?'true':'false')+'">'+m[1]+'</button>';
+      }).join('')+'</div>';
+  }
+  return h;
+}
+
 function resultadoHtml(d){
-  var h='';
+  var h=avaliacaoHtml();
   h+='<section class="pvres-sec"><h4 class="pvres-rot">Situação do processo</h4><ul class="pvres-itens">'+
     d.situacao.map(itemHtml).join('')+'</ul></section>';
   h+='<section class="pvres-sec pvres-pend"><h4 class="pvres-rot">Pendências segundo a IA</h4>'+
@@ -127,13 +151,6 @@ function resultadoHtml(d){
   h+='<p class="pvres-nota" id="pvres-nota-ato" role="status"></p>';
   h+='<div class="pvres-proc"><span class="pvres-selo" aria-hidden="true">IA</span>'+
     '<span>Gerado por IA em '+esc(pv().dth(d.criadaEm))+'. Confira nos atos.</span></div>';
-  h+='<div class="pvres-aval" role="group" aria-label="Como foi este resumo?"><span class="pvres-rot">Como foi este resumo?</span>'+
-    AVALIACOES.map(function(a){
-      var on=S.aval===a[0];
-      return '<button type="button" class="nov-btn pvres-av'+(on?' on':'')+'" data-pvres="aval" data-aval="'+a[0]+
-        '" id="pvres-av-'+a[0]+'" aria-pressed="'+(on?'true':'false')+'">'+a[1]+'</button>';
-    }).join('')+
-    '<span class="pvres-ok" role="status">'+(S.aval?'✓ Avaliação registrada.':'')+(S.avalErro?esc(S.avalErro):'')+'</span></div>';
   return h;
 }
 
@@ -205,7 +222,7 @@ function remover(){
 function iniciar(){
   var e=S;
   var ctrl=typeof AbortController!=='undefined'?new AbortController():null;
-  e.ctrl=ctrl;e.fase='analisando';e.dados=null;e.aval='';e.avalErro='';e.motivo='';
+  e.ctrl=ctrl;e.fase='analisando';e.dados=null;e.aval='';e.motivoAval='';e.avalErro='';e.motivo='';
   fetch('/v1/acompanhamentos/'+encodeURIComponent(e.numero)+'/resumo',{method:'POST',headers:cabecalhosSemCorpo(),
     signal:ctrl?ctrl.signal:undefined})
     .then(function(r){return r.json().catch(function(){return {}}).then(function(b){return {ok:r.ok,status:r.status,b:b}})})
@@ -228,21 +245,24 @@ function iniciar(){
     });
 }
 
-function avaliar(valor){
+function avaliar(valor,motivo){
   var e=S;
   if(!e||!e.dados||e.ocupadoAval)return;
   e.ocupadoAval=true;e.avalErro='';
+  var foco=motivo?'pvres-mo-'+motivo:'pvres-av-'+valor;
+  var corpo={avaliacao:valor};
+  if(motivo)corpo.motivo=motivo;
   fetch('/v1/resumos/'+encodeURIComponent(e.dados.id)+'/avaliacao',{method:'POST',headers:cabecalhosJson(),
-    body:JSON.stringify({avaliacao:valor})})
+    body:JSON.stringify(corpo)})
     .then(function(r){
       e.ocupadoAval=false;
       if(S!==e)return;
-      if(r.ok){e.aval=valor;refrescar('Avaliação registrada.','pvres-av-'+valor)}
-      else{e.avalErro='Não foi possível registrar. Tente de novo.';refrescar(e.avalErro,'pvres-av-'+valor)}
+      if(r.ok){e.aval=valor;e.motivoAval=motivo||'';refrescar('Avaliação registrada.',foco)}
+      else{e.avalErro='Não foi possível registrar. Tente de novo.';refrescar(e.avalErro,foco)}
     },function(){
       e.ocupadoAval=false;
       if(S!==e)return;
-      e.avalErro='Não foi possível registrar. Tente de novo.';refrescar(e.avalErro,'pvres-av-'+valor);
+      e.avalErro='Não foi possível registrar. Tente de novo.';refrescar(e.avalErro,foco);
     });
 }
 
@@ -263,7 +283,7 @@ function fechar(anuncio){
 
 function abrirResumo(numero){
   if(S){fechar('');return}
-  S={numero:digitos(numero),fase:'analisando',ctrl:null,dados:null,aval:'',avalErro:'',motivo:'',ocupadoAval:false};
+  S={numero:digitos(numero),fase:'analisando',ctrl:null,dados:null,aval:'',motivoAval:'',avalErro:'',motivo:'',ocupadoAval:false};
   montarRaiz();
   iniciar();
   refrescar('Resumindo o processo. Isso pode levar até 2 minutos.','pvres-painel');
@@ -328,6 +348,11 @@ document.addEventListener('click',function(ev){
   if(acao==='cancelar'){fechar('Resumo cancelado.');return}
   if(acao==='repetir'){iniciar();refrescar('Resumindo o processo. Isso pode levar até 2 minutos.','pvres-painel');return}
   if(acao==='aval'){avaliar(el.getAttribute('data-aval'));return}
+  if(acao==='motivo'){
+    var m=el.getAttribute('data-motivo');
+    if(S.aval!=='errado'&&S.aval!=='perigoso')return;
+    avaliar(S.aval,S.motivoAval===m?'':m);return;
+  }
   if(acao==='ato'){irAoAto(el.getAttribute('data-quando'),el.getAttribute('data-rotulo'));return}
 });
 
@@ -374,6 +399,8 @@ export const ESTILOS_RESUMO_IA = `
   background:var(--acento-bg);color:var(--acento);border:1px solid var(--acento)}
 .pvres-aval{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;margin-top:8px}
 .pvres-aval .pvres-rot{margin:0 4px 0 0}
+.pvres-aval{margin:0 0 10px}
+.pvres-motivo{margin-top:-4px}
 .pvres-av.on{background:var(--acento-bg);color:var(--acento);border-color:var(--acento);box-shadow:inset 0 0 0 1px var(--acento)}
 .pvres-ok{font-size:12.5px;color:var(--verde-tinta);font-weight:700}
 .pvres-aviso{margin:10px 0 0;font-size:12.5px;color:var(--tinta2)}
