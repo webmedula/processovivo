@@ -156,6 +156,16 @@ export interface DiagnosticoDoResumo {
     readonly foraDoResumo: number;
     readonly porProvidencia: number;
     readonly porRecencia: number;
+    /** v0.54.0: só-título absorvidos por ato com texto do mesmo dia e tipo. */
+    readonly mesclados: number;
+    readonly maisRecenteLido: boolean | null;
+    readonly providenciasNaoLidas: number;
+    readonly naoLidosPorMotivo: {
+      readonly teorIndisponivel: number;
+      readonly semTexto: number;
+      readonly abaixoDoMinimo: number;
+      readonly foraDoLimite: number;
+    };
   };
   readonly retrato: {
     readonly idadeDaSincronizacaoEmDias: number | null;
@@ -251,6 +261,10 @@ export function diagnosticarResumo(
       foraDoResumo: selecao.foraDoResumo,
       porProvidencia: selecao.atos.filter((a) => a.motivo === 'providencia').length,
       porRecencia: selecao.atos.filter((a) => a.motivo === 'recente').length,
+      mesclados: selecao.mesclados,
+      maisRecenteLido: selecao.maisRecente?.lido ?? null,
+      providenciasNaoLidas: selecao.providenciasNaoLidas.length,
+      naoLidosPorMotivo: selecao.motivosDosNaoLidos,
     },
   };
 }
@@ -412,6 +426,13 @@ export function executarDiagnosticoDoResumo(
     amb.saida('');
     amb.saida(
       `Seleção do resumo (limites: ${o.pendentesMax} providências, ${o.recentesMax} recentes com texto, ${o.titulosMax} títulos): ${d.selecao.comTexto} com texto (${d.selecao.porProvidencia} por providência, ${d.selecao.porRecencia} por recência) · ${d.selecao.soTitulo} só pelo título · ${d.selecao.foraDoResumo} fora`,
+    );
+    const q = d.selecao;
+    amb.saida(
+      `Ato mais recente (depois de juntar o só-título ao ato com texto do mesmo dia e tipo: ${q.mesclados} junção(ões)): ${q.maisRecenteLido === null ? '—' : q.maisRecenteLido ? 'texto LIDO' : 'texto NÃO lido'} · providências do sistema sem leitura: ${q.providenciasNaoLidas}`,
+    );
+    amb.saida(
+      `Atos não lidos por motivo: teor indisponível ${q.naoLidosPorMotivo.teorIndisponivel} · sem texto ${q.naoLidosPorMotivo.semTexto} · abaixo de ${MINIMO_DE_CARACTERES_DO_TEXTO} caracteres ${q.naoLidosPorMotivo.abaixoDoMinimo} · fora do limite ${q.naoLidosPorMotivo.foraDoLimite}`,
     );
     return 0;
   } finally {

@@ -816,6 +816,32 @@ Nada muda para o usuário: são ferramentas **manuais**, no Console do serviço,
 3. **Risco residual a lembrar:** a redação de peça cobre CEP, RG/CNH com rótulo, data de nascimento e conta/agência com rótulo, além do que o ato já cobria; **não
    cobre endereço nem nome de terceiro** fora do retrato. O processo filho do `pdftotext` tem tempo e saída máximos, mas não limite de CPU/memória.
 
+## Resumo do processo: diagnóstico e comparação 1.0.0 × 1.1.0 (v0.54.0)
+
+Ferramentas **manuais** no Console do serviço (sem rota; nada muda para o usuário além do resumo em si).
+
+1. **Diagnóstico de um processo** (só leitura, sem rede, só números; o número do processo é argumento e nunca é impresso):
+
+   ```bash
+   node scripts/diagnostico-resumo.mjs <número do processo>
+   node scripts/diagnostico-resumo.mjs <número do processo> --workspace=<id ou e-mail>   # se mais de uma conta acompanha
+   ```
+
+   Mostra, para os 5 atos mais recentes, o tamanho de cada campo de texto, se o resumo o considera utilizável (e por que não), se é providência do sistema e como a
+   seleção o tratou; e, desde a 0.54.0, se o ato mais recente foi lido, quantas junções de "mesmo ato" houve e os atos não lidos por motivo.
+
+2. **Comparar `resumo-1.0.0` × `resumo-1.1.0`** com processos inventados (8 em `tests/fixtures/ia-resumo/casos.json`). Precisa de `OPENROUTER_API_KEY` e de
+   `PROCESSOVIVO_IA_MODELO` (o modelo de produção, sempre a referência). Requer `npm run build` fora da imagem.
+
+   ```bash
+   node scripts/ia-comparar-modelos.mjs --tarefa=resumo             # só ESTIMA: nada é enviado
+   node scripts/ia-comparar-modelos.mjs --tarefa=resumo --executar  # roda as duas versões (teto padrão US$ 1,00)
+   node scripts/ia-comparar-modelos.mjs --tarefa=resumo --executar --versoes=resumo-1.1.0 --teto-usd=2
+   ```
+
+   Saída em `dados/comparador-ia/`: `comparacao-resumo-<data>-<hora>.md`, `-metricas.csv` e `-revisao-humana.csv`. A avaliação automática é um filtro, não um
+   juiz. Os números que importam: "atual indevida" e "negou pendência" devem ser **0** na 1.1.0. Preços são estimativa, não confirmados.
+
 ## Medir e comparar a análise por IA (v0.52.0)
 
 Nada aqui muda a produção: o modelo, o prompt e as regras de verificação continuam os de sempre. São três ferramentas

@@ -71,6 +71,7 @@ COPY tests/fixtures/ia-ato ./tests/fixtures/ia-ato
 # `scripts/ia-comparar-modelos.mjs` os lê no Console. Só texto inventado, nenhum dado real.
 COPY tests/fixtures/ia-avaliacao ./tests/fixtures/ia-avaliacao
 COPY tests/fixtures/ia-pecas ./tests/fixtures/ia-pecas
+COPY tests/fixtures/ia-resumo ./tests/fixtures/ia-resumo
 
 # Diretório do banco, criado ANTES de trocar de usuário e com dono `node` —
 # senão o processo sobe sem permissão de escrever e quebra na primeira gravação.

@@ -30,6 +30,7 @@ import {
   executarComparacaoDePecas,
   julgarPlanilhaDePecas,
 } from './comandoComparadorPecas.js';
+import { executarComparacaoDeResumo } from './comandoComparadorResumo.js';
 import type { PrecoPorToken } from './sondaIaAto.js';
 
 /**
@@ -48,7 +49,10 @@ Precisa de OPENROUTER_API_KEY e de PROCESSOVIVO_IA_MODELO (o modelo de produçã
 3. Leitura de PEÇAS (v0.53.0, casos sintéticos em tests/fixtures/ia-pecas):
   node scripts/ia-comparar-modelos.mjs --tarefa=pecas --modelos=a,b [--executar]
   node scripts/ia-comparar-modelos.mjs --julgar-revisao=<planilha preenchida .csv>   # errado/perigoso, sem chamar modelo
-Opções: --tarefa=ato|pecas  --teto-usd=<n> (padrão ${TETO_PADRAO_USD})  --categorias=decisao,prazo_escrito  --casos=<arquivo.json>  --saida=<pasta>  --pausa-ms=<n>  --ajuda
+4. RESUMO do processo (v0.54.0): compara resumo-1.0.0 × resumo-1.1.0 com o modelo de produção (casos sintéticos em tests/fixtures/ia-resumo):
+  node scripts/ia-comparar-modelos.mjs --tarefa=resumo            # estima; NADA é enviado
+  node scripts/ia-comparar-modelos.mjs --tarefa=resumo --executar [--versoes=resumo-1.0.0,resumo-1.1.0] [--modelos=a,b]
+Opções: --tarefa=ato|pecas|resumo  --teto-usd=<n> (padrão ${TETO_PADRAO_USD})  --categorias=decisao,prazo_escrito  --casos=<arquivo.json>  --saida=<pasta>  --pausa-ms=<n>  --ajuda
 Só roda modelo que a lista oficial de ZDR do OpenRouter aprova na hora; o resto é recusado. Preço é estimativa, não confirmado.
 A saída (relatório .md, métricas .csv e revisão humana .csv) fica FORA do repositório.`;
 
@@ -79,8 +83,8 @@ export async function executarComandoComparador(
     return argv.length === 0 ? 1 : 0;
   }
   const tarefa = op.get('tarefa') ?? 'ato';
-  if (tarefa !== 'ato' && tarefa !== 'pecas') {
-    amb.aviso('--tarefa inválida. Use: ato (padrão) ou pecas.');
+  if (tarefa !== 'ato' && tarefa !== 'pecas' && tarefa !== 'resumo') {
+    amb.aviso('--tarefa inválida. Use: ato (padrão), pecas ou resumo.');
     return 1;
   }
   try {
@@ -186,6 +190,22 @@ export async function executarComandoComparador(
     // --- outra tarefa: leitura de PEÇAS (v0.53.0) ---
     if (tarefa === 'pecas') {
       return await executarComparacaoDePecas({
+        op,
+        amb,
+        chave,
+        producao,
+        aprovados,
+        lista,
+        tetoUsd,
+        pausa,
+        pastaDeSaida,
+        precos,
+      });
+    }
+
+    // --- outra tarefa: resumo do processo, 1.0.0 × 1.1.0 (v0.54.0) ---
+    if (tarefa === 'resumo') {
+      return await executarComparacaoDeResumo({
         op,
         amb,
         chave,

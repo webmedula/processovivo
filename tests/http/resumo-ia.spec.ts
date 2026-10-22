@@ -131,7 +131,7 @@ describe('IA habilitada', () => {
       expect(j.situacao[0].ato).toMatchObject({ rotulo: 'Intimação' });
       expect(j.situacao[0].texto).toContain(NOME_DA_PARTE);
       expect(j.contagens).toMatchObject({ atosNoProcesso: 6, providenciasDoSistema: 1 });
-      expect(j.versaoPrompt).toBe('resumo-1.0.0');
+      expect(j.versaoPrompt).toBe('resumo-1.1.0');
       expect(resumidor.chamadas).toBe(1);
       // O pedido não leva texto de fora: o que foi ao modelo veio do retrato, redigido.
       expect(resumidor.pedidos[0]?.usuario).not.toContain(NOME_DA_PARTE);
