@@ -58,6 +58,13 @@ export const VERSAO_DO_COMPARADOR_DE_RESUMO = '1.0.0';
 export const VERSOES_DO_RESUMO: readonly VersaoDoPromptDoResumo[] = [
   'resumo-1.0.0',
   'resumo-1.1.0',
+  'resumo-1.2.0',
+];
+
+/** O que o comparador roda quando ninguém pede outra coisa: a versão em produção até a 0.55 × a da 0.56. */
+export const VERSOES_PADRAO_DO_COMPARADOR: readonly VersaoDoPromptDoResumo[] = [
+  'resumo-1.1.0',
+  'resumo-1.2.0',
 ];
 
 /** "Hoje" dos casos sintéticos: fixo, para a providência do sistema não depender do relógio. */
@@ -93,7 +100,7 @@ export function prepararCasoDeResumo(
   const selecao = selecionarAtosParaResumo(
     movs,
     pendentes,
-    versao === 'resumo-1.1.0' ? REGRAS_DA_SELECAO_1_1_0 : REGRAS_DA_SELECAO_1_0_0,
+    versao === 'resumo-1.0.0' ? REGRAS_DA_SELECAO_1_0_0 : REGRAS_DA_SELECAO_1_1_0,
   );
   const entrada = prepararEntradaDoResumo(
     selecao,
@@ -154,6 +161,9 @@ export interface AvaliacaoDoResumo {
   /** Só com providência do sistema sem leitura: itens que negam pendência. */
   readonly negouPendencia: number;
   readonly descartes: number;
+  /** Caracteres da situação verificada (soma dos itens) e de cada pendência verificada. */
+  readonly caracteresDaSituacao: number;
+  readonly caracteresDasPendencias: readonly number[];
 }
 
 /** Os itens verificados (situação e pendências), ou nenhum se o resultado não foi verificado. */
@@ -210,6 +220,8 @@ export function avaliarResumo(
         ? [...situacao, ...pendencias].filter((i) => textoNegaPendencia(i.texto)).length
         : 0,
     descartes: somaDescartes(v),
+    caracteresDaSituacao: situacao.reduce((a, i) => a + i.texto.length, 0),
+    caracteresDasPendencias: pendencias.map((i) => i.texto.length),
   };
 }
 
@@ -260,6 +272,9 @@ export interface LinhaDaVersao {
   readonly negouPendencia: number;
   readonly violacoes: number;
   readonly descartes: number;
+  /** Tamanho médio da situação por resumo verificado, e de cada pendência (caracteres). */
+  readonly situacaoMediaCaracteres?: number;
+  readonly pendenciaMediaCaracteres?: number;
   readonly interrompido: boolean;
   readonly latenciaP50Ms?: number;
   readonly latenciaP95Ms?: number;
@@ -320,14 +335,32 @@ export async function compararResumos(
     lerResposta: lerRespostaDoResumo,
     verificar: (resposta, _texto, caso) => {
       const p = doId(caso.id);
-      // A 1.0.0 não conhecia a faixa do sistema: verifica COMO a 1.0.0 verificava.
+      // Cada versão é verificada COMO a produção a verificava: a 1.0.0 não conhecia a faixa do sistema,
+      // a 1.1.0 não exigia o ato mais recente na situação, a 1.2.0 exige.
+      const chaveDoMaisRecente = p.entrada.maisRecente
+        ? p.entrada.atos.get(p.entrada.maisRecente.id)?.chave
+        : undefined;
+      const daFaixa = {
+        maisRecenteNaoLido: p.entrada.maisRecente?.lido === false,
+        providenciaNaoLida: p.entrada.providenciasNaoLidas.length > 0,
+      };
       const contexto =
-        p.versao === 'resumo-1.1.0'
-          ? {
-              maisRecenteNaoLido: p.entrada.maisRecente?.lido === false,
-              providenciaNaoLida: p.entrada.providenciasNaoLidas.length > 0,
-            }
-          : {};
+        p.versao === 'resumo-1.0.0'
+          ? {}
+          : p.versao === 'resumo-1.1.0'
+            ? daFaixa
+            : {
+                ...daFaixa,
+                regras: '1.2.0' as const,
+                ...(chaveDoMaisRecente && p.entrada.maisRecente
+                  ? {
+                      maisRecente: {
+                        chave: chaveDoMaisRecente,
+                        lido: p.entrada.maisRecente.lido,
+                      },
+                    }
+                  : {}),
+              };
       const v = verificarResumo(
         resposta as RespostaDoModeloResumo,
         p.entrada.atos,
@@ -427,6 +460,18 @@ export async function compararResumos(
         negouPendencia: av.reduce((a, x) => a + x.negouPendencia, 0),
         violacoes: av.reduce((a, x) => a + x.violacoes.length, 0),
         descartes: av.reduce((a, x) => a + x.descartes, 0),
+        ...(() => {
+          const sit = av
+            .filter((x) => x.caracteresDaSituacao > 0)
+            .map((x) => x.caracteresDaSituacao);
+          const pend = av.flatMap((x) => x.caracteresDasPendencias);
+          const ms = media(sit);
+          const mp = media(pend);
+          return {
+            ...(ms !== undefined ? { situacaoMediaCaracteres: ms } : {}),
+            ...(mp !== undefined ? { pendenciaMediaCaracteres: mp } : {}),
+          };
+        })(),
         interrompido: parados.has(modelo),
         ...(p50 !== undefined ? { latenciaP50Ms: p50 } : {}),
         ...(p95 !== undefined ? { latenciaP95Ms: p95 } : {}),
@@ -470,6 +515,7 @@ const pct = (a: number, b: number): string =>
   b === 0 ? '—' : `${((a / b) * 100).toFixed(0)}%`;
 const seg = (v: number | undefined): string =>
   v === undefined ? '—' : `${(v / 1000).toFixed(1)} s`;
+const num = (v: number | undefined): string => (v === undefined ? '—' : v.toFixed(0));
 const usd = (v: number | undefined): string =>
   v === undefined ? '—' : `US$ ${v.toFixed(5)}`;
 
@@ -485,9 +531,9 @@ export function relatorioDeResumoEmMarkdown(
 ): string {
   const l: string[] = [];
   l.push(
-    `# Comparação do resumo de processo — resumo-1.0.0 × resumo-1.1.0 (comparador ${VERSAO_DO_COMPARADOR_DE_RESUMO})`,
+    `# Comparação do resumo de processo — ${[...new Set(res.linhas.map((x) => x.versao))].join(' × ')} (comparador ${VERSAO_DO_COMPARADOR_DE_RESUMO})`,
     '',
-    `Data: ${meta.data} · casos sintéticos: ${meta.casos} · regras de verificação ${VERSAO_DAS_REGRAS_DO_RESUMO}.`,
+    `Data: ${meta.data} · casos sintéticos: ${meta.casos} · regras de verificação da versão atual: ${VERSAO_DAS_REGRAS_DO_RESUMO}.`,
     `Teto de gasto da rodada: US$ ${meta.tetoUsd.toFixed(2)} · gasto contado: ${usd(res.gastoUsd)}${res.tetoAtingido ? ' · **TETO ATINGIDO: a rodada ficou incompleta**' : ''}.`,
     '',
     '> Só processos inventados; nenhum texto de processo real entrou nesta rodada. A avaliação automática é um filtro, não um juiz: pontos e violações se medem por padrão e podem errar — a revisão humana (CSV) decide. Nenhum prompt entra em produção por este relatório.',
@@ -495,12 +541,12 @@ export function relatorioDeResumoEmMarkdown(
     '',
     '## Resultado por modelo e versão',
     '',
-    '| Modelo | Versão | Chamadas | Verificadas | Pontos cobertos | Abre no ato mais recente | "Atual" com o mais recente sem leitura | Negou pendência | Violações | Itens descartados | Falhas de formato | Latência p50 / p95 | Custo médio | Custo total | Origem do custo |',
-    '|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|',
+    '| Modelo | Versão | Chamadas | Verificadas | Pontos cobertos | Abre no ato mais recente | "Atual" com o mais recente sem leitura | Negou pendência | Violações | Itens descartados | Falhas de formato | Situação (média, caracteres) | Pendência (média, caracteres) | Latência p50 / p95 | Custo médio | Custo total | Origem do custo |',
+    '|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|',
   );
   for (const m of res.linhas) {
     l.push(
-      `| ${m.modelo}${m.referencia ? ' (produção)' : ''}${m.interrompido ? ' (interrompido)' : ''} | ${m.versao} | ${m.chamadas} | ${m.verificadas} de ${m.chamadas} | ${m.pontosCobertos}/${m.pontosTotais} (${pct(m.pontosCobertos, m.pontosTotais)}) | ${m.abreNoMaisRecente}/${m.casosComMaisRecenteLido} | ${m.atualIndevida} | ${m.negouPendencia} | ${m.violacoes} | ${m.descartes} | ${m.falhasDeFormato} | ${seg(m.latenciaP50Ms)} / ${seg(m.latenciaP95Ms)} | ${usd(m.custoMedioUsd)} | ${usd(m.custoTotalUsd)} | ${m.fonteDoCusto} |`,
+      `| ${m.modelo}${m.referencia ? ' (produção)' : ''}${m.interrompido ? ' (interrompido)' : ''} | ${m.versao} | ${m.chamadas} | ${m.verificadas} de ${m.chamadas} | ${m.pontosCobertos}/${m.pontosTotais} (${pct(m.pontosCobertos, m.pontosTotais)}) | ${m.abreNoMaisRecente}/${m.casosComMaisRecenteLido} | ${m.atualIndevida} | ${m.negouPendencia} | ${m.violacoes} | ${m.descartes} | ${m.falhasDeFormato} | ${num(m.situacaoMediaCaracteres)} | ${num(m.pendenciaMediaCaracteres)} | ${seg(m.latenciaP50Ms)} / ${seg(m.latenciaP95Ms)} | ${usd(m.custoMedioUsd)} | ${usd(m.custoTotalUsd)} | ${m.fonteDoCusto} |`,
     );
   }
   l.push(
@@ -511,7 +557,8 @@ export function relatorioDeResumoEmMarkdown(
     '- **Abre no ato mais recente**: nos casos em que o ato mais recente foi lido, o primeiro item de situação cita esse ato.',
     '- **"Atual" com o mais recente sem leitura**: itens de situação que apresentam como atual um ato antigo, quando o ato mais recente NÃO foi lido. É o defeito que a 1.1.0 existe para eliminar: deve ser zero.',
     '- **Negou pendência**: itens que dizem "não há pendências" havendo providência do sistema sem leitura. Também deve ser zero.',
-    '- **Itens descartados**: itens que o modelo devolveu e a verificação barrou (inclui as duas regras acima, só na 1.1.0).',
+    '- **Situação / Pendência (média)**: tamanho do que passou na verificação. A 1.2.0 pede ~320 caracteres de situação e 160 por pendência.',
+    '- **Itens descartados**: itens que o modelo devolveu e a verificação barrou (inclui as duas regras acima, a partir da 1.1.0).',
     '- **Verificadas**: o resultado passou pela verificação item a item; "não verificado" aparece na tela como "Leia os atos".',
     '',
   );
@@ -543,6 +590,8 @@ export function metricasDeResumoEmCsv(res: ResultadoDaComparacaoDeResumo): strin
       'negou_pendencia',
       'violacoes',
       'descartes',
+      'situacao_media_caracteres',
+      'pendencia_media_caracteres',
       'latencia_p50_ms',
       'latencia_p95_ms',
       'custo_medio_usd',
@@ -565,6 +614,8 @@ export function metricasDeResumoEmCsv(res: ResultadoDaComparacaoDeResumo): strin
       String(m.negouPendencia),
       String(m.violacoes),
       String(m.descartes),
+      n(m.situacaoMediaCaracteres, 0),
+      n(m.pendenciaMediaCaracteres, 0),
       n(m.latenciaP50Ms, 0),
       n(m.latenciaP95Ms, 0),
       n(m.custoMedioUsd, 6),

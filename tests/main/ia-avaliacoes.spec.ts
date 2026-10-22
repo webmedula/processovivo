@@ -135,7 +135,7 @@ describe('ia-avaliacoes — somente leitura e sem texto', () => {
     db.close();
     const { saida } = rodar();
     expect(saida).toContain(
-      'Motivos (Errado/Perigoso): erro de fato 2 · citação inventada 0 · concluiu prazo 1 · deixou de fora algo importante 0 · outro 0 · sem motivo 1',
+      'Motivos (Errado/Perigoso): erro de fato 2 · citação inventada 0 · concluiu prazo 1 · deixou de fora algo importante 0 · pode causar prejuízo 0 · outro 0 · sem motivo 1',
     );
   });
 

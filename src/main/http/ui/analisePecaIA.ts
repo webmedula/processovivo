@@ -6,17 +6,22 @@
  *
  * O que sustenta a tela (CLAUDE.md §8, "Análise de peça por IA"):
  * - o botão só existe se o servidor liberar a CONTA (`GET /v1/analises-de-peca/disponibilidade`: as duas
- *   chaves) e só para processo ACOMPANHADO; peça sob sigilo tem o botão DESLIGADO, com a razão. O PLANO
- *   é conferido no clique (a conta liberada sem o plano vê o aviso padrão de upgrade);
+ *   chaves). Para processo não acompanhado, de outro tribunal que não o TJGO ou peça sob sigilo, ele aparece
+ *   DESLIGADO, com a razão. O PLANO é conferido no clique (a conta liberada sem o plano vê o aviso padrão de upgrade);
  * - o fluxo é de UM clique: se a peça não está na guarda de 24 h, a tela a baixa pelo pedido que já existe
  *   da Pasta digital e acompanha (só banco) até ela ficar disponível — e então pede a análise. O texto
  *   da peça NUNCA passa por aqui: o servidor lê o PDF guardado e devolve só o resultado verificado;
  * - toda frase de recusa é FIXA aqui, nunca texto do servidor ou do modelo;
  * - o resultado é CONCISO: uma frase, o que pede, o que alega, documentos e valores (recolhidos se
  *   muitos), citações recolhidas em "Ver trecho · pág. N" e o aviso fixo em uma linha;
- * - avaliação: na conta de AVALIAÇÃO (lista de contas) os três botões Útil / Errado / Perigoso com motivo
- *   de lista fechada; nas demais, só o link discreto "Reportar problema" (que registra "errado" + motivo).
- *   Nenhum campo de texto livre;
+ * - avaliação por POLEGAR (v0.56.0, `ui/polegares.ts`), igual para todas as contas, no fim do resultado; o modo
+ *   de avaliação com três botões e o link "Reportar problema" saíram. Nenhum campo de texto livre;
+ * - o botão NUNCA some sem aviso numa conta liberada (v0.56.0): onde a análise não se aplica ele aparece DESLIGADO,
+ *   com a razão em português (peça sob sigilo, outro tribunal, processo não acompanhado, peça ainda não baixada);
+ * - o botão existe em dois lugares, com os mesmos estados: ao lado de cada peça da linha do tempo e no visualizador da
+ *   Pasta digital (`pasta()`, chamado por `scriptPasta.ts`). Peça convertida do HTML do tribunal TEM texto (o arquivo
+ *   guardado é um PDF que desenha esse texto) e é analisada como as outras; o resultado só avisa que imagens e tabelas
+ *   podem não ter entrado;
  * - o estado vive na página e é apagado ao sair do processo; não há "reabrir" (o servidor guarda o
  *   resultado por 30 dias, mas a reabertura exigiria restaurar os nomes do retrato, que só a análise faz).
  *
@@ -29,7 +34,7 @@ var pv=function(){return window.__pv};
 function esc(s){return pv().esc(s)}
 function digitos(n){return String(n||'').replace(/\D/g,'')}
 
-var D={promessa:null,liberado:false,modo:''};
+var D={promessa:null,liberado:false};
 var S=null;
 var ESPERA_MS=2500,LIMITE_DE_ESPERA_MS=120000;
 
@@ -74,11 +79,14 @@ var NAO_VERIFICADO='Não foi possível analisar esta peça com segurança. Leia 
 var ERRO='Não foi possível analisar agora. Tente de novo em alguns minutos.';
 var AVISO_FIXO='Leitura automática, pode omitir pontos. Confira a peça inteira.';
 var SIGILOSA='Peça sob sigilo: a análise por IA não é feita.';
-var AVALIACOES=[['util','Útil'],['errado','Errado'],['perigoso','Perigoso']];
-var MOTIVOS=[['erro_de_fato','Erro de fato'],['citacao_inventada','Citação inventada'],['concluiu_prazo','Concluiu prazo'],
-  ['deixou_de_fora','Deixou de fora algo importante'],['outro','Outro']];
-
-function pl(n,um,varios){return n+' '+(n===1?um:varios)}
+var RAZOES={
+  nao_acompanhado:'Acompanhe este processo para poder analisar as peças dele com IA.',
+  outro_tribunal:'Por enquanto a análise de peça vale apenas para o Tribunal de Justiça de Goiás (TJGO).',
+  baixando:'Aguarde: a peça ainda está sendo baixada do tribunal.',
+  nao_baixada:'Baixe a peça primeiro; a análise usa a peça guardada.',
+  nao_obtida:'A peça não foi obtida do tribunal. Tente baixá-la de novo antes de analisar.'
+};
+var CONVERTIDA='Peça convertida do HTML do tribunal em texto: imagens e tabelas podem não ter entrado na leitura.';
 function cabecalhos(json){
   var h={},k=pv().chave();
   if(k)h['x-api-key']=k;
@@ -104,7 +112,6 @@ function carregar(){
     .then(function(r){return r.ok?r.json():{liberado:false}})
     .then(function(b){
       D.liberado=b.liberado===true;
-      D.modo=b.modo==='avaliacao'?'avaliacao':'geral';
       return D.liberado},
       function(){D.promessa=null;D.liberado=false;return false});
   return D.promessa;
@@ -133,37 +140,9 @@ function citados(r){
   }
   return '<section class="pvpe-sec"><h4 class="pvpe-rot">Documentos e valores citados</h4>'+h+'</section>';
 }
-function avaliacaoHtml(){
-  if(D.modo==='avaliacao'){
-    var h='<div class="pvpe-aval" role="group" aria-label="Esta análise foi útil?"><span class="pvpe-rot">Esta análise foi útil?</span>'+
-      AVALIACOES.map(function(a){
-        var on=S.aval===a[0];
-        return '<button type="button" class="nov-btn pvpe-av'+(on?' on':'')+'" data-pvpe="aval" data-aval="'+a[0]+
-          '" id="pvpe-av-'+a[0]+'" aria-pressed="'+(on?'true':'false')+'">'+a[1]+'</button>';
-      }).join('')+
-      '<span class="pvpe-ok" role="status">'+(S.aval?'✓ Avaliação registrada.':'')+(S.avalErro?esc(S.avalErro):'')+'</span></div>';
-    if(S.aval==='errado'||S.aval==='perigoso')h+=motivosHtml('Qual foi o problema? (opcional)');
-    return h;
-  }
-  /* Conta no modo geral: só um link discreto; ele abre a lista fechada de motivos e registra "errado". */
-  var r='<div class="pvpe-aval"><button type="button" class="link pvpe-reportar" data-pvpe="reportar" id="pvpe-reportar" aria-expanded="'+
-    (S.reportando?'true':'false')+'">Reportar problema</button>'+
-    '<span class="pvpe-ok" role="status">'+(S.aval?'✓ Obrigado, registramos.':'')+(S.avalErro?esc(S.avalErro):'')+'</span></div>';
-  if(S.reportando&&!S.aval)r+=motivosHtml('Qual foi o problema?');
-  return r;
-}
-function motivosHtml(titulo){
-  return '<div class="pvpe-aval pvpe-motivo" role="group" aria-label="'+titulo+'"><span class="pvpe-rot">'+titulo+'</span>'+
-    MOTIVOS.map(function(m){
-      var on=S.motivoAval===m[0];
-      return '<button type="button" class="nov-btn pvpe-av'+(on?' on':'')+'" data-pvpe="motivo" data-motivo="'+m[0]+
-        '" id="pvpe-mo-'+m[0]+'" aria-pressed="'+(on?'true':'false')+'">'+m[1]+'</button>';
-    }).join('')+'</div>';
-}
 function resultadoHtml(d){
   var r=d.resultado;
-  var h=avaliacaoHtml();
-  h+='<p class="pvpe-tipo"><span class="pvpe-selo">'+esc(TIPOS[r.tipo]||'Peça')+'</span></p>';
+  var h='<p class="pvpe-tipo"><span class="pvpe-selo">'+esc(TIPOS[r.tipo]||'Peça')+'</span></p>';
   if(r.emUmaFrase)h+='<section class="pvpe-sec"><h4 class="pvpe-rot">Em uma frase</h4><p class="pvpe-texto">'+esc(r.emUmaFrase)+'</p></section>';
   h+=lista(r.pedidos,'O que pede');
   h+=lista(r.alegacoes,'O que alega');
@@ -173,11 +152,13 @@ function resultadoHtml(d){
     h+='<section class="pvpe-sec"><h4 class="pvpe-rot">Pontos de atenção</h4><ul class="pvpe-itens-simples">'+
       r.pontosDeAtencao.map(function(p){return '<li>'+esc(ATENCAO[p]||'')+'</li>'}).join('')+'</ul></section>';
   }
+  if(d.conversao==='html')h+='<p class="pvpe-nota">'+esc(CONVERTIDA)+'</p>';
   h+='<p class="pvpe-aviso-fixo">'+esc(AVISO_FIXO)+' <button type="button" class="link" data-pvpe="abrir" id="pvpe-abrir">Abrir a peça</button></p>';
   h+='<p class="pvpe-nota" id="pvpe-nota-abrir" role="status"></p>';
   h+='<div class="pvpe-proc"><span class="pvpe-selo" aria-hidden="true">IA</span><span>'+
     (d.reaproveitada?'Resultado já gerado para esta peça (nada foi gasto agora). ':'')+
     'Gerado por IA em '+esc(pv().dth(d.criadaEm))+'. Fica guardado até '+esc(pv().dt(d.expiraEm))+'.</span></div>';
+  if(window.__pvPolegares)h+=window.__pvPolegares.html('peca',d.id,d.avaliacao);
   return h;
 }
 function corpo(){
@@ -206,22 +187,24 @@ function painelInterno(){
 }
 
 /* ---------- montagem ---------- */
-function botaoDaPeca(id){
-  var bs=document.querySelectorAll('#conteudo [data-pvpe="analisar"]');
-  for(var i=0;i<bs.length;i++){if(bs[i].getAttribute('data-pvpe-id')===id)return bs[i]}
+function botaoDaPeca(id,onde){
+  var bs=document.querySelectorAll('[data-pvpe="analisar"]');
+  for(var i=0;i<bs.length;i++){
+    if(bs[i].getAttribute('data-pvpe-id')===id&&(!onde||(bs[i].getAttribute('data-pvpe-onde')||'linha')===onde))return bs[i];
+  }
   return null;
 }
 function montarRaiz(){
   if(!S)return false;
-  var b=botaoDaPeca(S.pecaId);
+  var b=botaoDaPeca(S.pecaId,S.onde);
   if(!b)return false;
   var raiz=document.getElementById('pvpe-raiz');
-  var docs=b.closest('.docs');
+  var docs=S.onde==='linha'?b.closest('.docs'):null;
   var onde=docs||b.parentElement;
-  if(raiz&&raiz.getAttribute('data-peca')!==S.pecaId){raiz.parentNode.removeChild(raiz);raiz=null}
+  if(raiz&&(raiz.getAttribute('data-peca')!==S.pecaId||raiz.getAttribute('data-onde')!==S.onde)){raiz.parentNode.removeChild(raiz);raiz=null}
   if(!raiz){
     raiz=document.createElement('div');
-    raiz.id='pvpe-raiz';raiz.setAttribute('data-peca',S.pecaId);
+    raiz.id='pvpe-raiz';raiz.setAttribute('data-peca',S.pecaId);raiz.setAttribute('data-onde',S.onde);
     raiz.innerHTML='<div id="pvpe-corpo"></div>';
     if(docs)docs.insertAdjacentElement('afterend',raiz);else onde.appendChild(raiz);
   }
@@ -230,9 +213,10 @@ function montarRaiz(){
   return true;
 }
 function marcarBotoes(){
-  var bs=document.querySelectorAll('#conteudo [data-pvpe="analisar"]');
+  var bs=document.querySelectorAll('[data-pvpe="analisar"]');
   for(var i=0;i<bs.length;i++){
-    bs[i].setAttribute('aria-expanded',S&&bs[i].getAttribute('data-pvpe-id')===S.pecaId?'true':'false');
+    var on=S&&bs[i].getAttribute('data-pvpe-id')===S.pecaId&&(bs[i].getAttribute('data-pvpe-onde')||'linha')===S.onde;
+    bs[i].setAttribute('aria-expanded',on?'true':'false');
   }
 }
 function refrescar(anuncio,foco){
@@ -330,7 +314,7 @@ function analisar(e){
       if(S!==e)return;
       e.ctrl=null;
       if(x.ok&&x.b.estado==='verificada'){
-        e.fase='resultado';e.dados=x.b;e.aval=x.b.avaliacao||'';
+        e.fase='resultado';e.dados=x.b;
         refrescar('Análise concluída. Confira na peça.','pvpe-painel');return}
       if(x.ok&&x.b.estado==='nao_verificada'){e.fase='nao_verificado';refrescar(NAO_VERIFICADO,'pvpe-painel');return}
       var motivo=x.b&&x.b.detalhes?x.b.detalhes.motivo:'';
@@ -345,26 +329,6 @@ function analisar(e){
       if(S!==e)return;
       if(err&&err.name==='AbortError')return;
       e.ctrl=null;e.fase='erro';refrescar(ERRO,'pvpe-painel');
-    });
-}
-
-function avaliar(valor,motivo){
-  var e=S;
-  if(!e||!e.dados||e.ocupadoAval)return;
-  e.ocupadoAval=true;e.avalErro='';
-  var foco=motivo?'pvpe-mo-'+motivo:(D.modo==='avaliacao'?'pvpe-av-'+valor:'pvpe-reportar');
-  var c={avaliacao:valor};
-  if(motivo)c.motivo=motivo;
-  fetch('/v1/analises-de-peca/'+encodeURIComponent(e.dados.id)+'/avaliacao',{method:'POST',headers:cabecalhos(true),body:JSON.stringify(c)})
-    .then(function(r){
-      e.ocupadoAval=false;
-      if(S!==e)return;
-      if(r.ok){e.aval=valor;e.motivoAval=motivo||'';refrescar('Avaliação registrada.',foco)}
-      else{e.avalErro='Não foi possível registrar. Tente de novo.';refrescar(e.avalErro,foco)}
-    },function(){
-      e.ocupadoAval=false;
-      if(S!==e)return;
-      e.avalErro='Não foi possível registrar. Tente de novo.';refrescar(e.avalErro,foco);
     });
 }
 
@@ -387,8 +351,8 @@ function abrir(b){
   var id=b.getAttribute('data-pvpe-id');
   if(S&&S.pecaId===id){descartar();b.focus();return}
   descartar();
-  S={numero:numeroAtual(),pecaId:id,fase:'baixando',ctrl:null,timer:null,dados:null,aval:'',motivoAval:'',avalErro:'',
-    motivo:'',frase:'',reportando:false,ocupadoAval:false,inicioDaEspera:0};
+  S={numero:b.getAttribute('data-pvpe-num')||numeroAtual(),pecaId:id,onde:b.getAttribute('data-pvpe-onde')||'linha',fase:'baixando',
+    ctrl:null,timer:null,dados:null,motivo:'',frase:'',inicioDaEspera:0};
   montarRaiz();
   refrescar(BAIXANDO,'pvpe-painel');
   baixar(S);
@@ -407,34 +371,89 @@ function ehSigilosa(b){
   var ev=b.closest('.ev');
   return !!(ev&&ev.querySelector('.selo.al'));
 }
+/* TJGO = J.TR 8.09 no número CNJ (dígitos 14 a 16). O servidor é quem decide; isto só evita um clique sem sentido. */
+function ehTjgo(n){return String(n).substring(13,16)==='809'}
+
+/* Desliga o botão e diz por quê: o botão NUNCA some sem aviso em conta liberada. */
+function desligar(b,razao){
+  b.disabled=true;b.setAttribute('aria-disabled','true');b.title=razao;
+  b.setAttribute('aria-label','Analisar peça com IA (indisponível: '+razao+')');
+}
+function novoBotao(id,onde,num){
+  var b=document.createElement('button');
+  b.type='button';b.className='pvpe-btn';b.setAttribute('data-pvpe','analisar');b.setAttribute('data-pvpe-id',id);
+  b.setAttribute('data-pvpe-onde',onde);
+  if(num)b.setAttribute('data-pvpe-num',num);
+  b.setAttribute('aria-expanded','false');b.setAttribute('aria-controls','pvpe-painel');
+  b.textContent='Analisar peça com IA';
+  return b;
+}
 var agendado=false;
 function decorar(){
   agendado=false;
-  var n=numeroAtual();
-  if(!n){if(S)descartar();return}
-  if(S&&S.numero!==n)descartar();
+  var capa=document.querySelector('#conteudo .capa');
+  var num=capa?capa.querySelector('.num'):null;
+  if(!num)return;
+  var n=digitos(num.textContent),acompanhado=!!document.getElementById('parar');
+  if(S&&S.onde==='linha'&&S.numero!==n)descartar();
   carregar().then(function(){
-    if(!D.liberado||numeroAtual()!==n)return;
+    if(!D.liberado)return;
     var origem=document.querySelectorAll('#conteudo button[data-peca]');
     for(var i=0;i<origem.length;i++){
       var o=origem[i];
       if(o.getAttribute('data-pvpe-ok'))continue;
       o.setAttribute('data-pvpe-ok','1');
-      var id=o.getAttribute('data-peca');
-      var b=document.createElement('button');
-      b.type='button';b.className='pvpe-btn';b.setAttribute('data-pvpe','analisar');b.setAttribute('data-pvpe-id',id);
-      b.setAttribute('aria-expanded','false');b.setAttribute('aria-controls','pvpe-painel');
-      b.textContent='Analisar peça com IA';
-      if(ehSigilosa(o)){
-        b.disabled=true;b.setAttribute('aria-disabled','true');b.title=SIGILOSA;
-        b.setAttribute('aria-label','Analisar peça com IA (indisponível: '+SIGILOSA+')');
-      }
+      var b=novoBotao(o.getAttribute('data-peca'),'linha','');
+      if(ehSigilosa(o))desligar(b,SIGILOSA);
+      else if(!ehTjgo(n))desligar(b,RAZOES.outro_tribunal);
+      else if(!acompanhado)desligar(b,RAZOES.nao_acompanhado);
       o.insertAdjacentElement('afterend',b);
     }
-    if(S&&!document.getElementById('pvpe-raiz'))montarRaiz();
+    if(S&&S.onde==='linha'&&!document.getElementById('pvpe-raiz'))montarRaiz();
   });
 }
 function agendar(){if(agendado)return;agendado=true;setTimeout(decorar,0)}
+
+/* ---------- o visualizador da Pasta digital ---------- */
+/* A Pasta chama isto toda vez que redesenha o visor (também a cada consulta de andamento, de 2 em 2 s), então é
+   idempotente: só mexe no DOM quando a peça ou o estado dela mudam. opc = {numero, peca:{id, estado}} ou null
+   para limpar (movimentação sem peça, "ver tudo seguido", pasta fechada). */
+function pasta(opc){
+  var slot=document.getElementById('pasta-ia');
+  if(!slot)return;
+  if(!opc||!opc.peca){
+    if(S&&S.onde==='pasta')descartar();
+    if(slot.firstChild)slot.innerHTML='';
+    slot.removeAttribute('data-sig');
+    return;
+  }
+  var p=opc.peca,n=digitos(opc.numero);
+  var razao='';
+  if(p.estado==='sigilo')razao=SIGILOSA;
+  else if(!ehTjgo(n))razao=RAZOES.outro_tribunal;
+  else if(p.estado==='na_fila'||p.estado==='baixando'||p.pedindo)razao=RAZOES.baixando;
+  else if(p.estado==='nao_obtida')razao=RAZOES.nao_obtida;
+  else if(p.estado!=='disponivel')razao=RAZOES.nao_baixada;
+  var sig=p.id+'|'+(razao||'ok');
+  carregar().then(function(){
+    if(!D.liberado){
+      if(slot.firstChild)slot.innerHTML='';
+      return;
+    }
+    if(slot.getAttribute('data-sig')===sig&&slot.querySelector('[data-pvpe="analisar"]'))return;
+    if(S&&S.onde==='pasta'&&S.pecaId!==p.id)descartar();
+    var raiz=document.getElementById('pvpe-raiz');
+    var guardar=raiz&&S&&S.onde==='pasta'&&S.pecaId===p.id?raiz:null;
+    if(guardar&&guardar.parentNode)guardar.parentNode.removeChild(guardar);
+    slot.innerHTML='';
+    slot.setAttribute('data-sig',sig);
+    var b=novoBotao(p.id,'pasta',n);
+    if(razao)desligar(b,razao);
+    slot.appendChild(b);
+    if(guardar)slot.appendChild(guardar);
+    if(S&&S.onde==='pasta')marcarBotoes();
+  });
+}
 
 /* ---------- eventos ---------- */
 document.addEventListener('click',function(ev){
@@ -443,19 +462,9 @@ document.addEventListener('click',function(ev){
   var acao=el.getAttribute('data-pvpe');
   if(acao==='analisar'){if(!el.disabled)abrir(el);return}
   if(!S)return;
-  if(acao==='fechar'){var b=botaoDaPeca(S.pecaId);descartar();if(b)b.focus();return}
-  if(acao==='cancelar'){var b2=botaoDaPeca(S.pecaId);descartar();if(b2)b2.focus();anunciar('Análise cancelada.');return}
+  if(acao==='fechar'){var b=botaoDaPeca(S.pecaId,S.onde);descartar();if(b)b.focus();return}
+  if(acao==='cancelar'){var b2=botaoDaPeca(S.pecaId,S.onde);descartar();if(b2)b2.focus();anunciar('Análise cancelada.');return}
   if(acao==='repetir'){var e=S;e.fase='baixando';refrescar(BAIXANDO,'pvpe-painel');baixar(e);return}
-  if(acao==='aval'){avaliar(el.getAttribute('data-aval'));return}
-  if(acao==='reportar'){S.reportando=!S.reportando;refrescar('', S.reportando?'pvpe-mo-erro_de_fato':'pvpe-reportar');return}
-  if(acao==='motivo'){
-    var m=el.getAttribute('data-motivo');
-    if(D.modo==='avaliacao'){
-      if(S.aval!=='errado'&&S.aval!=='perigoso')return;
-      avaliar(S.aval,S.motivoAval===m?'':m);return;
-    }
-    avaliar('errado',m);return;
-  }
   if(acao==='abrir'){abrirPeca();return}
 });
 document.addEventListener('keydown',function(ev){
@@ -463,7 +472,7 @@ document.addEventListener('keydown',function(ev){
   var p=ev.target&&ev.target.closest?ev.target.closest('#pvpe-painel'):null;
   if(!p)return;
   ev.preventDefault();
-  var b=botaoDaPeca(S.pecaId);
+  var b=botaoDaPeca(S.pecaId,S.onde);
   var andando=S.fase==='baixando'||S.fase==='lendo';
   descartar();
   if(b)b.focus();
@@ -475,7 +484,7 @@ if(alvo&&typeof MutationObserver!=='undefined'){
   new MutationObserver(agendar).observe(alvo,{childList:true,subtree:true});
 }
 
-window.__pvPecaIA={carregar:carregar,decorar:decorar};
+window.__pvPecaIA={carregar:carregar,decorar:decorar,pasta:pasta};
 })();
 `;
 
@@ -514,9 +523,5 @@ export const ESTILOS_ANALISE_PECA_IA = `
 .pvpe-proc{display:flex;align-items:flex-start;gap:8px;margin:6px 0 2px;font-size:12.5px;color:var(--tinta2)}
 .pvpe-selo{flex:none;display:inline-block;padding:1px 8px;border-radius:999px;font-size:11px;font-weight:700;
   background:var(--acento-bg);color:var(--acento);border:1px solid var(--acento)}
-.pvpe-aval{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;margin:6px 0}
-.pvpe-av.on{background:var(--acento-bg);border-color:var(--acento)}
-.pvpe-ok{font-size:12.5px;color:var(--tinta2)}
-.pvpe-reportar{font-size:12.5px;color:var(--tinta2)}
 @media (max-width:600px){.pvpe{padding:10px 12px}.pvpe-btn{display:inline-block;margin-left:0}}
 `;

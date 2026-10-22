@@ -118,6 +118,11 @@ export interface AnaliseDePecaParaATela {
   readonly contagens: ContagensDaAnaliseDePeca;
   /** A mesma peça já tinha sido analisada: nada foi gasto agora. */
   readonly reaproveitada: boolean;
+  /**
+   * Como o arquivo analisado nasceu (v0.56.0): `html` é o HTML do tribunal desenhado como texto — imagens e
+   * tabelas podem não ter entrado, e a tela diz isso. `null` = PDF como o tribunal entregou.
+   */
+  readonly conversao: 'html' | 'imagem' | null;
   readonly modelo: string;
   readonly versaoPrompt: string;
   readonly provedor: string;
@@ -252,7 +257,7 @@ export class ServicoAnaliseDePeca {
         versaoPrompt: VERSAO_PROMPT_DA_PECA,
         paginas: entrada.paginas,
       });
-      return this.paraATela(guardada, entrada, modo, true);
+      return this.paraATela(guardada, entrada, modo, true, conversaoParaATela(alvo));
     }
 
     // 6. Freio por hora e teto diário (peso 5). A vaga é liberada em qualquer desfecho.
@@ -266,6 +271,7 @@ export class ServicoAnaliseDePeca {
         hashDosBytes,
         entrada,
         modo,
+        conversao: conversaoParaATela(alvo),
       });
     } finally {
       vaga.liberar();
@@ -296,6 +302,7 @@ export class ServicoAnaliseDePeca {
       readonly hashDosBytes: string;
       readonly entrada: EntradaDaPeca;
       readonly modo: ModoDaAnaliseDePeca;
+      readonly conversao: 'html' | 'imagem' | null;
     },
   ): Promise<RespostaDaAnaliseDePeca> {
     const inicio = this.o.clock.monotonico();
@@ -387,7 +394,7 @@ export class ServicoAnaliseDePeca {
       descartesPagina: v.descartes.pagina,
       latenciaMs,
     });
-    return this.paraATela(analise, c.entrada, c.modo, false);
+    return this.paraATela(analise, c.entrada, c.modo, false, c.conversao);
   }
 
   /** Só o dono da conta avalia; pode corrigir. 404 igual para "não existe" e "é de outra". */
@@ -407,6 +414,7 @@ export class ServicoAnaliseDePeca {
     entrada: EntradaDaPeca,
     modo: ModoDaAnaliseDePeca,
     reaproveitada: boolean,
+    conversao: 'html' | 'imagem' | null,
   ): AnaliseDePecaParaATela {
     return {
       estado: a.resultado.estado,
@@ -415,6 +423,7 @@ export class ServicoAnaliseDePeca {
       resultado: restaurarResultado(a.resultado, entrada.restaurar),
       contagens: a.contagens,
       reaproveitada,
+      conversao,
       modelo: a.procedencia.modelo,
       versaoPrompt: a.procedencia.versaoPrompt,
       provedor: a.procedencia.provedor,
@@ -423,6 +432,10 @@ export class ServicoAnaliseDePeca {
       avaliacao: a.avaliacao ?? null,
     };
   }
+}
+
+function conversaoParaATela(alvo: PecaParaAnalise): 'html' | 'imagem' | null {
+  return alvo.conversao === 'html' || alvo.conversao === 'imagem' ? alvo.conversao : null;
 }
 
 /** Chave opaca do processo: prende a análise a ele sem gravar o número CNJ. */

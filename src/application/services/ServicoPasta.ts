@@ -177,6 +177,8 @@ export interface ArquivoDaPasta {
  */
 export interface PecaParaAnalise {
   readonly tribunal: string;
+  /** Como o arquivo guardado nasceu: `html` é o HTML do tribunal desenhado como texto (v0.56.0). */
+  readonly conversao?: 'nenhuma' | 'imagem' | 'html';
   readonly arquivo?: {
     readonly tamanho: number;
     ler(inicio: number, fim: number): AsyncIterable<Uint8Array>;
@@ -708,6 +710,7 @@ export class ServicoPasta {
     if (tamanho === undefined) return { tribunal: listagem.tribunal };
     return {
       tribunal: listagem.tribunal,
+      conversao: entrada.conversao,
       arquivo: {
         tamanho,
         ler: (inicio, fim) => this.armazem.ler(workspace, entrada.localizador, inicio, fim),

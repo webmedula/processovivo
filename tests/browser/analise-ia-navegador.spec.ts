@@ -366,35 +366,45 @@ describe.skipIf(sem)('Analisar com IA, no navegador', { timeout: 120_000 }, () =
     expect(await p.locator('.pvia-lista li').count()).toBe(2); // só os dois pontos de atenção
   });
 
-  it('avaliação: três botões, confirmação visível, e dá para corrigir; sem texto livre', async () => {
+  const cima = (n = NA) => painel(n).getByRole('button', { name: 'Resultado útil' });
+  const baixo = (n = NA) =>
+    painel(n).getByRole('button', { name: 'Resultado com problema' });
+
+  it('avaliação por polegar (v0.56.0): dois ícones no fim do resultado, confirmação visível, dá para corrigir; sem texto livre', async () => {
     await abrir();
     await botao(NA).click();
     const p = painel(NA);
     await p.getByText('Parece pedir:').waitFor();
+    expect(await cima().count()).toBe(1);
+    expect(await baixo().count()).toBe(1);
     expect(
       await p.getByRole('button', { name: /^(Útil|Errado|Perigoso)$/ }).count(),
-    ).toBe(3);
+    ).toBe(0);
     expect(await p.locator('textarea, input[type="text"]').count()).toBe(0);
-
-    await p.getByRole('button', { name: 'Útil' }).click();
-    await p.getByText('✓ Avaliação registrada.').waitFor();
+    // No FIM do resultado: depois da procedência ("Gerado por IA…").
     expect(
-      await p.getByRole('button', { name: 'Útil' }).getAttribute('aria-pressed'),
-    ).toBe('true');
-    await p.getByRole('button', { name: 'Perigoso' }).click();
+      await p.evaluate(
+        (el) =>
+          el.querySelector('.pvpol')!.getBoundingClientRect().top >
+          el.querySelector('.pvia-proc')!.getBoundingClientRect().top,
+      ),
+    ).toBe(true);
+
+    await cima().click();
+    await p.getByText('Obrigado pelo retorno.').waitFor();
+    expect(await cima().getAttribute('aria-pressed')).toBe('true');
+    await baixo().click();
     await page.waitForFunction(
       () =>
         document
-          .querySelector('.pvia-av[data-aval="perigoso"]')
+          .querySelector('.pvpol-b[aria-label="Resultado com problema"]')
           ?.getAttribute('aria-pressed') === 'true',
     );
     expect(avaliacoes).toEqual([
       { id: 'analise-1', corpo: { avaliacao: 'util' } },
-      { id: 'analise-1', corpo: { avaliacao: 'perigoso' } },
+      { id: 'analise-1', corpo: { avaliacao: 'errado' } },
     ]);
-    expect(
-      await p.getByRole('button', { name: 'Útil' }).getAttribute('aria-pressed'),
-    ).toBe('false');
+    expect(await cima().getAttribute('aria-pressed')).toBe('false');
   });
 
   it('falha ao gravar a avaliação: diz isso, sem fingir que gravou', async () => {
@@ -403,11 +413,9 @@ describe.skipIf(sem)('Analisar com IA, no navegador', { timeout: 120_000 }, () =
     const p = painel(NA);
     await p.getByText('Parece pedir:').waitFor();
     avaliacaoFalha = true;
-    await p.getByRole('button', { name: 'Errado' }).click();
+    await baixo().click();
     await p.getByText('Não foi possível registrar. Tente de novo.').waitFor();
-    expect(
-      await p.getByRole('button', { name: 'Errado' }).getAttribute('aria-pressed'),
-    ).toBe('false');
+    expect(await baixo().getAttribute('aria-pressed')).toBe('false');
   });
 
   const ESTADOS: Array<{
@@ -487,7 +495,7 @@ describe.skipIf(sem)('Analisar com IA, no navegador', { timeout: 120_000 }, () =
       await botao(NA).click();
       const p = painel(NA);
       await p.getByText(e.texto, { exact: true }).waitFor();
-      expect(await p.getByRole('button', { name: 'Útil' }).count()).toBe(0);
+      expect(await p.locator('.pvpol').count()).toBe(0);
       expect(await p.locator('mark').count()).toBe(0);
       const txt = (await p.innerText()).replace('nem a contagem de prazo', '');
       expect(txt).not.toMatch(/prazo/i);
@@ -519,17 +527,20 @@ describe.skipIf(sem)('Analisar com IA, no navegador', { timeout: 120_000 }, () =
       'pvia',
     );
     const visitados: string[] = [];
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 4; i++) {
       await page.keyboard.press('Tab');
       visitados.push(
-        await page.evaluate(
-          () => (document.activeElement as HTMLElement | null)?.textContent?.trim() ?? '',
-        ),
+        await page.evaluate(() => {
+          const a = document.activeElement as HTMLElement | null;
+          return (a?.getAttribute('aria-label') ?? a?.textContent ?? '').trim();
+        }),
       );
     }
-    // v0.52.0: a avaliação subiu para o TOPO do resultado, então vem antes do selo "IA" (focável: o aviso de
-    // procedência também chega por teclado). Antes a ordem era Fechar, IA, Útil, Errado, Perigoso.
-    expect(visitados).toEqual(['Fechar', 'Útil', 'Errado', 'Perigoso', 'IA']);
+    // v0.56.0: os polegares estão no FIM do resultado, depois do selo "IA" (focável: o aviso de procedência
+    // também chega por teclado). Antes (v0.52.0) vinham logo depois de "Fechar", como Útil, Errado, Perigoso.
+    expect(visitados[0]).toBe('Fechar');
+    expect(visitados[1]).toMatch(/^Gerado por IA em /); // o selo "IA" fala pelo aria-label
+    expect(visitados.slice(2)).toEqual(['Resultado útil', 'Resultado com problema']);
     await page.keyboard.press('Escape');
     await page.waitForFunction(() => document.querySelectorAll('.pvia').length === 0);
     expect(
@@ -547,8 +558,8 @@ describe.skipIf(sem)('Analisar com IA, no navegador', { timeout: 120_000 }, () =
     };
     await botao(NA).click();
     await painel(NA).getByText('Parece pedir:').waitFor();
-    await painel(NA).getByRole('button', { name: 'Útil' }).click();
-    await page.getByText('✓ Avaliação registrada.').waitFor();
+    await cima().click();
+    await page.getByText('Obrigado pelo retorno.').first().waitFor();
     expect({
       ordem: await page.locator('.nvt-tabela tr.nvt-linha .nvt-num').allTextContents(),
       chips: await page.locator('.nvt-chips .chip').allTextContents(),
@@ -568,9 +579,7 @@ describe.skipIf(sem)('Analisar com IA, no navegador', { timeout: 120_000 }, () =
     expect(await painel(NA).getByText('Parece pedir:').count()).toBe(1);
   });
 
-  describe('avaliação no topo e motivo opcional (v0.52.0)', () => {
-    const linhaDeAvaliacao = () =>
-      painel(NA).getByRole('group', { name: 'Esta análise foi útil?' });
+  describe('polegares: motivo opcional (v0.56.0)', () => {
     const grupoDoMotivo = () =>
       painel(NA).getByRole('group', { name: 'Qual foi o problema? (opcional)' });
 
@@ -580,104 +589,64 @@ describe.skipIf(sem)('Analisar com IA, no navegador', { timeout: 120_000 }, () =
       await painel(NA).getByText('Parece pedir:').waitFor();
     }
 
-    for (const largura of [1920, 1366, 1280, 1024, 768, 390]) {
-      it(`a linha "Esta análise foi útil?" fica no topo do resultado, sem rolar, em ${largura} px`, async () => {
-        await abrir({ largura });
-        await botao(NA).click();
-        await painel(NA).getByText('Parece pedir:').waitFor();
-        const medidas = await page.evaluate(
-          (sel) => {
-            const painelEl = document.querySelector(sel) as HTMLElement;
-            const linha = painelEl.querySelector('.pvia-aval') as HTMLElement;
-            const r = linha.getBoundingClientRect();
-            const p = painelEl.getBoundingClientRect();
-            return {
-              desdeOTopoDoPainel: r.top - p.top,
-              dentroDaLargura: r.left >= 0 && r.right <= window.innerWidth,
-              antesDoResumo:
-                linha.compareDocumentPosition(
-                  painelEl.querySelector('.pvia-parece') as HTMLElement,
-                ) === Node.DOCUMENT_POSITION_FOLLOWING,
-              rolagemHorizontal: document.documentElement.scrollWidth > window.innerWidth,
-            };
-          },
-          `#pvia-${NA.replace(/\D/g, '')}`,
-        );
-        expect(medidas.desdeOTopoDoPainel).toBeLessThan(120);
-        expect(medidas.dentroDaLargura).toBe(true);
-        expect(medidas.antesDoResumo).toBe(true);
-        expect(medidas.rolagemHorizontal).toBe(false);
-      });
-    }
-
-    it('o motivo só aparece com "Errado" ou "Perigoso" — nunca com "Útil" nem antes de avaliar', async () => {
+    it('o motivo só aparece com o polegar para baixo — nunca com o de cima nem antes de avaliar — e é a lista fechada', async () => {
       await abrirAnalise();
       expect(await grupoDoMotivo().count()).toBe(0);
-      await linhaDeAvaliacao().getByRole('button', { name: 'Útil' }).click();
-      await page.getByText('✓ Avaliação registrada.').waitFor();
+      await cima().click();
+      await painel(NA).getByText('Obrigado pelo retorno.').waitFor();
       expect(await grupoDoMotivo().count()).toBe(0);
-      await linhaDeAvaliacao().getByRole('button', { name: 'Errado' }).click();
+      await baixo().click();
       await grupoDoMotivo().waitFor();
       expect(await grupoDoMotivo().getByRole('button').allTextContents()).toEqual([
         'Erro de fato',
         'Citação inventada',
         'Concluiu prazo',
         'Deixou de fora algo importante',
+        'Pode causar prejuízo se seguido',
         'Outro',
       ]);
-      await linhaDeAvaliacao().getByRole('button', { name: 'Útil' }).click();
+      await cima().click();
       await page.waitForFunction(
-        () => document.querySelectorAll('.pvia-motivo').length === 0,
+        () => document.querySelectorAll('.pvpol-motivos').length === 0,
       );
     });
 
-    it('avaliar SEM motivo continua funcionando: o corpo leva só a avaliação', async () => {
+    it('escolher o motivo reenvia a avaliação com ele; clicar no mesmo de novo o tira; "pode causar prejuízo" também sai pelo polegar para baixo', async () => {
       await abrirAnalise();
-      await linhaDeAvaliacao().getByRole('button', { name: 'Perigoso' }).click();
-      await page.getByText('✓ Avaliação registrada.').waitFor();
-      expect(avaliacoes.map((a) => a.corpo)).toEqual([{ avaliacao: 'perigoso' }]);
-    });
-
-    it('escolher o motivo reenvia a avaliação com ele; clicar no mesmo de novo o tira; só os cinco valores fechados saem', async () => {
-      await abrirAnalise();
-      await linhaDeAvaliacao().getByRole('button', { name: 'Errado' }).click();
+      await baixo().click();
       await grupoDoMotivo().getByRole('button', { name: 'Concluiu prazo' }).click();
       await page.waitForFunction(
         () =>
-          document
-            .querySelector('.pvia-motivo [aria-pressed="true"]')
-            ?.textContent?.trim() === 'Concluiu prazo',
+          document.querySelector('.pvpol-m[aria-pressed="true"]')?.textContent?.trim() ===
+          'Concluiu prazo',
       );
       await grupoDoMotivo().getByRole('button', { name: 'Concluiu prazo' }).click();
       await page.waitForFunction(
-        () =>
-          document.querySelectorAll('.pvia-motivo [aria-pressed="true"]').length === 0,
+        () => document.querySelectorAll('.pvpol-m[aria-pressed="true"]').length === 0,
       );
-      await grupoDoMotivo().getByRole('button', { name: 'Outro' }).click();
+      await grupoDoMotivo()
+        .getByRole('button', { name: 'Pode causar prejuízo se seguido' })
+        .click();
       await page.waitForFunction(
-        () => document.querySelector('.pvia-motivo [aria-pressed="true"]') !== null,
+        () => document.querySelector('.pvpol-m[aria-pressed="true"]') !== null,
       );
       expect(avaliacoes.map((a) => a.corpo)).toEqual([
         { avaliacao: 'errado' },
         { avaliacao: 'errado', motivo: 'concluiu_prazo' },
         { avaliacao: 'errado' },
-        { avaliacao: 'errado', motivo: 'outro' },
+        { avaliacao: 'errado', motivo: 'pode_causar_prejuizo' },
       ]);
-      // Nenhum campo de texto livre existe na linha de avaliação.
-      expect(
-        await painel(NA).locator('.pvia-aval input, .pvia-aval textarea').count(),
-      ).toBe(0);
+      expect(await painel(NA).locator('.pvpol input, .pvpol textarea').count()).toBe(0);
     });
 
-    it('teclado: Tab chega aos botões, Espaço avalia, o foco volta ao botão e o motivo é alcançável', async () => {
+    it('teclado: Espaço avalia, o foco fica no botão e o motivo é alcançável', async () => {
       await abrirAnalise();
-      await linhaDeAvaliacao().getByRole('button', { name: 'Errado' }).focus();
+      await baixo().focus();
       await page.keyboard.press('Space');
       await grupoDoMotivo().waitFor();
-      expect(await page.evaluate(() => document.activeElement?.textContent?.trim())).toBe(
-        'Errado',
-      );
-      await page.keyboard.press('Tab');
+      expect(
+        await page.evaluate(() => document.activeElement?.getAttribute('aria-label')),
+      ).toBe('Resultado com problema');
       await page.keyboard.press('Tab');
       expect(await page.evaluate(() => document.activeElement?.textContent?.trim())).toBe(
         'Erro de fato',
@@ -699,10 +668,10 @@ describe.skipIf(sem)('Analisar com IA, no navegador', { timeout: 120_000 }, () =
         await abrir({ escuro });
         await botao(NA).click();
         await painel(NA).getByText('Parece pedir:').waitFor();
-        await linhaDeAvaliacao().getByRole('button', { name: 'Errado' }).click();
+        await baixo().click();
         await grupoDoMotivo().getByRole('button', { name: 'Outro' }).click();
         await page.waitForFunction(
-          () => document.querySelector('.pvia-motivo [aria-pressed="true"]') !== null,
+          () => document.querySelector('.pvpol-m[aria-pressed="true"]') !== null,
         );
         await page.addScriptTag({
           content: (AxeBuilder as unknown as { source: string }).source,
@@ -727,8 +696,8 @@ describe.skipIf(sem)('Analisar com IA, no navegador', { timeout: 120_000 }, () =
       await botao(NA).click();
       await painel(NA).getByText('Parece pedir:').waitFor();
       expect(await botao(NA).getAttribute('aria-expanded')).toBe('true');
-      await linhaDeAvaliacao().getByRole('button', { name: 'Útil' }).click();
-      await page.getByText('✓ Avaliação registrada.').waitFor();
+      await cima().click();
+      await painel(NA).getByText('Obrigado pelo retorno.').waitFor();
       await painel(NA).getByRole('button', { name: 'Fechar' }).click();
       await page.waitForFunction(() => document.querySelectorAll('.pvia').length === 0);
       expect(await botao(NA).getAttribute('aria-expanded')).toBe('false');
@@ -780,8 +749,8 @@ describe.skipIf(sem)('Analisar com IA, no navegador', { timeout: 120_000 }, () =
       await botao(NA).click();
       await painel(NA).getByText('Parece pedir:').waitFor();
       expect(await rodar(), 'resultado').toBe('');
-      await painel(NA).getByRole('button', { name: 'Útil' }).click();
-      await page.getByText('✓ Avaliação registrada.').waitFor();
+      await cima().click();
+      await painel(NA).getByText('Obrigado pelo retorno.').waitFor();
       expect(await rodar(), 'avaliado').toBe('');
 
       responder = (rota) =>

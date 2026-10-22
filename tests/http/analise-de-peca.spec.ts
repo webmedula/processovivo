@@ -6,7 +6,13 @@ import type { Aplicacao } from '../../src/main/factories/makeProcessoSearchServi
 import { workspaceDaChave } from '../../src/main/http/chaves.js';
 import { construirServidor } from '../../src/main/http/servidor.js';
 import { aplicacaoDeTeste } from '../helpers/aplicacao.js';
-import { AnalisadorDePecaFalso, PAGINAS_DA_PECA } from '../helpers/analiseDePeca.js';
+import {
+  AnalisadorDePecaFalso,
+  PAGINA_1,
+  PAGINA_2,
+  PAGINAS_DA_PECA,
+  respostaDaPeca,
+} from '../helpers/analiseDePeca.js';
 import { NOME_DA_PARTE } from '../helpers/analiseIa.js';
 import { ProviderFalso, umProcesso } from '../helpers/fabricas.js';
 import {
@@ -51,6 +57,12 @@ async function montar(m: Montagem): Promise<void> {
   analisador = new AnalisadorDePecaFalso();
   const provedor = new ProvedorDeLoteFalso([
     { id: 'a', rotulo: 'Petição inicial', bytes: await pdfComPaginas(PAGINAS_DA_PECA) },
+    {
+      id: 'h',
+      rotulo: 'Petição (HTML do tribunal)',
+      mimetype: 'text/html',
+      bytes: new TextEncoder().encode(`<p>${PAGINA_1}</p><p>${PAGINA_2}</p>`),
+    },
     { id: 'i', rotulo: 'Documento escaneado', bytes: await pdfSoComImagem(2) },
     {
       id: 's',
@@ -283,6 +295,36 @@ describe('recusas pela rota (nenhuma chama o modelo)', () => {
   });
 });
 
+describe('peça convertida do HTML do tribunal (v0.56.0)', () => {
+  it('tem texto: é analisada como as outras, e a resposta diz que veio de conversão', async () => {
+    await montar({ workspaces: [WS_A] });
+    // O HTML desenhado cabe numa página: as citações apontam para a página 1.
+    const na1 = (i: { texto: string; trecho: string; pagina: number }) => ({
+      ...i,
+      pagina: 1,
+    });
+    const base = respostaDaPeca();
+    analisador.responderCom({
+      ...base,
+      pedidos: base.pedidos.map(na1),
+      alegacoes_principais: base.alegacoes_principais.map(na1),
+      valores_citados: base.valores_citados.map((v) => ({ ...v, pagina: 1 })),
+      documentos_citados: base.documentos_citados.map((d) => ({ ...d, pagina: 1 })),
+    });
+    await baixar('h');
+    const r = await analisar('h');
+    expect(r.statusCode).toBe(200);
+    expect(r.json()).toMatchObject({ estado: 'verificada', conversao: 'html' });
+    expect(analisador.chamadas).toBe(1);
+  });
+
+  it('o PDF que o tribunal entregou como PDF não leva marca de conversão', async () => {
+    await montar({ workspaces: [WS_A] });
+    await baixar('a');
+    expect((await analisar('a')).json().conversao).toBeNull();
+  });
+});
+
 describe('estado da peça na guarda (só banco)', () => {
   it('antes de baixar "nao_baixada"; depois, "disponivel"; conta não liberada: 404', async () => {
     await montar({ workspaces: [WS_A] });
@@ -315,6 +357,13 @@ describe('avaliação', () => {
       (await enviar({ avaliacao: 'errado', motivo: 'erro_de_fato' })).statusCode,
     ).toBe(200);
     expect((await enviar({ avaliacao: 'util' })).statusCode).toBe(200);
+    // O polegar para baixo manda "errado"; o motivo "pode causar prejuízo" é o antigo "perigoso" e o servidor o grava assim.
+    const prej = await enviar({ avaliacao: 'errado', motivo: 'pode_causar_prejuizo' });
+    expect(prej.statusCode).toBe(200);
+    expect(prej.json()).toMatchObject({
+      avaliacao: 'perigoso',
+      motivo: 'pode_causar_prejuizo',
+    });
     expect((await enviar({ avaliacao: 'util', motivo: 'outro' })).statusCode).toBe(400);
     expect((await enviar({ avaliacao: 'errado', texto: 'livre' })).statusCode).toBe(400);
     expect((await enviar({ avaliacao: 'errado', motivo: 'inventado' })).statusCode).toBe(

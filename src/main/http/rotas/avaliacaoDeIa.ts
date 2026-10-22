@@ -6,9 +6,14 @@ import type {
 } from '../../../domain/entities/AnaliseDoAto.js';
 
 /**
- * Corpo da avaliação da análise e do resumo (v0.52.0): três valores e, OPCIONAL, um motivo de lista
+ * Corpo da avaliação da análise, do resumo e da peça (v0.52.0): três valores e, OPCIONAL, um motivo de lista
  * fechada — só com "errado" ou "perigoso". `.strict()` e nenhum campo de texto: texto livre receberia dado
  * pessoal, e este corpo é a única entrada da avaliação.
+ *
+ * Desde a v0.56.0 a tela só tem polegares: para baixo grava "errado", e o motivo "pode causar prejuízo" é o que
+ * antes era "perigoso". Por isso esse motivo FORÇA o valor "perigoso" aqui, no servidor — a tabela, o relatório
+ * e o critério "zero perigoso" da avaliação de modelos continuam falando a mesma língua, e nenhum cliente
+ * (antigo ou novo) consegue gravar o motivo com outro valor.
  */
 export const corpoDaAvaliacao = z
   .object({
@@ -21,7 +26,10 @@ export const corpoDaAvaliacao = z
   .refine((c) => c.motivo === undefined || c.avaliacao !== 'util', {
     message: 'O motivo só vale com "errado" ou "perigoso".',
     path: ['motivo'],
-  });
+  })
+  .transform((c) =>
+    c.motivo === 'pode_causar_prejuizo' ? { ...c, avaliacao: 'perigoso' as const } : c,
+  );
 
 export type CorpoDaAvaliacao = {
   readonly avaliacao: AvaliacaoDaAnalise;

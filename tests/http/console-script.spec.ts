@@ -9,6 +9,7 @@ import { SCRIPT_CALENDARIO } from '../../src/main/http/ui/calendario.js';
 import { SCRIPT_ATUALIZACOES } from '../../src/main/http/ui/atualizacoes.js';
 import { SCRIPT_PROVIDENCIA } from '../../src/main/http/ui/providencia.js';
 import { SCRIPT_ANALISE_IA } from '../../src/main/http/ui/analiseIA.js';
+import { SCRIPT_POLEGARES } from '../../src/main/http/ui/polegares.js';
 import { SCRIPT_RESUMO_IA } from '../../src/main/http/ui/resumoIA.js';
 import { SCRIPT_ANALISE_PECA_IA } from '../../src/main/http/ui/analisePecaIA.js';
 import { SCRIPT_PAGAMENTO } from '../../src/main/http/ui/pagamento.js';
@@ -46,6 +47,7 @@ describe.each([
   ['atualizações (tabela)', SCRIPT_ATUALIZACOES],
   ['marcar como cumprido', SCRIPT_PROVIDENCIA],
   ['análise por IA', SCRIPT_ANALISE_IA],
+  ['polegares das IAs', SCRIPT_POLEGARES],
   ['resumo por IA', SCRIPT_RESUMO_IA],
   ['análise de peça por IA', SCRIPT_ANALISE_PECA_IA],
   ['assinatura online e confirmação', SCRIPT_PAGAMENTO],

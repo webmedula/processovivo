@@ -45,7 +45,7 @@ Citação verificada ≥ 95%, zero "perigoso", "errado" ≤ 10%, pedidos princip
 Decisões do dono de 22/10/2026, agora em código. **Produção só para contas escolhidas; para todos só depois da Política de Privacidade e dos Termos v1.4.**
 
 1. **Liberação por duas chaves** (`PROCESSOVIVO_IA_PECAS_HABILITADA`, padrão `false`; `PROCESSOVIVO_IA_PECAS_WORKSPACES`, padrão vazio, ids de 16 ou 32 hex). Com `HABILITADA=false`, só as contas da lista; com `true`, todas. **Em ambos os casos a conta também precisa do recurso `analiseIa` (plano Avançado/IA), sem a exceção do "workspace sem assinatura".** Sem nenhuma das duas, o botão não aparece e a rota responde "indisponível".
-2. **Modo avaliação:** conta da lista (chave geral desligada) vê Útil / Errado / Perigoso com motivo de lista fechada; no modo geral só o link discreto "Reportar problema" (registra "errado" + motivo). Nenhum texto livre.
+2. **Modo avaliação:** conta da lista (chave geral desligada) vê Útil / Errado / Perigoso com motivo de lista fechada; no modo geral só o link discreto "Reportar problema" (registra "errado" + motivo). Nenhum texto livre. **Substituído na 0.56.0:** a tela é o polegar (para cima "útil"; para baixo "errado" + motivo opcional, incluindo "pode causar prejuízo se seguido") para todas as contas, e o botão também existe no visualizador da Pasta digital.
 3. **Resultado conciso** (esquema fechado, Zod `.strict()`): `tipo_da_peca`; `em_uma_frase` (≤ 200); `pedidos` (≤ 5); `alegacoes_principais` (≤ 4); `preliminares_ou_defesas_formais` (≤ 3); `documentos_citados` (≤ 8); `valores_citados` (≤ 5); `pontos_de_atencao` (≤ 3, códigos fechados). **Isto SUBSTITUI os limites maiores da seção 5 da v1.0.0**, que valem só para o comparador da Fase 0.
 4. **Só TJGO; só peça com texto pesquisável (sem OCR); recusa acima de 40 páginas ou 80 mil caracteres; peça sigilosa ou processo em segredo de justiça: botão desligado e zero chamadas.**
 5. **Teto:** cada análise pesa 5 no teto técnico diário (`PROCESSOVIVO_IA_MAX_POR_DIA`) e conta uma no freio por hora (`PROCESSOVIVO_IA_PECAS_MAX_POR_HORA`, 6). Resultado reaproveitado não pesa.
@@ -57,6 +57,7 @@ Decisões do dono de 22/10/2026, agora em código. **Produção só para contas 
 
 ## Histórico de versões
 
+- **Errata (0.56.0):** itens 2 e a tela do botão — ver a nota no item 2. Nada mais da especificação mudou.
 - **v1.2.0 (22/10/2026, 0.55.0):** Fase 1 implementada: liberação por chave + lista de contas, modo avaliação, resultado conciso, peso 5 no teto, guarda de 30 dias, reaproveitamento por hash e redação ampliada.
 - **v1.1.0 (22/10/2026, 0.53.0):** acrescenta as seis mudanças acima, as decisões da Fase 1 e o roteiro. Conteúdo da v1.0.0 preservado.
 - **v1.0.0 (22/10/2026):** princípios para peças, seção 5 (saída) e seção 8 (critério), fornecidos pelo dono.

@@ -4,6 +4,7 @@ import {
 } from '../../domain/entities/vocabularioDaAnalise.js';
 import {
   LIMITES_DO_RESUMO,
+  LIMITES_DO_RESUMO_1_2_0,
   type ItemBrutoDoResumo,
   type ItemDoResumo,
   type PontoDoResumo,
@@ -36,9 +37,18 @@ import {
  *   - há providência do sistema que a IA não leu → item que afirma "não há pendências" ou
  *     "a IA não indicou pendências" é descartado: o silêncio da IA não é ausência de providência.
  *
+ * Regras 1.2.0 (v0.56.0, `regras: '1.2.0'` no contexto; produção usa sempre esta):
+ *   - tamanho: no máximo 3 itens de situação (360 caracteres) e 5 pendências (200); o que passar é descartado;
+ *   - o ato mais recente LIDO tem de aparecer na situação: se nenhum item verificado o cita, o resultado
+ *     inteiro é "não verificado" (`sem_ato_mais_recente`); se aparece fora do começo, vai para o começo;
+ *   - com o ato mais recente lido, ato mais antigo entra no máximo UMA vez na situação, e nunca como atual
+ *     ("atualmente", "no momento"…): o item é descartado (`atualidade`).
+ * Sem `regras`, vale o comportamento da 1.1.0 (o comparador compara as duas versões).
+ *
  * Mude `VERSAO_DAS_REGRAS_DO_RESUMO` junto com qualquer alteração aqui.
  */
-export const VERSAO_DAS_REGRAS_DO_RESUMO = '1.1.0';
+export const VERSAO_DAS_REGRAS_DO_RESUMO = '1.2.0';
+export const VERSAO_DAS_REGRAS_DO_RESUMO_1_1_0 = '1.1.0';
 
 /** O que a verificação precisa de cada ato enviado. */
 export interface AtoVerificavel {
@@ -70,6 +80,10 @@ export interface DescartesDoResumo {
 export interface ContextoDaVerificacaoDoResumo {
   readonly maisRecenteNaoLido?: boolean;
   readonly providenciaNaoLida?: boolean;
+  /** Quais regras valem (padrão: as da 1.1.0). */
+  readonly regras?: '1.1.0' | '1.2.0';
+  /** O ato mais recente que o SISTEMA conhece e se o texto dele foi enviado (1.2.0). */
+  readonly maisRecente?: { readonly chave: string; readonly lido: boolean };
 }
 
 /** Palavras que dão a um ato o lugar de "como o processo está agora". */
@@ -103,7 +117,8 @@ export type ResultadoDaVerificacaoDoResumo =
     }
   | {
       readonly estado: 'nao_verificado';
-      readonly motivo: 'sem_item_verificado' | 'expressao_proibida';
+      readonly motivo:
+        'sem_item_verificado' | 'expressao_proibida' | 'sem_ato_mais_recente';
       readonly descartes: DescartesDoResumo;
       readonly itensRecebidos: number;
     };
@@ -155,6 +170,8 @@ export function verificarResumo(
     return n;
   };
 
+  const v12 = contexto.regras === '1.2.0';
+  const maisRecenteLido = v12 && contexto.maisRecente?.lido === true;
   const vistos = new Set<string>();
   const verificar = (
     bruto: readonly ItemBrutoDoResumo[],
@@ -162,9 +179,15 @@ export function verificarResumo(
     ehSituacao: boolean,
   ): ItemDoResumo[] => {
     const saida: ItemDoResumo[] = [];
+    let antigos = 0;
+    const maxTexto = !v12
+      ? LIMITES_DO_RESUMO.texto
+      : ehSituacao
+        ? LIMITES_DO_RESUMO_1_2_0.textoDaSituacao
+        : LIMITES_DO_RESUMO_1_2_0.textoDaPendencia;
     for (const i of bruto) {
       const texto = i.texto.trim();
-      if (texto === '' || texto.length > LIMITES_DO_RESUMO.texto) {
+      if (texto === '' || texto.length > maxTexto) {
         contagem.forma++;
         continue;
       }
@@ -195,6 +218,20 @@ export function verificarResumo(
         contagem.copiaDoTrecho++;
         continue;
       }
+      // 1.2.0: com o ato mais recente lido, a situação fala dele; ato antigo só como "antes", uma vez,
+      // e nunca como o estado de agora.
+      const ehAntigo =
+        maisRecenteLido && ehSituacao && ato.chave !== contexto.maisRecente?.chave;
+      if (ehAntigo) {
+        if (textoApresentaComoAtual(texto)) {
+          contagem.atualidade++;
+          continue;
+        }
+        if (antigos >= 1) {
+          contagem.forma++;
+          continue;
+        }
+      }
       const chaveDeRepeticao = `${id}|${normalizarParaComparar(texto)}`;
       if (vistos.has(chaveDeRepeticao)) continue;
       vistos.add(chaveDeRepeticao);
@@ -202,13 +239,20 @@ export function verificarResumo(
         contagem.forma++;
         continue;
       }
+      if (ehAntigo) antigos++;
       saida.push({ texto, chaveDoAto: ato.chave, trecho: i.trecho.trim() });
     }
     return saida;
   };
 
-  const situacao = verificar(resposta.situacao, LIMITES_DO_RESUMO.situacao, true);
-  const pendencias = verificar(resposta.pendencias, LIMITES_DO_RESUMO.pendencias, false);
+  const limiteDaSituacao = v12
+    ? LIMITES_DO_RESUMO_1_2_0.situacao
+    : LIMITES_DO_RESUMO.situacao;
+  const limiteDasPendencias = v12
+    ? LIMITES_DO_RESUMO_1_2_0.pendencias
+    : LIMITES_DO_RESUMO.pendencias;
+  let situacao = verificar(resposta.situacao, limiteDaSituacao, true);
+  const pendencias = verificar(resposta.pendencias, limiteDasPendencias, false);
 
   if (situacao.length === 0) {
     return {
@@ -217,6 +261,23 @@ export function verificarResumo(
       descartes: descartes(),
       itensRecebidos,
     };
+  }
+
+  // 1.2.0: o ato mais recente lido TEM de estar na situação, e vem primeiro.
+  if (maisRecenteLido && contexto.maisRecente) {
+    const chave = contexto.maisRecente.chave;
+    if (!situacao.some((i) => i.chaveDoAto === chave)) {
+      return {
+        estado: 'nao_verificado',
+        motivo: 'sem_ato_mais_recente',
+        descartes: descartes(),
+        itensRecebidos,
+      };
+    }
+    situacao = [
+      ...situacao.filter((i) => i.chaveDoAto === chave),
+      ...situacao.filter((i) => i.chaveDoAto !== chave),
+    ];
   }
 
   const pontos: PontoDeAtencao[] = [];

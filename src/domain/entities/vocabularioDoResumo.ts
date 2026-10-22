@@ -15,6 +15,22 @@ export const LIMITES_DO_RESUMO = Object.freeze({
   pontosDeAtencao: 2,
 });
 
+/**
+ * Limites do resumo CONCISO (`resumo-1.2.0`, v0.56.0). O prompt pede ~320 caracteres de situação e 160 por
+ * pendência; a verificação tolera um pouco mais (360 e 200) para não jogar fora um bom item por três palavras.
+ * Itens a mais ou longos demais são descartados como "forma", nunca cortados: texto do modelo não se edita.
+ */
+export const LIMITES_DO_RESUMO_1_2_0 = Object.freeze({
+  situacao: 3,
+  pendencias: 5,
+  textoDaSituacao: 360,
+  textoDaPendencia: 200,
+  pontosDeAtencao: 2,
+  /** O que o prompt PEDE (meta); a verificação usa os maiores acima. */
+  metaDaSituacao: 320,
+  metaDaPendencia: 160,
+});
+
 /** Um item como o modelo o entrega: `ato` é o identificador curto (A1, A2…) que NÓS demos. */
 export interface ItemBrutoDoResumo {
   readonly texto: string;

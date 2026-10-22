@@ -15,6 +15,7 @@ import { TransporteComTeto } from './comparadorDeModelos.js';
 import {
   VERSAO_DO_COMPARADOR_DE_RESUMO,
   VERSOES_DO_RESUMO,
+  VERSOES_PADRAO_DO_COMPARADOR,
   compararResumos,
   estimarCustoDeResumo,
   metricasDeResumoEmCsv,
@@ -72,7 +73,7 @@ export async function executarComparacaoDeResumo(
     amb.aviso('Nenhum caso para rodar.');
     return 1;
   }
-  const pedidas = (op.get('versoes') ?? VERSOES_DO_RESUMO.join(','))
+  const pedidas = (op.get('versoes') ?? VERSOES_PADRAO_DO_COMPARADOR.join(','))
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean);

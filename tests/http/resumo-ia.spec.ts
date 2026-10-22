@@ -131,7 +131,7 @@ describe('IA habilitada', () => {
       expect(j.situacao[0].ato).toMatchObject({ rotulo: 'Intimação' });
       expect(j.situacao[0].texto).toContain(NOME_DA_PARTE);
       expect(j.contagens).toMatchObject({ atosNoProcesso: 6, providenciasDoSistema: 1 });
-      expect(j.versaoPrompt).toBe('resumo-1.1.0');
+      expect(j.versaoPrompt).toBe('resumo-1.2.0');
       expect(resumidor.chamadas).toBe(1);
       // O pedido não leva texto de fora: o que foi ao modelo veio do retrato, redigido.
       expect(resumidor.pedidos[0]?.usuario).not.toContain(NOME_DA_PARTE);
@@ -155,6 +155,27 @@ describe('IA habilitada', () => {
       ]) {
         expect((await avaliar(id, corpo)).statusCode, JSON.stringify(corpo)).toBe(400);
       }
+    });
+
+    // v0.56.0: o polegar para baixo manda "errado"; o motivo "pode causar prejuízo" é o antigo "perigoso".
+    it('polegar: "pode causar prejuízo" é gravado como perigoso, mesmo vindo com "errado"; o resto do motivo não muda o valor', async () => {
+      const id = (await resumir()).json().id as string;
+      const prej = await avaliar(id, {
+        avaliacao: 'errado',
+        motivo: 'pode_causar_prejuizo',
+      });
+      expect(prej.statusCode).toBe(200);
+      expect(prej.json()).toEqual({
+        id,
+        avaliacao: 'perigoso',
+        motivo: 'pode_causar_prejuizo',
+      });
+      const outro = await avaliar(id, { avaliacao: 'errado', motivo: 'erro_de_fato' });
+      expect(outro.json()).toEqual({ id, avaliacao: 'errado', motivo: 'erro_de_fato' });
+      expect(
+        (await avaliar(id, { avaliacao: 'util', motivo: 'pode_causar_prejuizo' }))
+          .statusCode,
+      ).toBe(400);
     });
 
     it('avalia com três valores e recusa qualquer outro (inclusive texto livre)', async () => {

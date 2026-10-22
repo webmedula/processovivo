@@ -114,6 +114,7 @@ const ROTULO_DO_MOTIVO: Readonly<Record<MotivoDaAvaliacao, string>> = {
   citacao_inventada: 'citação inventada',
   concluiu_prazo: 'concluiu prazo',
   deixou_de_fora: 'deixou de fora algo importante',
+  pode_causar_prejuizo: 'pode causar prejuízo',
   outro: 'outro',
 };
 const usd = (v: number | undefined): string =>
@@ -135,7 +136,7 @@ export function linhasDeAvaliacoes(grupos: readonly LinhaDeAvaliacoes[]): string
     );
     if (g.errado + g.perigoso > 0) {
       saida.push(
-        `  Motivos (Errado/Perigoso): ${MOTIVOS_DA_AVALIACAO.map((m) => `${ROTULO_DO_MOTIVO[m]} ${g.motivos[m]}`).join(' · ')} · sem motivo ${g.semMotivo}`,
+        `  Polegar para baixo: ${g.errado + g.perigoso} (${pct(g.errado + g.perigoso, avaliadas)}) · Motivos (Errado/Perigoso): ${MOTIVOS_DA_AVALIACAO.map((m) => `${ROTULO_DO_MOTIVO[m]} ${g.motivos[m]}`).join(' · ')} · sem motivo ${g.semMotivo}`,
       );
     }
     saida.push('');

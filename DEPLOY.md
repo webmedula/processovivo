@@ -802,9 +802,9 @@ Em qualquer caso a conta **também precisa do plano IA** (liberado no `/admin` o
 1. Descubra o identificador de cada conta. No Console do serviço (Easypanel): `node dist/main/cli.js assinatura ver email@da.conta` — a linha `workspace .....` é o identificador. (Conta de chave de API: o id aparece em `/admin` → Chaves de API.)
 2. Confira que a conta tem o plano IA: a mesma saída mostra o plano. Se não tem: `node dist/main/cli.js assinatura liberar email@da.conta ia 1`.
 3. No Easypanel, aba **Environment**: `PROCESSOVIVO_IA_PECAS_WORKSPACES=<id-do-dono>,<id-do-avaliador>` e `PROCESSOVIVO_IA_PECAS_HABILITADA=false`. Salve e reinicie. Id torto não derruba o serviço: o log avisa quantos foram ignorados (sem repetir o valor).
-4. A conta da lista vê Útil / Errado / Perigoso (com o motivo da lista) logo abaixo de cada resultado. Quem não está na lista não vê nada.
+4. A conta da lista vê o botão em cada peça (linha do tempo e visualizador da Pasta digital) e avalia o resultado pelo **polegar** (para cima = útil; para baixo = com problema, com motivo opcional). Quem não está na lista não vê nada.
 
-**Para todos, depois da Política de Privacidade e dos Termos v1.4 publicados:** troque para `PROCESSOVIVO_IA_PECAS_HABILITADA=true` e reinicie. A lista deixa de importar; todas as contas com o plano IA passam a ver o botão, só com o link discreto "Reportar problema".
+**Para todos, depois da Política de Privacidade e dos Termos v1.4 publicados:** troque para `PROCESSOVIVO_IA_PECAS_HABILITADA=true` e reinicie. A lista deixa de importar; todas as contas com o plano IA passam a ver o botão. A avaliação é o mesmo polegar para todas (desde a 0.56.0 não há mais modo de avaliação na tela).
 
 **Limites e custo:** só TJGO; só peça com texto pesquisável (PDF escaneado é recusado, sem OCR); até 40 páginas e 80 mil caracteres. Cada análise pesa **5** no teto diário `PROCESSOVIVO_IA_MAX_POR_DIA` (padrão 200 → 40 peças por conta por dia) e conta uma no freio `PROCESSOVIVO_IA_PECAS_MAX_POR_HORA` (6). Modelo: `PROCESSOVIVO_IA_PECAS_MODELO` (vazio = o de `PROCESSOVIVO_IA_MODELO`). O resultado fica guardado 30 dias (`PROCESSOVIVO_IA_PECAS_RESULTADO_DIAS`); o texto da peça nunca é gravado.
 
@@ -847,7 +847,7 @@ Nada muda para o usuário: são ferramentas **manuais**, no Console do serviço,
 3. **Risco residual a lembrar:** a redação de peça cobre CEP, RG/CNH com rótulo, data de nascimento e conta/agência com rótulo, além do que o ato já cobria; **não
    cobre endereço nem nome de terceiro** fora do retrato. O processo filho do `pdftotext` tem tempo e saída máximos, mas não limite de CPU/memória.
 
-## Resumo do processo: diagnóstico e comparação 1.0.0 × 1.1.0 (v0.54.0)
+## Resumo do processo: diagnóstico e comparação 1.1.0 × 1.2.0 (v0.54.0; atualizado na v0.56.0)
 
 Ferramentas **manuais** no Console do serviço (sem rota; nada muda para o usuário além do resumo em si).
 
@@ -861,17 +861,18 @@ Ferramentas **manuais** no Console do serviço (sem rota; nada muda para o usuá
    Mostra, para os 5 atos mais recentes, o tamanho de cada campo de texto, se o resumo o considera utilizável (e por que não), se é providência do sistema e como a
    seleção o tratou; e, desde a 0.54.0, se o ato mais recente foi lido, quantas junções de "mesmo ato" houve e os atos não lidos por motivo.
 
-2. **Comparar `resumo-1.0.0` × `resumo-1.1.0`** com processos inventados (8 em `tests/fixtures/ia-resumo/casos.json`). Precisa de `OPENROUTER_API_KEY` e de
+2. **Comparar `resumo-1.1.0` (a de antes) × `resumo-1.2.0` (a conciso, em produção desde a 0.56.0)** com processos inventados (8 em `tests/fixtures/ia-resumo/casos.json`). Precisa de `OPENROUTER_API_KEY` e de
    `PROCESSOVIVO_IA_MODELO` (o modelo de produção, sempre a referência). Requer `npm run build` fora da imagem.
 
    ```bash
    node scripts/ia-comparar-modelos.mjs --tarefa=resumo             # só ESTIMA: nada é enviado
    node scripts/ia-comparar-modelos.mjs --tarefa=resumo --executar  # roda as duas versões (teto padrão US$ 1,00)
-   node scripts/ia-comparar-modelos.mjs --tarefa=resumo --executar --versoes=resumo-1.1.0 --teto-usd=2
+   node scripts/ia-comparar-modelos.mjs --tarefa=resumo --executar --versoes=resumo-1.2.0 --teto-usd=2   # só a nova, com outro teto
    ```
 
    Saída em `dados/comparador-ia/`: `comparacao-resumo-<data>-<hora>.md`, `-metricas.csv` e `-revisao-humana.csv`. A avaliação automática é um filtro, não um
-   juiz. Os números que importam: "atual indevida" e "negou pendência" devem ser **0** na 1.1.0. Preços são estimativa, não confirmados.
+   juiz. Os números que importam: "atual indevida" e "negou pendência" devem ser **0**; "abre no ato mais recente" deve cobrir todos os casos em que ele foi lido; e a 1.2.0 deve ter a
+   situação média perto de 320 caracteres e a pendência média perto de 160 (as colunas "Situação" e "Pendência"). Preços são estimativa, não confirmados.
 
 ## Medir e comparar a análise por IA (v0.52.0)
 
@@ -884,10 +885,10 @@ Nada aqui muda a produção: o modelo, o prompt e as regras de verificação con
    node scripts/ia-avaliacoes.mjs
    ```
 
-   Por modelo e versão do prompt: análises, avaliações (Útil / Errado / Perigoso), não verificadas, latência p50/p95,
-   custo médio, p50, p95 e máximo (só onde o OpenRouter informou) e, entre as avaliadas Errado/Perigoso, a contagem
-   por **motivo** (erro de fato, citação inventada, concluiu prazo, deixou de fora algo importante, outro, sem motivo).
-   O resumo de processo aparece em seção separada.
+   Por modelo e versão do prompt: análises, avaliações (polegar para cima = Útil; para baixo = Errado, ou Perigoso quando o motivo é
+   "pode causar prejuízo"), não verificadas, latência p50/p95, custo médio, p50, p95 e máximo (só onde o OpenRouter informou) e, entre
+   os polegares para baixo, a contagem por **motivo** (erro de fato, citação inventada, concluiu prazo, deixou de fora algo importante,
+   pode causar prejuízo, outro, sem motivo). O resumo de processo e a análise de peça aparecem em seções separadas.
 
 2. **Comparar modelos com casos inventados** (48 casos sintéticos em `tests/fixtures/ia-avaliacao/casos.json`).
    Precisa de `OPENROUTER_API_KEY` (só na variável de ambiente; nunca é impressa nem gravada) e de
@@ -914,9 +915,9 @@ Nada aqui muda a produção: o modelo, o prompt e as regras de verificação con
    - **Nenhum modelo entra em produção por este relatório.** A troca é decisão do dono (variável
      `PROCESSOVIVO_IA_MODELO` no Easypanel).
 
-3. **Avaliação na tela** (produção): depois do cabeçalho do resultado, "Esta análise foi útil?" / "Este resumo foi
-   útil?" com Útil, Errado e Perigoso. Ao marcar Errado ou Perigoso aparece o motivo (opcional, uma escolha fixa; nunca
-   texto livre). A coluna nova `motivo_avaliacao` é aditiva e nasce vazia; nada é apagado.
+3. **Avaliação na tela** (produção, desde a 0.56.0): no fim do resultado do resumo, da análise do ato e da análise de peça, dois
+   ícones de polegar. Para baixo aparece o motivo (opcional, uma escolha fixa; nunca texto livre). A coluna `motivo_avaliacao` é
+   aditiva; o motivo "pode causar prejuízo" é gravado como `perigoso`; nada é apagado.
 
 O resumo de processo agora conta no mesmo **teto técnico diário por conta** da análise de ato
 (`PROCESSOVIVO_IA_MAX_POR_DIA`, padrão 200): uma análise ou um resumo, cada um conta 1. O freio de 6 por hora do resumo

@@ -282,8 +282,17 @@ export class ServicoResumoDoProcesso {
     // lido o ato mais recente e "sem pendências" havendo providência que a IA não leu.
     const chavesPendentes = selecao.chavesPendentes;
     const verificada = verificarResumo(bruta.resposta, entrada.atos, {
+      regras: '1.2.0',
       maisRecenteNaoLido: selecao.maisRecente !== undefined && !selecao.maisRecente.lido,
       providenciaNaoLida: selecao.providenciasNaoLidas.length > 0,
+      ...(selecao.maisRecente
+        ? {
+            maisRecente: {
+              chave: selecao.maisRecente.chave,
+              lido: selecao.maisRecente.lido,
+            },
+          }
+        : {}),
     });
     const resultado: ResultadoDoResumo =
       verificada.estado === 'verificado'
