@@ -9,6 +9,38 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.56.0] — 2026-10-22
+
+**Acabamento das IAs: resumo conciso, avaliação por polegar e o botão de peça também na Pasta digital.** Prompt `resumo-1.2.0` e regras de verificação `1.2.0`.
+**Não mudaram:** modelo, provedor, ZDR, redação, segredo de justiça, planos, preços, teto diário, as regras de não calcular prazo, calendário, análise do ato (prompt
+`ato-1.2.0`) e análise de peça (`peca-1.0.0`). Sem dependência nova; sem migração (o motivo novo da avaliação é texto na coluna que já existia).
+
+- **Resumo direto e conciso.** De cima para baixo: faixa do sistema (só quando o ato mais recente não foi lido, ou a Pasta digital já lista um ato mais novo),
+  **Situação** (1 a 3 itens, ~320 caracteres; abre pelo ato mais recente lido, com a data; ato antigo no máximo um, como "Antes, em dd/mm/aaaa…"), **O que pede
+  providência** (até 5 linhas de até 160 caracteres; data e tipo do ato vêm do sistema; o prazo só se estiver escrito no ato, sem cálculo; citação recolhida em
+  "Ver trecho"), **Detalhes** recolhido (o que foi lido, as providências do sistema que a IA não leu, a hora), o aviso fixo em uma linha e os polegares. Saíram "O que
+  entrou e o que ficou de fora" e "Itens descartados na verificação: N" (havendo descarte, uma linha neutra nos Detalhes).
+- **Verificação 1.2.0.** O ato mais recente LIDO tem de estar na situação (senão o resultado é "não verificado", motivo `sem_ato_mais_recente`; se estiver fora do começo,
+  sobe para o começo); com ele lido, ato antigo entra no máximo uma vez e nunca como atual; situação acima de 360 caracteres, mais de 3 itens e pendência acima de 200
+  são descartadas (o texto do modelo nunca é cortado). Continuam: citação literal, número/data só se estiver no ato, nenhuma expressão proibida, "sem pendências" barrado
+  havendo providência sem leitura. Sem `regras` valem as 1.1.0 (o comparador compara as duas).
+- **Avaliação por polegar** (`ui/polegares.ts`), no fim do resultado do resumo, da análise do ato e da análise de peça. Para cima grava "util"; para baixo grava "errado" e
+  abre, sem sair da tela, a lista fechada e opcional de motivos: erro de fato, citação inventada, concluiu prazo, deixou de fora algo importante, **pode causar prejuízo se
+  seguido** e outro. "Pode causar prejuízo" é o que antes era "perigoso": o servidor grava `perigoso` + `pode_causar_prejuizo`, então a tabela, o relatório e o critério "zero
+  perigoso" falam a mesma língua. Saíram os botões Útil / Errado / Perigoso, o link "Reportar problema" e o modo de avaliação da peça (a API ainda informa `modo`).
+  `ia-avaliacoes.mjs` conta o polegar para baixo e o motivo novo. **Não existia `PROCESSOVIVO_IA_AVALIACAO_COMPLETA`: nada a remover.**
+- **"Analisar peça com IA" também no visualizador da Pasta digital**, com os mesmos estados da linha do tempo. O botão não some mais sem aviso: aparece **desligado, com a
+  razão** para processo não acompanhado, outro tribunal, peça sob sigilo ou peça ainda não baixada/na fila/não obtida. A peça **convertida do HTML do tribunal** já era
+  elegível (o arquivo guardado é um PDF que desenha o texto); o resultado só avisa que imagens e tabelas podem não ter entrado (`conversao: "html"` na resposta).
+- **Pluralização** numa função só (`domain/entities/pluralizacao.ts`, testada para 0, 1 e vários): acabou "1 ato como pedem providência".
+- **Comparador** `--tarefa=resumo`: `resumo-1.1.0` × `resumo-1.2.0` por padrão (a 1.0.0 segue aceita em `--versoes`); novas colunas com o tamanho médio da situação e das
+  pendências. Estima antes de `--executar`; ZDR e teto como sempre.
+- **Testes reescritos (e por quê):** os de navegador do resumo e da análise do ato que assumiam o layout antigo, a linha "Esta análise/resumo foi útil?", os três botões, o
+  rodapé "Itens descartados" e a ordem do Tab; os da peça que assumiam o modo de avaliação e o "Reportar problema"; e os de versão (`resumo-1.1.0` → `1.2.0`) e do relatório
+  de avaliações (um motivo a mais na lista). O de "providências não citadas" ganhou uma segunda intimação, porque o ato mais recente lido agora sempre é citado.
+
+---
+
 ## [0.55.0] — 2026-10-22
 
 **Análise de peça por IA, Fase 1: o botão "Analisar peça com IA".** Prompt `peca-1.0.0`, regras de verificação `1.0.0`, especificação v1.2.0

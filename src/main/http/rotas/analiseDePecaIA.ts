@@ -100,6 +100,7 @@ export function rotasDaAnaliseDePecaIA(
           resultado: resultadoJson(r.resultado),
           contagens: r.contagens,
           reaproveitada: r.reaproveitada,
+          conversao: r.conversao,
           modelo: r.modelo,
           versaoPrompt: r.versaoPrompt,
           provedor: r.provedor,

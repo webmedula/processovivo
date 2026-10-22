@@ -8,7 +8,7 @@ import type { Ambiente } from './ambiente.js';
 import { PROCESSO_TJGO } from '../helpers/leitor.js';
 
 /*
- * "Analisar peça com IA" NUM NAVEGADOR (v0.55.0). Servidor, console, linha do tempo e Pasta digital são
+ * "Analisar peça com IA" NUM NAVEGADOR (v0.55.0; polegares e Pasta digital na v0.56.0). Servidor, console, linha do tempo e Pasta digital são
  * os reais (tribunal falso, peças sintéticas); só as rotas da análise são simuladas com o contrato da API
  * (que tem teste próprio em tests/http/analise-de-peca.spec.ts). Nenhuma chamada a modelo, nenhuma rede.
  */
@@ -30,6 +30,7 @@ const RESULTADO = {
   id: 'analise-1',
   modo: 'avaliacao',
   reaproveitada: false,
+  conversao: null,
   avaliacao: null,
   criadaEm: '2026-10-05T12:00:00.000Z',
   expiraEm: '2026-11-04T12:00:00.000Z',
@@ -97,6 +98,7 @@ describe.skipIf(sem)('Analisar peça com IA, no navegador', { timeout: 180_000 }
     o: {
       liberado?: boolean;
       modo?: 'avaliacao' | 'geral';
+      acompanhado?: boolean;
       largura?: number;
       escuro?: boolean;
     } = {},
@@ -124,6 +126,15 @@ describe.skipIf(sem)('Analisar peça com IA, no navegador', { timeout: 180_000 }
           : { liberado: true, modo: o.modo ?? 'avaliacao' },
       ),
     );
+    if (o.acompanhado === false) {
+      await ctx.route(
+        (u) => u.pathname === `/v1/acompanhamentos/${PROCESSO_TJGO}`,
+        (rota) =>
+          rota.request().method() === 'GET'
+            ? json(rota, 404, { erro: 'ACOMPANHAMENTO_NAO_ENCONTRADO', mensagem: 'x' })
+            : rota.fallback(),
+      );
+    }
     await ctx.route('**/v1/analises/disponibilidade', (rota) =>
       json(rota, 200, { habilitada: true }),
     );
@@ -161,6 +172,10 @@ describe.skipIf(sem)('Analisar peça com IA, no navegador', { timeout: 180_000 }
     await page.waitForSelector('#conteudo .capa');
     await page.waitForSelector('#conteudo button[data-peca]');
   }
+  const cima = () => painel().getByRole('button', { name: 'Resultado útil' });
+  const baixo = () => painel().getByRole('button', { name: 'Resultado com problema' });
+  const grupoDoMotivo = () =>
+    painel().getByRole('group', { name: 'Qual foi o problema? (opcional)' });
 
   const botao = (id: string) =>
     page.locator(`[data-pvpe="analisar"][data-pvpe-id="${id}"]`);
@@ -208,33 +223,67 @@ describe.skipIf(sem)('Analisar peça com IA, no navegador', { timeout: 180_000 }
     expect(await botao('p01').getAttribute('aria-expanded')).toBe('true');
   });
 
-  it('modo avaliação: os três botões e o motivo de lista fechada; nada de texto livre', async () => {
-    await abrir({ modo: 'avaliacao' });
-    await analisar();
-    expect(await painel().locator('.pvpe-av').count()).toBe(3);
-    expect(await page.locator('#pvpe-reportar').count()).toBe(0);
-    await page.locator('#pvpe-av-errado').click();
-    await page.locator('#pvpe-mo-erro_de_fato').click();
-    await page.waitForFunction(() =>
-      document.querySelector('#pvpe-mo-erro_de_fato[aria-pressed="true"]'),
+  // v0.56.0: o modo de avaliação (três botões) e o link "Reportar problema" saíram; qualquer conta liberada vê os
+  // mesmos polegares, e o modo que o servidor informa não muda a tela.
+  for (const modo of ['avaliacao', 'geral'] as const) {
+    it(`polegares no fim do resultado, iguais com o modo "${modo}": para cima grava "util"; para baixo, "errado" e motivo opcional`, async () => {
+      await abrir({ modo });
+      await analisar();
+      expect(await painel().locator('.pvpe-av, #pvpe-reportar').count()).toBe(0);
+      expect(await painel().getByText('Reportar problema').count()).toBe(0);
+      expect(
+        await painel()
+          .getByRole('button', { name: /^(Útil|Errado|Perigoso)$/ })
+          .count(),
+      ).toBe(0);
+      expect(
+        await painel().evaluate(
+          (el) =>
+            el.querySelector('.pvpol')!.getBoundingClientRect().top >
+            el.querySelector('.pvpe-aviso-fixo')!.getBoundingClientRect().top,
+        ),
+      ).toBe(true);
+      await cima().click();
+      await painel().getByText('Obrigado pelo retorno.').waitFor();
+      await baixo().click();
+      await grupoDoMotivo().waitFor();
+      await grupoDoMotivo()
+        .getByRole('button', { name: 'Pode causar prejuízo se seguido' })
+        .click();
+      await page.waitForFunction(
+        () => document.querySelector('.pvpol-m[aria-pressed="true"]') !== null,
+      );
+      expect(avaliacoes).toEqual([
+        { avaliacao: 'util' },
+        { avaliacao: 'errado' },
+        { avaliacao: 'errado', motivo: 'pode_causar_prejuizo' },
+      ]);
+      expect(await painel().locator('textarea, input[type="text"]').count()).toBe(0);
+    });
+  }
+
+  it('peça convertida do HTML do tribunal: o botão existe e o resultado avisa que imagens e tabelas podem não ter entrado', async () => {
+    await abrir();
+    responder = (rota) => json(rota, 200, { ...RESULTADO, conversao: 'html' });
+    await analisar('p04');
+    expect(await painel().innerText()).toContain(
+      'Peça convertida do HTML do tribunal em texto: imagens e tabelas podem não ter entrado na leitura.',
     );
-    expect(avaliacoes.at(-1)).toEqual({ avaliacao: 'errado', motivo: 'erro_de_fato' });
-    expect(await painel().locator('textarea, input[type="text"]').count()).toBe(0);
+    await painel().getByRole('button', { name: 'Fechar' }).click();
+    responder = (rota) => json(rota, 200, RESULTADO);
+    await analisar('p01');
+    expect(await painel().innerText()).not.toContain('convertida do HTML');
   });
 
-  it('modo geral: só o link "Reportar problema", que registra "errado" com o motivo escolhido', async () => {
-    await abrir({ modo: 'geral' });
-    await analisar();
-    expect(await painel().locator('#pvpe-av-util').count()).toBe(0);
-    await page.locator('#pvpe-reportar').click();
-    await page.locator('#pvpe-mo-citacao_inventada').click();
-    await page.waitForFunction(() =>
-      /registramos/.test(document.getElementById('pvpe-painel')?.innerText ?? ''),
+  it('processo que a conta não acompanha: os botões existem, DESLIGADOS, com a razão', async () => {
+    await abrir({ acompanhado: false });
+    await botao('p01').waitFor();
+    expect(await botao('p01').isDisabled()).toBe(true);
+    expect(await botao('p01').getAttribute('title')).toBe(
+      'Acompanhe este processo para poder analisar as peças dele com IA.',
     );
-    expect(avaliacoes.at(-1)).toEqual({
-      avaliacao: 'errado',
-      motivo: 'citacao_inventada',
-    });
+    expect(await botao('p01').getAttribute('aria-label')).toContain('indisponível');
+    expect(analises).toHaveLength(0);
   });
 
   it.each([
@@ -332,5 +381,190 @@ describe.skipIf(sem)('Analisar peça com IA, no navegador', { timeout: 180_000 }
     expect(await original.count()).toBe(1);
     expect(await original.getAttribute('data-pvpe')).toBeNull();
     expect(await page.locator('#conteudo .capa').count()).toBe(1);
+  });
+
+  describe('visualizador da Pasta digital (v0.56.0)', () => {
+    async function abrirPasta(id: string): Promise<void> {
+      await page.click('#pasta-abrir');
+      await page.waitForSelector('#pasta .linha');
+      await page.click(`#pf-${id}`);
+    }
+    const botaoPasta = () => page.locator('#pasta-ia [data-pvpe="analisar"]');
+    const pronto = () =>
+      page.waitForFunction(() => {
+        const b = document.querySelector('#pasta-ia [data-pvpe="analisar"]');
+        return !!b && !(b as HTMLButtonElement).disabled;
+      });
+
+    it('peça disponível: o botão do visor fica ligado, um clique analisa e o resultado (com polegares) mora no visor', async () => {
+      await abrir();
+      await abrirPasta('p01');
+      await botaoPasta().waitFor();
+      await pronto();
+      expect(await botaoPasta().textContent()).toBe('Analisar peça com IA');
+      await botaoPasta().click();
+      await page.locator('#pasta-ia #pvpe-painel .pvpe-tipo').waitFor();
+      expect(await page.locator('#pasta-ia #pvpe-painel').innerText()).toContain(
+        'Leitura automática, pode omitir pontos. Confira a peça inteira.',
+      );
+      expect(await page.locator('#pasta-ia .pvpol-b').count()).toBe(2);
+      expect(analises).toHaveLength(1);
+      // O visualizador continua: o PDF abre ao lado, e o resultado rola dentro do próprio espaço.
+      expect(
+        await page.locator('#pasta-ia').evaluate((e) => getComputedStyle(e).overflowY),
+      ).toBe('auto');
+    });
+
+    it('peça convertida do HTML do tribunal: botão ligado, resultado com o aviso da conversão', async () => {
+      await abrir();
+      responder = (rota) => json(rota, 200, { ...RESULTADO, conversao: 'html' });
+      await abrirPasta('p04');
+      await pronto();
+      await botaoPasta().click();
+      await page.locator('#pasta-ia #pvpe-painel .pvpe-tipo').waitFor();
+      expect(await page.locator('#pasta-ia #pvpe-painel').innerText()).toContain(
+        'Peça convertida do HTML do tribunal',
+      );
+    });
+
+    it('outro tribunal que não o TJGO: desligado, com a razão em português (o servidor também recusa)', async () => {
+      await abrir();
+      await abrirPasta('p01');
+      await botaoPasta().waitFor();
+      await page.evaluate(() =>
+        (
+          window as unknown as {
+            __pvPecaIA: {
+              pasta(o: { numero: string; peca: { id: string; estado: string } }): void;
+            };
+          }
+        ).__pvPecaIA.pasta({
+          numero: '00000000020208260100',
+          peca: { id: 'p01', estado: 'disponivel' },
+        }),
+      );
+      await page.waitForFunction(
+        () =>
+          (
+            document.querySelector(
+              '#pasta-ia [data-pvpe="analisar"]',
+            ) as HTMLButtonElement
+          )?.disabled,
+      );
+      expect(await botaoPasta().getAttribute('title')).toContain(
+        'Tribunal de Justiça de Goiás',
+      );
+    });
+
+    it('peça ainda não baixada, na fila, não obtida ou sigilosa: desligado, com a razão, em vez de sumir', async () => {
+      await abrir();
+      await abrirPasta('p01');
+      await botaoPasta().waitFor();
+      for (const [estado, trecho] of [
+        ['na_fila', 'ainda está sendo baixada'],
+        ['nao_obtida', 'não foi obtida'],
+        ['nao_baixada', 'Baixe a peça primeiro'],
+        // A Pasta não abre peça sigilosa no visor, mas se um dia abrisse o botão diria por que não vale.
+        ['sigilo', 'Peça sob sigilo'],
+      ] as const) {
+        await page.evaluate(
+          (e) =>
+            (
+              window as unknown as {
+                __pvPecaIA: {
+                  pasta(o: {
+                    numero: string;
+                    peca: { id: string; estado: string };
+                  }): void;
+                };
+              }
+            ).__pvPecaIA.pasta({
+              numero: '99999019620268099999',
+              peca: { id: 'p01', estado: e },
+            }),
+          estado,
+        );
+        await page.waitForFunction(
+          (t) =>
+            (
+              document.querySelector(
+                '#pasta-ia [data-pvpe="analisar"]',
+              ) as HTMLButtonElement
+            )?.title.includes(t),
+          trecho,
+        );
+        expect(await botaoPasta().isDisabled()).toBe(true);
+      }
+    });
+
+    it('conta não liberada: nenhum botão no visor', async () => {
+      await abrir({ liberado: false });
+      await abrirPasta('p01');
+      await page.waitForFunction(() => true);
+      expect(await page.locator('#pasta-ia [data-pvpe="analisar"]').count()).toBe(0);
+    });
+
+    it('mudar de peça no visor troca o botão; fechar a Pasta apaga o resultado e a linha do tempo volta a funcionar', async () => {
+      await abrir();
+      await abrirPasta('p01');
+      await pronto();
+      await botaoPasta().click();
+      await page.locator('#pasta-ia #pvpe-painel .pvpe-tipo').waitFor();
+      await page.click('#pf-p05');
+      await page.waitForFunction(
+        () => document.querySelector('#pasta-ia [data-pvpe-id="p05"]') !== null,
+      );
+      expect(await page.locator('#pasta-ia #pvpe-painel').count()).toBe(0);
+      await page.click('#pasta-fechar');
+      expect(await page.locator('#pvpe-raiz').count()).toBe(0);
+      await analisar('p01');
+      expect(await painel().count()).toBe(1);
+    });
+
+    for (const largura of LARGURAS) {
+      it(`sem rolagem horizontal com o resultado no visor em ${largura} px`, async () => {
+        await abrir({ largura });
+        await abrirPasta('p01');
+        await pronto();
+        await botaoPasta().click();
+        await page.locator('#pasta-ia #pvpe-painel .pvpe-tipo').waitFor();
+        const m = await page.evaluate(() => ({
+          sw: document.documentElement.scrollWidth,
+          iw: window.innerWidth,
+          ia: document.getElementById('pasta-ia')!.getBoundingClientRect().right,
+        }));
+        expect(m.sw).toBeLessThanOrEqual(m.iw);
+        expect(m.ia).toBeLessThanOrEqual(m.iw);
+      });
+    }
+
+    for (const escuro of [false, true]) {
+      it(`axe sem violações no visor com o resultado e os motivos (tema ${escuro ? 'escuro' : 'claro'})`, async () => {
+        await abrir({ escuro });
+        await abrirPasta('p01');
+        await pronto();
+        await botaoPasta().click();
+        await page.locator('#pasta-ia #pvpe-painel .pvpe-tipo').waitFor();
+        await baixo().click();
+        await grupoDoMotivo().getByRole('button', { name: 'Outro' }).click();
+        await page.waitForFunction(
+          () => document.querySelector('.pvpol-m[aria-pressed="true"]') !== null,
+        );
+        await page.addScriptTag({
+          content: (AxeBuilder as unknown as { source: string }).source,
+        });
+        const r = await page.evaluate(() =>
+          (window as unknown as AxeNaPagina).axe.run(
+            document.getElementById('pasta-ia')!,
+            { rules: { 'color-contrast': { enabled: true } } },
+          ),
+        );
+        expect(
+          r.violations.map(
+            (v) => `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(' | ')}`,
+          ),
+        ).toEqual([]);
+      });
+    }
   });
 });

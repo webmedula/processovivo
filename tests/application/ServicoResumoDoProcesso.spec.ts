@@ -27,7 +27,6 @@ import {
   INTIMACAO,
   respostaDoResumo,
   ResumidorFalso,
-  TRECHO_DO_DESPACHO,
 } from '../helpers/resumoIa.js';
 
 const WS_A = 'ws-a';
@@ -193,7 +192,7 @@ describe('ServicoResumoDoProcesso', () => {
         rotulo: 'Intimação',
         tipoDaComunicacao: 'Intimação',
       });
-      expect(r.versaoPrompt).toBe('resumo-1.1.0');
+      expect(r.versaoPrompt).toBe('resumo-1.2.0');
       expect(r.avaliacao).toBeNull();
     });
 
@@ -211,15 +210,26 @@ describe('ServicoResumoDoProcesso', () => {
       expect(linha['workspace']).toBe(WS_A);
     });
 
+    // Reescrito na v0.56.0: com o ato mais recente lido ele TEM de estar na situação (regras 1.2.0), então a
+    // providência "não citada" é agora outra, mais antiga: aqui, uma segunda intimação do mês anterior.
     it('conta as providências do sistema que a IA não citou, separado do resumo', async () => {
-      await semear(WS_A, ATOS_DO_RESUMO);
+      const intimacaoAntiga: Movimentacao = {
+        data: new Date('2026-09-25T12:00:00.000Z'),
+        titulo: 'Intimação',
+        idExterno: 'djen:9',
+        tipoComunicacao: 'Intimação',
+        conteudo:
+          'Intime-se a parte ré para apresentar os documentos solicitados, no prazo de 5 (cinco) dias.',
+      };
+      await semear(WS_A, [INTIMACAO, intimacaoAntiga, ...ATOS_DO_RESUMO.slice(1)]);
       resumidor.resposta = async () => ({
         resposta: respostaDoResumo({
           situacao: [
             {
-              texto: 'O juízo mandou oficiar o banco informado.',
-              ato: 'A2',
-              trecho: TRECHO_DO_DESPACHO,
+              texto:
+                'A parte autora foi intimada a se pronunciar sobre o laudo pericial.',
+              ato: 'A1',
+              trecho: 'se manifeste sobre o laudo pericial',
             },
           ],
           pendencias: [],
@@ -229,7 +239,7 @@ describe('ServicoResumoDoProcesso', () => {
       });
       const r = await servico().resumir(pedido());
       if (r.estado !== 'verificado') throw new Error('esperava verificado');
-      expect(r.contagens.providenciasDoSistema).toBe(1);
+      expect(r.contagens.providenciasDoSistema).toBe(2);
       expect(r.contagens.providenciasNaoCitadas).toBe(1);
     });
 

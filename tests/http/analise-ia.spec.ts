@@ -224,6 +224,23 @@ describe('IA habilitada — avaliação', () => {
     expect((await avaliar(id, A, { comentario: 'texto livre' })).statusCode).toBe(400);
   });
 
+  // v0.56.0: o polegar para baixo manda "errado"; o motivo "pode causar prejuízo" é o antigo "perigoso".
+  it('polegar: "pode causar prejuízo" é gravado como perigoso e isolado por conta', async () => {
+    const { id } = (await analisar()).json() as { id: string };
+    const r = await avaliar(id, A, {
+      avaliacao: 'errado',
+      motivo: 'pode_causar_prejuizo',
+    });
+    expect(r.statusCode).toBe(200);
+    expect(r.json()).toEqual({
+      id,
+      avaliacao: 'perigoso',
+      motivo: 'pode_causar_prejuizo',
+    });
+    const deOutra = await avaliar(id, B, { avaliacao: 'util' });
+    expect(deOutra.statusCode).toBe(404);
+  });
+
   it('motivo (v0.52.0): opcional, só da lista fechada, só com errado/perigoso, sem texto livre', async () => {
     const { id } = (await analisar()).json() as { id: string };
     // Sem motivo continua funcionando (o corpo antigo).
@@ -239,9 +256,9 @@ describe('IA habilitada — avaliação', () => {
       expect(r.statusCode, motivo).toBe(200);
       expect(r.json()).toEqual({ id, avaliacao: 'errado', motivo });
     }
-    expect((await avaliar(id, A, { avaliacao: 'perigoso', motivo: 'outro' })).statusCode).toBe(
-      200,
-    );
+    expect(
+      (await avaliar(id, A, { avaliacao: 'perigoso', motivo: 'outro' })).statusCode,
+    ).toBe(200);
     // Fora da lista, com "útil" e com campo de texto: 400.
     for (const corpo of [
       { avaliacao: 'errado', motivo: 'porque sim' },

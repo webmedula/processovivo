@@ -23,7 +23,14 @@ import {
   relatorioDeResumoEmMarkdown,
   revisaoDeResumoEmCsv,
   VERSOES_DO_RESUMO,
+  VERSOES_PADRAO_DO_COMPARADOR,
 } from '../../src/main/sonda/comparadorDeResumo.js';
+
+/*
+ * Reescrito na v0.56.0: `VERSOES_DO_RESUMO` ganhou a `resumo-1.2.0`, e estes testes (1.0.0 × 1.1.0) passaram
+ * a nomear as duas versões que sempre exerceram; o padrão do comando agora é 1.1.0 × 1.2.0 (bloco final).
+ */
+const DUAS_VERSOES = ['resumo-1.0.0', 'resumo-1.1.0'] as const;
 
 /* Casos e respostas SINTÉTICOS. Nenhuma rede: o transporte é um dublê. */
 const JSON_DOS_CASOS = readFileSync(
@@ -161,7 +168,7 @@ function transporte(
 
 const base = (extra: Partial<Parameters<typeof compararResumos>[0]> = {}) => ({
   casos,
-  versoes: VERSOES_DO_RESUMO,
+  versoes: DUAS_VERSOES,
   modeloDeReferencia: PRODUCAO,
   modelos: [PRODUCAO],
   transporte: transporte(),
@@ -218,12 +225,96 @@ describe('comparação resumo-1.0.0 × resumo-1.1.0', () => {
   it('estimativa: uma chamada por (caso × versão) com texto, por modelo', () => {
     const e = estimarCustoDeResumo(
       casos,
-      VERSOES_DO_RESUMO,
+      DUAS_VERSOES,
       [PRODUCAO],
       new Map([[PRODUCAO, { entrada: 0.000001, saida: 0.000002 }]]),
     );
     expect(e[0]?.chamadas).toBe(casos.length * 2);
     expect(e[0]?.custoEstimadoUsd).toBeGreaterThan(0);
+  });
+});
+
+describe('comparação resumo-1.1.0 × resumo-1.2.0 (v0.56.0)', () => {
+  const AS_NOVAS = ['resumo-1.1.0', 'resumo-1.2.0'] as const;
+  const porPedidoNovo = new Map(
+    casos.flatMap((c) =>
+      AS_NOVAS.map((v) => {
+        const p = prepararCasoDeResumo(c, v);
+        return [chaveDoPedido(p.entrada.sistema, p.entrada.usuario), p] as const;
+      }),
+    ),
+  );
+
+  /** Um modelo que cita o ato com texto MAIS ANTIGO e escreve itens de tamanho conhecido. */
+  function respostaDoAntigo(pedido: PedidoAoModelo): unknown {
+    const p = porPedidoNovo.get(chaveDoPedido(pedido.sistema, pedido.usuario));
+    if (!p) throw new Error('pedido desconhecido');
+    const comTexto = [...p.entrada.atos.values()].filter((a) => a.comTexto);
+    const ato = comTexto[comTexto.length - 1];
+    if (!ato) throw new Error('caso sem ato com texto');
+    const trecho = (ato.textoEnviado.split('Texto:\n')[1] ?? '').slice(0, 40).trim();
+    return {
+      situacao: [
+        {
+          texto: 'O juízo determinou a providência descrita nesse ato.',
+          ato: ato.id,
+          trecho,
+        },
+      ],
+      pendencias: [
+        { texto: 'Parte: cumprir o que o ato determina.', ato: ato.id, trecho },
+      ],
+      pontos_de_atencao: [],
+    };
+  }
+  const transporteNovo = (): TransporteDeModelo => ({
+    nome: 'dublado',
+    gerar: async (pedido) => ({
+      objeto: respostaDoAntigo(pedido),
+      tokensEntrada: 2000,
+      tokensSaida: 300,
+      provedor: 'Provedor Dublado',
+      modeloResolvido: pedido.modelo,
+      diagnostico: {
+        corpoEnviado: { model: pedido.modelo },
+        modeloResolvido: pedido.modelo,
+        provedorDaResposta: 'Provedor Dublado',
+      },
+    }),
+  });
+
+  it('a 1.2.0 rejeita a situação que ignora o ato mais recente lido; a 1.1.0 deixava passar', async () => {
+    const r = await compararResumos(
+      base({ versoes: AS_NOVAS, transporte: transporteNovo() }),
+    );
+    const antiga = r.linhas.find((l) => l.versao === 'resumo-1.1.0');
+    const nova = r.linhas.find((l) => l.versao === 'resumo-1.2.0');
+    expect(nova?.verificadas).toBeLessThan(antiga?.verificadas ?? 0);
+    expect(nova?.naoVerificadas).toBeGreaterThan(0);
+  });
+
+  it('o relatório e as métricas trazem o tamanho médio da situação e das pendências', async () => {
+    const r = await compararResumos(
+      base({ versoes: AS_NOVAS, transporte: transporteNovo() }),
+    );
+    const antiga = r.linhas.find((l) => l.versao === 'resumo-1.1.0');
+    expect(antiga?.situacaoMediaCaracteres).toBeGreaterThan(0);
+    expect(antiga?.pendenciaMediaCaracteres).toBeGreaterThan(0);
+    const md = relatorioDeResumoEmMarkdown(r, {
+      data: '2026-10-22',
+      casos: casos.length,
+      tetoUsd: 1,
+    });
+    expect(md).toContain('resumo-1.1.0 × resumo-1.2.0');
+    expect(md).toContain('Situação (média, caracteres)');
+    expect(metricasDeResumoEmCsv(r).split('\n')[0]).toContain(
+      'situacao_media_caracteres',
+    );
+  });
+
+  it('o padrão do comparador são só estas duas versões, e a 1.0.0 continua pedindo por --versoes', () => {
+    expect(VERSOES_DO_RESUMO).toContain('resumo-1.0.0');
+    expect(VERSOES_PADRAO_DO_COMPARADOR).toEqual(['resumo-1.1.0', 'resumo-1.2.0']);
   });
 });
 
@@ -271,7 +362,7 @@ describe('comando do comparador, tarefa "resumo"', () => {
     const texto = saida.join('\n');
     expect(texto).toContain('NADA foi enviado');
     expect(texto).toContain('NÃO confirmado');
-    expect(texto).toContain('resumo-1.0.0, resumo-1.1.0');
+    expect(texto).toContain('resumo-1.1.0, resumo-1.2.0');
     expect(texto).toContain('m/producao (produção)');
   });
 

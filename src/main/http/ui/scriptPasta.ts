@@ -163,6 +163,7 @@ function montarPainel(){
         '</div>'+
         '<div class="mov-visor" id="pasta-mov"></div>'+
         '<div class="estado" id="pasta-estado" role="status" aria-live="polite"></div>'+
+        '<div class="ia-slot" id="pasta-ia"></div>'+
         '<div class="ferramentas oculto" id="pasta-ferramentas">'+
           '<button class="bt bt2" id="pasta-menos" title="Diminuir" aria-label="Diminuir">−</button>'+
           '<button class="bt bt2" id="pasta-largura" title="Ajustar à largura">largura</button>'+
@@ -386,6 +387,7 @@ function fechar(){
   if(st.redimensionar)window.removeEventListener('resize',st.redimensionar);
   if(st.observador)st.observador.disconnect();
   if(st.pdf){try{st.pdf.destroy()}catch(e){}}
+  iaNoVisor(null);
   var el=$('pasta'); if(el)el.remove();
   document.body.classList.remove('com-pasta','pasta-lendo');
   var g=st.gatilho;
@@ -877,10 +879,18 @@ function estadoDoVisor(h){
   if(h===st.ultimoEstado)return;
   st.ultimoEstado=h;el.innerHTML=h;
 }
+/* "Analisar peça com IA" no visor (v0.56.0): o módulo da análise desenha o botão (e o resultado) no espaço #pasta-ia.
+   Sem peça no visor (movimentação sem peça, "ver tudo seguido", pasta fechada) ele limpa o espaço. */
+function iaNoVisor(p){
+  var ia=window.__pvPecaIA;
+  if(!ia||!ia.pasta)return;
+  ia.pasta(p&&!p.semPeca?{numero:st.numero,peca:{id:p.pecaId,estado:p.estado,pedindo:!!(st.clique&&st.clique.id===p.pecaId)}}:null);
+}
 function atualizarVisor(){
   var nome=$('pasta-nome'); if(!nome)return;
-  if(st.modo==='tudo'){mostrarTudo();return}
+  if(st.modo==='tudo'){iaNoVisor(null);mostrarTudo();return}
   var p=st.peca?pecaDe(st.peca):null;
+  iaNoVisor(p);
   nome.textContent=p?cal.rotuloDoVisor(p)+' · '+p.rotulo:'';
   if(p)nome.setAttribute('aria-label',cal.nomeAcessivel(p)+': '+p.rotulo);
   else nome.removeAttribute('aria-label');

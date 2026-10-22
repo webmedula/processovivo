@@ -49,7 +49,8 @@ export type ResultadoDoResumo =
     }
   | {
       readonly estado: 'nao_verificado';
-      readonly motivo: 'sem_item_verificado' | 'expressao_proibida';
+      readonly motivo:
+        'sem_item_verificado' | 'expressao_proibida' | 'sem_ato_mais_recente';
     };
 
 /** Quais atos foram enviados: chave e data, jamais título ou texto. */

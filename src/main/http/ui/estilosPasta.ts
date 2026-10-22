@@ -214,6 +214,9 @@ body.com-pasta{overflow:hidden;height:100vh;height:100dvh}
 #pasta .visor .estado{padding:10px 14px;border-bottom:1px solid var(--linha2);
   font-size:13.5px;color:var(--tinta2);background:var(--papel);max-height:34vh;overflow:auto}
 #pasta .visor .estado:empty{display:none}
+#pasta .visor>.ia-slot{flex-shrink:0;padding:6px 14px;border-bottom:1px solid var(--linha2);max-height:45vh;overflow:auto;min-width:0}
+#pasta .visor>.ia-slot:empty{display:none}
+#pasta .visor>.ia-slot .pvpe-btn{margin:0}
 #pasta .visor .estado .espera{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
 #pasta .visor .ferramentas{display:flex;align-items:center;gap:6px;padding:8px 12px;
   border-bottom:1px solid var(--linha);flex-wrap:wrap;font-size:13px;background:var(--papel)}

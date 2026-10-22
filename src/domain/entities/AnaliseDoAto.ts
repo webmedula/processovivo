@@ -26,18 +26,22 @@ export const AVALIACOES_DA_ANALISE: readonly AvaliacaoDaAnalise[] = [
 /**
  * Motivo OPCIONAL de uma avaliação "errado" ou "perigoso" (v0.52.0). Lista FECHADA, sem texto
  * livre: texto livre receberia dado pessoal. Só serve para medir onde o modelo erra.
+ * `pode_causar_prejuizo` (v0.56.0) é o que antes era a avaliação "perigoso": o polegar para baixo grava
+ * "errado" e, se a pessoa escolher este motivo, o servidor grava "perigoso" (ver `corpoDaAvaliacao`).
  */
 export type MotivoDaAvaliacao =
   | 'erro_de_fato'
   | 'citacao_inventada'
   | 'concluiu_prazo'
   | 'deixou_de_fora'
+  | 'pode_causar_prejuizo'
   | 'outro';
 export const MOTIVOS_DA_AVALIACAO: readonly MotivoDaAvaliacao[] = [
   'erro_de_fato',
   'citacao_inventada',
   'concluiu_prazo',
   'deixou_de_fora',
+  'pode_causar_prejuizo',
   'outro',
 ];
 

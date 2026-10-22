@@ -262,8 +262,9 @@ describe('mensagem do resumo (prompt resumo-1.1.0)', () => {
     conteudo: [...CABECALHO, '', BODY].join('\n'),
   });
 
-  it('a versão é a 1.1.0 e a instrução manda começar pelo ato mais recente', () => {
-    expect(VERSAO_PROMPT_DO_RESUMO).toBe('resumo-1.1.0');
+  // Reescrito na v0.56.0: a produção passou à 1.2.0 (a 1.1.0 segue no comparador); o bloco do sistema é o mesmo.
+  it('a versão de produção é a 1.2.0 e a instrução manda começar pelo ato mais recente', () => {
+    expect(VERSAO_PROMPT_DO_RESUMO).toBe('resumo-1.2.0');
     expect(INSTRUCAO_DO_RESUMO).toContain('<ato_mais_recente>');
     expect(INSTRUCAO_DO_RESUMO).toContain(
       'não é a situação atual'.slice(0, 0) + 'situação atual',
@@ -334,8 +335,9 @@ describe('verificação do resumo (regras 1.1.0)', () => {
     trecho,
   });
 
-  it('versão 1.1.0', () => {
-    expect(VERSAO_DAS_REGRAS_DO_RESUMO).toBe('1.1.0');
+  // Reescrito na v0.56.0: as regras de produção são as 1.2.0; sem `regras` no contexto valem as 1.1.0 (comparador).
+  it('versão das regras de produção: 1.2.0 (as 1.1.0 continuam sem `regras`)', () => {
+    expect(VERSAO_DAS_REGRAS_DO_RESUMO).toBe('1.2.0');
   });
 
   it('com o ato mais recente sem leitura, não deixa ato antigo passar por situação atual', () => {
@@ -516,7 +518,7 @@ describe('ServicoResumoDoProcesso — situação atual (v0.54.0)', () => {
       atosComTexto: 1,
       atosSoTitulo: 1,
     });
-    expect(r.versaoPrompt).toBe('resumo-1.1.0');
+    expect(r.versaoPrompt).toBe('resumo-1.2.0');
   });
 
   it('o log diz quantos atos ficaram sem leitura e por quê — só contagens', async () => {

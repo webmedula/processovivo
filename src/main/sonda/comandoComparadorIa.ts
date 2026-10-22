@@ -49,9 +49,9 @@ Precisa de OPENROUTER_API_KEY e de PROCESSOVIVO_IA_MODELO (o modelo de produçã
 3. Leitura de PEÇAS (v0.53.0, casos sintéticos em tests/fixtures/ia-pecas):
   node scripts/ia-comparar-modelos.mjs --tarefa=pecas --modelos=a,b [--executar]
   node scripts/ia-comparar-modelos.mjs --julgar-revisao=<planilha preenchida .csv>   # errado/perigoso, sem chamar modelo
-4. RESUMO do processo (v0.54.0): compara resumo-1.0.0 × resumo-1.1.0 com o modelo de produção (casos sintéticos em tests/fixtures/ia-resumo):
+4. RESUMO do processo (v0.54.0; v0.56.0): compara resumo-1.1.0 × resumo-1.2.0 (padrão; a 1.0.0 por --versoes) com o modelo de produção (casos sintéticos em tests/fixtures/ia-resumo):
   node scripts/ia-comparar-modelos.mjs --tarefa=resumo            # estima; NADA é enviado
-  node scripts/ia-comparar-modelos.mjs --tarefa=resumo --executar [--versoes=resumo-1.0.0,resumo-1.1.0] [--modelos=a,b]
+  node scripts/ia-comparar-modelos.mjs --tarefa=resumo --executar [--versoes=resumo-1.1.0,resumo-1.2.0] [--modelos=a,b]
 Opções: --tarefa=ato|pecas|resumo  --teto-usd=<n> (padrão ${TETO_PADRAO_USD})  --categorias=decisao,prazo_escrito  --casos=<arquivo.json>  --saida=<pasta>  --pausa-ms=<n>  --ajuda
 Só roda modelo que a lista oficial de ZDR do OpenRouter aprova na hora; o resto é recusado. Preço é estimativa, não confirmado.
 A saída (relatório .md, métricas .csv e revisão humana .csv) fica FORA do repositório.`;
@@ -203,7 +203,7 @@ export async function executarComandoComparador(
       });
     }
 
-    // --- outra tarefa: resumo do processo, 1.0.0 × 1.1.0 (v0.54.0) ---
+    // --- outra tarefa: resumo do processo, 1.1.0 × 1.2.0 por padrão (v0.54.0; v0.56.0) ---
     if (tarefa === 'resumo') {
       return await executarComparacaoDeResumo({
         op,
