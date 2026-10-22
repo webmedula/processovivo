@@ -269,6 +269,18 @@ const schema = z.object({
   PROCESSOVIVO_IA_RESUMO_MAX_POR_HORA: inteiroPositivo(6),
   PROCESSOVIVO_IA_RESUMO_MAX_TOKENS: inteiroPositivo(1500),
   PROCESSOVIVO_IA_RESUMO_TIMEOUT_MS: inteiroPositivo(120_000),
+  // Análise de PEÇA por IA (v0.55.0, Fase 1). Só funciona com a IA acima habilitada. DUAS chaves de liberação:
+  // HABILITADA=true libera a todas as contas com o recurso `analiseIa`; sem ela, só as contas de WORKSPACES
+  // (16 ou 32 hex, separados por vírgula) — e elas também precisam do recurso. Sem nenhuma das duas, nada.
+  PROCESSOVIVO_IA_PECAS_HABILITADA: booleano.default('false'),
+  PROCESSOVIVO_IA_PECAS_WORKSPACES: z.string().default(''),
+  // Vazio = o modelo de produção (PROCESSOVIVO_IA_MODELO). Um modelo REAL do OpenRouter, trocável sem deploy.
+  PROCESSOVIVO_IA_PECAS_MODELO: z.string().default(''),
+  PROCESSOVIVO_IA_PECAS_MAX_POR_HORA: inteiroPositivo(6),
+  PROCESSOVIVO_IA_PECAS_MAX_TOKENS: inteiroPositivo(2500),
+  PROCESSOVIVO_IA_PECAS_TIMEOUT_MS: inteiroPositivo(120_000),
+  // Por quantos dias o resultado (com citações curtas) fica guardado. Nunca o texto da peça.
+  PROCESSOVIVO_IA_PECAS_RESULTADO_DIAS: inteiroPositivo(30),
   // Exigida SÓ com a IA habilitada. Nunca vai para log, resposta ou mensagem de erro.
   OPENROUTER_API_KEY: z.string().default(''),
 
@@ -429,6 +441,20 @@ export interface Config {
     readonly resumoTimeoutMs: number;
     /** Teto técnico por conta e por dia (v0.50.0). */
     readonly maxPorDia: number;
+    /** Análise de peça (v0.55.0). */
+    readonly pecas: {
+      readonly habilitada: boolean;
+      /** Identificadores válidos (16 ou 32 hex, minúsculos). */
+      readonly workspaces: readonly string[];
+      /** Quantos itens da lista não eram um identificador válido (ignorados; nunca ecoados). */
+      readonly workspacesInvalidos: number;
+      /** O modelo efetivo: o próprio ou, vazio, o de produção. */
+      readonly modelo: string;
+      readonly maxPorHora: number;
+      readonly maxTokens: number;
+      readonly timeoutMs: number;
+      readonly resultadoDias: number;
+    };
     /**
      * A variável da antiga exceção de teste fechado (removida na v0.50.0) ainda está no ambiente.
      * Não tem efeito; o composition root avisa no log para o operador apagá-la.
@@ -673,6 +699,18 @@ export function carregarConfig(fonte: NodeJS.ProcessEnv = process.env): Config {
       resumoMaxTokens: env.PROCESSOVIVO_IA_RESUMO_MAX_TOKENS,
       resumoTimeoutMs: env.PROCESSOVIVO_IA_RESUMO_TIMEOUT_MS,
       maxPorDia: env.PROCESSOVIVO_IA_MAX_POR_DIA,
+      pecas: {
+        habilitada: env.PROCESSOVIVO_IA_PECAS_HABILITADA,
+        ...lerListaDeWorkspaces(env.PROCESSOVIVO_IA_PECAS_WORKSPACES),
+        modelo:
+          env.PROCESSOVIVO_IA_PECAS_MODELO.trim() !== ''
+            ? env.PROCESSOVIVO_IA_PECAS_MODELO.trim()
+            : env.PROCESSOVIVO_IA_MODELO.trim(),
+        maxPorHora: env.PROCESSOVIVO_IA_PECAS_MAX_POR_HORA,
+        maxTokens: env.PROCESSOVIVO_IA_PECAS_MAX_TOKENS,
+        timeoutMs: env.PROCESSOVIVO_IA_PECAS_TIMEOUT_MS,
+        resultadoDias: env.PROCESSOVIVO_IA_PECAS_RESULTADO_DIAS,
+      },
       variavelDeTesteFechadoPresente:
         (fonte['PROCESSOVIVO_IA_WORKSPACES_LIBERADOS'] ?? '').trim() !== '',
       chave: env.PROCESSOVIVO_IA_HABILITADA ? env.OPENROUTER_API_KEY.trim() : '',
@@ -745,6 +783,12 @@ function validarConfiguracaoDaIa(env: z.infer<typeof schema>): void {
   if (modelo === '' || ehApelidoOuVariante(modelo)) {
     throw new Error(
       'Configuração inválida:\n  - PROCESSOVIVO_IA_MODELO: use o id de um modelo real (sem "~" nem ":")',
+    );
+  }
+  const modeloDePecas = env.PROCESSOVIVO_IA_PECAS_MODELO.trim();
+  if (modeloDePecas !== '' && ehApelidoOuVariante(modeloDePecas)) {
+    throw new Error(
+      'Configuração inválida:\n  - PROCESSOVIVO_IA_PECAS_MODELO: use o id de um modelo real (sem "~" nem ":") ou deixe vazio',
     );
   }
 }
@@ -952,6 +996,26 @@ function origemDoSite(valor: string): string {
     );
   }
   return url.origin;
+}
+
+/**
+ * A lista de contas da análise de peça: identificador de 16 (chave de API) ou 32 (conta) hex, separados
+ * por vírgula ou espaço. O que não for isso é IGNORADO (e contado, sem ecoar): um identificador torto
+ * liberaria conta nenhuma, e é melhor avisar no log do que derrubar o serviço por causa dele.
+ */
+export function lerListaDeWorkspaces(valor: string): {
+  workspaces: string[];
+  workspacesInvalidos: number;
+} {
+  const validos = new Set<string>();
+  let invalidos = 0;
+  for (const bruto of valor.split(/[\s,;]+/)) {
+    const item = bruto.trim().toLowerCase();
+    if (item === '') continue;
+    if (/^(?:[0-9a-f]{16}|[0-9a-f]{32})$/.test(item)) validos.add(item);
+    else invalidos += 1;
+  }
+  return { workspaces: [...validos], workspacesInvalidos: invalidos };
 }
 
 function listaSeparadaPorVirgula(valor: string): string[] {

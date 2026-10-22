@@ -51,9 +51,17 @@ export class TetoDiario {
     return this.quantidadeHoje(workspace) >= this.porDia;
   }
 
-  registrar(workspace: string): void {
+  /**
+   * Cabe mais uma operação de `peso` hoje? (v0.55.0: a análise de uma peça pesa 5, a de um ato 1.)
+   * Com peso 1 é exatamente `!cheio`. Uma conta que gastou 198 de 200 pode fazer atos, não uma peça.
+   */
+  cabe(workspace: string, peso = 1): boolean {
+    return this.quantidadeHoje(workspace) + peso <= this.porDia;
+  }
+
+  registrar(workspace: string, peso = 1): void {
     const dia = diaEmSaoPaulo(this.clock.agora().getTime());
-    this.doDia.set(workspace, { dia, quantidade: this.quantidadeHoje(workspace) + 1 });
+    this.doDia.set(workspace, { dia, quantidade: this.quantidadeHoje(workspace) + peso });
   }
 
   private quantidadeHoje(workspace: string): number {
@@ -83,17 +91,18 @@ export class LimiteDeAnalises {
 
   /**
    * Reserva uma vaga. Devolve a função que a libera (idempotente), ou o motivo da recusa.
-   * A recusa não consome nada.
+   * A recusa não consome nada. `peso` só conta no teto DIÁRIO (a hora conta iniciadas, não peso).
    */
   reservar(
     workspace: string,
+    peso = 1,
   ): { readonly liberar: () => void } | { readonly negada: NegativaDoLimite } {
     const agora = this.opcoes.clock.agora().getTime();
     if (this.emAndamento.has(workspace)) return { negada: 'em_andamento' };
     if (this.emAndamento.size >= this.opcoes.simultaneasNoTotal) {
       return { negada: 'global' };
     }
-    if (this.teto?.cheio(workspace)) return { negada: 'dia' };
+    if (this.teto && !this.teto.cabe(workspace, peso)) return { negada: 'dia' };
     const recentes = (this.inicios.get(workspace) ?? []).filter(
       (t) => agora - t < UMA_HORA_MS,
     );
@@ -103,7 +112,7 @@ export class LimiteDeAnalises {
     }
     recentes.push(agora);
     this.inicios.set(workspace, recentes);
-    this.teto?.registrar(workspace);
+    this.teto?.registrar(workspace, peso);
     this.emAndamento.add(workspace);
     let liberada = false;
     return {

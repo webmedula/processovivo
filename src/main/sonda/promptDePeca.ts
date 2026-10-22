@@ -47,7 +47,6 @@ export const INSTRUCAO_DE_FORMATO_DE_PECA =
   'FORMATO DA RESPOSTA: responda SOMENTE com um objeto JSON, sem texto antes ou depois e sem cercas de código, com exatamente as chaves tipo_da_peca, pedidos, alegacoes_principais, preliminares_ou_defesas_formais, documentos_citados, valores_citados e pontos_de_atencao.';
 
 const MARCADOR_DE_PAGINA = (n: number): string => `[[PÁGINA ${n}]]`;
-const LEITURA_DO_MARCADOR = /\[\[PÁGINA (\d+)\]\]\n/g;
 
 export interface PecaParaMontar {
   readonly titulo: string;
@@ -110,13 +109,5 @@ export function montarEntradaDePeca(peca: PecaParaMontar): EntradaDePeca {
   };
 }
 
-/** O inverso do que `montarEntradaDePeca` escreve: as páginas, na ordem, sem os marcadores. */
-export function paginasDoTextoEnviado(textoEnviado: string): string[] {
-  const partes = textoEnviado.split(LEITURA_DO_MARCADOR);
-  // split com grupo de captura: [antes, "1", pag1, "2", pag2, ...]
-  const paginas: string[] = [];
-  for (let i = 1; i < partes.length; i += 2) {
-    paginas.push((partes[i + 1] ?? '').replace(/\n$/, ''));
-  }
-  return paginas;
-}
+/** O inverso do que `montarEntradaDePeca` escreve (mesma função da produção). */
+export { paginasDoTextoEnviado } from '../../application/politicas/entradaDaPeca.js';

@@ -29,6 +29,7 @@ import { ROTA_DRIVE_RETORNO, rotasDoDrive } from './rotas/drive.js';
 import { rotasDoPainel } from './rotas/painel.js';
 import { rotasDaAnaliseIA } from './rotas/analiseIA.js';
 import { rotasDoResumoIA } from './rotas/resumoIA.js';
+import { rotasDaAnaliseDePecaIA } from './rotas/analiseDePecaIA.js';
 import { ROTA_FEED_PUBLICO, rotasDoCalendario } from './rotas/calendario.js';
 import { rotasDeCustos } from './rotas/custos.js';
 import { ROTA_PLANOS_PUBLICOS, rotasDePlanosPublicos } from './rotas/planosPublicos.js';
@@ -164,6 +165,7 @@ export function construirServidor(app: Aplicacao, config: Config): FastifyInstan
     }),
   );
   void servidor.register(rotasDoResumoIA(app.resumoDoProcesso));
+  void servidor.register(rotasDaAnaliseDePecaIA(app.analiseDePeca, app.pasta));
   void servidor.register(rotasDoLeitor(app.leitor, app.assinaturas));
   void servidor.register(rotasDaPasta(app.pasta, app.assinaturas));
   void servidor.register(rotasDoDrive(app.drive));
@@ -342,6 +344,7 @@ export async function iniciar(app: Aplicacao, config: Config): Promise<FastifyIn
   app.agendadorBackup?.iniciar();
   app.agendadorLeitor?.iniciar();
   app.agendadorLimpezaLeitor?.iniciar();
+  app.agendadorLimpezaAnalisesDePeca?.iniciar();
   app.agendadorCalendario?.iniciar();
   app.agendadorResumoDoCalendario?.iniciar();
 

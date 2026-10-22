@@ -6,6 +6,7 @@ import {
   AnaliseNaoEncontradaError,
   AtoDaProvidenciaInvalidoError,
   EntradaNaoAnalisavelError,
+  AnaliseDePecaRecusadaError,
   PrazoNaoCalculavelError,
   DriveRecusadoError,
   AssinaturaDeWebhookInvalidaError,
@@ -172,6 +173,32 @@ export function mapearErro(erro: unknown): RespostaDeErro {
         mensagem: erro.message,
         detalhes: { motivo: erro.motivo },
       },
+    };
+  }
+
+  // Análise de PEÇA por IA (v0.55.0). Cada motivo tem a frase dele na tela; o corpo traz `motivo` e
+  // nenhum texto de peça. Nenhum desses casos chamou o modelo.
+  if (erro instanceof AnaliseDePecaRecusadaError) {
+    const status: Record<AnaliseDePecaRecusadaError['motivo'], number> = {
+      indisponivel: 404,
+      peca_nao_encontrada: 404,
+      sem_plano: 403,
+      peca_sigilosa: 403,
+      processo_sigiloso: 403,
+      peca_nao_baixada: 409,
+      limite_de_uso: 429,
+      limite_diario: 429,
+      tribunal_nao_suportado: 422,
+      sem_texto: 422,
+      acima_de_40_paginas: 422,
+      acima_de_80_mil_caracteres: 422,
+      pdf_invalido: 422,
+      pdf_protegido: 422,
+      arquivo_grande: 422,
+    };
+    return {
+      status: status[erro.motivo],
+      corpo: { erro: erro.codigo, mensagem: erro.message, detalhes: { motivo: erro.motivo } },
     };
   }
 

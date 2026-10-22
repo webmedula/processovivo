@@ -171,6 +171,18 @@ export interface ArquivoDaPasta {
   ler(inicio: number, fim: number): AsyncIterable<Uint8Array>;
 }
 
+/**
+ * O que a análise de peça por IA (v0.55.0) precisa da Pasta: de que tribunal é a peça e, se ela está na
+ * guarda de 24 h, os bytes do PDF guardado. Sem arquivo = "baixe a peça antes".
+ */
+export interface PecaParaAnalise {
+  readonly tribunal: string;
+  readonly arquivo?: {
+    readonly tamanho: number;
+    ler(inicio: number, fim: number): AsyncIterable<Uint8Array>;
+  };
+}
+
 export interface EstimativaDeBusca {
   /** Quantas peças serão buscadas no tribunal. */
   readonly abuscar: number;
@@ -668,6 +680,39 @@ export class ServicoPasta {
     const v = await this.visao(workspace, numeroProcesso);
     const p = v.pecas.find((x) => x.pecaId === pecaId);
     return p ? { estado: p.estado, motivo: p.motivo, retomarEm: p.retomarEm } : undefined;
+  }
+
+  /**
+   * A peça para a análise por IA (v0.55.0). Mesmas travas do pedido de uma peça: a listagem é a gravada
+   * do tribunal (nunca o que o navegador diz), processo em segredo de justiça e peça sigilosa NÃO
+   * seguem. NÃO consulta o tribunal e NÃO enfileira nada: peça fora da guarda volta sem `arquivo`, e
+   * quem decide baixá-la é a pessoa (pelo pedido da peça, que já existe).
+   *
+   * @throws {ListagemDaPastaAusenteError | PecaDaPastaNaoEncontradaError}
+   * @throws {PecaSigilosaNaoGuardadaError | SegredoDeJusticaNaoGuardadoError}
+   */
+  async pecaParaAnalise(
+    workspace: string,
+    numeroProcesso: string,
+    pecaId: string,
+  ): Promise<PecaParaAnalise> {
+    const numero = NumeroCNJ.criar(numeroProcesso).digitos;
+    const listagem = await this.exigirListagem(workspace, numero);
+    if (listagem.processoSigiloso) throw new SegredoDeJusticaNaoGuardadoError(numero);
+    const peca = listagem.pecas.find((p) => p.pecaId === pecaId);
+    if (!peca) throw new PecaDaPastaNaoEncontradaError(pecaId);
+    if (peca.sigilosa) throw new PecaSigilosaNaoGuardadaError(pecaId);
+    const entrada = await this.guarda.obter(workspace, numero, pecaId);
+    if (!entrada) return { tribunal: listagem.tribunal };
+    const tamanho = await this.armazem.tamanho(workspace, entrada.localizador);
+    if (tamanho === undefined) return { tribunal: listagem.tribunal };
+    return {
+      tribunal: listagem.tribunal,
+      arquivo: {
+        tamanho,
+        ler: (inicio, fim) => this.armazem.ler(workspace, entrada.localizador, inicio, fim),
+      },
+    };
   }
 
   /**

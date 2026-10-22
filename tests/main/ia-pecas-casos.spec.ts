@@ -134,7 +134,10 @@ describe('conjunto sintético de peças (v0.53.0)', () => {
     }
     expect(e.textoEnviado).toContain('[PARTE A]');
     // NÃO cobertos, e nenhum texto do produto pode prometer o contrário:
-    expect(e.textoEnviado).toContain('Rua Nenhuma');
+    // v0.55.0: o endereço "residente na Rua Nenhuma, 0, CEP…" passou a ser redigido; o que NÃO é coberto
+    // (nome de terceiro fora do retrato) continua no texto.
+    expect(e.textoEnviado).toContain('[ENDEREÇO]');
+    expect(e.textoEnviado).not.toContain('Rua Nenhuma');
     expect(e.textoEnviado).toContain('Sicrano de Mentira');
   });
 
