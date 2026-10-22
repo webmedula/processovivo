@@ -9,6 +9,30 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.53.0] — 2026-10-22
+
+**IA de peças, Fase 0: viabilidade e medição, sem produto.** Nenhuma tela, rota, plano, preço ou chamada de IA nova em produção; a análise do
+ato, o resumo, o calendário, `exigir()`, o modelo e o prompt de produção não mudaram. Sem dependência npm nova; sem migração. Especificação em
+`docs/ia-analise-de-pecas-especificacao-v1.1.0.md` (a v1.0.0 fica preservada); resultado e investigação em `docs/ia-pecas-fase0-resultado-v1.0.0.md`.
+
+- **Extração de texto por página (módulo interno, sem rota):** porta `ExtratorDeTextoDePdf` e `PdftotextExtrator` (`pdftotext -layout` do poppler, já na
+  imagem desde a 0.30.0). PDF pela entrada padrão, `execFile` com argumentos em vetor, 30 s por peça, 20 MB por arquivo, 8 MB de saída, 40 páginas lidas e
+  80 mil caracteres por peça; erro tipado em português (`ExtracaoDeTextoError`: arquivo vazio/grande, PDF inválido ou com senha, tempo esgotado, saída grande
+  demais, ferramenta ausente), sem texto de peça em mensagem ou log. **Sem OCR:** peça escaneada volta sem texto e é contada, não lida. O texto nunca é gravado.
+- **`scripts/pecas-medir-texto.mjs` (somente leitura, sem rede):** sobre as peças guardadas agora, mostra só agregados — % com texto pesquisável, páginas e
+  caracteres (p50, p95, máximo), % acima de 40 páginas / 80 mil caracteres, falhas por tipo e tempo de extração. Nenhum texto, nome, número de processo,
+  localizador ou workspace.
+- **Redação extra para peças** (`redigirPecaParaIA`, função pura): CEP, RG/CNH com rótulo, "nascido em dd/mm/aaaa" e conta/agência com rótulo. A redação da
+  análise do ato NÃO mudou. **Não cobre** endereço nem nome de terceiro fora do retrato, e nenhum texto pode prometer isso.
+- **24 peças sintéticas** (`tests/fixtures/ia-pecas/casos.json`): texto por página, gabarito com a página de cada ponto, proibições, instrução injetada,
+  dados pessoais fictícios de formato óbvio. Teste confere o alinhamento do gabarito com o texto e a ausência de dado real.
+- **Comparador de peças** (`scripts/ia-comparar-modelos.mjs --tarefa=pecas`): esquema fechado da seção 5, verificação por (página, trecho), pedidos
+  principais, proibições, citação com página, latência e custo (p50, p95, máximo), relatório com o critério da seção 8 e planilha de revisão humana; manual,
+  ZDR obrigatório, teto de gasto e `--executar`. `--julgar-revisao=<csv>` calcula errado/perigoso da planilha preenchida. `executarSonda` ganhou o parâmetro opcional
+  `tarefa` (sem ele, nada muda).
+- **Correção da 0.52.0 (imagem Docker):** os conjuntos sintéticos do comparador (`tests/fixtures/ia-avaliacao`, e agora `ia-pecas`) não estavam na imagem, então o
+  comparador falharia no Console; o `Dockerfile` passa a copiá-los. Só texto inventado.
+
 ## [0.52.0] — 2026-10-22
 
 **Infraestrutura de medição e comparação da análise por IA.** Modelo, prompt (`ato-1.2.0`, `resumo-1.0.0`), regras de

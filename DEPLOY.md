@@ -786,6 +786,36 @@ O plano IA (Peças + análise com IA) é vendido pelo mesmo caminho dos outros: 
    A coluna de custo médio é por modelo e versão do prompt. Análise que falhou antes de chegar ao modelo (sem plano,
    sigilo, teto) não gera linha; análise que o modelo não concluiu (erro) também não.
 
+## IA de peças, Fase 0: medir a camada de texto e comparar modelos em peças (v0.53.0)
+
+Nada muda para o usuário: são ferramentas **manuais**, no Console do serviço, sem rota e sem chamada de IA nova em produção. O `poppler-utils`
+(`pdftotext`) **já está na imagem** desde a 0.30.0; o `Dockerfile` só passou a copiar os conjuntos sintéticos do comparador.
+
+1. **Medir a camada de texto das peças guardadas** (só leitura, sem rede, só números):
+
+   ```bash
+   node scripts/pecas-medir-texto.mjs
+   ```
+
+   Mostra: peças na guarda, % com texto pesquisável, % escaneadas (sem OCR), páginas e caracteres (p50, p95, máximo), % acima de 40 páginas e de 80 mil
+   caracteres, falhas por tipo, tempo de extração e a origem do arquivo guardado. **Nunca** mostra texto, nome, número de processo ou workspace. A amostra é o
+   que está na guarda agora (24 h): repita em dias diferentes. Variáveis lidas: `PROCESSOVIVO_DB_PATH` e `LEITOR_PASTA` (as do serviço).
+
+2. **Comparar modelos na leitura de peças** (só peças inventadas; mesmas regras do comparador da 0.52.0 — ZDR da lista oficial de agora, teto de gasto
+   padrão US$ 1,00, `OPENROUTER_API_KEY` só na variável de ambiente):
+
+   ```bash
+   node scripts/ia-comparar-modelos.mjs --tarefa=pecas --modelos=fabricante/modelo-a            # só estima
+   node scripts/ia-comparar-modelos.mjs --tarefa=pecas --modelos=fabricante/modelo-a --executar  # roda de verdade
+   node scripts/ia-comparar-modelos.mjs --julgar-revisao=<planilha preenchida>.csv                # errado e perigoso
+   ```
+
+   Saída em `dados/comparador-ia/`: `comparacao-pecas-<data>-<hora>.md` (com o critério da seção 8), `-metricas.csv` e `-revisao-humana.csv` (preencher a coluna
+   `avaliacao` com `util`, `errado` ou `perigoso`). Preços são estimativa, não confirmados. **Nenhum modelo entra em produção por este relatório.**
+
+3. **Risco residual a lembrar:** a redação de peça cobre CEP, RG/CNH com rótulo, data de nascimento e conta/agência com rótulo, além do que o ato já cobria; **não
+   cobre endereço nem nome de terceiro** fora do retrato. O processo filho do `pdftotext` tem tempo e saída máximos, mas não limite de CPU/memória.
+
 ## Medir e comparar a análise por IA (v0.52.0)
 
 Nada aqui muda a produção: o modelo, o prompt e as regras de verificação continuam os de sempre. São três ferramentas

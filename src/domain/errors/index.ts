@@ -1029,11 +1029,7 @@ export class AutorizacaoDoDestinoVencidaError extends DomainError {
  * - `desconhecido`: respondeu 4xx e nada do que veio permite dizer por quê.
  */
 export type MotivoDoGateway =
-  | 'email_pagador'
-  | 'credencial'
-  | 'parametro_invalido'
-  | 'indisponivel'
-  | 'desconhecido';
+  'email_pagador' | 'credencial' | 'parametro_invalido' | 'indisponivel' | 'desconhecido';
 
 /**
  * O que a recusa do gateway diz, JÁ SANEADO (e-mail mascarado, sem token, sem corpo bruto): é o que vai
@@ -1044,7 +1040,10 @@ export interface DiagnosticoDoGateway {
   readonly status: number;
   readonly erro?: string;
   readonly mensagem?: string;
-  readonly causas: ReadonlyArray<{ readonly codigo?: string; readonly descricao?: string }>;
+  readonly causas: ReadonlyArray<{
+    readonly codigo?: string;
+    readonly descricao?: string;
+  }>;
   /** Só os NOMES dos campos enviados no pedido (`auto_recurring.frequency`…), nunca os valores. */
   readonly camposEnviados: readonly string[];
 }
@@ -1180,7 +1179,8 @@ export class LimiteDeCustosError extends DomainError {
  * JPEG nem PNG DE VERDADE (conferido pelos primeiros bytes, não pela extensão). A mensagem é do
  * sistema e nunca repete o nome nem o conteúdo recebidos. NENHUM chamou o Google.
  */
-export type MotivoDeComprovanteInvalido = 'arquivo_vazio' | 'arquivo_grande' | 'tipo_nao_aceito';
+export type MotivoDeComprovanteInvalido =
+  'arquivo_vazio' | 'arquivo_grande' | 'tipo_nao_aceito';
 export class ComprovanteInvalidoError extends DomainError {
   readonly codigo = 'COMPROVANTE_INVALIDO';
 
@@ -1203,6 +1203,30 @@ export class ComprovanteNaoEnviadoError extends DomainError {
 
   constructor(
     readonly motivo: MotivoDeComprovanteNaoEnviado,
+    mensagem: string,
+  ) {
+    super(mensagem);
+  }
+}
+
+/**
+ * Por que o texto de um PDF não pôde ser extraído (v0.53.0, Fase 0 da análise de peças).
+ * O módulo de extração é interno e a mensagem é SEMPRE uma frase nossa: nunca texto da peça,
+ * nome de arquivo nem a saída do `pdftotext`.
+ */
+export type MotivoDeExtracaoRecusada =
+  | 'arquivo_vazio'
+  | 'arquivo_grande'
+  | 'pdf_invalido'
+  | 'pdf_protegido'
+  | 'tempo_esgotado'
+  | 'saida_grande_demais'
+  | 'ferramenta_ausente';
+export class ExtracaoDeTextoError extends DomainError {
+  readonly codigo = 'EXTRACAO_DE_TEXTO';
+
+  constructor(
+    readonly motivo: MotivoDeExtracaoRecusada,
     mensagem: string,
   ) {
     super(mensagem);

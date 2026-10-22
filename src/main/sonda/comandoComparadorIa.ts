@@ -26,6 +26,10 @@ import {
   relatorioEmMarkdown,
   revisaoHumanaEmCsv,
 } from './comparadorDeModelos.js';
+import {
+  executarComparacaoDePecas,
+  julgarPlanilhaDePecas,
+} from './comandoComparadorPecas.js';
 import type { PrecoPorToken } from './sondaIaAto.js';
 
 /**
@@ -41,7 +45,10 @@ Precisa de OPENROUTER_API_KEY e de PROCESSOVIVO_IA_MODELO (o modelo de produçã
   node scripts/ia-comparar-modelos.mjs --modelos=a,b
 2. Rodar de verdade:
   node scripts/ia-comparar-modelos.mjs --modelos=a,b --executar [--teto-usd=${TETO_PADRAO_USD}]
-Opções: --teto-usd=<n> (padrão ${TETO_PADRAO_USD})  --categorias=decisao,prazo_escrito  --casos=<arquivo.json>  --saida=<pasta>  --pausa-ms=<n>  --ajuda
+3. Leitura de PEÇAS (v0.53.0, casos sintéticos em tests/fixtures/ia-pecas):
+  node scripts/ia-comparar-modelos.mjs --tarefa=pecas --modelos=a,b [--executar]
+  node scripts/ia-comparar-modelos.mjs --julgar-revisao=<planilha preenchida .csv>   # errado/perigoso, sem chamar modelo
+Opções: --tarefa=ato|pecas  --teto-usd=<n> (padrão ${TETO_PADRAO_USD})  --categorias=decisao,prazo_escrito  --casos=<arquivo.json>  --saida=<pasta>  --pausa-ms=<n>  --ajuda
 Só roda modelo que a lista oficial de ZDR do OpenRouter aprova na hora; o resto é recusado. Preço é estimativa, não confirmado.
 A saída (relatório .md, métricas .csv e revisão humana .csv) fica FORA do repositório.`;
 
@@ -71,7 +78,16 @@ export async function executarComandoComparador(
     amb.saida(AJUDA);
     return argv.length === 0 ? 1 : 0;
   }
+  const tarefa = op.get('tarefa') ?? 'ato';
+  if (tarefa !== 'ato' && tarefa !== 'pecas') {
+    amb.aviso('--tarefa inválida. Use: ato (padrão) ou pecas.');
+    return 1;
+  }
   try {
+    // Julgar a planilha de revisão humana das peças: não chama modelo e não precisa de chave.
+    if (op.has('julgar-revisao')) {
+      return await julgarPlanilhaDePecas(op.get('julgar-revisao') ?? '', amb);
+    }
     const chave = amb.env['OPENROUTER_API_KEY']?.trim();
     if (!chave || pareceValorDeExemplo(chave)) {
       amb.aviso(
@@ -148,6 +164,41 @@ export async function executarComandoComparador(
       return 2;
     }
 
+    // --- preços (estimativa; não confirmados) ---
+    const precos = new Map<string, PrecoPorToken>(precosEstimados(lista.endpoints));
+    if (aprovados.some((m) => !precos.has(m))) {
+      try {
+        for (const m of await amb.buscarModelosPublicos()) {
+          if (
+            aprovados.includes(m.id) &&
+            !precos.has(m.id) &&
+            m.precoEntrada !== undefined &&
+            m.precoSaida !== undefined
+          ) {
+            precos.set(m.id, { entrada: m.precoEntrada, saida: m.precoSaida });
+          }
+        }
+      } catch {
+        /* sem preço público: a estimativa diz "sem preço" e o teto usa o custo conservador */
+      }
+    }
+
+    // --- outra tarefa: leitura de PEÇAS (v0.53.0) ---
+    if (tarefa === 'pecas') {
+      return await executarComparacaoDePecas({
+        op,
+        amb,
+        chave,
+        producao,
+        aprovados,
+        lista,
+        tetoUsd,
+        pausa,
+        pastaDeSaida,
+        precos,
+      });
+    }
+
     // --- casos sintéticos ---
     const caminhoDosCasos = resolve(
       op.get('casos') ??
@@ -173,25 +224,6 @@ export async function executarComandoComparador(
     if (casos.length === 0) {
       amb.aviso('Nenhum caso para rodar.');
       return 1;
-    }
-
-    // --- preços (estimativa; não confirmados) ---
-    const precos = new Map<string, PrecoPorToken>(precosEstimados(lista.endpoints));
-    if (aprovados.some((m) => !precos.has(m))) {
-      try {
-        for (const m of await amb.buscarModelosPublicos()) {
-          if (
-            aprovados.includes(m.id) &&
-            !precos.has(m.id) &&
-            m.precoEntrada !== undefined &&
-            m.precoSaida !== undefined
-          ) {
-            precos.set(m.id, { entrada: m.precoEntrada, saida: m.precoSaida });
-          }
-        }
-      } catch {
-        /* sem preço público: a estimativa diz "sem preço" e o teto usa o custo conservador */
-      }
     }
 
     const estimativas = estimarCusto(casos, aprovados, precos);
