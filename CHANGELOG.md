@@ -9,6 +9,36 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.51.0] — 2026-10-22
+
+**Calendário: lembretes no feed ICS e resumo por e-mail dos eventos a confirmar.** Detecção de eventos, estados
+(sugerido, confirmado, descartado), deduplicação, privacidade do feed (`SUMMARY`/`DESCRIPTION`), token do feed,
+planos, preços e e-mails existentes não mudaram. Sem dependência nova; as tabelas e colunas novas são aditivas.
+Nada aqui afirma prazo: as mensagens dizem "data lida do andamento de dd/mm, confira no processo".
+
+- **Lembretes (`VALARM`) no feed:** o feed ganhou a escolha `lembretes` (`umDiaAntes`, `umaHoraAntes`; padrão
+  nenhum) em `POST`/`GET`/`PATCH /v1/calendario/feed`. Saem só em evento **confirmado** e ainda no futuro, nunca em
+  sugerido nem `CANCELLED`, com `DESCRIPTION` igual ao `SUMMARY` (sem parte, sem trecho, sem observação; sigilo
+  sem número). Evento com hora: `TRIGGER:-P1D` e `-PT1H`. Dia inteiro: gatilho **absoluto em UTC** (12:00Z = 09:00
+  de São Paulo no dia anterior; 11:00Z = 08:00 no próprio dia). Mudar a escolha sobe o contador `revisao_lembretes`
+  do feed: `SEQUENCE` = `sequencia` do evento + revisão e `DTSTAMP` = o maior entre o evento e a mudança, sem
+  regravar evento e sem trocar o `UID` (nada duplica).
+- **Painel "Assinar no meu calendário"** (`ui/calendario.ts`): as duas opções e o texto "Apple Calendário e Outlook
+  costumam mostrar estes lembretes. O Google Agenda pode ignorá-los em calendários assinados por URL…". O
+  comportamento real de cada aplicativo **não é provado por teste**: só o formato do ICS.
+- **Resumo por e-mail** (`ServicoResumoDoCalendario`): um e-mail por conta, no máximo um por dia, entre 08:00 e
+  12:00 de São Paulo (tick de 15 min, relógio injetado), só com evento `sugerido` novo ou `revisar` ainda não
+  avisado; até 10 itens e "e mais N". Chave global `PROCESSOVIVO_CALENDARIO_RESUMO_HABILITADO` (**desligada por
+  padrão**) e só com SMTP de verdade. Opção por conta em `GET`/`PUT /v1/calendario/resumo` (padrão ligado) e no
+  painel ("Resumo por e-mail"). Registro de itens e envios sem e-mail, número ou texto; até 3 tentativas por item.
+  O link do e-mail é `/?calendario=resumo`, que abre o Calendário.
+- **CLI:** `calendario resumo-previa` (só leitura): contas e itens que receberiam o resumo agora.
+- **Testes:** formato do ICS (também lido pelo ical.js), API, resumo com banco real e notificador falso, CLI, grafo
+  de imports do calendário (os módulos novos entram) e navegador (axe claro/escuro, seis larguras, teclado).
+  Reescritos só dois literais de `FeedDoCalendario` em `calendario-sqlite.spec.ts`, que ganhou campos obrigatórios.
+
+---
+
 ## [0.50.1] — 2026-10-22
 
 **Tela de entrada: aviso de que as peças valem, por enquanto, só para o TJGO.** Só texto e layout do painel da esquerda
@@ -2027,7 +2057,7 @@ Três ajustes pedidos por advogados que usaram o sistema. Especificação:
 
 Calendário: agenda por workspace, com eventos lidos dos andamentos (sugeridos,
 a confirmar) e eventos criados pelo advogado, numa tela do console e num feed
-ICS assinável. Especificação: `docs/calendario-especificacao-v1.0.3.md`.
+ICS assinável. Especificação: `docs/calendario-especificacao-v1.1.0.md` (a v1.0.3 foi renomeada e ganhou a seção 17).
 
 ### Adicionado
 

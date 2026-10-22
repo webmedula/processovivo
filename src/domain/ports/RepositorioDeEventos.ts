@@ -9,8 +9,34 @@ export interface FeedDoCalendario {
   readonly workspace: string;
   readonly tokenHash: string;
   readonly incluiSugeridos: boolean;
+  /** Lembretes (`VALARM`) que o feed põe nos eventos confirmados. Padrão: nenhum. */
+  readonly lembretes: LembretesDoFeed;
+  /**
+   * Sobe a cada mudança de `lembretes` (v0.51.0). Entra no `SEQUENCE` de todos os eventos do feed:
+   * sem isso o app de calendário, que compara versão, podia não reaplicar o alarme.
+   */
+  readonly revisaoLembretes: number;
+  /** Instante da última mudança de lembretes; entra no `DTSTAMP` (o maior vence). */
+  readonly lembretesAlteradosEm?: Date;
   readonly criadoEm: Date;
   readonly revogadoEm?: Date;
+}
+
+/** As duas opções fixas de lembrete. `false` nas duas = feed sem `VALARM`. */
+export interface LembretesDoFeed {
+  readonly umDiaAntes: boolean;
+  readonly umaHoraAntes: boolean;
+}
+
+export const SEM_LEMBRETES: LembretesDoFeed = Object.freeze({
+  umDiaAntes: false,
+  umaHoraAntes: false,
+});
+
+/** O que o `PATCH` do feed pode mudar. Ausente = não mexe. */
+export interface MudancasNoFeed {
+  readonly incluiSugeridos?: boolean;
+  readonly lembretes?: LembretesDoFeed;
 }
 
 export interface FiltroDeEventos {
@@ -70,14 +96,15 @@ export interface RepositorioDeEventos {
   substituirFeed(feed: FeedDoCalendario): Promise<void>;
 
   /**
-   * Muda só a opção "incluir sugeridos" do feed vigente — o token continua o
+   * Muda só as opções do feed vigente ("incluir sugeridos" e lembretes) — o token continua o
    * mesmo, e a URL que já está no calendário do advogado segue valendo.
    *
    * @returns o feed alterado, ou `undefined` quando não há feed vigente.
    */
   alterarFeed(
     workspace: string,
-    incluiSugeridos: boolean,
+    mudancas: MudancasNoFeed,
+    agora: Date,
   ): Promise<FeedDoCalendario | undefined>;
 
   /** @returns `true` quando havia feed vigente para revogar. */

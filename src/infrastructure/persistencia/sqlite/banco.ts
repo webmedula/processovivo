@@ -528,6 +528,35 @@ const ESQUEMA = [
    )`,
   `CREATE INDEX IF NOT EXISTS idx_feeds_ws ON calendario_feeds (workspace, revogado_em)`,
 
+  // Resumo por e-mail dos eventos a confirmar (v0.51.0). Três tabelas NOVAS e aditivas, sem conteúdo de
+  // andamento, de parte nem e-mail: só ids, datas e contagens.
+  //  - preferência: ausente = LIGADO (padrão do dono); a linha só existe depois de a pessoa escolher.
+  //  - itens: um por (evento, motivo, chave). `chave` é '' para 'novo' e a data da revisão para 'revisar',
+  //    então um andamento de mudança NOVO volta a ser avisado e o mesmo nunca se repete.
+  //  - envios: um por envio bem-sucedido (conta, dia local, instante, quantidade).
+  `CREATE TABLE IF NOT EXISTS calendario_resumo_preferencias (
+     workspace     TEXT PRIMARY KEY,
+     ativo         INTEGER NOT NULL,
+     atualizado_em TEXT NOT NULL
+   )`,
+  `CREATE TABLE IF NOT EXISTS calendario_resumo_itens (
+     workspace         TEXT NOT NULL,
+     evento_id         TEXT NOT NULL,
+     motivo            TEXT NOT NULL,
+     chave             TEXT NOT NULL DEFAULT '',
+     tentativas        INTEGER NOT NULL DEFAULT 0,
+     ultima_tentativa_em TEXT,
+     avisado_em        TEXT,
+     PRIMARY KEY (workspace, evento_id, motivo, chave)
+   )`,
+  `CREATE TABLE IF NOT EXISTS calendario_resumo_envios (
+     workspace  TEXT NOT NULL,
+     dia_local  TEXT NOT NULL,
+     enviado_em TEXT NOT NULL,
+     quantidade INTEGER NOT NULL,
+     PRIMARY KEY (workspace, dia_local)
+   )`,
+
   // Quem já teve os andamentos guardados relidos pela detecção (o
   // preenchimento retroativo de 180 dias). Uma linha por workspace.
   `CREATE TABLE IF NOT EXISTS calendario_retroativo (
@@ -905,7 +934,29 @@ const COLUNAS_ACRESCENTADAS: ReadonlyArray<{
    */
   { tabela: 'acompanhamentos', coluna: 'cumprido_chave', tipo: 'TEXT' },
   // v0.39.0: prazo calculado pelo sistema (0/1). Sem retrocarga: nenhum evento antigo foi calculado.
-  { tabela: 'eventos_calendario', coluna: 'calculado', tipo: 'INTEGER NOT NULL DEFAULT 0' },
+  {
+    tabela: 'eventos_calendario',
+    coluna: 'calculado',
+    tipo: 'INTEGER NOT NULL DEFAULT 0',
+  },
+  // v0.51.0: lembretes (VALARM) do feed. Padrão 0/0 = feed sem alarme, igual ao de antes; sem retrocarga,
+  // porque ninguém escolheu lembrete. `revisao_lembretes` sobe a cada mudança de escolha (SEQUENCE do feed).
+  {
+    tabela: 'calendario_feeds',
+    coluna: 'lembrete_um_dia',
+    tipo: 'INTEGER NOT NULL DEFAULT 0',
+  },
+  {
+    tabela: 'calendario_feeds',
+    coluna: 'lembrete_uma_hora',
+    tipo: 'INTEGER NOT NULL DEFAULT 0',
+  },
+  {
+    tabela: 'calendario_feeds',
+    coluna: 'revisao_lembretes',
+    tipo: 'INTEGER NOT NULL DEFAULT 0',
+  },
+  { tabela: 'calendario_feeds', coluna: 'lembretes_alterados_em', tipo: 'TEXT' },
   { tabela: 'acompanhamentos', coluna: 'cumprido_ate', tipo: 'TEXT' },
   { tabela: 'acompanhamentos', coluna: 'cumprido_em', tipo: 'TEXT' },
   { tabela: 'acompanhamentos', coluna: 'cumprido_por', tipo: 'TEXT' },

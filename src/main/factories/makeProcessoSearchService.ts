@@ -18,6 +18,7 @@ import { GoogleDriveAdapter } from '../../infrastructure/adapters/drive/GoogleDr
 import { TransporteComHttpClient } from '../../infrastructure/adapters/drive/TransporteDoDrive.js';
 import { RepositorioDoDriveSqlite } from '../../infrastructure/persistencia/sqlite/RepositorioDoDriveSqlite.js';
 import { ServicoCalendario } from '../../application/services/ServicoCalendario.js';
+import { ServicoResumoDoCalendario } from '../../application/services/ServicoResumoDoCalendario.js';
 import { ServicoCustos } from '../../application/services/ServicoCustos.js';
 import { ServicoCustosPorCliente } from '../../application/services/ServicoCustosPorCliente.js';
 import { PrestacaoDeContasPdf } from '../../infrastructure/pdf/PrestacaoDeContasPdf.js';
@@ -27,6 +28,7 @@ import { comIndicadorDeDestinatario } from '../../application/services/indicador
 import { comDeteccaoDoCalendario } from '../../application/services/ingestaoDoCalendario.js';
 import { OabsDoWorkspaceSqlite } from '../../infrastructure/persistencia/sqlite/OabsDoWorkspaceSqlite.js';
 import { RepositorioDeEventosSqlite } from '../../infrastructure/persistencia/sqlite/RepositorioDeEventosSqlite.js';
+import { RepositorioDoResumoDoCalendarioSqlite } from '../../infrastructure/persistencia/sqlite/RepositorioDoResumoDoCalendarioSqlite.js';
 import { createHmac, randomBytes, randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -167,6 +169,9 @@ export interface Aplicacao {
   readonly calendario: ServicoCalendario;
   /** Preenchimento retroativo do calendário (de hora em hora, só banco). */
   readonly agendadorCalendario: Agendador | undefined;
+  /** v0.51.0. Ausente quando não há SMTP de verdade: sem entrega, não há resumo. */
+  readonly resumoDoCalendario: ServicoResumoDoCalendario | undefined;
+  readonly agendadorResumoDoCalendario: Agendador | undefined;
   /** Centro de custos do processo (v0.47.0). Sempre montado — só depende do banco. */
   readonly custos: ServicoCustos;
   /** Custos por cliente, PDF consolidado e CSV (v0.49.0). */
@@ -510,6 +515,38 @@ export function montarAplicacao(config: Config): Aplicacao {
     tarefa: () => calendario.preencherRetroativo(),
   });
 
+  // Resumo por e-mail dos eventos a confirmar (v0.51.0). O tick é de 15 min e a decisão de "é hora" é do
+  // serviço, pelo relógio: o Agendador só sabe de intervalos. Sem SMTP de verdade o serviço NÃO é montado
+  // ("log não é entrega"), e a chave global, desligada por padrão, ainda precisa estar ligada.
+  const resumoDoCalendario = entregaDeVerdade(config)
+    ? new ServicoResumoDoCalendario({
+        repositorio: new RepositorioDoResumoDoCalendarioSqlite(db),
+        usuarios,
+        notificador,
+        logger,
+        urlBase: config.notificacao.urlBase,
+        habilitado: config.calendario.resumoHabilitado,
+        assinaturas,
+      })
+    : undefined;
+  if (config.calendario.resumoHabilitado && !resumoDoCalendario) {
+    logger.warn(
+      'resumo do calendário ligado, mas sem SMTP de verdade: nenhum e-mail será enviado',
+      {
+        motivo: 'SMTP_HOST ou SMTP_FROM não definidos',
+      },
+    );
+  }
+  const agendadorResumoDoCalendario =
+    resumoDoCalendario && config.calendario.resumoHabilitado
+      ? new Agendador({
+          intervaloHoras: 0.25,
+          atrasoInicialMs: 120_000,
+          logger,
+          tarefa: () => resumoDoCalendario.executar(),
+        })
+      : undefined;
+
   const agendadorVigilancia =
     vigilancia && config.vigilancia.intervaloHoras > 0
       ? new Agendador({
@@ -615,6 +652,8 @@ export function montarAplicacao(config: Config): Aplicacao {
     agendadorLimpezaLeitor,
     calendario,
     agendadorCalendario,
+    resumoDoCalendario,
+    agendadorResumoDoCalendario,
     custos,
     custosPorCliente,
     contas,
@@ -643,6 +682,7 @@ export function montarAplicacao(config: Config): Aplicacao {
       agendadorLeitor?.parar();
       agendadorLimpezaLeitor?.parar();
       agendadorCalendario.parar();
+      agendadorResumoDoCalendario?.parar();
       db.close();
     },
   };
@@ -809,7 +849,12 @@ function montarServicoPecas(
   pasta: ServicoPasta | undefined;
   drive: ServicoDrive | undefined;
 } {
-  const nada = { pecas: undefined, leitor: undefined, pasta: undefined, drive: undefined };
+  const nada = {
+    pecas: undefined,
+    leitor: undefined,
+    pasta: undefined,
+    drive: undefined,
+  };
   if (pareceValorDeExemplo(config.mni.chaveDoCofre)) {
     logger.warn(
       'acesso a peças desligado: PROCESSOVIVO_CREDENCIAL_CHAVE ainda contém o texto de exemplo',

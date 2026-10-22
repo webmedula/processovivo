@@ -27,8 +27,11 @@ import {
 import type { TokensDeSessao } from '../../domain/ports/Criptografia.js';
 import type { Logger } from '../../domain/ports/Logger.js';
 import type { RepositorioAcompanhamentos } from '../../domain/ports/RepositorioAcompanhamentos.js';
+import { SEM_LEMBRETES } from '../../domain/ports/RepositorioDeEventos.js';
 import type {
   FeedDoCalendario,
+  LembretesDoFeed,
+  MudancasNoFeed,
   RepositorioDeEventos,
 } from '../../domain/ports/RepositorioDeEventos.js';
 import type { ServicoAssinaturas } from './ServicoAssinaturas.js';
@@ -217,6 +220,7 @@ export class ServicoCalendario {
   async criarFeed(
     workspace: string,
     incluiSugeridos: boolean,
+    lembretes: LembretesDoFeed = SEM_LEMBRETES,
   ): Promise<{ readonly token: string; readonly feed: FeedDoCalendario }> {
     const token = this.tokens.gerar();
     const feed: FeedDoCalendario = {
@@ -224,6 +228,8 @@ export class ServicoCalendario {
       workspace,
       tokenHash: this.tokens.hash(token),
       incluiSugeridos,
+      lembretes,
+      revisaoLembretes: 0,
       criadoEm: this.agora(),
     };
     await this.eventos.substituirFeed(feed);
@@ -236,19 +242,23 @@ export class ServicoCalendario {
   }
 
   /**
-   * Liga ou desliga os sugeridos no feed que já existe, SEM trocar o token:
-   * regenerar obrigaria o advogado a assinar de novo em cada aparelho só para
-   * mudar uma opção.
+   * Muda as opções do feed que já existe (sugeridos e lembretes), SEM trocar o
+   * token: regenerar obrigaria o advogado a assinar de novo em cada aparelho
+   * só para mudar uma opção.
    *
    * @throws {FeedDoCalendarioAusenteError} quando não há feed vigente.
    */
   async alterarFeed(
     workspace: string,
-    incluiSugeridos: boolean,
+    mudancas: MudancasNoFeed,
   ): Promise<FeedDoCalendario> {
-    const feed = await this.eventos.alterarFeed(workspace, incluiSugeridos);
+    const feed = await this.eventos.alterarFeed(workspace, mudancas, this.agora());
     if (!feed) throw new FeedDoCalendarioAusenteError();
-    this.log.info('feed do calendário alterado', { workspace, incluiSugeridos });
+    this.log.info('feed do calendário alterado', {
+      workspace,
+      incluiSugeridos: feed.incluiSugeridos,
+      lembretes: feed.lembretes,
+    });
     return feed;
   }
 
@@ -266,9 +276,11 @@ export class ServicoCalendario {
    * fica anos dentro do aplicativo de calendário de alguém, e qualquer
    * diferença entre as respostas ensinaria a quem a achou se ela já valeu.
    */
-  async eventosDoFeed(
-    token: string,
-  ): Promise<{ readonly eventos: EventoDeCalendario[]; readonly agora: Date }> {
+  async eventosDoFeed(token: string): Promise<{
+    readonly eventos: EventoDeCalendario[];
+    readonly agora: Date;
+    readonly feed: FeedDoCalendario;
+  }> {
     const hash = this.tokens.hash(token);
     const feed = await this.eventos.feedPorHash(hash);
     // A busca já foi pelo hash; a comparação em tempo constante é a segunda
@@ -302,6 +314,7 @@ export class ServicoCalendario {
         incluiSugeridos: feed.incluiSugeridos,
       }),
       agora,
+      feed,
     };
   }
 

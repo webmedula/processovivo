@@ -23,6 +23,10 @@ const MODULOS_DO_CALENDARIO = [
   'src/infrastructure/persistencia/sqlite/RepositorioDeEventosSqlite.ts',
   'src/infrastructure/calendario/ics.ts',
   'src/main/http/rotas/calendario.ts',
+  // v0.51.0: o resumo por e-mail só conhece a porta Notificador, nunca o adaptador SMTP.
+  'src/application/services/ServicoResumoDoCalendario.ts',
+  'src/application/politicas/mensagemDoResumoDoCalendario.ts',
+  'src/infrastructure/persistencia/sqlite/RepositorioDoResumoDoCalendarioSqlite.ts',
 ];
 
 /** Caminhos que são rede: os adaptadores das fontes (MNI, DataJud, DJEN, crawler) e o cliente HTTP. */

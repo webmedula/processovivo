@@ -6,6 +6,7 @@ import {
 } from '../../domain/entities/EventoDeCalendario.js';
 import type { EventoDeCalendario } from '../../domain/entities/EventoDeCalendario.js';
 import { NumeroCNJ } from '../../domain/entities/NumeroCNJ.js';
+import type { LembretesDoFeed } from '../../domain/ports/RepositorioDeEventos.js';
 
 /**
  * Gerador do feed ICS (RFC 5545).
@@ -23,6 +24,12 @@ export interface OpcoesDoFeed {
   readonly agora: Date;
   /** Base pública do sistema, sem barra no fim — para o link "abrir no Processo Vivo". */
   readonly urlBase: string;
+  /** Lembretes escolhidos para este feed (v0.51.0). Ausente = nenhum: o ICS sai igual ao de antes. */
+  readonly lembretes?: LembretesDoFeed;
+  /** Contador de mudanças de lembrete do feed; soma-se ao `SEQUENCE` de todo evento. */
+  readonly revisaoLembretes?: number;
+  /** Instante da última mudança de lembrete; o `DTSTAMP` nunca fica antes dele. */
+  readonly lembretesAlteradosEm?: Date;
 }
 
 /** Domínio do `UID`. Fixo: mudar o domínio mudaria todos os UIDs e duplicaria a agenda. */
@@ -71,8 +78,10 @@ function vevento(e: EventoDeCalendario, opcoes: OpcoesDoFeed): string[] {
   const linhas = [
     'BEGIN:VEVENT',
     `UID:${e.id}@${DOMINIO_DO_UID}`,
-    `DTSTAMP:${instanteUtc(e.atualizadoEm)}`,
-    `SEQUENCE:${e.sequencia}`,
+    // Mudar a escolha de lembretes não regrava evento nenhum: o contador e o instante vêm do FEED. Os
+    // dois só crescem, então o app que compara versão relê o evento (mesmo UID, sem duplicata).
+    `DTSTAMP:${instanteUtc(maisRecente(e.atualizadoEm, opcoes.lembretesAlteradosEm))}`,
+    `SEQUENCE:${e.sequencia + (opcoes.revisaoLembretes ?? 0)}`,
   ];
 
   if (e.horaLocal === undefined) {
@@ -98,8 +107,65 @@ function vevento(e: EventoDeCalendario, opcoes: OpcoesDoFeed): string[] {
     `STATUS:${e.estado === 'descartado' ? 'CANCELLED' : e.estado === 'sugerido' ? 'TENTATIVE' : 'CONFIRMED'}`,
   );
   linhas.push('TRANSP:OPAQUE');
+  linhas.push(...alarmes(e, opcoes));
   linhas.push('END:VEVENT');
   return linhas;
+}
+
+/**
+ * Lembretes (`VALARM`) — só de evento CONFIRMADO e que ainda não começou. Nunca em `sugerido` (não é
+ * compromisso) nem em `CANCELLED`. O `DESCRIPTION` é o próprio `SUMMARY`: tipo e número, sem parte, sem
+ * trecho, sem observação, e processo sigiloso sem número.
+ *
+ * Evento com hora: gatilho RELATIVO ao início (`-P1D`, `-PT1H`). Dia inteiro: o `DTSTART` é uma DATA, e o
+ * RFC deixa o cliente ler "meia-noite" no fuso do aparelho — quem viaja receberia o lembrete em outra
+ * hora. Por isso, em dia inteiro, o gatilho é ABSOLUTO em UTC, calculado no fuso fixo de São Paulo:
+ * "1 dia antes" = 09:00 do dia anterior (12:00Z) e "1 hora antes" = 08:00 do próprio dia (11:00Z).
+ */
+function alarmes(e: EventoDeCalendario, opcoes: OpcoesDoFeed): string[] {
+  const l = opcoes.lembretes;
+  if (!l || (!l.umDiaAntes && !l.umaHoraAntes)) return [];
+  if (e.estado !== 'confirmado' || !ehFuturo(e, opcoes.agora)) return [];
+
+  const descricaoDoAlarme = escapar(resumo(e));
+  const bloco = (trigger: string): string[] => [
+    'BEGIN:VALARM',
+    'ACTION:DISPLAY',
+    `DESCRIPTION:${descricaoDoAlarme}`,
+    trigger,
+    'END:VALARM',
+  ];
+  const saida: string[] = [];
+  if (e.horaLocal === undefined) {
+    if (l.umDiaAntes) {
+      saida.push(
+        ...bloco(
+          `TRIGGER;VALUE=DATE-TIME:${compacta(somarDias(e.dataLocal, -1))}T120000Z`,
+        ),
+      );
+    }
+    if (l.umaHoraAntes) {
+      saida.push(...bloco(`TRIGGER;VALUE=DATE-TIME:${compacta(e.dataLocal)}T110000Z`));
+    }
+  } else {
+    if (l.umDiaAntes) saida.push(...bloco('TRIGGER:-P1D'));
+    if (l.umaHoraAntes) saida.push(...bloco('TRIGGER:-PT1H'));
+  }
+  return saida;
+}
+
+/** Com hora: o início ainda não passou. Dia inteiro: o dia é hoje ou depois (fuso de São Paulo). */
+function ehFuturo(e: EventoDeCalendario, agora: Date): boolean {
+  if (e.horaLocal === undefined) return e.dataLocal >= dataLocalEm(agora);
+  const [h, m] = e.horaLocal.split(':').map(Number);
+  const [a, mes, d] = e.dataLocal.split('-').map(Number);
+  // São Paulo é UTC-3 fixo: a hora de parede + 3 h é o instante.
+  const inicio = Date.UTC(a ?? 0, (mes ?? 1) - 1, d ?? 1, (h ?? 0) + 3, m ?? 0);
+  return inicio > agora.getTime();
+}
+
+function maisRecente(a: Date, b: Date | undefined): Date {
+  return b && b.getTime() > a.getTime() ? b : a;
 }
 
 /** `<Tipo> — <número CNJ>`, ou `<Tipo> (processo sigiloso)`. Nunca o título livre. */

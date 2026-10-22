@@ -38,7 +38,7 @@ var SEMANA=['domingo','segunda','terça','quarta','quinta','sexta','sábado'];
 var SEMANA_CURTA=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
 
 var st={visao:lerVisao(),mes:'',eventos:[],total:0,totalNoIntervalo:0,
-  verDescartados:false,carteira:null,feed:null,urlNova:'',editando:null,
+  verDescartados:false,carteira:null,feed:null,resumo:null,urlNova:'',editando:null,
   criando:false,selecionado:'',alvo:null,pedido:0};
 
 function pv(){return window.__pv}
@@ -464,7 +464,10 @@ function alternarFeed(){
 function carregarFeed(){
   var p=$('cal-feed');
   p.innerHTML='<div class="cartao"><span class="gira"></span>Carregando…</div>';
-  pv().api('/v1/calendario/feed').then(function(r){st.feed=r;desenharFeed()})
+  /* O resumo por e-mail é opcional: se a rota falhar, o painel do feed segue sem a opção. */
+  var resumo=pv().api('/v1/calendario/resumo').catch(function(){return {disponivel:false,ativo:false}});
+  Promise.all([pv().api('/v1/calendario/feed'),resumo])
+    .then(function(r){st.feed=r[0];st.resumo=r[1];desenharFeed()})
     .catch(function(e){p.innerHTML=erroDoCalendario(e)});
 }
 
@@ -486,6 +489,25 @@ function desenharFeed(){
   }
   h+='<label class="cal-check"><input type="checkbox" id="cal-sug"'+(f.incluiSugeridos?' checked':'')+'> '+
     'Incluir sugestões ainda não confirmadas (aparecem como "[sugerido]")</label>';
+  var lem=f.lembretes||{umDiaAntes:false,umaHoraAntes:false};
+  h+='<fieldset class="cal-lembretes"><legend>Lembretes nos eventos confirmados</legend>'+
+    '<label class="cal-check"><input type="checkbox" id="cal-lem-dia"'+(lem.umDiaAntes?' checked':'')+'> '+
+      '1 dia antes (em evento de dia inteiro: às 09:00 do dia anterior)</label>'+
+    '<label class="cal-check"><input type="checkbox" id="cal-lem-hora"'+(lem.umaHoraAntes?' checked':'')+'> '+
+      '1 hora antes (em evento de dia inteiro: às 08:00 do próprio dia)</label>'+
+    '<p class="nota" id="cal-lem-nota">Só eventos confirmados e que ainda não começaram. Sem nenhuma opção marcada, o feed não leva lembretes. '+
+    'Apple Calendário e Outlook costumam mostrar estes lembretes. O Google Agenda pode ignorá-los em calendários '+
+    'assinados por URL; se precisar, configure notificações dele em Configurações do calendário &gt; Notificações. '+
+    'O aplicativo é quem decide se exibe; nós só incluímos os lembretes no feed.</p>'+
+    (f.existe?'':'<p class="nota">Salvos junto com a URL, quando você a criar.</p>')+
+    '</fieldset>';
+  if(st.resumo&&st.resumo.disponivel){
+    h+='<fieldset class="cal-resumo"><legend>Resumo por e-mail</legend>'+
+      '<label class="cal-check"><input type="checkbox" id="cal-resumo"'+(st.resumo.ativo?' checked':'')+'> '+
+      'Receber resumo dos eventos a confirmar</label>'+
+      '<p class="nota" id="cal-resumo-nota">No máximo um e-mail por dia, só quando houver evento novo para confirmar '+
+      'ou rever. Ele traz tipo, data e número do processo, e as datas são lidas do andamento: confira no processo.</p></fieldset>';
+  }
   if(f.existe){
     h+='<p class="nota">Assinatura ativa desde '+esc(brDeInstante(f.criadoEm))+'. A URL não é mostrada de novo; '+
       'se você não a tem mais, regenere.</p>'+
@@ -505,8 +527,8 @@ function desenharFeed(){
   var erro=$('cal-feed-erro');
   function falhou(e){erro.textContent=e&&e.status?e.message:pv().explicar(e)}
   function criar(){
-    pv().api('/v1/calendario/feed',{method:'POST',body:{incluiSugeridos:$('cal-sug').checked}})
-      .then(function(r){st.urlNova=r.url;st.feed={existe:true,criadoEm:r.criadoEm,incluiSugeridos:r.incluiSugeridos};
+    pv().api('/v1/calendario/feed',{method:'POST',body:{incluiSugeridos:$('cal-sug').checked,lembretes:lembretesDaTela()}})
+      .then(function(r){st.urlNova=r.url;st.feed={existe:true,criadoEm:r.criadoEm,incluiSugeridos:r.incluiSugeridos,lembretes:r.lembretes};
         desenharFeed();var i=$('cal-url-i');if(i){i.focus();i.select()}})
       .catch(falhou);
   }
@@ -527,6 +549,22 @@ function desenharFeed(){
         c.textContent=marcado?'Sugestões incluídas no feed.':'Sugestões retiradas do feed.'})
       .catch(function(e){ev.target.checked=!marcado;falhou(e)});
   });
+  function lembretesDaTela(){return {umDiaAntes:$('cal-lem-dia').checked,umaHoraAntes:$('cal-lem-hora').checked}}
+  ['cal-lem-dia','cal-lem-hora'].forEach(function(id){
+    $(id).addEventListener('change',function(ev){
+      if(!st.feed||!st.feed.existe)return;
+      var antes=!ev.target.checked, c=$('cal-copiado')||erro;
+      pv().api('/v1/calendario/feed',{method:'PATCH',body:{lembretes:lembretesDaTela()}})
+        .then(function(r){st.feed=r;c.textContent='Lembretes salvos. O aplicativo de calendário atualiza na próxima leitura do feed.'})
+        .catch(function(e){ev.target.checked=antes;falhou(e)});
+    });
+  });
+  if($('cal-resumo'))$('cal-resumo').addEventListener('change',function(ev){
+    var marcado=ev.target.checked, nota=$('cal-resumo-nota');
+    pv().api('/v1/calendario/resumo',{method:'PUT',body:{ativo:marcado}})
+      .then(function(r){st.resumo=r;nota.textContent=marcado?'Resumo ligado.':'Resumo desligado. Você não receberá mais este e-mail.'})
+      .catch(function(e){ev.target.checked=!marcado;falhou(e)});
+  });
   if($('cal-copiar'))$('cal-copiar').addEventListener('click',function(){
     var i=$('cal-url-i'), aviso=$('cal-copiado');
     function feito(){aviso.textContent='URL copiada.'}
@@ -542,7 +580,7 @@ function desenharFeed(){
    APAGADO da barra de endereço (para um F5 não reabrir o processo) e atendido
    quando a sessão abre — inclusive depois de a pessoa entrar, se ela chegou
    deslogada. Só número CNJ de 20 dígitos; qualquer outra coisa é ignorada. */
-var processoPedido='';
+var processoPedido='', abrirResumo=false;
 try{
   var busca=new URLSearchParams(location.search);
   var pedido=String(busca.get('processo')||'').replace(/\D/g,'');
@@ -552,9 +590,21 @@ try{
     history.replaceState(null,'',location.pathname+(resto?'?'+resto:''));
   }
   if(pedido.length===20)processoPedido=pedido;
+  /* v0.51.0: o link do e-mail de resumo (?calendario=resumo) abre a aba Calendário. Só esse valor exato; sai da barra. */
+  if(busca.get('calendario')==='resumo')abrirResumo=true;
+  if(busca.has('calendario')){
+    busca.delete('calendario');
+    var resto2=busca.toString();
+    history.replaceState(null,'',location.pathname+(resto2?'?'+resto2:''));
+  }
 }catch(e){}
 
 window.__pvAoIniciar=function(){
+  if(abrirResumo){
+    abrirResumo=false;
+    var nav=$('nav-calendario');
+    if(nav){nav.click();var ass=$('cal-assinar');if(ass&&ass.getAttribute('aria-expanded')==='false')ass.click()}
+  }
   if(!processoPedido||!pv())return;
   var n=processoPedido;processoPedido='';
   pv().abrir(n);
@@ -622,6 +672,9 @@ export const ESTILOS_CALENDARIO = `
 .cal .cal-url-l{display:flex;gap:8px}
 .cal .cal-url-l input{font-family:var(--mono);font-size:12.5px;min-width:0}
 .cal .cal-check{display:flex;gap:8px;align-items:center;margin:10px 0;font-size:14px}
+.cal .cal-lembretes,.cal .cal-resumo{margin:14px 0;padding:6px 14px 10px;border:1px solid var(--linha);border-radius:10px;min-width:0}
+.cal .cal-lembretes legend,.cal .cal-resumo legend{padding:0 6px;font-weight:700;font-size:14px}
+.cal .cal-lembretes .nota,.cal .cal-resumo .nota{overflow-wrap:anywhere}
 .cal .cal-como{margin-top:12px;font-size:13.5px}
 .cal .cal-como summary{cursor:pointer;font-weight:700}
 .cal .cal-indisponivel p{margin:0}
