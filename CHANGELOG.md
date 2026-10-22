@@ -9,6 +9,55 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.54.0] — 2026-10-22
+
+**Resumo do processo por IA: a "situação atual" nunca é um ato antigo.** Prompt `resumo-1.1.0` e regras de verificação `1.1.0`. **Não mudaram:** modelo, provedor,
+ZDR, redação, segredo de justiça, planos, teto diário, freio por hora, regras de prazo, análise do ato, análise de peças (Fase 0), calendário e a marcação "pede
+providência" do sistema. Sem dependência nova; sem migração (campos novos de `contagens` e `resultado` são aditivos e opcionais). O comando de diagnóstico da
+0.53.x (`scripts/diagnostico-resumo.mjs`) continua, agora também mostrando a seleção nova.
+
+**O problema, no caso que originou esta versão:** processo com 44 atos cujo ato mais recente (despacho de 05/10) o sistema marcava "pede providência". O resumo
+mostrou como "Situação do processo" duas decisões de fevereiro de 2025, disse "A IA não indicou pendências" e o rodapé não dizia que o despacho novo não tinha
+sido lido. Causa provável (o código não prova qual das três; o diagnóstico mostra no processo real): o texto do ato mais recente não estava no retrato da conta —
+(a) só existia na régua do tribunal (MNI), que o resumo não lê; (b) o DJEN devolveu "teor indisponível"; ou (c) o título veio do DataJud e o texto do DJEN, em
+linhas separadas. A correção cobre as três, sem chamar o tribunal.
+
+- **Seleção determinística (`selecionarAtosParaResumo`):** o ato mais recente com texto entra sempre (com o limite de caracteres das providências); todas as
+  providências do sistema com texto entram, até **8** (eram 5); depois os recentes até o limite de sempre; os atos só com título formam a linha do tempo e **não
+  gastam o limite de textos**. A seleção devolve também qual é o ato mais recente, se o texto dele foi lido, quais providências do sistema ficaram sem leitura (com o
+  motivo) e a contagem de atos não lidos por motivo.
+- **Mesmo ato em duas fontes (só para a seleção):** o ato só com título (DataJud) e o ato com texto (DJEN) contam como um quando são do mesmo dia (fuso de São
+  Paulo), da mesma classe (despacho, decisão, sentença, intimação, citação, ato ordinatório, edital — pelo começo do título) e de fontes diferentes, e há exatamente um de
+  cada. Na dúvida não junta. O retrato, a tela e as contagens do sistema não mudam; a providência do só-título passa ao ato com texto.
+- **Cabeçalho institucional:** a regra mínima (`removerCabecalhoInstitucional`, pura) tira do começo do texto o bloco repetido (PODER JUDICIÁRIO, Tribunal, Comarca, Vara,
+  endereço com CEP, Autos nº, Natureza, Polo Ativo/Passivo) só quando pelo menos duas linhas curtas seguidas casam e o que sobra continua com texto utilizável (≥ 80
+  caracteres); só mexe no começo; na dúvida, devolve o original. O texto enviado ao modelo é o texto verificado.
+- **Faixa do sistema (nunca escrita pelo modelo):** logo abaixo da avaliação, a tela diz o **ato mais recente** (data e tipo) e se o texto dele foi lido. Se não foi:
+  "O ato mais recente (dd/mm/aaaa, tipo) não pôde ser lido; confira-o na linha do tempo. O que está abaixo vem de atos mais antigos e não é a situação atual do
+  processo", e o título da seção deixa de ser "Situação do processo" para "O que os atos lidos mostram". A faixa lista as providências que o sistema marca e a IA não
+  leu (data, tipo e motivo: o tribunal não liberou o texto, sem texto, texto curto demais, fora do limite) e, quando a Pasta digital **já gravada** (nenhuma consulta
+  nova ao tribunal) lista um ato mais novo que o retrato, avisa isso.
+- **Pendências:** com providência do sistema sem leitura, a tela não diz "A IA não indicou pendências": diz "Há ato marcado pelo sistema como que pede providência
+  que a IA não leu: (data, tipo)".
+- **Prompt `resumo-1.1.0`:** o modelo recebe, em blocos escritos pelo sistema, `<ato_mais_recente>` (id, data, tipo, "Texto lido: sim|não") e
+  `<providencias_do_sistema>`; se o mais recente foi lido, o primeiro item de situação é sobre ele e começa pela data; se não foi, o modelo não o descreve e não usa
+  "atualmente", "no momento", "hoje", "último ato", "mais recente"; nunca escreve "não há pendências"; os pontos de atenção apontam o ato (`{ codigo, ato }`). A
+  frase "o ato mais recente não pôde ser lido" é do sistema (mais robusta que pedi-la ao modelo). As versões anteriores seguem legíveis (`resumo-1.0.0` fica no banco).
+- **Verificação `1.1.0`:** com o ato mais recente sem leitura, item de situação que o apresenta como atual é descartado; com providência do sistema sem leitura, item que
+  afirma "não há pendências" é descartado; os dois são contados à parte (`atualidade`, `pendenciaNegada`); sem item de situação sobrevivente, o resultado continua "não
+  verificado". O ponto de atenção "depende de outro documento" passa a dizer **de qual ato** (data e tipo vêm do retrato, não do modelo).
+- **Rodapé em uma frase:** "Este resumo usou o texto de N atos, entre eles o ato mais recente (dd/mm/aaaa). Outros M atos têm só o título e K não foram lidos." (ou
+  "…, mas não o do ato mais recente (dd/mm/aaaa)…"), mais a contagem de providências que o IA não citou e de itens descartados. Aviso fixo e "Este resumo foi útil?" não mudaram.
+- **Log por motivo, só contagens** ("resumo do processo montado"): atos só pelo título por teor indisponível, sem texto, abaixo do mínimo e fora do limite; mesclados;
+  providências sem leitura; se o mais recente foi lido; e os descartes da verificação por motivo. Nunca texto, título, parte, número de processo ou conta.
+- **Comparador `--tarefa=resumo`:** `resumo-1.0.0` × `resumo-1.1.0` sobre 8 processos sintéticos (`tests/fixtures/ia-resumo`: cabeçalho longo, muitos só-título, despacho
+  e decisão do mesmo dia, ato recente sem texto). Mede pontos cobertos, "abre no ato mais recente", "atual" indevido, pendência negada, violações, descartes, latência e
+  custo; relatório `.md`, métricas `.csv` e planilha de revisão humana. Manual, ZDR da lista oficial de agora, teto de gasto (US$ 1,00), estima antes de `--executar`.
+  `Dockerfile` copia `tests/fixtures/ia-resumo`.
+- **Fonte única da tela e do resumo:** DataJud + DJEN já eram a mesma lista (o retrato é gravado pela mesma fusão que a tela mostra). A régua do MNI **não** pode virar fonte
+  do resumo: traz só título e complementos, o texto das decisões está em PDF (e a extração de PDF é interna, da Fase 0). O que se reaproveita, sem consulta nova, é a listagem
+  da Pasta digital que a tela já gravou, só para avisar que o tribunal lista ato mais novo.
+
 ## [0.53.0] — 2026-10-22
 
 **IA de peças, Fase 0: viabilidade e medição, sem produto.** Nenhuma tela, rota, plano, preço ou chamada de IA nova em produção; a análise do

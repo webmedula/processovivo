@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { DatabaseSync } from 'node:sqlite';
-import { LimiteDeAnalises, TetoDiario } from '../../src/application/politicas/limiteDeAnalises.js';
+import {
+  LimiteDeAnalises,
+  TetoDiario,
+} from '../../src/application/politicas/limiteDeAnalises.js';
 import { ServicoResumoDoProcesso } from '../../src/application/services/ServicoResumoDoProcesso.js';
 import { chaveDaMovimentacao } from '../../src/domain/entities/Acompanhamento.js';
 import type { Movimentacao } from '../../src/domain/entities/Movimentacao.js';
@@ -190,7 +193,7 @@ describe('ServicoResumoDoProcesso', () => {
         rotulo: 'Intimação',
         tipoDaComunicacao: 'Intimação',
       });
-      expect(r.versaoPrompt).toBe('resumo-1.0.0');
+      expect(r.versaoPrompt).toBe('resumo-1.1.0');
       expect(r.avaliacao).toBeNull();
     });
 

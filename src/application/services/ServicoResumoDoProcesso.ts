@@ -11,7 +11,11 @@ import type {
 import { NumeroCNJ } from '../../domain/entities/NumeroCNJ.js';
 import type { Processo } from '../../domain/entities/Processo.js';
 import type { PontoDeAtencao } from '../../domain/entities/vocabularioDaAnalise.js';
-import type { ItemDoResumo } from '../../domain/entities/vocabularioDoResumo.js';
+import type { Movimentacao } from '../../domain/entities/Movimentacao.js';
+import type {
+  ItemDoResumo,
+  PontoDoResumo,
+} from '../../domain/entities/vocabularioDoResumo.js';
 import {
   AcompanhamentoNaoEncontradoError,
   AnaliseNaoEncontradaError,
@@ -21,6 +25,7 @@ import {
 } from '../../domain/errors/index.js';
 import type { Clock } from '../../domain/ports/Clock.js';
 import type { Logger } from '../../domain/ports/Logger.js';
+import type { RepositorioDaPasta } from '../../domain/ports/RepositorioDaPasta.js';
 import type { RepositorioAcompanhamentos } from '../../domain/ports/RepositorioAcompanhamentos.js';
 import type { RepositorioResumos } from '../../domain/ports/RepositorioResumos.js';
 import type { ResumidorDeProcesso } from '../../domain/ports/ResumidorDeProcesso.js';
@@ -31,7 +36,12 @@ import {
 } from '../politicas/entradaDoResumo.js';
 import type { LimiteDeAnalises } from '../politicas/limiteDeAnalises.js';
 import type { PessoasParaRedigir } from '../politicas/redigirParaIA.js';
-import { selecionarAtosParaResumo } from '../politicas/selecionarAtosParaResumo.js';
+import { diaLocal } from '../politicas/mesmoAtoParaOResumo.js';
+import {
+  selecionarAtosParaResumo,
+  type MotivoDeNaoLido,
+  type SelecaoDoResumo,
+} from '../politicas/selecionarAtosParaResumo.js';
 import { verificarResumo } from '../politicas/verificarResumo.js';
 
 /**
@@ -67,12 +77,56 @@ export interface ItemDoResumoParaATela {
   };
 }
 
+/** Um ato como a tela o mostra na faixa do sistema: data e rótulo vêm do RETRATO. */
+export interface AtoParaATela {
+  readonly data: Date;
+  readonly rotulo: string;
+  readonly tipoDaComunicacao: string | null;
+}
+
+/**
+ * O que o SISTEMA sabe e o modelo não (v0.54.0): qual é o ato mais recente, se o texto dele foi
+ * lido e quais providências marcadas pelo sistema ficaram sem leitura. Escrito aqui, nunca pelo
+ * modelo — é a faixa que impede o resumo de apresentar um ato antigo como a situação atual.
+ */
+export interface AtualidadeDoResumo {
+  readonly maisRecente: (AtoParaATela & { readonly lido: boolean }) | null;
+  /** As mais recentes primeiro; no máximo `LISTADAS_NA_FAIXA`. */
+  readonly providenciasNaoLidas: readonly (AtoParaATela & {
+    readonly motivo: MotivoDeNaoLido;
+  })[];
+  readonly providenciasNaoLidasTotal: number;
+  /** A Pasta digital (já gravada, sem consulta nova) lista ato mais novo que o retrato. */
+  readonly tribunalMaisNovo: {
+    readonly data: Date;
+    readonly rotulo: string;
+    readonly listadaEm: Date;
+  } | null;
+}
+
+const LISTADAS_NA_FAIXA = 8;
+
+export const SEM_ATUALIDADE: AtualidadeDoResumo = Object.freeze({
+  maisRecente: null,
+  providenciasNaoLidas: [],
+  providenciasNaoLidasTotal: 0,
+  tribunalMaisNovo: null,
+});
+
+export interface PontoParaATela {
+  readonly codigo: PontoDeAtencao;
+  readonly ato: AtoParaATela | null;
+}
+
 export interface ResumoParaATela {
   readonly estado: 'verificado' | 'nao_verificado';
   readonly id: string;
   readonly situacao: readonly ItemDoResumoParaATela[];
   readonly pendencias: readonly ItemDoResumoParaATela[];
   readonly pontosDeAtencao: readonly PontoDeAtencao[];
+  /** Os mesmos pontos, com o ato que os motivou (data e rótulo do retrato), quando há. */
+  readonly pontosDoAto: readonly PontoParaATela[];
+  readonly atualidade: AtualidadeDoResumo;
   readonly contagens: ContagensDoResumo;
   readonly modelo: string;
   readonly versaoPrompt: string;
@@ -95,6 +149,11 @@ export interface OpcoesServicoResumoDoProcesso {
   readonly novoId: () => string;
   /** A janela única de "pede providência" (`PENDENCIA_JANELA_DIAS`). */
   readonly janelaDePendenciaDias: number;
+  /**
+   * A listagem da Pasta digital que a tela já gravou (v0.54.0). SÓ LEITURA do que existe: o resumo
+   * nunca consulta o tribunal; serve para avisar que o tribunal lista ato mais novo que o retrato.
+   */
+  readonly pasta?: Pick<RepositorioDaPasta, 'obterListagem'>;
 }
 
 export interface PedidoDeResumoDoProcesso {
@@ -151,8 +210,8 @@ export class ServicoResumoDoProcesso {
           }
         : undefined,
     );
-    const chavesPendentes = new Set(pendentes.map((p) => p.chave));
-    const selecao = selecionarAtosParaResumo(processo.movimentacoes, chavesPendentes);
+    const chavesDoSistema = new Set(pendentes.map((p) => p.chave));
+    const selecao = selecionarAtosParaResumo(processo.movimentacoes, chavesDoSistema);
     if (selecao.comTexto === 0) {
       throw new EntradaNaoAnalisavelError(
         'texto_insuficiente',
@@ -174,7 +233,6 @@ export class ServicoResumoDoProcesso {
         numero,
         processo,
         selecao,
-        chavesPendentes,
         pessoasDoProcesso(processo),
       );
     } finally {
@@ -186,8 +244,7 @@ export class ServicoResumoDoProcesso {
     pedido: PedidoDeResumoDoProcesso,
     numero: string,
     processo: Processo,
-    selecao: ReturnType<typeof selecionarAtosParaResumo>,
-    chavesPendentes: ReadonlySet<string>,
+    selecao: SelecaoDoResumo,
     pessoas: PessoasParaRedigir,
   ): Promise<RespostaDoResumo> {
     const entrada = prepararEntradaDoResumo(
@@ -221,7 +278,13 @@ export class ServicoResumoDoProcesso {
     }
     const latenciaMs = Math.max(0, Math.round(this.o.clock.monotonico() - inicio));
 
-    const verificada = verificarResumo(bruta.resposta, entrada.atos);
+    // O que o SISTEMA sabe e o modelo não: a verificação usa para barrar "situação atual" sem ter
+    // lido o ato mais recente e "sem pendências" havendo providência que a IA não leu.
+    const chavesPendentes = selecao.chavesPendentes;
+    const verificada = verificarResumo(bruta.resposta, entrada.atos, {
+      maisRecenteNaoLido: selecao.maisRecente !== undefined && !selecao.maisRecente.lido,
+      providenciaNaoLida: selecao.providenciasNaoLidas.length > 0,
+    });
     const resultado: ResultadoDoResumo =
       verificada.estado === 'verificado'
         ? {
@@ -229,6 +292,7 @@ export class ServicoResumoDoProcesso {
             situacao: verificada.situacao,
             pendencias: verificada.pendencias,
             pontosDeAtencao: verificada.pontosDeAtencao,
+            pontosDoAto: verificada.pontosDoAto,
           }
         : { estado: 'nao_verificado', motivo: verificada.motivo };
 
@@ -249,7 +313,34 @@ export class ServicoResumoDoProcesso {
       itensDescartados: Math.max(0, verificada.itensRecebidos - verificados),
       providenciasDoSistema: chavesPendentes.size,
       providenciasNaoCitadas: [...chavesPendentes].filter((c) => !citadas.has(c)).length,
+      atosMesclados: selecao.mesclados,
+      providenciasNaoLidas: selecao.providenciasNaoLidas.length,
+      maisRecenteLido: selecao.maisRecente?.lido ?? false,
     };
+
+    // Só CONTAGENS, por motivo: nada de texto de ato, título, número de processo, conta ou parte.
+    this.log.info('resumo do processo montado', {
+      versaoPrompt: entrada.versaoPrompt,
+      atosNoProcesso: selecao.totalDeAtos,
+      comTexto: selecao.comTexto,
+      soTitulo: selecao.soTitulo,
+      foraDoResumo: selecao.foraDoResumo,
+      mesclados: selecao.mesclados,
+      naoLidosTeorIndisponivel: selecao.motivosDosNaoLidos.teorIndisponivel,
+      naoLidosSemTexto: selecao.motivosDosNaoLidos.semTexto,
+      naoLidosAbaixoDoMinimo: selecao.motivosDosNaoLidos.abaixoDoMinimo,
+      naoLidosForaDoLimite: selecao.motivosDosNaoLidos.foraDoLimite,
+      providenciasNaoLidas: selecao.providenciasNaoLidas.length,
+      maisRecenteLido: selecao.maisRecente?.lido ?? false,
+      descartesReferencia: verificada.descartes.referencia,
+      descartesCitacao: verificada.descartes.citacao,
+      descartesNumero: verificada.descartes.numeroInventado,
+      descartesCopia: verificada.descartes.copiaDoTrecho,
+      descartesForma: verificada.descartes.forma,
+      descartesAtualidade: verificada.descartes.atualidade,
+      descartesPendenciaNegada: verificada.descartes.pendenciaNegada,
+      descartesExpressaoProibida: verificada.descartes.expressaoProibida,
+    });
 
     const resumo: ResumoDoProcesso = {
       id: this.o.novoId(),
@@ -279,7 +370,56 @@ export class ServicoResumoDoProcesso {
     };
     await this.o.resumos.salvar(resumo);
 
-    return resumoParaATela(resumo, entrada.atos, (t) => entrada.restaurar(t));
+    const atualidade = await this.atualidadeDe(pedido.workspace, numero, selecao);
+    return resumoParaATela(resumo, entrada.atos, (t) => entrada.restaurar(t), atualidade);
+  }
+
+  /** A faixa do sistema (v0.54.0): ato mais recente, providências sem leitura e o aviso da Pasta digital. */
+  private async atualidadeDe(
+    workspace: string,
+    numero: string,
+    selecao: SelecaoDoResumo,
+  ): Promise<AtualidadeDoResumo> {
+    const doAto = (a: Movimentacao): AtoParaATela => ({
+      data: a.data,
+      rotulo: a.titulo,
+      tipoDaComunicacao: a.tipoComunicacao?.trim() || null,
+    });
+    let tribunalMaisNovo: AtualidadeDoResumo['tribunalMaisNovo'] = null;
+    const maisRecente = selecao.maisRecente;
+    if (this.o.pasta && maisRecente) {
+      try {
+        const listagem = await this.o.pasta.obterListagem(workspace, numero);
+        const novo = [...(listagem?.atos ?? [])].sort(
+          (a, b) => b.data.getTime() - a.data.getTime(),
+        )[0];
+        // Comparação por DIA: a Pasta e as fontes públicas não dão a mesma hora ao mesmo ato.
+        if (
+          listagem &&
+          !listagem.processoSigiloso &&
+          novo &&
+          diaLocal(novo.data) > diaLocal(maisRecente.ato.data)
+        ) {
+          tribunalMaisNovo = {
+            data: novo.data,
+            rotulo: novo.descricao,
+            listadaEm: listagem.listadaEm,
+          };
+        }
+      } catch {
+        // O aviso é um extra: a falha em ler a Pasta nunca derruba o resumo (e não vai ao log com dado).
+      }
+    }
+    return {
+      maisRecente: maisRecente
+        ? { ...doAto(maisRecente.ato), lido: maisRecente.lido }
+        : null,
+      providenciasNaoLidas: selecao.providenciasNaoLidas
+        .slice(0, LISTADAS_NA_FAIXA)
+        .map((p) => ({ ...doAto(p.ato), motivo: p.motivo })),
+      providenciasNaoLidasTotal: selecao.providenciasNaoLidas.length,
+      tribunalMaisNovo,
+    };
   }
 
   /** Só o dono da conta avalia; pode corrigir a avaliação anterior. 404 igual para "não existe" e "é de outra". */
@@ -302,6 +442,7 @@ export function resumoParaATela(
   resumo: ResumoDoProcesso,
   atos: ReadonlyMap<string, AtoEnviado>,
   restaurar: (texto: string) => string,
+  atualidade: AtualidadeDoResumo = SEM_ATUALIDADE,
 ): ResumoParaATela {
   const porChave = new Map<string, AtoEnviado>();
   for (const a of atos.values()) porChave.set(a.chave, a);
@@ -319,7 +460,17 @@ export function resumoParaATela(
     };
   };
   const r = resumo.resultado;
+  const pontoParaATela = (p: PontoDoResumo): PontoParaATela => {
+    const ato = p.chaveDoAto ? porChave.get(p.chaveDoAto) : undefined;
+    return {
+      codigo: p.codigo,
+      ato: ato
+        ? { data: ato.data, rotulo: ato.titulo, tipoDaComunicacao: ato.tipoComunicacao }
+        : null,
+    };
+  };
   const base = {
+    atualidade,
     id: resumo.id,
     contagens: resumo.contagens,
     modelo: resumo.procedencia.modelo,
@@ -335,6 +486,7 @@ export function resumoParaATela(
       situacao: [],
       pendencias: [],
       pontosDeAtencao: [],
+      pontosDoAto: [],
     };
   }
   return {
@@ -343,6 +495,9 @@ export function resumoParaATela(
     situacao: r.situacao.map(item),
     pendencias: r.pendencias.map(item),
     pontosDeAtencao: r.pontosDeAtencao,
+    pontosDoAto: (r.pontosDoAto ?? r.pontosDeAtencao.map((codigo) => ({ codigo }))).map(
+      pontoParaATela,
+    ),
   };
 }
 

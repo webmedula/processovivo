@@ -54,7 +54,10 @@ import type { RepositorioAcompanhamentos } from '../../domain/ports/RepositorioA
 import { ServicoAnaliseDoAto } from '../../application/services/ServicoAnaliseDoAto.js';
 import { ServicoResumoDoProcesso } from '../../application/services/ServicoResumoDoProcesso.js';
 import { ServicoAvisoDoPrazo } from '../../application/services/ServicoAvisoDoPrazo.js';
-import { LimiteDeAnalises, TetoDiario } from '../../application/politicas/limiteDeAnalises.js';
+import {
+  LimiteDeAnalises,
+  TetoDiario,
+} from '../../application/politicas/limiteDeAnalises.js';
 import { clockDoSistema } from '../../domain/ports/Clock.js';
 import { ModeloComZdr } from '../../infrastructure/adapters/modelo/ModeloComZdr.js';
 import { OpenRouterResumidorDeProcesso } from '../../infrastructure/adapters/modelo/OpenRouterResumidorDeProcesso.js';
@@ -829,6 +832,8 @@ function montarAnaliseIa(
     logger,
     novoId: () => randomUUID(),
     janelaDePendenciaDias: config.telas.pendenciaJanelaDias,
+    // v0.54.0: só LÊ a listagem que a tela da Pasta já gravou (nunca consulta o tribunal).
+    pasta: new RepositorioDaPastaSqlite(db),
   });
   return { analiseIa, resumoDoProcesso };
 }

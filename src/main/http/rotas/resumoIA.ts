@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import { corpoDaAvaliacao } from './avaliacaoDeIa.js';
 import type {
+  AtoParaATela,
   ItemDoResumoParaATela,
   ServicoResumoDoProcesso,
 } from '../../../application/services/ServicoResumoDoProcesso.js';
@@ -12,7 +13,6 @@ function workspaceDe(requisicao: FastifyRequest): string {
   return ws;
 }
 
-
 function itemJson(i: ItemDoResumoParaATela): Record<string, unknown> {
   return {
     texto: i.texto,
@@ -23,6 +23,14 @@ function itemJson(i: ItemDoResumoParaATela): Record<string, unknown> {
       rotulo: i.ato.rotulo,
       tipoDaComunicacao: i.ato.tipoDaComunicacao,
     },
+  };
+}
+
+function atoJson(a: AtoParaATela): Record<string, unknown> {
+  return {
+    data: a.data.toISOString(),
+    rotulo: a.rotulo,
+    tipoDaComunicacao: a.tipoDaComunicacao,
   };
 }
 
@@ -61,6 +69,32 @@ export function rotasDoResumoIA(
           situacao: r.situacao.map(itemJson),
           pendencias: r.pendencias.map(itemJson),
           pontosDeAtencao: r.pontosDeAtencao,
+          pontosDoAto: r.pontosDoAto.map((p) => ({
+            codigo: p.codigo,
+            ato: p.ato ? atoJson(p.ato) : null,
+          })),
+          // v0.54.0: a faixa do SISTEMA (nunca texto do modelo): ato mais recente, providências
+          // do sistema sem leitura e o aviso da Pasta digital.
+          atualidade: {
+            maisRecente: r.atualidade.maisRecente
+              ? {
+                  ...atoJson(r.atualidade.maisRecente),
+                  lido: r.atualidade.maisRecente.lido,
+                }
+              : null,
+            providenciasNaoLidas: r.atualidade.providenciasNaoLidas.map((p) => ({
+              ...atoJson(p),
+              motivo: p.motivo,
+            })),
+            providenciasNaoLidasTotal: r.atualidade.providenciasNaoLidasTotal,
+            tribunalMaisNovo: r.atualidade.tribunalMaisNovo
+              ? {
+                  data: r.atualidade.tribunalMaisNovo.data.toISOString(),
+                  rotulo: r.atualidade.tribunalMaisNovo.rotulo,
+                  listadaEm: r.atualidade.tribunalMaisNovo.listadaEm.toISOString(),
+                }
+              : null,
+          },
           contagens: r.contagens,
           modelo: r.modelo,
           versaoPrompt: r.versaoPrompt,

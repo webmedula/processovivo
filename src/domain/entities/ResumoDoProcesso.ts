@@ -1,5 +1,5 @@
 import type { PontoDeAtencao } from './vocabularioDaAnalise.js';
-import type { ItemDoResumo } from './vocabularioDoResumo.js';
+import type { ItemDoResumo, PontoDoResumo } from './vocabularioDoResumo.js';
 import type {
   AvaliacaoDaAnalise,
   MedidasDaAnalise,
@@ -27,6 +27,15 @@ export interface ContagensDoResumo {
   readonly providenciasDoSistema: number;
   /** Desses, quantos a IA não citou em nenhum item verificado. */
   readonly providenciasNaoCitadas: number;
+  /**
+   * v0.54.0 (aditivos: resumos gravados antes não os têm). Atos só-título absorvidos por um
+   * ato com texto do mesmo dia e tipo.
+   */
+  readonly atosMesclados?: number;
+  /** Providências do sistema cujo texto o resumo NÃO leu (sem texto, indisponível, curto ou fora do limite). */
+  readonly providenciasNaoLidas?: number;
+  /** O texto do ato mais recente foi lido? */
+  readonly maisRecenteLido?: boolean;
 }
 
 export type ResultadoDoResumo =
@@ -35,6 +44,8 @@ export type ResultadoDoResumo =
       readonly situacao: readonly ItemDoResumo[];
       readonly pendencias: readonly ItemDoResumo[];
       readonly pontosDeAtencao: readonly PontoDeAtencao[];
+      /** v0.54.0: os mesmos pontos com a chave do ato apontado (resumos antigos não têm). */
+      readonly pontosDoAto?: readonly PontoDoResumo[];
     }
   | {
       readonly estado: 'nao_verificado';

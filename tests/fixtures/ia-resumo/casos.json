@@ -1,0 +1,477 @@
+[
+  {
+    "id": "cabecalho-despacho",
+    "categoria": "cabecalho_longo",
+    "classe": "Procedimento Comum Cível",
+    "atos": [
+      {
+        "data": "2099-03-18T12:00:00Z",
+        "titulo": "Despacho",
+        "id_externo": "djen:101",
+        "fonte": "djen",
+        "conteudo": "PODER JUDICIÁRIO\nTRIBUNAL DE JUSTIÇA DO ESTADO DE GOIÁS\nComarca de Cidade Exemplo\n2ª Vara Cível\nRua das Flores, 100, Centro - CEP: 74000-000\nAutos nº 0000001-00.2099.8.09.0001\nNatureza: Procedimento Comum\n\nDesigno audiência de conciliação para o dia 14 de abril de 2099, às 14 horas, e determino a intimação das partes por seus advogados para comparecerem ao ato."
+      },
+      {
+        "data": "2099-02-10T12:00:00Z",
+        "titulo": "Decisão",
+        "id_externo": "djen:102",
+        "fonte": "djen",
+        "conteudo": "Indefiro o pedido de tutela de urgência por ausência de perigo de dano e suspendo o andamento até a juntada dos documentos que faltam aos autos."
+      }
+    ],
+    "pontos_obrigatorios": [
+      ["audiencia de conciliacao"],
+      ["14 de abril de 2099", "14/04/2099"]
+    ],
+    "proibicoes": ["procedente"]
+  },
+  {
+    "id": "cabecalho-intimacao",
+    "categoria": "cabecalho_longo",
+    "classe": "Procedimento Comum Cível",
+    "atos": [
+      {
+        "data": "2099-03-17T12:00:00Z",
+        "titulo": "Intimação",
+        "id_externo": "djen:111",
+        "fonte": "djen",
+        "conteudo": "PODER JUDICIÁRIO\nTRIBUNAL DE JUSTIÇA DO ESTADO DE GOIÁS\nComarca de Cidade Exemplo\n2ª Vara Cível\nRua das Flores, 100, Centro - CEP: 74000-000\nAutos nº 0000001-00.2099.8.09.0001\nNatureza: Procedimento Comum\n\nIntime-se a parte autora para que se manifeste sobre o laudo pericial juntado aos autos, no prazo de 15 (quinze) dias úteis, sob pena de preclusão.",
+        "tipo_comunicacao": "Intimação"
+      },
+      {
+        "data": "2099-01-20T12:00:00Z",
+        "titulo": "Sentença",
+        "id_externo": "djen:112",
+        "fonte": "djen",
+        "conteudo": "Julgo parcialmente procedentes os pedidos formulados na inicial para condenar a parte ré ao pagamento de indenização por danos materiais, com custas pela parte ré."
+      }
+    ],
+    "pontos_obrigatorios": [["laudo pericial"], ["15 (quinze) dias", "15 dias"]],
+    "proibicoes": ["vence em"]
+  },
+  {
+    "id": "muitos-titulos-a",
+    "categoria": "muitos_so_titulo",
+    "classe": "Procedimento Comum Cível",
+    "atos": [
+      {
+        "data": "2099-03-10T12:00:00Z",
+        "titulo": "Decisão",
+        "id_externo": "djen:121",
+        "fonte": "djen",
+        "conteudo": "Defiro o pedido de produção de prova pericial e determino que a parte autora indique assistente técnico e apresente quesitos no prazo de 10 dias."
+      },
+      {
+        "data": "2099-02-01T10:00:00Z",
+        "titulo": "Juntada de petição",
+        "id_externo": "datajud:200",
+        "fonte": "datajud"
+      },
+      {
+        "data": "2099-02-02T11:00:00Z",
+        "titulo": "Conclusão",
+        "id_externo": "datajud:201",
+        "fonte": "datajud"
+      },
+      {
+        "data": "2099-02-03T12:00:00Z",
+        "titulo": "Expedição de documento",
+        "id_externo": "datajud:202",
+        "fonte": "datajud"
+      },
+      {
+        "data": "2099-02-04T13:00:00Z",
+        "titulo": "Mero expediente",
+        "id_externo": "datajud:203",
+        "fonte": "datajud"
+      },
+      {
+        "data": "2099-02-05T14:00:00Z",
+        "titulo": "Remessa",
+        "id_externo": "datajud:204",
+        "fonte": "datajud"
+      },
+      {
+        "data": "2099-02-06T15:00:00Z",
+        "titulo": "Recebimento",
+        "id_externo": "datajud:205",
+        "fonte": "datajud"
+      },
+      {
+        "data": "2099-02-07T16:00:00Z",
+        "titulo": "Publicação",
+        "id_externo": "datajud:206",
+        "fonte": "datajud"
+      },
+      {
+        "data": "2099-02-08T17:00:00Z",
+        "titulo": "Cumprimento de determinação",
+        "id_externo": "datajud:207",
+        "fonte": "datajud"
+      },
+      {
+        "data": "2099-02-09T10:00:00Z",
+        "titulo": "Juntada de petição",
+        "id_externo": "datajud:208",
+        "fonte": "datajud"
+      },
+      {
+        "data": "2099-02-10T11:00:00Z",
+        "titulo": "Conclusão",
+        "id_externo": "datajud:209",
+        "fonte": "datajud"
+      },
+      {
+        "data": "2099-02-11T12:00:00Z",
+        "titulo": "Expedição de documento",
+        "id_externo": "datajud:210",
+        "fonte": "datajud"
+      },
+      {
+        "data": "2099-02-12T13:00:00Z",
+        "titulo": "Mero expediente",
+        "id_externo": "datajud:211",
+        "fonte": "datajud"
+      },
+      {
+        "data": "2099-02-13T14:00:00Z",
+        "titulo": "Remessa",
+        "id_externo": "datajud:212",
+        "fonte": "datajud"
+      },
+      {
+        "data": "2099-02-14T15:00:00Z",
+        "titulo": "Recebimento",
+        "id_externo": "datajud:213",
+        "fonte": "datajud"
+      },
+      {
+        "data": "2099-02-15T16:00:00Z",
+        "titulo": "Publicação",
+        "id_externo": "datajud:214",
+        "fonte": "datajud"
+      },
+      {
+        "data": "2099-02-16T17:00:00Z",
+        "titulo": "Cumprimento de determinação",
+        "id_externo": "datajud:215",
+        "fonte": "datajud"
+      },
+      {
+        "data": "2099-02-17T10:00:00Z",
+        "titulo": "Juntada de petição",
+        "id_externo": "datajud:216",
+        "fonte": "datajud"
+      },
+      {
+        "data": "2099-02-18T11:00:00Z",
+        "titulo": "Conclusão",
+        "id_externo": "datajud:217",
+        "fonte": "datajud"
+      },
+      {
+        "data": "2099-02-19T12:00:00Z",
+        "titulo": "Expedição de documento",
+        "id_externo": "datajud:218",
+        "fonte": "datajud"
+      },
+      {
+        "data": "2099-02-20T13:00:00Z",
+        "titulo": "Mero expediente",
+        "id_externo": "datajud:219",
+        "fonte": "datajud"
+      },
+      {
+        "data": "2099-02-21T14:00:00Z",
+        "titulo": "Remessa",
+        "id_externo": "datajud:220",
+        "fonte": "datajud"
+      },
+      {
+        "data": "2099-02-22T15:00:00Z",
+        "titulo": "Recebimento",
+        "id_externo": "datajud:221",
+        "fonte": "datajud"
+      },
+      {
+        "data": "2099-02-23T16:00:00Z",
+        "titulo": "Publicação",
+        "id_externo": "datajud:222",
+        "fonte": "datajud"
+      },
+      {
+        "data": "2099-02-24T17:00:00Z",
+        "titulo": "Cumprimento de determinação",
+        "id_externo": "datajud:223",
+        "fonte": "datajud"
+      }
+    ],
+    "pontos_obrigatorios": [["prova pericial"], ["assistente tecnico"]],
+    "proibicoes": ["recurso"]
+  },
+  {
+    "id": "muitos-titulos-b",
+    "categoria": "muitos_so_titulo",
+    "classe": "Procedimento Comum Cível",
+    "atos": [
+      {
+        "data": "2099-03-12T12:00:00Z",
+        "titulo": "Despacho",
+        "id_externo": "djen:131",
+        "fonte": "djen",
+        "conteudo": "Determino a citação da parte ré para contestar a ação no prazo legal, com as advertências de praxe, e a intimação da parte autora."
+      },
+      {
+        "data": "2099-01-05T12:00:00Z",
+        "titulo": "Decisão",
+        "id_externo": "djen:132",
+        "fonte": "djen",
+        "conteudo": "Indefiro o pedido de tutela de urgência por ausência de perigo de dano e suspendo o andamento até a juntada dos documentos que faltam aos autos."
+      },
+      {
+        "data": "2099-02-01T10:00:00Z",
+        "titulo": "Juntada de petição",
+        "id_externo": "datajud:200",
+        "fonte": "datajud"
+      },
+      {
+        "data": "2099-02-02T11:00:00Z",
+        "titulo": "Conclusão",
+        "id_externo": "datajud:201",
+        "fonte": "datajud"
+      },
+      {
+        "data": "2099-02-03T12:00:00Z",
+        "titulo": "Expedição de documento",
+        "id_externo": "datajud:202",
+        "fonte": "datajud"
+      },
+      {
+        "data": "2099-02-04T13:00:00Z",
+        "titulo": "Mero expediente",
+        "id_externo": "datajud:203",
+        "fonte": "datajud"
+      },
+      {
+        "data": "2099-02-05T14:00:00Z",
+        "titulo": "Remessa",
+        "id_externo": "datajud:204",
+        "fonte": "datajud"
+      },
+      {
+        "data": "2099-02-06T15:00:00Z",
+        "titulo": "Recebimento",
+        "id_externo": "datajud:205",
+        "fonte": "datajud"
+      },
+      {
+        "data": "2099-02-07T16:00:00Z",
+        "titulo": "Publicação",
+        "id_externo": "datajud:206",
+        "fonte": "datajud"
+      },
+      {
+        "data": "2099-02-08T17:00:00Z",
+        "titulo": "Cumprimento de determinação",
+        "id_externo": "datajud:207",
+        "fonte": "datajud"
+      },
+      {
+        "data": "2099-02-09T10:00:00Z",
+        "titulo": "Juntada de petição",
+        "id_externo": "datajud:208",
+        "fonte": "datajud"
+      },
+      {
+        "data": "2099-02-10T11:00:00Z",
+        "titulo": "Conclusão",
+        "id_externo": "datajud:209",
+        "fonte": "datajud"
+      },
+      {
+        "data": "2099-02-11T12:00:00Z",
+        "titulo": "Expedição de documento",
+        "id_externo": "datajud:210",
+        "fonte": "datajud"
+      },
+      {
+        "data": "2099-02-12T13:00:00Z",
+        "titulo": "Mero expediente",
+        "id_externo": "datajud:211",
+        "fonte": "datajud"
+      },
+      {
+        "data": "2099-02-13T14:00:00Z",
+        "titulo": "Remessa",
+        "id_externo": "datajud:212",
+        "fonte": "datajud"
+      },
+      {
+        "data": "2099-02-14T15:00:00Z",
+        "titulo": "Recebimento",
+        "id_externo": "datajud:213",
+        "fonte": "datajud"
+      },
+      {
+        "data": "2099-02-15T16:00:00Z",
+        "titulo": "Publicação",
+        "id_externo": "datajud:214",
+        "fonte": "datajud"
+      },
+      {
+        "data": "2099-02-16T17:00:00Z",
+        "titulo": "Cumprimento de determinação",
+        "id_externo": "datajud:215",
+        "fonte": "datajud"
+      },
+      {
+        "data": "2099-02-17T10:00:00Z",
+        "titulo": "Juntada de petição",
+        "id_externo": "datajud:216",
+        "fonte": "datajud"
+      },
+      {
+        "data": "2099-02-18T11:00:00Z",
+        "titulo": "Conclusão",
+        "id_externo": "datajud:217",
+        "fonte": "datajud"
+      }
+    ],
+    "pontos_obrigatorios": [["citacao da parte re", "citacao"], ["contestar"]],
+    "proibicoes": ["estrategia"]
+  },
+  {
+    "id": "mesmo-dia-a",
+    "categoria": "despacho_e_decisao_mesmo_dia",
+    "classe": "Procedimento Comum Cível",
+    "atos": [
+      {
+        "data": "2099-03-18T17:30:00Z",
+        "titulo": "Despacho",
+        "id_externo": "datajud:301",
+        "fonte": "datajud"
+      },
+      {
+        "data": "2099-03-18T12:00:00Z",
+        "titulo": "Despacho",
+        "id_externo": "djen:302",
+        "fonte": "djen",
+        "conteudo": "Cite-se a parte ré, por carta, para apresentar contestação, e intime-se a parte autora para se manifestar sobre o pedido de gratuidade."
+      },
+      {
+        "data": "2099-03-18T12:00:00Z",
+        "titulo": "Decisão",
+        "id_externo": "djen:303",
+        "fonte": "djen",
+        "conteudo": "Defiro a gratuidade da justiça requerida pela parte autora, com fundamento na declaração de hipossuficiência juntada com a inicial."
+      },
+      {
+        "data": "2099-01-20T12:00:00Z",
+        "titulo": "Sentença",
+        "id_externo": "djen:304",
+        "fonte": "djen",
+        "conteudo": "Julgo parcialmente procedentes os pedidos formulados na inicial para condenar a parte ré ao pagamento de indenização por danos materiais, com custas pela parte ré."
+      }
+    ],
+    "pontos_obrigatorios": [["gratuidade"], ["cite-se", "citacao", "contestacao"]],
+    "proibicoes": ["procedente"]
+  },
+  {
+    "id": "mesmo-dia-b",
+    "categoria": "despacho_e_decisao_mesmo_dia",
+    "classe": "Procedimento Comum Cível",
+    "atos": [
+      {
+        "data": "2099-03-16T17:00:00Z",
+        "titulo": "Decisão",
+        "id_externo": "datajud:311",
+        "fonte": "datajud"
+      },
+      {
+        "data": "2099-03-16T12:00:00Z",
+        "titulo": "Decisão",
+        "id_externo": "djen:312",
+        "fonte": "djen",
+        "conteudo": "Rejeito a preliminar de ilegitimidade passiva e designo audiência de instrução para o dia 20 de maio de 2099, às 9 horas."
+      },
+      {
+        "data": "2099-03-16T12:00:00Z",
+        "titulo": "Despacho",
+        "id_externo": "djen:313",
+        "fonte": "djen",
+        "conteudo": "Intimem-se as partes para indicarem as provas que pretendem produzir na audiência, com a respectiva justificativa."
+      }
+    ],
+    "pontos_obrigatorios": [
+      ["ilegitimidade passiva"],
+      ["20 de maio de 2099", "20/05/2099"]
+    ],
+    "proibicoes": ["vence em"]
+  },
+  {
+    "id": "recente-sem-texto-a",
+    "categoria": "ato_recente_sem_texto",
+    "classe": "Procedimento Comum Cível",
+    "atos": [
+      {
+        "data": "2099-03-18T12:00:00Z",
+        "titulo": "Despacho",
+        "id_externo": "djen:401",
+        "fonte": "djen",
+        "conteudo": "ARQUIVOS DIGITAIS INDISPONÍVEIS (NÃO SÃO DO TIPO PÚBLICO)",
+        "teor_indisponivel": true
+      },
+      {
+        "data": "2099-02-02T12:00:00Z",
+        "titulo": "Decisão",
+        "id_externo": "djen:402",
+        "fonte": "djen",
+        "conteudo": "Indefiro o pedido de tutela de urgência por ausência de perigo de dano e suspendo o andamento até a juntada dos documentos que faltam aos autos."
+      },
+      {
+        "data": "2098-11-20T12:00:00Z",
+        "titulo": "Sentença",
+        "id_externo": "djen:403",
+        "fonte": "djen",
+        "conteudo": "Julgo parcialmente procedentes os pedidos formulados na inicial para condenar a parte ré ao pagamento de indenização por danos materiais, com custas pela parte ré."
+      }
+    ],
+    "pontos_obrigatorios": [
+      ["tutela de urgencia"],
+      ["julgo parcialmente procedentes", "parcialmente procedentes"]
+    ],
+    "proibicoes": ["vence em"]
+  },
+  {
+    "id": "recente-sem-texto-b",
+    "categoria": "ato_recente_sem_texto",
+    "classe": "Procedimento Comum Cível",
+    "atos": [
+      {
+        "data": "2099-03-19T12:00:00Z",
+        "titulo": "Intimação",
+        "id_externo": "djen:411",
+        "fonte": "djen",
+        "conteudo": "ARQUIVOS DIGITAIS INDISPONÍVEIS (NÃO SÃO DO TIPO PÚBLICO)",
+        "teor_indisponivel": true,
+        "tipo_comunicacao": "Intimação"
+      },
+      {
+        "data": "2099-02-15T12:00:00Z",
+        "titulo": "Despacho",
+        "id_externo": "djen:412",
+        "fonte": "djen",
+        "conteudo": "Determino a expedição de ofício à instituição financeira indicada pela parte autora, que deverá responder em quinze dias, e a juntada da resposta aos autos."
+      },
+      {
+        "data": "2099-01-10T12:00:00Z",
+        "titulo": "Decisão",
+        "id_externo": "djen:413",
+        "fonte": "djen",
+        "conteudo": "Indefiro o pedido de tutela de urgência por ausência de perigo de dano e suspendo o andamento até a juntada dos documentos que faltam aos autos."
+      }
+    ],
+    "pontos_obrigatorios": [["oficio"], ["instituicao financeira", "banco"]],
+    "proibicoes": ["estrategia"]
+  }
+]

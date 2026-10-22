@@ -42,6 +42,19 @@ var ATENCAO={
   texto_incompleto:'O texto de um ato pode estar incompleto.',
   possivel_outro_destinatario:'Uma comunicação pode ser dirigida a outro destinatário.'
 };
+/* Com o ato de origem (data e rótulo do RETRATO, nunca do modelo) o ponto diz de qual ato fala. */
+var ATENCAO_DO_ATO={
+  ato_depende_de_outro_documento:'depende de outro documento',
+  texto_incompleto:'pode estar com o texto incompleto',
+  possivel_outro_destinatario:'pode ser dirigido a outro destinatário',
+  conferir_prazo_no_processo:'pede conferir o prazo no processo'
+};
+var MOTIVO_NAO_LIDO={
+  teor_indisponivel:'o tribunal não liberou o texto',
+  sem_texto:'sem texto',
+  abaixo_do_minimo:'texto curto demais',
+  fora_do_limite:'ficou fora do limite do resumo'
+};
 var RECUSAS={
   sem_plano:'O resumo por IA faz parte do plano IA. Faça upgrade do plano para usar.',
   segredo_de_justica:'Processo em segredo de justiça: o resumo por IA não é feito. Leia os atos.',
@@ -97,8 +110,48 @@ function itemHtml(i){
     '<blockquote class="pvres-cit"><mark>'+esc(i.trecho)+'</mark></blockquote></li>';
 }
 
-function contagensHtml(c){
-  var h='<ul class="pvres-contagens">';
+function rotuloDoAto(a){
+  var t=pv().dt(a.data)+' · '+(a.rotulo||'Ato');
+  if(a.tipoDaComunicacao&&String(a.tipoDaComunicacao).toLowerCase()!==String(a.rotulo||'').toLowerCase())t+=' · '+a.tipoDaComunicacao;
+  return t;
+}
+
+/* A faixa do SISTEMA (v0.54.0): escrita aqui, nunca pelo modelo. Diz qual é o ato mais recente e se o texto dele foi lido;
+   se não foi, diz que o resto vem de atos mais antigos e NÃO é a situação atual. Lista as providências que o sistema
+   marca e a IA não leu, e o ato mais novo que a Pasta digital já listou. */
+function faixaHtml(at){
+  if(!at||!at.maisRecente)return '';
+  var m=at.maisRecente,h='<section class="pvres-faixa'+(m.lido?'':' pvres-faixa-alerta')+'" aria-label="Ato mais recente, informação do sistema">';
+  h+='<p class="pvres-faixa-linha"><strong>Ato mais recente:</strong> '+esc(rotuloDoAto(m))+' — '+(m.lido?'texto lido neste resumo.':'<strong>o texto não foi lido.</strong>')+'</p>';
+  if(!m.lido){
+    h+='<p class="pvres-faixa-linha">O ato mais recente ('+esc(pv().dt(m.data))+', '+esc(m.rotulo||'ato')+') não pôde ser lido; confira-o na linha do tempo. '+
+      'O que está abaixo vem de atos mais antigos e não é a situação atual do processo.</p>';
+  }
+  if(at.tribunalMaisNovo){
+    var t=at.tribunalMaisNovo;
+    h+='<p class="pvres-faixa-linha">A Pasta digital (carregada em '+esc(pv().dt(t.listadaEm))+') lista um ato mais recente, de '+esc(pv().dt(t.data))+
+      (t.rotulo?': '+esc(t.rotulo):'')+'. O resumo não o leu; confira-o na linha do tempo.</p>';
+  }
+  if(at.providenciasNaoLidasTotal>0){
+    h+='<p class="pvres-faixa-linha">O sistema marca '+pl(at.providenciasNaoLidasTotal,'ato','atos')+' como '+(at.providenciasNaoLidasTotal===1?'pede':'pedem')+
+      ' providência e a IA não '+(at.providenciasNaoLidasTotal===1?'leu o texto dele':'leu o texto deles')+':</p><ul class="pvres-itens-simples">'+
+      at.providenciasNaoLidas.map(function(p){return '<li>'+esc(rotuloDoAto(p))+' <span class="pvres-motivo-nl">('+esc(MOTIVO_NAO_LIDO[p.motivo]||'sem leitura')+')</span></li>'}).join('')+'</ul>';
+    if(at.providenciasNaoLidasTotal>at.providenciasNaoLidas.length)h+='<p class="pvres-nota">E mais '+(at.providenciasNaoLidasTotal-at.providenciasNaoLidas.length)+' na linha do tempo.</p>';
+  }
+  return h+'</section>';
+}
+
+/* O rodapé (v0.54.0): UMA frase que diz o que foi lido, mais o que o sistema sabe de providência e o descarte. */
+function contagensHtml(c,at){
+  var m=at&&at.maisRecente;
+  var h='<p class="pvres-rodape-frase">Este resumo usou o texto de '+pl(c.atosComTexto,'ato','atos');
+  if(m)h+=m.lido?', entre eles o ato mais recente ('+esc(pv().dt(m.data))+')':', mas não o do ato mais recente ('+esc(pv().dt(m.data))+')';
+  h+='.';
+  var resto=[];
+  if(c.atosSoTitulo>0)resto.push(pl(c.atosSoTitulo,'ato tem','atos têm')+' só o título');
+  if(c.foraDoResumo>0)resto.push(c.foraDoResumo+' não '+(c.foraDoResumo===1?'foi lido':'foram lidos'));
+  if(resto.length)h+=' Outros '+resto.join(' e ')+'.';
+  h+='</p><ul class="pvres-contagens">';
   if(c.providenciasDoSistema>0){
     h+=c.providenciasNaoCitadas>0
       ?'<li>O sistema marca '+pl(c.providenciasDoSistema,'ato','atos')+' como pedem providência; '+
@@ -107,9 +160,7 @@ function contagensHtml(c){
       :'<li>O sistema marca '+pl(c.providenciasDoSistema,'ato','atos')+' como pedem providência, e '+
         (c.providenciasDoSistema===1?'ele foi citado':'todos foram citados')+' neste resumo.</li>';
   }else h+='<li>O sistema não marca nenhum ato como pede providência neste momento.</li>';
-  h+='<li>O processo tem '+pl(c.atosNoProcesso,'ato','atos')+'. Lidos com texto: '+c.atosComTexto+
-    '. Só pelo título: '+c.atosSoTitulo+'. <strong>Ficaram de fora do resumo: '+c.foraDoResumo+'.</strong></li>';
-  h+='<li>Itens descartados na verificação: '+c.itensDescartados+' (o texto deles não é mostrado).</li>';
+  if(c.itensDescartados>0)h+='<li>Itens descartados na verificação: '+c.itensDescartados+' (o texto deles não é mostrado).</li>';
   return h+'</ul>';
 }
 
@@ -135,18 +186,29 @@ function avaliacaoHtml(){
 }
 
 function resultadoHtml(d){
-  var h=avaliacaoHtml();
-  h+='<section class="pvres-sec"><h4 class="pvres-rot">Situação do processo</h4><ul class="pvres-itens">'+
+  var at=d.atualidade,naoLido=!!(at&&at.maisRecente&&!at.maisRecente.lido);
+  var h=avaliacaoHtml()+faixaHtml(at);
+  h+='<section class="pvres-sec"><h4 class="pvres-rot">'+(naoLido?'O que os atos lidos mostram':'Situação do processo')+'</h4><ul class="pvres-itens">'+
     d.situacao.map(itemHtml).join('')+'</ul></section>';
   h+='<section class="pvres-sec pvres-pend"><h4 class="pvres-rot">Pendências segundo a IA</h4>'+
     '<p class="pvres-nota">Leitura automática dos atos. É outra coisa que a marcação “providência” do sistema na linha do tempo, que não muda.</p>';
   if(d.pendencias.length)h+='<ul class="pvres-itens">'+d.pendencias.map(itemHtml).join('')+'</ul>';
+  else if(at&&at.providenciasNaoLidasTotal>0){
+    h+='<p class="pvres-vazio">Há '+(at.providenciasNaoLidasTotal===1?'ato marcado pelo sistema como que pede':'atos marcados pelo sistema como que pedem')+' providência que a IA não leu: '+
+      at.providenciasNaoLidas.map(function(p){return esc('('+rotuloDoAto(p)+')')}).join(', ')+
+      (at.providenciasNaoLidasTotal>at.providenciasNaoLidas.length?' e mais '+(at.providenciasNaoLidasTotal-at.providenciasNaoLidas.length):'')+'.</p>';
+  }
   else h+='<p class="pvres-vazio">A IA não indicou pendências nos atos lidos.</p>';
   h+='</section>';
-  h+='<section class="pvres-sec"><h4 class="pvres-rot">O que entrou e o que ficou de fora</h4>'+contagensHtml(d.contagens)+'</section>';
-  if(d.pontosDeAtencao&&d.pontosDeAtencao.length){
+  h+='<section class="pvres-sec"><h4 class="pvres-rot">O que entrou e o que ficou de fora</h4>'+contagensHtml(d.contagens,at)+'</section>';
+  var pontos=d.pontosDoAto&&d.pontosDoAto.length?d.pontosDoAto:(d.pontosDeAtencao||[]).map(function(c){return {codigo:c,ato:null}});
+  if(pontos.length){
     h+='<section class="pvres-sec"><h4 class="pvres-rot">Pontos de atenção</h4><ul class="pvres-itens-simples">'+
-      d.pontosDeAtencao.map(function(p){return '<li>'+esc(ATENCAO[p]||'')+'</li>'}).join('')+'</ul></section>';
+      pontos.map(function(p){
+        /* Com o ato de origem, a frase diz QUAL ato (data e rótulo vêm do retrato); sem ele, a frase geral. */
+        if(p.ato&&ATENCAO_DO_ATO[p.codigo])return '<li>O ato de '+esc(rotuloDoAto(p.ato))+' '+ATENCAO_DO_ATO[p.codigo]+'.</li>';
+        return '<li>'+esc(ATENCAO[p.codigo]||'')+'</li>';
+      }).join('')+'</ul></section>';
   }
   h+='<p class="pvres-nota" id="pvres-nota-ato" role="status"></p>';
   h+='<div class="pvres-proc"><span class="pvres-selo" aria-hidden="true">IA</span>'+
@@ -229,7 +291,10 @@ function iniciar(){
     .then(function(x){
       if(S!==e)return;
       e.ctrl=null;
-      if(x.ok&&x.b.estado==='verificado'){e.fase='resultado';e.dados=x.b;refrescar('Resumo concluído. Confira nos atos.');return}
+      if(x.ok&&x.b.estado==='verificado'){
+        e.fase='resultado';e.dados=x.b;
+        var am=x.b.atualidade&&x.b.atualidade.maisRecente;
+        refrescar(am&&!am.lido?'Resumo concluído. Atenção: o ato mais recente não foi lido. Confira na linha do tempo.':'Resumo concluído. Confira nos atos.');return}
       if(x.ok&&x.b.estado==='nao_verificado'){e.fase='nao_verificado';refrescar(NAO_VERIFICADO);return}
       var motivo=x.b&&x.b.detalhes?x.b.detalhes.motivo:'';
       if(!x.ok&&motivo&&RECUSAS[motivo]){
@@ -390,6 +455,12 @@ export const ESTILOS_RESUMO_IA = `
 .pvres-ato .link{font-size:12.5px;text-align:left;overflow-wrap:anywhere}
 .pvres-cit{margin:4px 0 0;padding:6px 10px;border-left:3px solid var(--linha);background:var(--papel);color:var(--tinta2);font-style:italic}
 .pvres-cit mark{background:var(--atencao-bg);color:var(--tinta);padding:0 2px;border-radius:3px;font-style:normal}
+.pvres-faixa{margin:10px 0;padding:8px 12px;border:1px solid var(--linha);border-radius:var(--r);background:var(--papel)}
+.pvres-faixa-alerta{border-left:4px solid var(--atencao);background:var(--atencao-bg)}
+.pvres-faixa-linha{margin:0 0 6px}
+.pvres-faixa-linha:last-child{margin-bottom:0}
+.pvres-motivo-nl{color:var(--tinta2)}
+.pvres-rodape-frase{margin:0 0 6px}
 .pvres-nota{margin:0 0 6px;font-size:12.5px;color:var(--tinta2)}
 .pvres-vazio{margin:0;color:var(--tinta2)}
 .pvres-contagens{margin:0;padding-left:18px}

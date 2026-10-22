@@ -130,6 +130,14 @@ describe('diagnóstico do resumo por IA', () => {
       expect(tudo).not.toContain('djen:');
     });
 
+    it('diz se o ato mais recente foi lido, as junções e os não lidos por motivo (v0.54.0)', () => {
+      expect(rodar([NUMERO])).toBe(0);
+      const tudo = saida.join('\n');
+      expect(tudo).toContain('texto NÃO lido');
+      expect(tudo).toContain('providências do sistema sem leitura: 1');
+      expect(tudo).toContain('Atos não lidos por motivo: teor indisponível 1');
+    });
+
     it('não altera o banco', () => {
       const antes = readFileSync(caminho);
       rodar([NUMERO]);

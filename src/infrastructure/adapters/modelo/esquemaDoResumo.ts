@@ -17,7 +17,13 @@ export const esquemaDoResumo = z
   .object({
     situacao: z.array(item),
     pendencias: z.array(item),
-    pontos_de_atencao: z.array(z.enum(PONTOS_DE_ATENCAO)),
+    // `resumo-1.0.0` devolvia só o código; `resumo-1.1.0` devolve { codigo, ato }. Os dois valem.
+    pontos_de_atencao: z.array(
+      z.union([
+        z.enum(PONTOS_DE_ATENCAO),
+        z.object({ codigo: z.enum(PONTOS_DE_ATENCAO), ato: z.string() }).strict(),
+      ]),
+    ),
   })
   .strict();
 
@@ -29,4 +35,4 @@ export function lerRespostaDoResumo(bruto: unknown): RespostaDoModeloResumo | un
 
 /** Acrescentada ao sistema porque a saída é pedida em texto (sem esquema estrito no provedor). */
 export const INSTRUCAO_DE_FORMATO_DO_RESUMO =
-  'FORMATO DA RESPOSTA: responda SOMENTE com um objeto JSON, sem texto antes ou depois e sem cercas de código, com exatamente as chaves situacao (lista de objetos {texto, ato, trecho}), pendencias (lista de objetos {texto, ato, trecho}) e pontos_de_atencao (lista de códigos).';
+  'FORMATO DA RESPOSTA: responda SOMENTE com um objeto JSON, sem texto antes ou depois e sem cercas de código, com exatamente as chaves situacao (lista de objetos {texto, ato, trecho}), pendencias (lista de objetos {texto, ato, trecho}) e pontos_de_atencao (lista de objetos {codigo, ato}).';

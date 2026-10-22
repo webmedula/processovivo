@@ -274,7 +274,8 @@ describe.skipIf(sem)(
     const painel = () => page.locator('#pvres-painel');
     const resumir = async (): Promise<void> => {
       await botao().click();
-      await painel().getByText('Situação do processo').waitFor();
+      // O título da primeira seção muda quando o ato mais recente não foi lido (v0.54.0).
+      await painel().locator('.pvres-sec').first().waitFor();
     };
     const SEM_PRAZO = (t: string): string =>
       t.replace(AVISO_FIXO, '').replace(/Conferir o prazo no processo\./g, '');
@@ -402,8 +403,9 @@ describe.skipIf(sem)(
       expect(t).toContain(
         'O sistema marca 3 atos como pedem providência; 2 não foram citados neste resumo.',
       );
+      // v0.54.0: uma frase só no lugar de "Lidos com texto: N. Só pelo título: M. Ficaram de fora: K.".
       expect(t).toContain(
-        'Lidos com texto: 10. Só pelo título: 40. Ficaram de fora do resumo: 10.',
+        'Este resumo usou o texto de 10 atos. Outros 40 atos têm só o título e 10 não foram lidos.',
       );
       expect(t).toContain(
         'Itens descartados na verificação: 2 (o texto deles não é mostrado).',
@@ -868,6 +870,220 @@ describe.skipIf(sem)(
         expect(m.painel).toBeLessThanOrEqual(m.iw);
       });
     }
+
+    /* ---------- v0.54.0: a faixa do SISTEMA (ato mais recente), o rodapé em uma frase e os pontos com ato ---------- */
+    const ATUALIDADE_NAO_LIDO = {
+      maisRecente: {
+        data: iso(1),
+        rotulo: 'Despacho',
+        tipoDaComunicacao: null,
+        lido: false,
+      },
+      providenciasNaoLidas: [
+        {
+          data: iso(1),
+          rotulo: 'Despacho',
+          tipoDaComunicacao: null,
+          motivo: 'teor_indisponivel',
+        },
+        {
+          data: iso(6),
+          rotulo: 'Intimação',
+          tipoDaComunicacao: 'Intimação',
+          motivo: 'sem_texto',
+        },
+      ],
+      providenciasNaoLidasTotal: 2,
+      tribunalMaisNovo: null,
+    };
+    const ATUALIDADE_LIDO = {
+      maisRecente: {
+        data: iso(1),
+        rotulo: 'Intimação',
+        tipoDaComunicacao: 'Intimação',
+        lido: true,
+      },
+      providenciasNaoLidas: [],
+      providenciasNaoLidasTotal: 0,
+      tribunalMaisNovo: null,
+    };
+    const comAtualidade = (atualidade: unknown, extra: object = {}) => ({
+      ...RESULTADO,
+      versaoPrompt: 'resumo-1.1.0',
+      atualidade,
+      pontosDoAto: [{ codigo: 'ato_depende_de_outro_documento', ato: ATO_2 }],
+      ...extra,
+    });
+
+    describe('situação atual (v0.54.0)', () => {
+      it('ato mais recente NÃO lido: a faixa do sistema diz isso, avisa que o resto não é a situação atual e muda o título', async () => {
+        await abrir();
+        responder = (rota) => json(rota, 200, comAtualidade(ATUALIDADE_NAO_LIDO));
+        await resumir();
+        const faixa = painel().locator('.pvres-faixa');
+        const t = await faixa.innerText();
+        expect(t).toMatch(
+          /Ato mais recente: \d{2}\/\d{2}\/\d{4} · Despacho — o texto não foi lido\./,
+        );
+        expect(t).toMatch(
+          /O ato mais recente \(\d{2}\/\d{2}\/\d{4}, Despacho\) não pôde ser lido; confira-o na linha do tempo\./,
+        );
+        expect(t).toContain('não é a situação atual do processo');
+        expect(
+          await painel()
+            .getByRole('heading', { name: 'O que os atos lidos mostram' })
+            .count(),
+        ).toBe(1);
+        expect(
+          await painel().getByRole('heading', { name: 'Situação do processo' }).count(),
+        ).toBe(0);
+        // A faixa vem logo depois da avaliação, antes da situação.
+        const ordem = await painel().evaluate((el) => {
+          const nos = Array.from(
+            el.querySelectorAll('.pvres-aval, .pvres-faixa, .pvres-sec'),
+          );
+          return nos
+            .map((n) =>
+              n.classList.contains('pvres-aval')
+                ? 'aval'
+                : n.classList.contains('pvres-faixa')
+                  ? 'faixa'
+                  : 'sec',
+            )
+            .slice(0, 3);
+        });
+        expect(ordem).toEqual(['aval', 'faixa', 'sec']);
+      });
+
+      it('lista as providências do sistema que a IA não leu, com data, tipo e motivo; e no lugar de "não indicou pendências" diz o que há', async () => {
+        await abrir();
+        responder = (rota) =>
+          json(rota, 200, comAtualidade(ATUALIDADE_NAO_LIDO, { pendencias: [] }));
+        await resumir();
+        const t = await painel().innerText();
+        expect(t).toMatch(
+          /O sistema marca 2 atos como pedem providência e a IA não leu o texto deles:/,
+        );
+        expect(t).toMatch(
+          /\d{2}\/\d{2}\/\d{4} · Despacho \(o tribunal não liberou o texto\)/,
+        );
+        expect(t).toMatch(/\d{2}\/\d{2}\/\d{4} · Intimação \(sem texto\)/);
+        expect(t).toMatch(
+          /Há atos marcados pelo sistema como que pedem providência que a IA não leu: \(\d{2}\/\d{2}\/\d{4} · Despacho\)/,
+        );
+        expect(t).not.toContain('A IA não indicou pendências');
+      });
+
+      it('rodapé em UMA frase: com o ato mais recente lido e com ele não lido', async () => {
+        await abrir();
+        responder = (rota) => json(rota, 200, comAtualidade(ATUALIDADE_LIDO));
+        await resumir();
+        let t = await painel().innerText();
+        expect(t).toMatch(
+          /Este resumo usou o texto de 10 atos, entre eles o ato mais recente \(\d{2}\/\d{2}\/\d{4}\)\. Outros 40 atos têm só o título e 10 não foram lidos\./,
+        );
+        expect(t).not.toContain('Lidos com texto');
+        expect(await painel().locator('.pvres-faixa-alerta').count()).toBe(0);
+        expect(
+          await painel().getByRole('heading', { name: 'Situação do processo' }).count(),
+        ).toBe(1);
+        await painel().getByRole('button', { name: 'Fechar' }).click();
+        responder = (rota) => json(rota, 200, comAtualidade(ATUALIDADE_NAO_LIDO));
+        await resumir();
+        t = await painel().innerText();
+        expect(t).toMatch(
+          /Este resumo usou o texto de 10 atos, mas não o do ato mais recente \(\d{2}\/\d{2}\/\d{4}\)\. Outros 40 atos têm só o título e 10 não foram lidos\./,
+        );
+      });
+
+      it('o aviso da Pasta digital aparece quando o tribunal já listou ato mais novo', async () => {
+        await abrir();
+        responder = (rota) =>
+          json(
+            rota,
+            200,
+            comAtualidade({
+              ...ATUALIDADE_LIDO,
+              tribunalMaisNovo: {
+                data: iso(0),
+                rotulo: 'Conclusos para decisão',
+                listadaEm: iso(0),
+              },
+            }),
+          );
+        await resumir();
+        const t = await painel().innerText();
+        expect(t).toMatch(
+          /A Pasta digital \(carregada em \d{2}\/\d{2}\/\d{4}\) lista um ato mais recente, de \d{2}\/\d{2}\/\d{4}: Conclusos para decisão\. O resumo não o leu/,
+        );
+      });
+
+      it('o ponto "depende de outro documento" diz de QUAL ato (data e tipo do sistema)', async () => {
+        await abrir();
+        responder = (rota) => json(rota, 200, comAtualidade(ATUALIDADE_LIDO));
+        await resumir();
+        const t = await painel().innerText();
+        expect(t).toMatch(
+          /O ato de \d{2}\/\d{2}\/\d{4} · Ato ordinatório · Intimação depende de outro documento\./,
+        );
+      });
+
+      it('resposta sem faixa (servidor antigo): a tela continua inteira, sem inventar o ato mais recente', async () => {
+        await abrir();
+        await resumir();
+        expect(await painel().locator('.pvres-faixa').count()).toBe(0);
+        expect(
+          await painel().getByRole('heading', { name: 'Situação do processo' }).count(),
+        ).toBe(1);
+      });
+
+      it('mantém o aviso fixo, a avaliação e nenhuma palavra "prazo" fora dos avisos fixos', async () => {
+        await abrir();
+        responder = (rota) => json(rota, 200, comAtualidade(ATUALIDADE_NAO_LIDO));
+        await resumir();
+        const t = await painel().innerText();
+        expect(t).toContain(AVISO_FIXO);
+        expect(t).toMatch(/este resumo foi útil\?/i);
+        expect(SEM_PRAZO(t)).not.toMatch(/prazo/i);
+      });
+
+      for (const largura of [1920, 1366, 1280, 1024, 768, 390]) {
+        it(`sem rolagem horizontal em ${largura} px com a faixa e a lista de providências`, async () => {
+          await abrir({ largura });
+          responder = (rota) => json(rota, 200, comAtualidade(ATUALIDADE_NAO_LIDO));
+          await resumir();
+          const m = await page.evaluate(() => ({
+            sw: document.documentElement.scrollWidth,
+            iw: window.innerWidth,
+            faixa: document.querySelector('.pvres-faixa')!.getBoundingClientRect().right,
+          }));
+          expect(m.sw).toBeLessThanOrEqual(m.iw);
+          expect(m.faixa).toBeLessThanOrEqual(m.iw);
+        });
+      }
+
+      for (const escuro of [false, true]) {
+        it(`axe sem violações com a faixa de alerta (tema ${escuro ? 'escuro' : 'claro'})`, async () => {
+          await abrir({ escuro });
+          await page.addScriptTag({
+            content: (AxeBuilder as unknown as { source: string }).source,
+          });
+          responder = (rota) => json(rota, 200, comAtualidade(ATUALIDADE_NAO_LIDO));
+          await resumir();
+          const r = await page.evaluate(() =>
+            (window as unknown as AxeNaPagina).axe.run(
+              { include: [['#pvres-raiz']] } as unknown as Element,
+              { rules: { 'color-contrast': { enabled: true } } },
+            ),
+          );
+          expect(
+            r.violations.map(
+              (v) => `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(' | ')}`,
+            ),
+          ).toEqual([]);
+        });
+      }
+    });
 
     for (const escuro of [false, true]) {
       it(`axe sem violações (tema ${escuro ? 'escuro' : 'claro'}): botão, resumindo, resultado, avaliado, recusa`, async () => {
