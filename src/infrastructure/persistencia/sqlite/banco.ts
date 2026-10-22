@@ -202,6 +202,36 @@ const ESQUEMA = [
   `CREATE INDEX IF NOT EXISTS idx_resumos_ws
      ON resumos_ia (workspace, numero)`,
 
+  // Análise de PEÇA por IA (v0.55.0). Resultado com marcadores e citações CURTAS; NUNCA o texto da peça,
+  // nome de parte, número de processo ou CPF. `processo_chave` é um SHA-256 (não o número CNJ);
+  // `hash_bytes` é o SHA-256 do PDF guardado (reaproveitamento sem guardar conteúdo); `expira_em` faz a
+  // linha sumir sozinha (padrão 30 dias, rotina do Agendador).
+  `CREATE TABLE IF NOT EXISTS analises_pecas_ia (
+     id             TEXT PRIMARY KEY,
+     workspace      TEXT NOT NULL,
+     processo_chave TEXT NOT NULL,
+     peca_id        TEXT NOT NULL,
+     hash_bytes     TEXT NOT NULL,
+     resultado      TEXT NOT NULL,
+     contagens      TEXT NOT NULL,
+     modelo         TEXT NOT NULL,
+     modelo_pedido  TEXT NOT NULL,
+     versao_prompt  TEXT NOT NULL,
+     provedor       TEXT NOT NULL,
+     tokens_entrada INTEGER,
+     tokens_saida   INTEGER,
+     custo_usd      REAL,
+     latencia_ms    INTEGER NOT NULL,
+     criada_em      TEXT NOT NULL,
+     expira_em      TEXT NOT NULL,
+     avaliacao      TEXT,
+     motivo_avaliacao TEXT
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_analises_pecas_reuso
+     ON analises_pecas_ia (workspace, processo_chave, peca_id, hash_bytes)`,
+  `CREATE INDEX IF NOT EXISTS idx_analises_pecas_expira
+     ON analises_pecas_ia (expira_em)`,
+
   `CREATE TABLE IF NOT EXISTS estado (
      chave TEXT PRIMARY KEY,
      valor TEXT NOT NULL

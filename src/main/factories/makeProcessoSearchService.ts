@@ -60,6 +60,10 @@ import {
 } from '../../application/politicas/limiteDeAnalises.js';
 import { clockDoSistema } from '../../domain/ports/Clock.js';
 import { ModeloComZdr } from '../../infrastructure/adapters/modelo/ModeloComZdr.js';
+import { OpenRouterAnalisadorDePeca } from '../../infrastructure/adapters/modelo/OpenRouterAnalisadorDePeca.js';
+import { PdftotextExtrator } from '../../infrastructure/pdf/PdftotextExtrator.js';
+import { RepositorioAnalisesDePecaSqlite } from '../../infrastructure/persistencia/sqlite/RepositorioAnalisesDePecaSqlite.js';
+import { ServicoAnaliseDePeca } from '../../application/services/ServicoAnaliseDePeca.js';
 import { OpenRouterResumidorDeProcesso } from '../../infrastructure/adapters/modelo/OpenRouterResumidorDeProcesso.js';
 import { OpenRouterAnalisadorDeAto } from '../../infrastructure/adapters/modelo/OpenRouterAnalisadorDeAto.js';
 import { TransporteOpenRouter } from '../../infrastructure/adapters/modelo/TransporteOpenRouter.js';
@@ -162,6 +166,14 @@ export interface Aplicacao {
    * responde 404 e a tela não mostra o botão "Assinar".
    */
   readonly pagamentos: ServicoPagamentos | undefined;
+  /**
+   * Análise de PEÇA por IA (v0.55.0). `undefined` com a IA desligada, sem a Pasta digital, ou sem NENHUMA das
+   * duas chaves (`PROCESSOVIVO_IA_PECAS_HABILITADA` / `_WORKSPACES`): então não há rota (404) e a tela não
+   * mostra o botão.
+   */
+  readonly analiseDePeca: ServicoAnaliseDePeca | undefined;
+  /** Apaga as análises de peça vencidas (de hora em hora, só banco). */
+  readonly agendadorLimpezaAnalisesDePeca: Agendador | undefined;
   /** Executor da fila do leitor (a cada minuto) e limpeza por prazo (a cada hora). */
   readonly agendadorLeitor: Agendador | undefined;
   readonly agendadorLimpezaLeitor: Agendador | undefined;
@@ -589,13 +601,22 @@ export function montarAplicacao(config: Config): Aplicacao {
         })
       : undefined;
 
-  const { analiseIa, resumoDoProcesso } = montarAnaliseIa(
-    config,
-    db,
-    logger,
-    repositorio,
-    assinaturas,
-  );
+  const { analiseIa, resumoDoProcesso, analiseDePeca, repositorioDeAnalisesDePeca } =
+    montarAnaliseIa(config, db, logger, repositorio, assinaturas, pasta);
+  const agendadorLimpezaAnalisesDePeca =
+    analiseDePeca && repositorioDeAnalisesDePeca
+      ? new Agendador({
+          intervaloHoras: 1,
+          atrasoInicialMs: 120_000,
+          logger,
+          tarefa: async () => {
+            const apagadas = await repositorioDeAnalisesDePeca.apagarVencidas(
+              clockDoSistema.agora(),
+            );
+            if (apagadas > 0) logger.info('análises de peça vencidas apagadas', { apagadas });
+          },
+        })
+      : undefined;
 
   const repositorioDeCustos = new RepositorioDeCustosSqlite(db);
   const custos = new ServicoCustos({
@@ -629,6 +650,8 @@ export function montarAplicacao(config: Config): Aplicacao {
     pecas,
     analiseIa,
     resumoDoProcesso,
+    analiseDePeca,
+    agendadorLimpezaAnalisesDePeca,
     avisoDoPrazo:
       analiseIa === undefined
         ? undefined
@@ -758,21 +781,37 @@ function montarAnaliseIa(
   logger: Logger,
   repositorio: RepositorioAcompanhamentos,
   assinaturas: ServicoAssinaturas,
+  pasta: ServicoPasta | undefined,
 ): {
   analiseIa: ServicoAnaliseDoAto | undefined;
   resumoDoProcesso: ServicoResumoDoProcesso | undefined;
+  analiseDePeca: ServicoAnaliseDePeca | undefined;
+  repositorioDeAnalisesDePeca: RepositorioAnalisesDePecaSqlite | undefined;
 } {
   const ia = config.ia;
-  if (!ia.habilitada) return { analiseIa: undefined, resumoDoProcesso: undefined };
+  if (!ia.habilitada) {
+    if (ia.pecas.habilitada || ia.pecas.workspaces.length > 0) {
+      logger.warn(
+        'análise de peça por IA configurada, mas PROCESSOVIVO_IA_HABILITADA=false: nada foi ligado',
+      );
+    }
+    return {
+      analiseIa: undefined,
+      resumoDoProcesso: undefined,
+      analiseDePeca: undefined,
+      repositorioDeAnalisesDePeca: undefined,
+    };
+  }
   const http = new HttpClient({ timeoutMs: 20_000, tentativas: 2 });
   // UMA peça comum para a análise de ato e o resumo de processo: uma lista ZDR e as mesmas
   // travas (modelo real, `provider.only`, conferência do par) para os dois.
+  const transporteOpenRouter = new TransporteOpenRouter({
+    chave: ia.chave,
+    timeoutMs: ia.timeoutMs,
+    ajustes: { raciocinio: ia.raciocinio, maxTokens: ia.maxTokens },
+  });
   const modeloZdr = new ModeloComZdr({
-    transporte: new TransporteOpenRouter({
-      chave: ia.chave,
-      timeoutMs: ia.timeoutMs,
-      ajustes: { raciocinio: ia.raciocinio, maxTokens: ia.maxTokens },
-    }),
+    transporte: transporteOpenRouter,
     modelo: ia.modelo,
     buscarListaZdr: async () => (await buscarEndpointsZdr(http, ia.chave)).endpoints,
     provedoresDoOperador: ia.provedoresPermitidos,
@@ -835,7 +874,72 @@ function montarAnaliseIa(
     // v0.54.0: só LÊ a listagem que a tela da Pasta já gravou (nunca consulta o tribunal).
     pasta: new RepositorioDaPastaSqlite(db),
   });
-  return { analiseIa, resumoDoProcesso };
+
+  // --- Análise de PEÇA (v0.55.0) ----------------------------------------------------------------------
+  // Só com a Pasta digital de pé (é de lá que vem a peça guardada) e com ao menos uma das duas chaves.
+  let analiseDePeca: ServicoAnaliseDePeca | undefined;
+  let repositorioDeAnalisesDePeca: RepositorioAnalisesDePecaSqlite | undefined;
+  const pecas = ia.pecas;
+  if (pecas.habilitada || pecas.workspaces.length > 0) {
+    if (!pasta) {
+      logger.warn(
+        'análise de peça por IA configurada, mas a Pasta digital não está de pé: nada foi ligado',
+      );
+    } else {
+      if (pecas.workspacesInvalidos > 0) {
+        logger.warn('PROCESSOVIVO_IA_PECAS_WORKSPACES tem itens que não são identificadores (ignorados)', {
+          ignorados: pecas.workspacesInvalidos,
+        });
+      }
+      // Mesmo modelo da produção: a MESMA peça comum (uma lista ZDR só). Outro modelo: peça comum própria,
+      // com o mesmo transporte e as mesmas travas.
+      const modeloDePecas =
+        pecas.modelo === ia.modelo
+          ? modeloZdr
+          : new ModeloComZdr({
+              transporte: transporteOpenRouter,
+              modelo: pecas.modelo,
+              buscarListaZdr: async () => (await buscarEndpointsZdr(http, ia.chave)).endpoints,
+              provedoresDoOperador: ia.provedoresPermitidos,
+              clock: clockDoSistema,
+              logger,
+            });
+      repositorioDeAnalisesDePeca = new RepositorioAnalisesDePecaSqlite(db);
+      analiseDePeca = new ServicoAnaliseDePeca({
+        repositorio,
+        analises: repositorioDeAnalisesDePeca,
+        assinaturas,
+        fonte: pasta,
+        extrator: new PdftotextExtrator(),
+        analisador: new OpenRouterAnalisadorDePeca({
+          modeloZdr: modeloDePecas,
+          maxTokens: pecas.maxTokens,
+          timeoutMs: pecas.timeoutMs,
+        }),
+        // O MESMO teto diário da análise de ato e do resumo (a peça pesa 5); freio por hora próprio.
+        limite: new LimiteDeAnalises({
+          porHora: pecas.maxPorHora,
+          simultaneasNoTotal: ia.maxSimultaneas,
+          teto: tetoDoDia,
+          clock: clockDoSistema,
+        }),
+        liberacao: { habilitada: pecas.habilitada, workspaces: pecas.workspaces },
+        tribunais: ['TJGO'],
+        modelo: pecas.modelo,
+        resultadoDias: pecas.resultadoDias,
+        clock: clockDoSistema,
+        logger,
+        novoId: () => randomUUID(),
+      });
+      logger.info('análise de peça por IA habilitada', {
+        modelo: pecas.modelo,
+        paraTodasAsContas: pecas.habilitada,
+        contasDaLista: pecas.workspaces.length,
+        resultadoDias: pecas.resultadoDias,
+      });
+    }
+  }
+  return { analiseIa, resumoDoProcesso, analiseDePeca, repositorioDeAnalisesDePeca };
 }
 
 /**

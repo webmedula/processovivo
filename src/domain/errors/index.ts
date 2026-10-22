@@ -1232,3 +1232,47 @@ export class ExtracaoDeTextoError extends DomainError {
     super(mensagem);
   }
 }
+
+/**
+ * A PEÇA não pode ser analisada por IA (v0.55.0, Fase 1). Cada `motivo` tem a frase própria na
+ * tela; o corpo da resposta traz só o motivo. NENHUM desses casos chamou o modelo — e nenhum
+ * carrega texto de peça, nome de arquivo ou número de processo na mensagem.
+ *
+ * - `indisponivel`: nenhuma das chaves libera esta conta (a rota "não existe" para ela);
+ * - `sem_plano`: falta o recurso `analiseIa` (sem exceção, como no ato e no resumo);
+ * - `peca_sigilosa` / `processo_sigiloso`: sigilo nunca sai do sistema;
+ * - `tribunal_nao_suportado`: só o TJGO tem peças hoje;
+ * - `peca_nao_encontrada` / `peca_nao_baixada`: não está na listagem DESTA conta / não está na guarda
+ *   de 24 h (a tela baixa e pede de novo);
+ * - `sem_texto`: PDF sem camada de texto (escaneado) — sem OCR; `acima_de_40_paginas` e
+ *   `acima_de_80_mil_caracteres`: limites por peça; `pdf_invalido` / `pdf_protegido` / `arquivo_grande`:
+ *   o PDF não pôde ser lido;
+ * - `limite_de_uso` / `limite_diario`: freio por hora e teto técnico do dia (não é limite do plano).
+ */
+export type MotivoDeAnaliseDePecaRecusada =
+  | 'indisponivel'
+  | 'sem_plano'
+  | 'peca_sigilosa'
+  | 'processo_sigiloso'
+  | 'tribunal_nao_suportado'
+  | 'peca_nao_encontrada'
+  | 'peca_nao_baixada'
+  | 'sem_texto'
+  | 'acima_de_40_paginas'
+  | 'acima_de_80_mil_caracteres'
+  | 'pdf_invalido'
+  | 'pdf_protegido'
+  | 'arquivo_grande'
+  | 'limite_de_uso'
+  | 'limite_diario';
+
+export class AnaliseDePecaRecusadaError extends DomainError {
+  readonly codigo = 'ANALISE_DE_PECA_RECUSADA';
+
+  constructor(
+    readonly motivo: MotivoDeAnaliseDePecaRecusada,
+    mensagem: string,
+  ) {
+    super(mensagem);
+  }
+}

@@ -786,6 +786,37 @@ O plano IA (Peças + análise com IA) é vendido pelo mesmo caminho dos outros: 
    A coluna de custo médio é por modelo e versão do prompt. Análise que falhou antes de chegar ao modelo (sem plano,
    sigilo, teto) não gera linha; análise que o modelo não concluiu (erro) também não.
 
+## Análise de peça por IA, "Analisar peça com IA" (v0.55.0)
+
+O botão aparece ao lado de cada peça na linha do tempo. **Nasce desligado.** Duas chaves decidem quem vê:
+
+| Variável | Padrão | O que faz |
+|---|---|---|
+| `PROCESSOVIVO_IA_PECAS_HABILITADA` | `false` | `true` libera **todas** as contas que têm o plano com análise por IA. |
+| `PROCESSOVIVO_IA_PECAS_WORKSPACES` | vazio | Lista de contas liberadas (identificadores de 16 ou 32 caracteres, separados por vírgula). Vale quando a chave de cima está `false`. |
+
+Em qualquer caso a conta **também precisa do plano IA** (liberado no `/admin` ou assinado). Sem as duas chaves o botão não aparece. Tudo isto exige o que a análise de ato já exige: `PROCESSOVIVO_IA_HABILITADA=true` e `OPENROUTER_API_KEY`.
+
+**Só para contas escolhidas (o estado de partida):**
+
+1. Descubra o identificador de cada conta. No Console do serviço (Easypanel): `node dist/main/cli.js assinatura ver email@da.conta` — a linha `workspace .....` é o identificador. (Conta de chave de API: o id aparece em `/admin` → Chaves de API.)
+2. Confira que a conta tem o plano IA: a mesma saída mostra o plano. Se não tem: `node dist/main/cli.js assinatura liberar email@da.conta ia 1`.
+3. No Easypanel, aba **Environment**: `PROCESSOVIVO_IA_PECAS_WORKSPACES=<id-do-dono>,<id-do-avaliador>` e `PROCESSOVIVO_IA_PECAS_HABILITADA=false`. Salve e reinicie. Id torto não derruba o serviço: o log avisa quantos foram ignorados (sem repetir o valor).
+4. A conta da lista vê Útil / Errado / Perigoso (com o motivo da lista) logo abaixo de cada resultado. Quem não está na lista não vê nada.
+
+**Para todos, depois da Política de Privacidade e dos Termos v1.4 publicados:** troque para `PROCESSOVIVO_IA_PECAS_HABILITADA=true` e reinicie. A lista deixa de importar; todas as contas com o plano IA passam a ver o botão, só com o link discreto "Reportar problema".
+
+**Limites e custo:** só TJGO; só peça com texto pesquisável (PDF escaneado é recusado, sem OCR); até 40 páginas e 80 mil caracteres. Cada análise pesa **5** no teto diário `PROCESSOVIVO_IA_MAX_POR_DIA` (padrão 200 → 40 peças por conta por dia) e conta uma no freio `PROCESSOVIVO_IA_PECAS_MAX_POR_HORA` (6). Modelo: `PROCESSOVIVO_IA_PECAS_MODELO` (vazio = o de `PROCESSOVIVO_IA_MODELO`). O resultado fica guardado 30 dias (`PROCESSOVIVO_IA_PECAS_RESULTADO_DIAS`); o texto da peça nunca é gravado.
+
+**Conferir uso e custo (somente leitura, só contagens):**
+
+```bash
+node scripts/ia-pecas-uso.mjs        # por conta: análises vigentes, hoje, peso no teto, avaliadas, custo
+node scripts/ia-avaliacoes.mjs       # seção "Análises de peça": avaliações, motivos, custo p50/p95/máximo
+```
+
+---
+
 ## IA de peças, Fase 0: medir a camada de texto e comparar modelos em peças (v0.53.0)
 
 Nada muda para o usuário: são ferramentas **manuais**, no Console do serviço, sem rota e sem chamada de IA nova em produção. O `poppler-utils`

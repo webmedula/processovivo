@@ -9,6 +9,37 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.55.0] — 2026-10-22
+
+**Análise de peça por IA, Fase 1: o botão "Analisar peça com IA".** Prompt `peca-1.0.0`, regras de verificação `1.0.0`, especificação v1.2.0
+(`docs/ia-analise-de-pecas-especificacao-v1.2.0.md`). **Não mudaram:** modelo, provedor, ZDR, redação da análise de ato, análise de ato, resumo do processo,
+planos, preços, calendário, textos da Política e dos Termos. Sem dependência nova; migração só aditiva (tabela nova).
+
+- **Quem vê:** duas chaves — `PROCESSOVIVO_IA_PECAS_HABILITADA` (padrão `false`; `true` = todas as contas com o plano IA) e `PROCESSOVIVO_IA_PECAS_WORKSPACES`
+  (lista de contas; vale com a chave geral desligada). A conta também precisa do recurso `analiseIa`, sem a exceção do "workspace sem assinatura". Sem nenhuma das
+  duas o botão não aparece e a rota responde "indisponível". Conta da lista vê Útil / Errado / Perigoso com motivo (modo avaliação); no modo geral, só o link
+  "Reportar problema".
+- **Como funciona:** um clique. Se a peça não está na guarda de 24 h, a tela a baixa pelo pedido que a Pasta digital já tem e espera (só banco); o servidor lê o PDF
+  guardado, extrai o texto por página (Fase 0), recusa o que não cabe, redige, chama o modelo com ZDR (falha fechada), verifica item a item e devolve o resultado.
+  Só TJGO; só peça com texto pesquisável; recusa acima de 40 páginas ou 80 mil caracteres; peça sigilosa e processo em segredo de justiça: botão desligado, zero chamadas.
+- **Resultado conciso:** em uma frase, o que pede (≤ 5), o que alega (≤ 4), preliminares (≤ 3), documentos (≤ 8) e valores (≤ 5) citados, pontos de atenção
+  (códigos fechados), cada item com "Ver trecho · pág. N" recolhido, e o aviso "Leitura automática, pode omitir pontos. Confira a peça inteira.".
+- **Verificação determinística:** o trecho tem de estar na página indicada; valor, número e data têm de estar no texto enviado; expressões de mérito/chance/conselho/prazo
+  descartam o resultado; petição ou contestação sem pedido nem alegação verificados = "não verificado"; fora do esquema, uma repetição e depois erro.
+- **Redação ampliada** para peças: endereço (com rótulo ou logradouro), RG/CNH mascarados, nascimento, conta/agência com rótulo, cartão, chave Pix e nomes de partes
+  do retrato. Nome de terceiro fora do retrato e endereço sem rótulo podem passar (risco residual dito no CLAUDE.md).
+- **Guarda:** tabela `analises_pecas_ia` (resultado com marcadores e citações curtas, 30 dias configuráveis, limpa pelo `Agendador`); nunca o texto da peça, o nome de
+  parte ou o número do processo (chave opaca). Reaproveita o resultado da mesma peça (mesmos bytes), prompt e modelo, sem chamar o modelo e sem peso.
+- **Teto:** cada análise pesa 5 no teto técnico diário e 1 no freio por hora (`PROCESSOVIVO_IA_PECAS_MAX_POR_HORA`).
+- **Relatórios:** `scripts/ia-avaliacoes.mjs` ganhou a seção de peças; novo `scripts/ia-pecas-uso.mjs` (somente leitura, só contagens por conta).
+- **Rotas:** `GET /v1/analises-de-peca/disponibilidade`, `GET /v1/processos/:numero/pasta/pecas/:pecaId/estado`, `POST /v1/processos/:numero/pecas/:pecaId/analise`,
+  `POST /v1/analises-de-peca/:id/avaliacao`. Tela em `ui/analisePecaIA.ts` (`script.ts` não cresceu).
+- **Testes reescritos (e por quê):** os da redação de peça da Fase 0 que fixavam "CEP não é redigido", "RG mascarado passa" e "o produto não promete endereço" — a Fase 1
+  muda exatamente isso; e o de `ia-pecas-casos` com a expressão "Rua Nenhuma", que agora é (corretamente) redigida. A lista de expressões proibidas **não** ganhou
+  "procedente/improcedência" porque descrevem o que a parte PEDE e derrubariam o gabarito do comparador.
+
+---
+
 ## [0.54.0] — 2026-10-22
 
 **Resumo do processo por IA: a "situação atual" nunca é um ato antigo.** Prompt `resumo-1.1.0` e regras de verificação `1.1.0`. **Não mudaram:** modelo, provedor,

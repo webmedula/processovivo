@@ -15,14 +15,35 @@ import {
  * Fase 0 não muda produção. Função pura, sem I/O.
  *
  * O QUE ESTA REDAÇÃO NÃO GARANTE — e nenhum texto do produto pode prometer:
- * - **Endereço**: logradouro, bairro e cidade não têm padrão confiável (só o CEP é pego).
+ * - **Endereço** sem tipo de via nem "residente/domiciliado" (só "Setor Sul, Goiânia"), nome de
+ *   edifício e ponto de referência. Desde a v0.55.0 o logradouro com tipo de via e a oração
+ *   "residente e domiciliado na/no/em …" SÃO pegos, mais o CEP.
  * - **Nome de terceiro** que não está no retrato (testemunha, perito, filho, sócio).
- * - Documento sem rótulo ("12.345.678-9" solto), conta sem a palavra "conta" ou "agência",
- *   data de nascimento sem "nascido"/"nascimento" por perto, chave Pix, placa, cartão.
+ * - Documento sem rótulo e sem máscara de RG (CNH e RG só com dígitos), conta sem a palavra "conta"
+ *   ou "agência", data de nascimento sem "nascido"/"nascimento" por perto, chave Pix que não seja
+ *   e-mail, telefone, CPF ou chave aleatória (UUID), placa de veículo.
  * Na dúvida redige (falso positivo custa uma palavra); o que está acima continua passando.
  */
 
-export type TipoDeRedacaoDePeca = 'CEP' | 'IDENTIDADE' | 'NASCIMENTO' | 'CONTA';
+export type TipoDeRedacaoDePeca =
+  | 'CEP'
+  | 'IDENTIDADE'
+  | 'NASCIMENTO'
+  | 'CONTA'
+  | 'ENDERECO'
+  | 'CHAVE'
+  | 'CARTAO';
+
+/** O marcador que o modelo vê para cada tipo (o endereço leva cedilha, como o texto do produto). */
+const ROTULO_DO_MARCADOR: Readonly<Record<TipoDeRedacaoDePeca, string>> = {
+  CEP: 'CEP',
+  IDENTIDADE: 'IDENTIDADE',
+  NASCIMENTO: 'NASCIMENTO',
+  CONTA: 'CONTA',
+  ENDERECO: 'ENDEREÇO',
+  CHAVE: 'CHAVE',
+  CARTAO: 'CARTÃO',
+};
 
 interface PadraoDePeca {
   readonly tipo: TipoDeRedacaoDePeca;
@@ -34,10 +55,40 @@ const MESES =
 const DATA = `(?:\\d{1,2}\\s*[/.-]\\s*\\d{1,2}\\s*[/.-]\\s*\\d{2,4}|\\d{1,2}\\s+de\\s+(?:${MESES})\\s+de\\s+\\d{4})`;
 const NUMERO_DE_DOCUMENTO = '\\d[\\d.\\- ]{5,14}[\\dx]';
 const NUMERO_DE_CONTA = '\\d[\\d.\\-/ ]{2,12}[\\dx]';
+// Logradouro (v0.55.0): tipo da via + nome até a vírgula ou o ponto, número e, se vierem, bairro e
+// cidade/UF. Roda no texto sem acento e em minúsculas.
+const VIA =
+  '(?:rua|avenida|av\\.|alameda|travessa|rodovia|estrada|praca|quadra|qd\\.|largo|viela)';
+const NUMERO_DA_VIA = '(?:,?\\s*(?:n[°ºo.]*\\s*)?\\d{1,5}[a-z]?(?:\\s*[-/]\\s*\\w{1,6})?)?';
+const COMPLEMENTO_DA_VIA =
+  '(?:,\\s*(?:quadra|qd\\.?|lote|lt\\.?|casa|apto\\.?|apartamento|bloco|sala)\\s*\\w{1,6})*';
+const BAIRRO =
+  '(?:,\\s*(?:bairro|setor|jardim|vila|parque|residencial|conjunto|loteamento|centro)\\b[^,.;\\n]{0,40})?';
+const CIDADE_UF = '(?:,\\s*[a-z][a-z ]{2,30}\\s*[-/]\\s*[a-z]{2}\\b)?';
 
 // Os padrões rodam sobre o texto SEM acento e em minúsculas (mesmo tamanho do original), então
 // só se escrevem em minúsculas e sem acento.
 const PADROES: readonly PadraoDePeca[] = [
+  // Endereço rotulado por tipo de via ("Rua das Flores, nº 100, Setor Central, Goiânia - GO") ou por
+  // "residente/domiciliado na/no/em ...": é o que se consegue com padrão. Endereço SEM esse jeito de
+  // escrever (só "Setor Sul, Goiânia"), nome de edifício ou ponto de referência NÃO é pego.
+  {
+    tipo: 'ENDERECO',
+    regex: new RegExp(
+      `\\b${VIA}\\s+[a-z0-9][^,.;\\n]{1,60}${NUMERO_DA_VIA}${COMPLEMENTO_DA_VIA}${BAIRRO}${CIDADE_UF}`,
+      'g',
+    ),
+  },
+  {
+    tipo: 'ENDERECO',
+    regex:
+      /\b(?:residentes?|domiciliad[oa]s?|resident[ea]s? e domiciliad[oa]s?)\s+(?:na|no|em|a)\s+[^.;\n]{5,120}/g,
+  },
+  // RG no layout de máscara (12.345.678-9) sem rótulo; CPF e CNPJ já saem na redação do ato.
+  { tipo: 'IDENTIDADE', regex: /(?<![\d.\-/])\d{1,2}\.\d{3}\.\d{3}-[\dx](?![\d-])/g },
+  // Chave aleatória do Pix (UUID) e número de cartão (4 × 4 dígitos).
+  { tipo: 'CHAVE', regex: /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/g },
+  { tipo: 'CARTAO', regex: /(?<![\d-])\d{4}[ -]\d{4}[ -]\d{4}[ -]\d{4}(?![\d-])/g },
   { tipo: 'CEP', regex: /(?<![\d.\-/])\d{2}\.?\d{3}-\d{3}(?!\d)/g },
   { tipo: 'CEP', regex: /\bcep\b[\s:.n°ºo-]{0,6}\d{8}(?!\d)/g },
   {
@@ -71,6 +122,8 @@ export interface ResultadoDaRedacaoDePeca {
 
 export interface RedatorDePeca {
   redigir(texto: string): ResultadoDaRedacaoDePeca;
+  /** Devolve os nomes do retrato no lugar dos marcadores `[PARTE A]`… (os dos acréscimos não voltam). */
+  restaurar(texto: string): string;
 }
 
 function redigirAcrescimos(texto: string): {
@@ -91,12 +144,15 @@ function redigirAcrescimos(texto: string): {
     IDENTIDADE: 0,
     NASCIMENTO: 0,
     CONTA: 0,
+    ENDERECO: 0,
+    CHAVE: 0,
+    CARTAO: 0,
   };
   let saida = '';
   let cursor = 0;
   for (const a of achados) {
     if (a.inicio < cursor) continue; // sobreposto a um trecho já redigido
-    saida += texto.slice(cursor, a.inicio) + `[${a.tipo}]`;
+    saida += texto.slice(cursor, a.inicio) + `[${ROTULO_DO_MARCADOR[a.tipo]}]`;
     contagem[a.tipo] += 1;
     cursor = a.fim;
   }
@@ -116,6 +172,7 @@ export function criarRedatorDePeca(pessoas: PessoasParaRedigir = {}): RedatorDeP
       const { texto: final, contagem } = redigirAcrescimos(primeira.texto);
       return { texto: final, substituicoes: { ...primeira.substituicoes, ...contagem } };
     },
+    restaurar: (texto) => base.restaurar(texto),
   };
 }
 

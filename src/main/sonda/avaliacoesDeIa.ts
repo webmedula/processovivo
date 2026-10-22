@@ -13,10 +13,10 @@ import { media, percentil } from './sondaIaAto.js';
  * nunca workspace. O banco é aberto com `readOnly` + `query_only` e nunca por `abrirBanco`
  * (que cria esquema e migra).
  */
-export const VERSAO_DE_AVALIACOES_DE_IA = '1.1.0';
+export const VERSAO_DE_AVALIACOES_DE_IA = '1.2.0';
 
 export const USO_DE_AVALIACOES_DE_IA = `Uso: node scripts/ia-avaliacoes.mjs
-Mostra, por modelo e versão do prompt, as análises de ato e os resumos de processo, e as avaliações das contas (útil / errado / perigoso). As duas tabelas ficam em seções separadas.`;
+Mostra, por modelo e versão do prompt, as análises de ato, os resumos de processo e as análises de peça, e as avaliações das contas (útil / errado / perigoso). As três tabelas ficam em seções separadas.`;
 
 export interface LinhaDeAvaliacoes {
   readonly modelo: string;
@@ -175,10 +175,11 @@ export function executarAvaliacoesDeIa(
   try {
     const existe = tabelaExiste(db, 'analises_ia');
     const existeResumo = tabelaExiste(db, 'resumos_ia');
+    const existePeca = tabelaExiste(db, 'analises_pecas_ia');
     deps.saida(
       `Avaliações da análise por IA v${VERSAO_DE_AVALIACOES_DE_IA} — somente leitura; só contagens e medidas, nenhum texto.`,
     );
-    if (!existe && !existeResumo) {
+    if (!existe && !existeResumo && !existePeca) {
       deps.saida('Nenhuma análise registrada ainda.');
       return 0;
     }
@@ -208,6 +209,23 @@ export function executarAvaliacoesDeIa(
       deps.saida('');
       const grupos = agruparAvaliacoes(linhas);
       if (grupos.length === 0) deps.saida('Nenhum resumo registrado ainda.');
+      else for (const l of linhasDeAvaliacoes(grupos)) deps.saida(l);
+    }
+    // Análises de peça (v0.55.0): terceira tabela, terceira seção. Só rótulos e medidas — o resultado
+    // (que tem citações curtas) nunca é lido, só o `estado` dentro dele.
+    if (existePeca) {
+      const linhas = db
+        .prepare(
+          `SELECT modelo, versao_prompt, avaliacao, latencia_ms, custo_usd, ${colunaDoMotivo(db, 'analises_pecas_ia')},
+                  CASE WHEN json_extract(resultado, '$.estado') = 'nao_verificada' THEN 1 ELSE 0 END AS nao_verificada
+             FROM analises_pecas_ia`,
+        )
+        .all() as unknown as Linha[];
+      deps.saida('');
+      deps.saida('Análises de peça (o resultado guardado vence em 30 dias: a série é a das vigentes)');
+      deps.saida('');
+      const grupos = agruparAvaliacoes(linhas);
+      if (grupos.length === 0) deps.saida('Nenhuma análise de peça registrada ainda.');
       else for (const l of linhasDeAvaliacoes(grupos)) deps.saida(l);
     }
     return 0;

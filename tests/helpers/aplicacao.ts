@@ -72,6 +72,12 @@ import {
   EntradaNaoAnalisavelError,
   SenhaFracaError,
 } from '../../src/domain/errors/index.js';
+import { ServicoAnaliseDePeca } from '../../src/application/services/ServicoAnaliseDePeca.js';
+import { PdftotextExtrator } from '../../src/infrastructure/pdf/PdftotextExtrator.js';
+import { RepositorioAnalisesDePecaSqlite } from '../../src/infrastructure/persistencia/sqlite/RepositorioAnalisesDePecaSqlite.js';
+import type { AnalisadorDePeca } from '../../src/domain/ports/AnalisadorDePeca.js';
+import type { ExtratorDeTextoDePdf } from '../../src/domain/ports/ExtratorDeTextoDePdf.js';
+import type { LiberacaoDaAnaliseDePeca } from '../../src/application/politicas/liberacaoDaAnaliseDePeca.js';
 import { ServicoResumoDoProcesso } from '../../src/application/services/ServicoResumoDoProcesso.js';
 import type { ResumidorDeProcesso } from '../../src/domain/ports/ResumidorDeProcesso.js';
 import { RepositorioResumosSqlite } from '../../src/infrastructure/persistencia/sqlite/RepositorioResumosSqlite.js';
@@ -203,6 +209,21 @@ export interface OpcoesAplicacaoDeTeste {
     /** Teto técnico do dia (v0.50.0). Ausente = sem teto diário. */
     readonly porDia?: number;
     readonly simultaneasNoTotal?: number;
+    readonly clock?: Clock;
+  };
+  /**
+   * Liga a análise de PEÇA por IA (v0.55.0) com um analisador DUBLÊ (nenhum teste toca a rede). Exige a
+   * Pasta digital (`leitor`). Ausente = desligada. O PDF é lido de verdade pelo `pdftotext` (como no CI),
+   * a menos que o teste passe um extrator. As duas chaves de liberação são as do servidor.
+   */
+  readonly analiseDePeca?: {
+    readonly analisador: AnalisadorDePeca;
+    readonly liberacao: LiberacaoDaAnaliseDePeca;
+    readonly extrator?: ExtratorDeTextoDePdf;
+    readonly porHora?: number;
+    readonly resultadoDias?: number;
+    readonly modelo?: string;
+    readonly tribunais?: readonly string[];
     readonly clock?: Clock;
   };
   /**
@@ -479,6 +500,34 @@ export function aplicacaoDeTeste(
         janelaDePendenciaDias: 10,
       })
     : undefined;
+  const clockDaPeca: Clock = opcoes.analiseDePeca?.clock ?? {
+    agora: () => (opcoes.agora ? opcoes.agora() : new Date()),
+    monotonico: () => 0,
+  };
+  const analiseDePeca =
+    opcoes.analiseDePeca && pasta
+      ? new ServicoAnaliseDePeca({
+          repositorio: repositorioCru,
+          analises: new RepositorioAnalisesDePecaSqlite(db),
+          assinaturas,
+          fonte: pasta,
+          extrator: opcoes.analiseDePeca.extrator ?? new PdftotextExtrator(),
+          analisador: opcoes.analiseDePeca.analisador,
+          limite: new LimiteDeAnalises({
+            porHora: opcoes.analiseDePeca.porHora ?? 100,
+            simultaneasNoTotal: 10,
+            ...(tetoCompartilhado ? { teto: tetoCompartilhado } : {}),
+            clock: clockDaPeca,
+          }),
+          liberacao: opcoes.analiseDePeca.liberacao,
+          tribunais: opcoes.analiseDePeca.tribunais ?? ['TJGO'],
+          modelo: opcoes.analiseDePeca.modelo ?? 'modelo/de-teste',
+          resultadoDias: opcoes.analiseDePeca.resultadoDias ?? 30,
+          clock: clockDaPeca,
+          logger: loggerSilencioso,
+          novoId: () => randomUUID(),
+        })
+      : undefined;
   const analisesRepo = new RepositorioAnalisesSqlite(db);
   const avisoDoPrazo = analiseIa
     ? new ServicoAvisoDoPrazo({
@@ -579,6 +628,8 @@ export function aplicacaoDeTeste(
     pecas,
     analiseIa,
     resumoDoProcesso,
+    analiseDePeca,
+    agendadorLimpezaAnalisesDePeca: undefined,
     avisoDoPrazo,
     leitor,
     pasta,
