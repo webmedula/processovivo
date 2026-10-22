@@ -50,6 +50,7 @@ Processo Vivo — consulta de processos judiciais
   npm run cli -- assinatura cancelar <email> [--obs "pediu por e-mail"]
   npm run cli -- assinatura avisar
   npm run cli -- pagamento reconciliar [--workspace <id>]
+  npm run cli -- calendario resumo-previa   # quantas contas receberiam o resumo dos eventos a confirmar (só leitura, v0.51.0)
   npm run cli -- novidades reparar [--aplicar] [--desfazer <arquivo>]
 
 Exemplos:
@@ -566,6 +567,31 @@ async function main(
         `Ação desconhecida: "${acao}". Use ver, liberar, cancelar ou avisar.`,
       );
       return 1;
+    }
+
+    case 'calendario': {
+      // `calendario resumo-previa` (v0.51.0): SOMENTE LEITURA. Quantas contas receberiam o resumo dos eventos a
+      // confirmar se ele saísse agora, e quantos itens — sem e-mail, sem número de processo, sem conteúdo.
+      if (args[0] !== 'resumo-previa') {
+        console.error('Uso: calendario resumo-previa');
+        return 1;
+      }
+      if (!app.resumoDoCalendario) {
+        console.error(
+          'O resumo do calendário não está montado: falta SMTP de verdade (SMTP_HOST e SMTP_FROM).',
+        );
+        return 1;
+      }
+      const p = await app.resumoDoCalendario.previa();
+      console.log(
+        `Chave PROCESSOVIVO_CALENDARIO_RESUMO_HABILITADO: ${config.calendario.resumoHabilitado ? 'LIGADA' : 'desligada'}`,
+      );
+      console.log(`Contas que receberiam o resumo agora: ${p.contas}`);
+      console.log(`Itens (eventos a confirmar ou rever): ${p.itens}`);
+      console.error(
+        'Nada foi enviado. O envio real acontece entre 08:00 e 12:00 (São Paulo), uma vez por dia.',
+      );
+      return 0;
     }
 
     case 'pagamento': {

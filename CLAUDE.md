@@ -104,6 +104,7 @@ src/
 │                                #   ServicoAssinaturas, ServicoLeitor,
 │                                #   ServicoPasta + GuardaDePecas (Pasta digital),
 │                                #   ServicoCalendario (+ ingestaoDoCalendario),
+│                                #   ServicoResumoDoCalendario (resumo por e-mail dos eventos a confirmar, v0.51.0),
 │                                #   ServicoAnaliseDoAto (IA, por botão),
 │                                #   ServicoAvisoDoPrazo (aviso no calendário, v0.39.0),
 │                                #   ServicoResumoDoProcesso (resumo por IA, por botão, v0.40.0),
@@ -2043,6 +2044,28 @@ Não são detalhes — moldam o código.
   negativo continua no andamento que o advogado também recebe; falso positivo
   confiante vira compromisso na agenda dele. O teste que vale é
   `tests/domain/deteccao-de-eventos.spec.ts` — textos sintéticos, sempre.
+- **Lembretes no feed só para confirmados; resumo por e-mail sem prazo e sem dado pessoal; chave global desligada por padrão**
+  (v0.51.0, decisões do dono; detecção, estados, deduplicação e a privacidade do `SUMMARY`/`DESCRIPTION` não mudaram).
+  (1) **Lembretes (`VALARM`)**: escolha por feed (`lembretes.umDiaAntes`/`umaHoraAntes`, padrão NENHUM, `PATCH`/`GET`/`POST
+  /v1/calendario/feed`). Saem só em evento `confirmado` e ainda no futuro — nunca em `sugerido`, nunca em `CANCELLED` —, com
+  `DESCRIPTION` igual ao `SUMMARY` (sem parte, trecho ou observação; sigilo sem número). Com hora: `TRIGGER` relativo (`-P1D`,
+  `-PT1H`); dia inteiro: **absoluto em UTC** (12:00Z = 09:00 SP no dia anterior; 11:00Z = 08:00 SP no dia), porque `DTSTART` de
+  dia inteiro é uma DATA e o cliente a leria no fuso do aparelho. Mudar a escolha sobe `revisao_lembretes` do FEED
+  (`SEQUENCE` = `e.sequencia + revisao`; `DTSTAMP` = o maior entre o evento e a mudança): nenhum evento é regravado e o `UID` não
+  muda. **O que o teste prova é o FORMATO; o que Apple, Outlook e Google fazem com o alarme não é provado** — a tela diz que o
+  Google Agenda pode ignorá-lo em calendário assinado por URL, e não se promete lembrete no aplicativo de ninguém.
+  (2) **Resumo por e-mail dos eventos a confirmar** (`ServicoResumoDoCalendario` + `mensagemDoResumoDoCalendario`, pura): um por
+  conta, no máximo um por dia, de 08:00 a 12:00 de São Paulo (tick de 15 min, relógio injetado), só com item NOVO (`sugerido` ou
+  `revisar`, detectado, de hoje em diante, ainda não avisado); até 10 itens e "e mais N"; **nunca afirma prazo** ("data lida do
+  andamento de dd/mm, confira no processo"; nada de "urgente" ou "prazo fatal"); sem nome de parte, trecho, título livre nem
+  observação; sigilo = "processo sigiloso", sem número. Vai ao e-mail de LOGIN; conta de chave de API não recebe.
+  (3) **Chave `PROCESSOVIVO_CALENDARIO_RESUMO_HABILITADO`, desligada por padrão**, e só com SMTP de verdade (`entregaDeVerdade`:
+  log não é entrega); a opção por conta (`GET`/`PUT /v1/calendario/resumo`, padrão ligado) só aparece com a chave ligada.
+  **Descadastro só pelo painel (Calendário > Resumo por e-mail); não há rota pública de descadastro** — se um dia houver, será
+  decisão à parte, com token assinado. (4) Registro (`calendario_resumo_itens`/`_envios`/`_preferencias`) só com ids, datas e
+  contagens; falha de envio soma tentativa por item (máximo 3), não derruba o agendador e o log leva só contagens. (5) `calendario
+  resumo-previa` (CLI) é SÓ LEITURA: contas e itens, sem e-mail nem conteúdo. (6) O aviso de "evento próximo" para confirmado
+  NÃO existe; se vier, entra no mesmo agendador, com a mesma chave e o mesmo opt-out (spec v1.1.0, 17.3).
 - **A detecção nunca derruba a sincronização.** Ela roda num decorator da porta
   das pastas (`comDeteccaoDoCalendario`), DEPOIS de gravar o retrato, e falha
   vai para o log. É o ponto único: varredura, "acompanhar" e vigilância gravam
@@ -2125,8 +2148,8 @@ teste e carência** (v0.28.0), **visual novo a partir do logo** (v0.29.0),
 **tela do processo sem os blocos "Pede providência" e "Última movimentação", Partes logo abaixo das peças** (v0.41.1), **Google Drive: conectar a conta do advogado e salvar as peças da Pasta digital numa pasta "Processo Vivo", por botão, escopo `drive.file`, desligado por padrão, planos Peças e IA** (v0.42.0), **Drive: o retorno do OAuth usa o workspace do `state` assinado e a conta de chave de API também conecta** (v0.42.1), **testes estáveis no CI e a volta do Google sem corrida no console** (v0.42.2), **Atualizações: situação como texto e caixa "Cumprido" como único controle, com aviso para desfazer** (v0.43.0), **cobrança recorrente pelo Mercado Pago, parte 1: assinatura por cartão atrás da porta de pagamento, webhook idempotente, reconciliação e ciclo no plano** (v0.44.0), **ambiente do pagamento declarado em `PROCESSOVIVO_PAGAMENTO_AMBIENTE`, não deduzido do token** (v0.44.1),
 **página de vendas: vitrine pública `GET /v1/planos`, plano escolhido atravessando cadastro e login, confirmação de assinatura com aceite dos Termos obrigatório e trecho para o site** (v0.45.0), **recusa do gateway com motivo de lista fechada, log saneado, 422/503 em JSON e a última falha no /admin** (v0.45.1), **tabela de Atualizações mais limpa: Atualização em uma linha, datas estreitas e coluna "Cumprido" só com a caixa e a dica** (v0.46.0),
 **tabela de Atualizações: caixa "Cumprido" na coluna Ações, Partes mais larga, sem o selo "outro destinatário" na linha e sem a frase fixa sob o filtro** (v0.46.1),
-**centro de custos do processo: lançamentos manuais por processo, categorias próprias, totais no servidor, caixa "Ressarcido" e prestação de contas em PDF para o cliente** (v0.47.0), **custos: recebimentos do cliente com saldo e crédito, quem pagou, depósitos fora das despesas, cancelar com histórico e catálogo Grupo › Subcategoria** (v0.48.0), **custos por cliente: tela no menu, PDF consolidado, CSV, comprovantes no Google Drive do advogado e aviso ao deixar de acompanhar** (v0.49.0), **painel de Custos: colunas de conteúdo, ações em ícones com dica e formulário em grade** (v0.49.1), **Atualizações: linha compacta, número do processo sem quebra e Ações em ícones com dica, inclusive "Analisar com IA"** (v0.49.2), **sincronização mais rápida: pool de até 3 (máx. 4) processos, progresso real "Verificando X de N" e fila sem processo que sempre falha na frente** (v0.49.3), **Atualizações: coluna Atualização em uma linha, sem o link "Abrir processo" na tabela (só nos cartões)** (v0.49.4), **checkout do Mercado Pago: e-mail do pagador informado na tela e checkout novo que substitui a assinatura pendente** (v0.49.5), **textos do checkout sem sugerir conta no Mercado Pago** (v0.49.6), **plano IA vendável por dado (preço + "à venda" no /admin), sem a exceção de teste fechado, com teto técnico diário e aviso de upgrade com "Ver planos"** (v0.50.0), **login avisa que as peças valem só para o TJGO por enquanto** (v0.50.1),
-Dockerfile multi-stage, CI, 3287 testes.
+**centro de custos do processo: lançamentos manuais por processo, categorias próprias, totais no servidor, caixa "Ressarcido" e prestação de contas em PDF para o cliente** (v0.47.0), **custos: recebimentos do cliente com saldo e crédito, quem pagou, depósitos fora das despesas, cancelar com histórico e catálogo Grupo › Subcategoria** (v0.48.0), **custos por cliente: tela no menu, PDF consolidado, CSV, comprovantes no Google Drive do advogado e aviso ao deixar de acompanhar** (v0.49.0), **painel de Custos: colunas de conteúdo, ações em ícones com dica e formulário em grade** (v0.49.1), **Atualizações: linha compacta, número do processo sem quebra e Ações em ícones com dica, inclusive "Analisar com IA"** (v0.49.2), **sincronização mais rápida: pool de até 3 (máx. 4) processos, progresso real "Verificando X de N" e fila sem processo que sempre falha na frente** (v0.49.3), **Atualizações: coluna Atualização em uma linha, sem o link "Abrir processo" na tabela (só nos cartões)** (v0.49.4), **checkout do Mercado Pago: e-mail do pagador informado na tela e checkout novo que substitui a assinatura pendente** (v0.49.5), **textos do checkout sem sugerir conta no Mercado Pago** (v0.49.6), **plano IA vendável por dado (preço + "à venda" no /admin), sem a exceção de teste fechado, com teto técnico diário e aviso de upgrade com "Ver planos"** (v0.50.0), **login avisa que as peças valem só para o TJGO por enquanto** (v0.50.1), **calendário: lembretes no feed ICS (só confirmados) e resumo por e-mail dos eventos a confirmar, desligado por padrão** (v0.51.0),
+Dockerfile multi-stage, CI, 3353 testes.
 
 **Pasta digital (v0.33.0, backend):** `GET /v1/processos/:numero/pasta` (lista +
 estado de cada peça + intervalos de página + totais SEM filtro + procedência
@@ -2156,7 +2179,7 @@ formulário) e fala com o console só por `window.__pv`,
 `window.__pvCalendario` e `window.__pvAoIniciar`; o mesmo arquivo atende o
 link `/?processo=<número>` que o feed põe na descrição de cada evento.
 `script.ts` NÃO cresce — há teste que fixa o tamanho. Especificação e as
-decisões do dono: `docs/calendario-especificacao-v1.0.3.md`.
+decisões do dono: `docs/calendario-especificacao-v1.1.0.md`.
 
 **Leitor de peças, ajustes (v0.31.1):** o painel abre com "Nova seleção" ao lado
 de "Reabrir o PDF já pronto" (com data e hora); a seleção nova começa vazia,

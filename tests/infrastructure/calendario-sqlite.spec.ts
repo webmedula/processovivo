@@ -175,6 +175,9 @@ describe('RepositorioDeEventosSqlite', () => {
         workspace: ws,
         tokenHash: hash,
         incluiSugeridos: false,
+        // v0.51.0: o feed ganhou lembretes e o contador de revisão; este teste é só de isolamento.
+        lembretes: { umDiaAntes: false, umaHoraAntes: false },
+        revisaoLembretes: 0,
         criadoEm: AGORA,
       });
       await repo.substituirFeed(feed('A', 'hash-a'));
@@ -187,7 +190,13 @@ describe('RepositorioDeEventosSqlite', () => {
   });
 
   it('regenerar revoga o feed anterior na mesma operação', async () => {
-    const base = { workspace: 'A', incluiSugeridos: true, criadoEm: AGORA };
+    const base = {
+      workspace: 'A',
+      incluiSugeridos: true,
+      lembretes: { umDiaAntes: false, umaHoraAntes: false },
+      revisaoLembretes: 0,
+      criadoEm: AGORA,
+    };
     await repo.substituirFeed({ ...base, id: 'f1', tokenHash: 'h1' });
     await repo.substituirFeed({ ...base, id: 'f2', tokenHash: 'h2' });
     expect((await repo.feedPorHash('h1'))?.revogadoEm).toBeDefined();

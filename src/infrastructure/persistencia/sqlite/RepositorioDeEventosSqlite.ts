@@ -8,6 +8,7 @@ import type {
 import type {
   FeedDoCalendario,
   FiltroDeEventos,
+  MudancasNoFeed,
   RepositorioDeEventos,
 } from '../../../domain/ports/RepositorioDeEventos.js';
 
@@ -144,8 +145,9 @@ export class RepositorioDeEventosSqlite implements RepositorioDeEventos {
       this.db
         .prepare(
           `INSERT INTO calendario_feeds
-             (id, workspace, token_hash, inclui_sugeridos, criado_em, revogado_em)
-           VALUES (?, ?, ?, ?, ?, NULL)`,
+             (id, workspace, token_hash, inclui_sugeridos, criado_em, revogado_em,
+              lembrete_um_dia, lembrete_uma_hora)
+           VALUES (?, ?, ?, ?, ?, NULL, ?, ?)`,
         )
         .run(
           feed.id,
@@ -153,6 +155,8 @@ export class RepositorioDeEventosSqlite implements RepositorioDeEventos {
           feed.tokenHash,
           feed.incluiSugeridos ? 1 : 0,
           feed.criadoEm.toISOString(),
+          feed.lembretes.umDiaAntes ? 1 : 0,
+          feed.lembretes.umaHoraAntes ? 1 : 0,
         );
       this.db.exec('COMMIT');
     } catch (erro) {
@@ -163,14 +167,44 @@ export class RepositorioDeEventosSqlite implements RepositorioDeEventos {
 
   async alterarFeed(
     workspace: string,
-    incluiSugeridos: boolean,
+    mudancas: MudancasNoFeed,
+    agora: Date,
   ): Promise<FeedDoCalendario | undefined> {
-    this.db
-      .prepare(
-        `UPDATE calendario_feeds SET inclui_sugeridos = ?
-          WHERE workspace = ? AND revogado_em IS NULL`,
-      )
-      .run(incluiSugeridos ? 1 : 0, workspace);
+    const atual = await this.feedAtivo(workspace);
+    if (!atual) return undefined;
+    if (
+      mudancas.incluiSugeridos !== undefined &&
+      mudancas.incluiSugeridos !== atual.incluiSugeridos
+    ) {
+      this.db
+        .prepare(
+          `UPDATE calendario_feeds SET inclui_sugeridos = ?
+            WHERE workspace = ? AND revogado_em IS NULL`,
+        )
+        .run(mudancas.incluiSugeridos ? 1 : 0, workspace);
+    }
+    const novos = mudancas.lembretes;
+    // Só conta como mudança o que de fato muda: salvar de novo a mesma escolha não sobe o SEQUENCE
+    // de todos os eventos do feed à toa.
+    if (
+      novos &&
+      (novos.umDiaAntes !== atual.lembretes.umDiaAntes ||
+        novos.umaHoraAntes !== atual.lembretes.umaHoraAntes)
+    ) {
+      this.db
+        .prepare(
+          `UPDATE calendario_feeds
+              SET lembrete_um_dia = ?, lembrete_uma_hora = ?,
+                  revisao_lembretes = revisao_lembretes + 1, lembretes_alterados_em = ?
+            WHERE workspace = ? AND revogado_em IS NULL`,
+        )
+        .run(
+          novos.umDiaAntes ? 1 : 0,
+          novos.umaHoraAntes ? 1 : 0,
+          agora.toISOString(),
+          workspace,
+        );
+    }
     return this.feedAtivo(workspace);
   }
 
@@ -292,11 +326,18 @@ function paraEvento(l: Linha): EventoDeCalendario {
 
 function paraFeed(l: Linha): FeedDoCalendario {
   const revogadoEm = data(l['revogado_em']);
+  const alteradosEm = data(l['lembretes_alterados_em']);
   return {
     id: String(l['id']),
     workspace: String(l['workspace']),
     tokenHash: String(l['token_hash']),
     incluiSugeridos: Number(l['inclui_sugeridos']) === 1,
+    lembretes: {
+      umDiaAntes: Number(l['lembrete_um_dia'] ?? 0) === 1,
+      umaHoraAntes: Number(l['lembrete_uma_hora'] ?? 0) === 1,
+    },
+    revisaoLembretes: Number(l['revisao_lembretes'] ?? 0),
+    ...(alteradosEm ? { lembretesAlteradosEm: alteradosEm } : {}),
     criadoEm: new Date(String(l['criado_em'])),
     ...(revogadoEm ? { revogadoEm } : {}),
   };

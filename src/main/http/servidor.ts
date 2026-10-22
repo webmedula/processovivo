@@ -171,9 +171,14 @@ export function construirServidor(app: Aplicacao, config: Config): FastifyInstan
     rotasDoPainel(app.acompanhamento, app.pecas, config.telas.pendenciaJanelaDias),
   );
   void servidor.register(
-    rotasDoCalendario(app.calendario, app.assinaturas, { urlBase: config.http.urlBase }),
+    rotasDoCalendario(app.calendario, app.assinaturas, {
+      urlBase: config.http.urlBase,
+      resumo: app.resumoDoCalendario,
+    }),
   );
-  void servidor.register(rotasDeCustos(app.custos, app.assinaturas, app.custosPorCliente));
+  void servidor.register(
+    rotasDeCustos(app.custos, app.assinaturas, app.custosPorCliente),
+  );
   void servidor.register(
     rotasDeAssinaturas(app.assinaturas, app.planos, {
       pagamentos: app.pagamentos,
@@ -338,6 +343,7 @@ export async function iniciar(app: Aplicacao, config: Config): Promise<FastifyIn
   app.agendadorLeitor?.iniciar();
   app.agendadorLimpezaLeitor?.iniciar();
   app.agendadorCalendario?.iniciar();
+  app.agendadorResumoDoCalendario?.iniciar();
 
   app.logger.info('Processo Vivo no ar', {
     versao: VERSAO,

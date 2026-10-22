@@ -15,6 +15,8 @@ import { RepositorioDoDriveSqlite } from '../../src/infrastructure/persistencia/
 import type { DestinoExternoDePecas } from '../../src/domain/ports/DestinoExternoDePecas.js';
 import { RepositorioDaPastaSqlite } from '../../src/infrastructure/persistencia/sqlite/RepositorioDaPastaSqlite.js';
 import { ServicoCalendario } from '../../src/application/services/ServicoCalendario.js';
+import { ServicoResumoDoCalendario } from '../../src/application/services/ServicoResumoDoCalendario.js';
+import { RepositorioDoResumoDoCalendarioSqlite } from '../../src/infrastructure/persistencia/sqlite/RepositorioDoResumoDoCalendarioSqlite.js';
 import { ServicoCustosPorCliente } from '../../src/application/services/ServicoCustosPorCliente.js';
 import { ServicoCustos } from '../../src/application/services/ServicoCustos.js';
 import { PrestacaoDeContasPdf } from '../../src/infrastructure/pdf/PrestacaoDeContasPdf.js';
@@ -123,6 +125,15 @@ export class NotificadorEspiao implements Notificador {
 }
 
 export interface OpcoesAplicacaoDeTeste {
+  /**
+   * Monta o resumo por e-mail dos eventos a confirmar (v0.51.0) com este notificador (em geral um espião).
+   * Sem isto, `resumoDoCalendario` fica indefinido, como em produção sem SMTP de verdade.
+   */
+  readonly resumoDoCalendario?: {
+    readonly habilitado: boolean;
+    readonly notificador: Notificador;
+    readonly urlBase?: string;
+  };
   /**
    * Liga a cobrança recorrente (v0.44.0) com o gateway dado (em geral o `GatewayFalso`). Sem isto,
    * `pagamentos` fica indefinido: as rotas de checkout não existem e o webhook responde 404.
@@ -264,6 +275,18 @@ export function aplicacaoDeTeste(
     gerarId: () => randomUUID(),
     ...(opcoes.agora ? { agora: opcoes.agora } : {}),
   });
+  const resumoDoCalendario = opcoes.resumoDoCalendario
+    ? new ServicoResumoDoCalendario({
+        repositorio: new RepositorioDoResumoDoCalendarioSqlite(db),
+        usuarios,
+        notificador: opcoes.resumoDoCalendario.notificador,
+        logger: loggerSilencioso,
+        urlBase: opcoes.resumoDoCalendario.urlBase ?? 'https://app.exemplo.test',
+        habilitado: opcoes.resumoDoCalendario.habilitado,
+        assinaturas,
+        ...(opcoes.agora ? { agora: opcoes.agora } : {}),
+      })
+    : undefined;
   const repositorio = comDeteccaoDoCalendario(
     repositorioCru,
     calendario,
@@ -405,7 +428,9 @@ export function aplicacaoDeTeste(
         limite: new LimiteDeAnalises({
           porHora: opcoes.analiseIa.porHora ?? 100,
           simultaneasNoTotal: opcoes.analiseIa.simultaneasNoTotal ?? 10,
-          ...(opcoes.analiseIa.porDia !== undefined ? { porDia: opcoes.analiseIa.porDia } : {}),
+          ...(opcoes.analiseIa.porDia !== undefined
+            ? { porDia: opcoes.analiseIa.porDia }
+            : {}),
           clock: opcoes.analiseIa.clock ?? {
             agora: () => (opcoes.agora ? opcoes.agora() : new Date()),
             monotonico: () => 0,
@@ -476,12 +501,16 @@ export function aplicacaoDeTeste(
             guarda: guardaDoDrive,
             armazem: armazemDoDrive,
           }),
-          estados: new EstadosDeConexao({ segredo: randomBytes(32), clock: clockDoDrive }),
+          estados: new EstadosDeConexao({
+            segredo: randomBytes(32),
+            clock: clockDoDrive,
+          }),
           conferirPlano: async (ws) =>
             (await assinaturas.temRecursoSemExcecao(ws, 'salvarNoDrive')) &&
             (await assinaturas.temRecursoSemExcecao(ws, 'pecas')),
           logger: loggerSilencioso,
-          uriDeRetorno: opcoes.drive.uriDeRetorno ?? 'https://app.exemplo.test/v1/drive/retorno',
+          uriDeRetorno:
+            opcoes.drive.uriDeRetorno ?? 'https://app.exemplo.test/v1/drive/retorno',
           maxSimultaneos: opcoes.drive.maxSimultaneos ?? 2,
           pausaEntrePecasMs: opcoes.drive.pausaEntrePecasMs ?? 0,
           clock: clockDoDrive,
@@ -553,6 +582,8 @@ export function aplicacaoDeTeste(
     assinaturas,
     calendario,
     agendadorCalendario: undefined,
+    resumoDoCalendario,
+    agendadorResumoDoCalendario: undefined,
     custos,
     custosPorCliente,
     usuarios,

@@ -2,6 +2,7 @@ import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { ServicoAssinaturas } from '../../../application/services/ServicoAssinaturas.js';
 import type { ServicoCalendario } from '../../../application/services/ServicoCalendario.js';
+import type { ServicoResumoDoCalendario } from '../../../application/services/ServicoResumoDoCalendario.js';
 import {
   ESTADOS_DO_EVENTO,
   LIMITE_OBSERVACAO,
@@ -83,8 +84,20 @@ const corpoAlterar = z
   })
   .strict();
 
-const corpoAlterarFeed = z.object({ incluiSugeridos: z.boolean() }).strict();
-const corpoFeed = z.object({ incluiSugeridos: z.boolean().optional() }).strict();
+const lembretes = z
+  .object({ umDiaAntes: z.boolean(), umaHoraAntes: z.boolean() })
+  .strict();
+// PATCH: ao menos uma das duas opções (corpo vazio não muda nada e é erro de quem chamou).
+const corpoAlterarFeed = z
+  .object({ incluiSugeridos: z.boolean().optional(), lembretes: lembretes.optional() })
+  .strict()
+  .refine((c) => c.incluiSugeridos !== undefined || c.lembretes !== undefined, {
+    message: 'Informe incluiSugeridos ou lembretes.',
+  });
+const corpoResumo = z.object({ ativo: z.boolean() }).strict();
+const corpoFeed = z
+  .object({ incluiSugeridos: z.boolean().optional(), lembretes: lembretes.optional() })
+  .strict();
 
 /** `<token>.ics`. O token é base64url de 32 bytes (43 caracteres). */
 const ARQUIVO_DO_FEED = /^([A-Za-z0-9_-]{20,128})\.ics$/;
@@ -103,7 +116,10 @@ const ARQUIVO_DO_FEED = /^([A-Za-z0-9_-]{20,128})\.ics$/;
 export function rotasDoCalendario(
   servico: ServicoCalendario | undefined,
   assinaturas: ServicoAssinaturas | undefined,
-  opcoes: { readonly urlBase: string },
+  opcoes: {
+    readonly urlBase: string;
+    readonly resumo?: ServicoResumoDoCalendario | undefined;
+  },
 ): FastifyPluginAsync {
   return async (servidor) => {
     async function preparar(
@@ -191,7 +207,11 @@ export function rotasDoCalendario(
     servidor.post('/v1/calendario/feed', async (req, resposta) => {
       const { ws, cal } = await preparar(req);
       const c = corpoFeed.parse(req.body ?? {});
-      const { token, feed } = await cal.criarFeed(ws, c.incluiSugeridos ?? false);
+      const { token, feed } = await cal.criarFeed(
+        ws,
+        c.incluiSugeridos ?? false,
+        c.lembretes,
+      );
       void resposta.header('Cache-Control', 'no-store');
       return resposta.code(201).send({
         ...feedParaJson(feed),
@@ -208,14 +228,41 @@ export function rotasDoCalendario(
       return feed ? { existe: true, ...feedParaJson(feed) } : { existe: false };
     });
 
-    // Só a opção "incluir sugeridos"; o token (e a URL já assinada) não muda.
+    // Só as opções (sugeridos e lembretes); o token (e a URL já assinada) não muda.
     servidor.patch('/v1/calendario/feed', async (req) => {
       const { ws, cal } = await preparar(req);
       const c = corpoAlterarFeed.parse(req.body ?? {});
       return {
         existe: true,
-        ...feedParaJson(await cal.alterarFeed(ws, c.incluiSugeridos)),
+        ...feedParaJson(
+          await cal.alterarFeed(ws, {
+            ...(c.incluiSugeridos !== undefined
+              ? { incluiSugeridos: c.incluiSugeridos }
+              : {}),
+            ...(c.lembretes ? { lembretes: c.lembretes } : {}),
+          }),
+        ),
       };
+    });
+
+    /*
+     * Resumo por e-mail dos eventos a confirmar (v0.51.0). `disponivel` é a chave global: desligada (ou sem
+     * SMTP de verdade), a tela nem mostra a opção. A escolha é por workspace; sem linha = LIGADO.
+     */
+    servidor.get('/v1/calendario/resumo', async (req) => {
+      const { ws } = await preparar(req);
+      const r = opcoes.resumo;
+      if (!r?.habilitado) return { disponivel: false, ativo: false };
+      return { disponivel: true, ativo: await r.preferencia(ws) };
+    });
+
+    servidor.put('/v1/calendario/resumo', async (req) => {
+      const { ws } = await preparar(req);
+      const c = corpoResumo.parse(req.body ?? {});
+      const r = opcoes.resumo;
+      if (!r?.habilitado) return { disponivel: false, ativo: false };
+      await r.definirPreferencia(ws, c.ativo);
+      return { disponivel: true, ativo: c.ativo };
     });
 
     servidor.delete('/v1/calendario/feed', async (req) => {
@@ -245,12 +292,22 @@ export function rotasDoCalendario(
       async (req, resposta) => {
         const casou = ARQUIVO_DO_FEED.exec(req.params.arquivo);
         if (!casou?.[1] || !servico) throw new FeedDoCalendarioNaoEncontradoError();
-        const { eventos, agora } = await servico.eventosDoFeed(casou[1]);
+        const { eventos, agora, feed } = await servico.eventosDoFeed(casou[1]);
         return resposta
           .header('Content-Type', 'text/calendar; charset=utf-8')
           .header('Cache-Control', 'private, max-age=300')
           .header('Content-Disposition', 'inline; filename="processovivo.ics"')
-          .send(gerarIcs(eventos, { agora, urlBase: base(req) }));
+          .send(
+            gerarIcs(eventos, {
+              agora,
+              urlBase: base(req),
+              lembretes: feed.lembretes,
+              revisaoLembretes: feed.revisaoLembretes,
+              ...(feed.lembretesAlteradosEm
+                ? { lembretesAlteradosEm: feed.lembretesAlteradosEm }
+                : {}),
+            }),
+          );
       },
     );
   };
@@ -260,6 +317,7 @@ function feedParaJson(feed: FeedDoCalendario): Record<string, unknown> {
   return {
     criadoEm: feed.criadoEm.toISOString(),
     incluiSugeridos: feed.incluiSugeridos,
+    lembretes: feed.lembretes,
   };
 }
 

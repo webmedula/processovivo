@@ -276,6 +276,10 @@ const schema = z.object({
   // Nasce DESLIGADO; o dono liga. O escopo é um só (`drive.file`) e não tem variável: o sistema
   // só enxerga o que ele mesmo criou, e pedir mais não é configuração, é outro produto.
   PROCESSOVIVO_DRIVE_HABILITADO: booleano.default('false'),
+  // v0.51.0: resumo diário por e-mail dos eventos do calendário que esperam confirmação. Nasce DESLIGADO; o
+  // dono liga depois do deploy e da conferência (`calendario resumo-previa`). Só envia com SMTP de verdade
+  // (SMTP_HOST e SMTP_FROM): no modo log não há entrega, e "enviado" no log seria mentira.
+  PROCESSOVIVO_CALENDARIO_RESUMO_HABILITADO: booleano.default('false'),
   // Nomes nativos do Google (Cloud Console > Credenciais > ID do cliente OAuth). Exigidos SÓ com
   // o recurso habilitado. O segredo nunca vai a log, resposta ou mensagem de erro.
   GOOGLE_CLIENT_ID: z.string().default(''),
@@ -432,6 +436,10 @@ export interface Config {
     readonly variavelDeTesteFechadoPresente: boolean;
     /** Vazia quando a IA está desligada. */
     readonly chave: string;
+  };
+  readonly calendario: {
+    /** `PROCESSOVIVO_CALENDARIO_RESUMO_HABILITADO`. */
+    readonly resumoHabilitado: boolean;
   };
   readonly drive: {
     readonly habilitado: boolean;
@@ -669,6 +677,7 @@ export function carregarConfig(fonte: NodeJS.ProcessEnv = process.env): Config {
         (fonte['PROCESSOVIVO_IA_WORKSPACES_LIBERADOS'] ?? '').trim() !== '',
       chave: env.PROCESSOVIVO_IA_HABILITADA ? env.OPENROUTER_API_KEY.trim() : '',
     },
+    calendario: { resumoHabilitado: env.PROCESSOVIVO_CALENDARIO_RESUMO_HABILITADO },
     drive: {
       habilitado: env.PROCESSOVIVO_DRIVE_HABILITADO,
       clientId: env.PROCESSOVIVO_DRIVE_HABILITADO ? env.GOOGLE_CLIENT_ID.trim() : '',

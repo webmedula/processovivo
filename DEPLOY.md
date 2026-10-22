@@ -786,6 +786,44 @@ O plano IA (Peças + análise com IA) é vendido pelo mesmo caminho dos outros: 
    A coluna de custo médio é por modelo e versão do prompt. Análise que falhou antes de chegar ao modelo (sem plano,
    sigilo, teto) não gera linha; análise que o modelo não concluiu (erro) também não.
 
+## Calendário: lembretes no feed e resumo por e-mail (v0.51.0)
+
+Duas coisas novas, com controles diferentes.
+
+**1. Lembretes no feed (`VALARM`).** Não há variável: a pessoa escolhe em Calendário > Assinar no meu
+calendário (1 dia antes e/ou 1 hora antes). **Padrão: nenhum**, então o feed continua igual ao de antes até
+alguém escolher. Só eventos **confirmados** e ainda no futuro levam lembrete. Apple Calendário e Outlook
+costumam mostrá-los; o Google Agenda pode ignorá-los em calendários assinados por URL (a tela diz isso).
+
+**2. Resumo por e-mail dos eventos a confirmar.**
+
+```text
+PROCESSOVIVO_CALENDARIO_RESUMO_HABILITADO=false
+```
+
+- **Padrão: desligado.** É a chave GLOBAL: desligada, nenhum e-mail sai e a tela não mostra a opção.
+- Ligada, manda **um e-mail por conta, no máximo um por dia, entre 08:00 e 12:00 (São Paulo)**, só se houver
+  evento detectado novo para confirmar (ou que o andamento mais recente sugere rever). Cada conta pode
+  desligar em **Calendário > Resumo por e-mail** (o padrão da conta é ligado). O primeiro envio leva TUDO o
+  que já está esperando confirmação (até 10 itens listados e "e mais N").
+- **Só envia com SMTP de verdade** (`SMTP_HOST` e `SMTP_FROM`). Sem eles, o serviço não é montado e o log
+  avisa; o modo log não conta como entrega.
+- Conta de chave de API (sem e-mail) não recebe. O e-mail vai para o e-mail de LOGIN da conta.
+- Falha de envio não derruba nada: o item é tentado no máximo 3 vezes (a cada 15 min) e depois para.
+- Três tabelas novas e aditivas (preferência, itens avisados, envios); sem e-mail, sem texto, sem número.
+
+Para ligar com segurança: (1) faça o deploy com a chave **desligada**; (2) confira o painel e o feed (importe o
+feed no Apple Calendário ou no Outlook e veja o lembrete); (3) rode a prévia, que **não envia nada** e só
+mostra contagens:
+
+```bash
+npm run cli -- calendario resumo-previa
+# em produção (contêiner): node dist/main/cli.js calendario resumo-previa
+```
+
+(4) ligue `PROCESSOVIVO_CALENDARIO_RESUMO_HABILITADO=true` e faça o deploy; (5) confira o primeiro envio entre
+08:00 e 12:00. Para **desligar**, volte para `false` e faça o deploy: nada é apagado.
+
 ## Endpoints
 
 | Método | Rota | Auth | O que faz |

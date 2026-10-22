@@ -1,6 +1,6 @@
-# Calendário — especificação — v1.0.3
+# Calendário — especificação — v1.1.0
 
-Documento: `calendario-especificacao-v1.0.3` · 02/10/2026 · para o repositório `webmedula/processovivo`
+Documento: `calendario-especificacao-v1.1.0` · 02/10/2026 · para o repositório `webmedula/processovivo`
 (base: **v0.31.1**, já com o leitor na `main`; o calendário entra na próxima versão menor, **0.32.0**).
 
 ## 1. Objetivo
@@ -192,12 +192,13 @@ Atualizar o teste que fixa as chaves/rotas da API, se houver.
 1. `incluiSugeridos` no feed: desligado por padrão (**sim**).
 2. Descartado entra como `CANCELLED` por 30 dias no feed (**sim**).
 3. Backfill de 180 dias ao ativar (**sim**; 365 se preferir).
-4. Alertas por e-mail de audiência próxima: **versão futura** (Resend já existe).
+4. Alertas por e-mail de audiência próxima: **versão futura** (Resend já existe). A v1.1.0 (seção 17) entregou só o RESUMO dos eventos a confirmar; o aviso de evento próximo segue futuro.
 5. Eventos de prazo: só com data explícita; ligação com a calculadora de prazo fica para depois.
 6. Janela do feed: -30/+365 dias (**ok**).
 
 ## 14. Histórico de versões
 
+- **v1.1.0 (22/10/2026):** acrescenta a seção 17 — lembretes (`VALARM`) no feed e resumo por e-mail dos eventos a confirmar (v0.51.0). A seção 17 só ACRESCENTA: nada nas seções 4 a 12 mudou.
 - **v1.0.3 (02/10/2026):** acrescenta a seção 16 — redesignação com data nova gera sugestão; rota
   para alterar só "incluir sugeridos" do feed; o console passa a abrir `/?processo=<número>`. Onde a
   seção 16 e a seção 5 divergem, vale a 16.
@@ -252,3 +253,63 @@ Valem mais que as seções anteriores onde divergirem (em especial a seção 5, 
    processo (depois do login, se a pessoa chegou deslogada) e apaga o parâmetro da barra de
    endereço. Só número de 20 dígitos; o resto é ignorado. É o link que a descrição do evento no
    feed já usava.
+
+## 17. Lembretes no feed e resumo por e-mail (v0.51.0, decisões do dono, 22/10/2026)
+
+**Fora desta versão (não implementar):** e-mail de "audiência amanhã" para evento confirmado, push, WhatsApp, SMS,
+qualquer cálculo de prazo, mudança na detecção. O texto nunca afirma prazo: "data lida do andamento de dd/mm,
+confira no processo"; nada de "prazo fatal" nem "urgente".
+
+### 17.1 Lembretes no feed (camada 1)
+
+1. **Preferência por feed**, aditiva: `lembretes = { umDiaAntes, umaHoraAntes }`, padrão `false`/`false`. Colunas
+   novas em `calendario_feeds` (`lembrete_um_dia`, `lembrete_uma_hora`, `revisao_lembretes`,
+   `lembretes_alterados_em`). Rotas: `POST` (cria/regenera, aceita `lembretes`), `GET` e `PATCH`
+   `/v1/calendario/feed` (o `PATCH` aceita `incluiSugeridos` e/ou `lembretes`, `.strict()`, ao menos um campo).
+2. **No ICS:** `BEGIN:VALARM`, `ACTION:DISPLAY`, `DESCRIPTION` = `SUMMARY` do evento, `TRIGGER`. **Só** em evento
+   `confirmado` que ainda não começou (com hora: o início é depois de agora; dia inteiro: o dia é hoje ou depois);
+   nunca em `sugerido`, nunca em `CANCELLED`. Respeita a janela do feed (-30/+365), a dobra de 75 octetos e o CRLF.
+3. **`TRIGGER`:** com hora, relativo ao início (`-P1D`, `-PT1H`). Dia inteiro, **absoluto em UTC**, no fuso fixo
+   de São Paulo: "1 dia antes" = 12:00Z do dia anterior (09:00 SP); "1 hora antes" = 11:00Z do próprio dia (08:00 SP).
+   Motivo: `DTSTART` de dia inteiro é uma DATA, e o cliente leria "meia-noite" no fuso do aparelho.
+4. **Mudar a preferência chega ao aplicativo sem regravar evento:** `SEQUENCE` = `e.sequencia + revisao_lembretes`
+   e `DTSTAMP` = o maior entre `atualizadoEm` e `lembretes_alterados_em`; o `UID` não muda. Salvar a mesma
+   escolha não sobe a revisão. (Não é provado que cada aplicativo reaplica o alarme por isso; ver 17.4.)
+5. **Texto do painel** (honesto): "Apple Calendário e Outlook costumam mostrar estes lembretes. O Google Agenda
+   pode ignorá-los em calendários assinados por URL; se precisar, configure notificações dele em Configurações do
+   calendário > Notificações."
+
+### 17.2 Resumo por e-mail dos eventos a confirmar (camada 2)
+
+1. **Um e-mail por conta, no máximo um por dia**, a partir das 08:00 de São Paulo e até as 12:00 (servidor fora do
+   ar de manhã não manda o resumo à noite). Só se houver item **novo**: evento `detectado`, não descartado, com data
+   de hoje em diante, que é `sugerido` (motivo `novo`) ou tem `revisar` (motivo `revisar`, com a data da revisão como
+   chave: andamento de mudança mais novo é item novo). Um item nunca é avisado duas vezes.
+2. **Texto:** assunto "Processo Vivo: N evento(s) para você confirmar". Até 10 itens (tipo, data e hora ou "dia
+   inteiro", número CNJ; sigilo: "processo sigiloso", sem número), depois "e mais N". Cada item: "Data lida do
+   andamento de dd/mm, confira no processo." ou, com `revisar`, "O andamento mais recente sugere mudança, confira.".
+   Link "Revisar no calendário" (`/?calendario=resumo`) e a frase "Para deixar de receber este resumo: Calendário >
+   Resumo por e-mail." Sem nome de parte, trecho, título livre nem observação.
+3. **Controle:** `GET`/`PUT /v1/calendario/resumo` (`{ disponivel, ativo }`), padrão ligado (sem linha na tabela de
+   preferências = ligado), só para quem usa o calendário (tem o recurso e ao menos um evento detectado). Descadastro
+   só pelo painel nesta versão; **não há rota pública de descadastro**.
+4. **Chave global** `PROCESSOVIVO_CALENDARIO_RESUMO_HABILITADO`, padrão desligada. Sem SMTP de verdade o serviço
+   não é montado ("log não é entrega"). Conta de chave de API (sem e-mail) não recebe.
+5. **Idempotência e falhas:** tabelas `calendario_resumo_preferencias`, `calendario_resumo_itens` e
+   `calendario_resumo_envios` (só ids, datas e contagens). Envio com falha não marca nada como avisado, soma uma
+   tentativa por item (no máximo 3) e não derruba o agendador nem as outras contas; o log leva só contagens.
+6. **CLI:** `calendario resumo-previa` (só leitura): contas e itens que receberiam o resumo agora, sem e-mail nem
+   conteúdo.
+
+### 17.3 Onde entraria o futuro "aviso de evento próximo" (não implementado)
+
+No mesmo agendador de 15 min, lendo `eventos.listar` pelo relógio injetado, com um registro de "já avisado" por
+evento (a tabela de itens serve de modelo) e a mesma chave global/opt-out. Os dados já existem (`dataLocal`,
+`horaLocal`, `estado`, `segredoJustica`, `numeroProcesso`).
+
+### 17.4 O que os testes provam e o que não provam
+
+Provam: formato do ICS (inclusive o parse pelo ical.js), regras de quando o alarme sai, `SEQUENCE`/`DTSTAMP`/`UID`,
+regras e horários do resumo, idempotência, limites, isolamento e privacidade. **Não provam** o comportamento real
+do Apple Calendário, do Outlook nem do Google Agenda diante do `VALARM` (se o exibem, se reaplicam ao mudar a
+preferência, a que horas); isso só se confere abrindo o feed no aplicativo.
