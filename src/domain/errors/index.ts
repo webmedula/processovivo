@@ -845,6 +845,7 @@ export class AtoDaProvidenciaInvalidoError extends DomainError {
  * - `texto_indisponivel`: o tribunal avisou que o teor não é público — outro
  *   problema, outra frase: o advogado precisa abrir o processo no tribunal;
  * - `limite_de_uso`: limite por hora da conta, ou análises demais em curso;
+ * - `limite_diario`: o teto técnico de segurança do dia (v0.50.0) — não é limite do plano;
  * - `ato_nao_encontrado`: o ato saiu do retrato (a tela estava desatualizada).
  */
 export type MotivoDeEntradaNaoAnalisavel =
@@ -853,6 +854,7 @@ export type MotivoDeEntradaNaoAnalisavel =
   | 'texto_insuficiente'
   | 'texto_indisponivel'
   | 'limite_de_uso'
+  | 'limite_diario'
   | 'ato_nao_encontrado';
 
 export class EntradaNaoAnalisavelError extends DomainError {

@@ -189,6 +189,8 @@ export interface OpcoesAplicacaoDeTeste {
   readonly analiseIa?: {
     readonly analisador: AnalisadorDeAto;
     readonly porHora?: number;
+    /** Teto técnico do dia (v0.50.0). Ausente = sem teto diário. */
+    readonly porDia?: number;
     readonly simultaneasNoTotal?: number;
     readonly clock?: Clock;
   };
@@ -403,6 +405,7 @@ export function aplicacaoDeTeste(
         limite: new LimiteDeAnalises({
           porHora: opcoes.analiseIa.porHora ?? 100,
           simultaneasNoTotal: opcoes.analiseIa.simultaneasNoTotal ?? 10,
+          ...(opcoes.analiseIa.porDia !== undefined ? { porDia: opcoes.analiseIa.porDia } : {}),
           clock: opcoes.analiseIa.clock ?? {
             agora: () => (opcoes.agora ? opcoes.agora() : new Date()),
             monotonico: () => 0,

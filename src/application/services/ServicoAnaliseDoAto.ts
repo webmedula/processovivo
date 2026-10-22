@@ -5,7 +5,6 @@ import type {
   AvaliacaoDaAnalise,
   ResultadoDaAnalise,
 } from '../../domain/entities/AnaliseDoAto.js';
-import { mascararWorkspace } from '../../domain/entities/workspaceLiberado.js';
 import { NumeroCNJ } from '../../domain/entities/NumeroCNJ.js';
 import type { Processo } from '../../domain/entities/Processo.js';
 import type {
@@ -87,12 +86,6 @@ export interface OpcoesServicoAnaliseDoAto {
   readonly clock: Clock;
   readonly logger: Logger;
   readonly novoId: () => string;
-  /**
-   * EXCEÇÃO DE TESTE FECHADO (v0.38.1) — REMOVER ANTES DE ABRIR AO PÚBLICO.
-   * Workspaces que passam na checagem do plano SEM assinatura, só aqui. Vazio/ausente
-   * = só quem tem o plano IA vigente.
-   */
-  readonly workspacesLiberados?: ReadonlySet<string>;
 }
 
 export interface PedidoDeAnaliseDoAto {
@@ -110,17 +103,11 @@ export class ServicoAnaliseDoAto {
   }
 
   /**
-   * O plano IA, sem exceção para workspace sem assinatura. O workspace liberado por variável
-   * passa SEM assinatura (nada é gravado em `assinaturas`); quem não está na lista continua
-   * dependendo do plano. Público porque o aviso de prazo (v0.39.0) exige a MESMA regra.
+   * O plano IA, sem exceção para workspace sem assinatura e, desde a v0.50.0, sem a exceção de
+   * teste fechado: só quem tem `analiseIa` no plano vigente (assinado ou liberado à mão).
+   * Público porque o aviso de prazo (v0.39.0) e o resumo (v0.40.0) exigem a MESMA regra.
    */
   async exigirPlano(workspace: string): Promise<void> {
-    if (this.o.workspacesLiberados?.has(workspace) === true) {
-      this.log.info('análise liberada por exceção de teste fechado', {
-        workspace: mascararWorkspace(workspace),
-      });
-      return;
-    }
     if (!(await this.o.assinaturas.temRecursoSemExcecao(workspace, 'analiseIa'))) {
       throw new EntradaNaoAnalisavelError(
         'sem_plano',
@@ -182,6 +169,13 @@ export class ServicoAnaliseDoAto {
     // 5. Limite de uso (sem tabela). A vaga é liberada em qualquer desfecho.
     const vaga = this.o.limite.reservar(workspace);
     if ('negada' in vaga) {
+      // O teto do dia é outra frase: "em instantes" não resolve, e insistir não adianta.
+      if (vaga.negada === 'dia') {
+        throw new EntradaNaoAnalisavelError(
+          'limite_diario',
+          'Muitas análises hoje. Tente de novo amanhã ou fale com a gente.',
+        );
+      }
       throw new EntradaNaoAnalisavelError(
         'limite_de_uso',
         'Há muitas análises em andamento. Tente novamente em instantes.',

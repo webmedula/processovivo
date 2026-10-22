@@ -61,7 +61,7 @@ describe('ServicoAnaliseDoAto', () => {
   let relogio: ClockFalso;
 
   function servico(
-    opcoes: { porHora?: number; global?: number } = {},
+    opcoes: { porHora?: number; global?: number; porDia?: number } = {},
   ): ServicoAnaliseDoAto {
     return new ServicoAnaliseDoAto({
       repositorio: repo,
@@ -71,6 +71,7 @@ describe('ServicoAnaliseDoAto', () => {
       limite: new LimiteDeAnalises({
         porHora: opcoes.porHora ?? 100,
         simultaneasNoTotal: opcoes.global ?? 10,
+        ...(opcoes.porDia !== undefined ? { porDia: opcoes.porDia } : {}),
         clock: relogio,
       }),
       clock: relogio,
@@ -387,6 +388,72 @@ describe('ServicoAnaliseDoAto', () => {
       relogio.avancar(3_600_001);
       await s.analisar(pedido(WS_A));
       expect(analisador.chamadas).toBe(3);
+    });
+
+    it('teto técnico do dia (v0.50.0): recusa sem chamar o modelo, com a frase neutra; outra conta não é afetada; zera no dia seguinte de São Paulo', async () => {
+      // O relógio falso começa em 01/10/2026 12:00 UTC = 09:00 em São Paulo.
+      await semear(WS_A, [ATO]);
+      await semear(WS_B, [ATO]);
+      const s = servico({ porDia: 2 });
+      await s.analisar(pedido(WS_A));
+      await s.analisar(pedido(WS_A));
+      const erro = await s.analisar(pedido(WS_A)).catch((e: unknown) => e);
+      expect((erro as EntradaNaoAnalisavelError).motivo).toBe('limite_diario');
+      expect((erro as Error).message).toBe(
+        'Muitas análises hoje. Tente de novo amanhã ou fale com a gente.',
+      );
+      expect(analisador.chamadas).toBe(2);
+      // Isolamento: a outra conta tem o próprio teto.
+      await s.analisar(pedido(WS_B));
+      expect(analisador.chamadas).toBe(3);
+      // 23:59 em São Paulo (02:59 UTC do dia seguinte): ainda é o mesmo dia.
+      relogio.ms = new Date('2026-10-02T02:59:00.000Z').getTime();
+      expect(
+        (
+          (await s
+            .analisar(pedido(WS_A))
+            .catch((e: unknown) => e)) as EntradaNaoAnalisavelError
+        ).motivo,
+      ).toBe('limite_diario');
+      expect(analisador.chamadas).toBe(3);
+      // 00:00 em São Paulo: dia novo, zera.
+      relogio.ms = new Date('2026-10-02T03:00:00.000Z').getTime();
+      await s.analisar(pedido(WS_A));
+      expect(analisador.chamadas).toBe(4);
+      // A recusa não grava linha nenhuma.
+      expect(
+        (db.prepare('SELECT COUNT(*) AS n FROM analises_ia').get() as { n: number }).n,
+      ).toBe(4);
+    });
+
+    it('sem teto do dia configurado (o resumo usa assim), nada muda', async () => {
+      await semear(WS_A, [ATO]);
+      const s = servico();
+      for (let i = 0; i < 5; i++) await s.analisar(pedido(WS_A));
+      expect(analisador.chamadas).toBe(5);
+    });
+
+    it('um registro por análise com modelo, provedor, duração, tokens e custo — sem texto do ato nem dado pessoal', async () => {
+      await semear(WS_A, [ATO]);
+      relogio.avancar(0);
+      await servico().analisar(pedido());
+      const linha = db.prepare('SELECT * FROM analises_ia').get() as Record<
+        string,
+        unknown
+      >;
+      expect(linha).toMatchObject({
+        workspace: WS_A,
+        modelo: 'modelo/teste',
+        provedor: 'provedor-teste',
+        tokens_entrada: 400,
+        tokens_saida: 90,
+        custo_usd: 0.0002,
+      });
+      expect(linha['latencia_ms']).toBeTypeOf('number');
+      const gravado = JSON.stringify(linha);
+      expect(gravado).not.toContain(TEXTO_DO_ATO);
+      expect(gravado).not.toContain(NOME_DA_PARTE);
+      expect(gravado).not.toContain('98765-4321');
     });
 
     it('uma análise em andamento por conta e teto global baixo', async () => {

@@ -652,7 +652,7 @@ revogada ou de uma chave do `.env`; senão nada é gravado.
 **Cuidado com o vencimento:** assinatura de chave **vence como qualquer outra**. Passada a
 carência, o workspace é barrado em tudo (402), inclusive consulta e acompanhamento, e **não sai
 e-mail de aviso** (não há conta). Use `60` meses e anote a data que o comando imprime.
-**O plano IA continua fora de venda** — o recurso novo não muda isso.
+(Desde a v0.50.0 o plano IA pode ir à venda — ver "Plano IA à venda" abaixo; o Drive não muda isso.)
 
 O retorno do Google (`/v1/drive/retorno`) é uma navegação do navegador, sem `x-api-key` nem cookie:
 o dono da conexão sai do `state` assinado, emitido por `POST /v1/drive/conexao` (esse sim
@@ -759,6 +759,32 @@ plano há o campo **Ciclo de renovação**; hoje só `mensal` é vendável.
   workspace (ver a seção do Drive).
 
 ---
+
+## Plano IA à venda (v0.50.0)
+
+O plano IA (Peças + análise com IA) é vendido pelo mesmo caminho dos outros: site, app e checkout do Mercado Pago.
+**Nada liga sozinho**: a semente deixa o IA **fora de venda e sem preço**. Quem decide é o operador, no `/admin`.
+
+1. **Pré-requisitos no Easypanel:** `PROCESSOVIVO_IA_HABILITADA=true` e `OPENROUTER_API_KEY` (a análise em si) e a
+   cobrança ligada (seção do Mercado Pago acima). `PROCESSOVIVO_IA_HABILITADA=false` continua sendo a chave geral: desliga
+   o botão para todo mundo, inclusive para quem pagou.
+2. **Apague `PROCESSOVIVO_IA_WORKSPACES_LIBERADOS`** se ainda estiver lá. Ela não libera mais nada (só gera um aviso no
+   log). A conta que usava a IA por ela precisa do plano IA liberado no `/admin` → Assinaturas, **antes** do deploy.
+3. **`/admin` → Planos → IA → Editar:** preço `99,90` (ou o que decidir) e marque **à venda**. Sem preço o `/admin`
+   recusa ("Defina o preço antes de colocá-lo à venda"). O teste grátis não pode ser o plano IA (a regra recusa).
+4. **Teto técnico** (opcional): `PROCESSOVIVO_IA_MAX_POR_DIA` (padrão `200`) — análises por conta por dia (dia de São
+   Paulo), em memória. Não é limite do plano; é o freio contra uso anômalo. Atingido, a tela diz "Muitas análises hoje.
+   Tente de novo amanhã ou fale com a gente." e o modelo não é chamado. Os freios de antes (`PROCESSOVIVO_IA_MAX_POR_HORA`,
+   `PROCESSOVIVO_IA_MAX_SIMULTANEAS`) continuam. O teto de gasto de verdade continua sendo o limite da chave no OpenRouter.
+5. **Custo médio por análise:** cada análise concluída é uma linha em `analises_ia` (modelo, provedor, duração, tokens e
+   custo em US$ quando o OpenRouter informa; nenhum texto de ato). No Console do serviço:
+
+   ```bash
+   node scripts/ia-avaliacoes.mjs
+   ```
+
+   A coluna de custo médio é por modelo e versão do prompt. Análise que falhou antes de chegar ao modelo (sem plano,
+   sigilo, teto) não gera linha; análise que o modelo não concluiu (erro) também não.
 
 ## Endpoints
 

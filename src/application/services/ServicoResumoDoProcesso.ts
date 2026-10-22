@@ -84,7 +84,7 @@ export interface OpcoesServicoResumoDoProcesso {
   readonly repositorio: RepositorioAcompanhamentos;
   readonly resumos: RepositorioResumos;
   readonly resumidor: ResumidorDeProcesso;
-  /** A MESMA regra do plano IA da análise de ato (inclui a exceção de teste fechado). */
+  /** A MESMA regra do plano IA da análise de ato. */
   readonly exigirPlanoIa: (workspace: string) => Promise<void>;
   readonly limite: LimiteDeAnalises;
   readonly clock: Clock;

@@ -156,7 +156,13 @@ export function construirServidor(app: Aplicacao, config: Config): FastifyInstan
   void servidor.register(rotasDeProcesso(app));
   void servidor.register(rotasDeAcompanhamento(app.acompanhamento, config.telas));
   void servidor.register(rotasDePecas(app.pecas, app.assinaturas));
-  void servidor.register(rotasDaAnaliseIA(app.analiseIa, app.avisoDoPrazo));
+  void servidor.register(
+    rotasDaAnaliseIA(app.analiseIa, app.avisoDoPrazo, {
+      planos: app.planos,
+      usuarios: app.usuarios,
+      pagamentoDisponivel: app.pagamentos !== undefined,
+    }),
+  );
   void servidor.register(rotasDoResumoIA(app.resumoDoProcesso));
   void servidor.register(rotasDoLeitor(app.leitor, app.assinaturas));
   void servidor.register(rotasDaPasta(app.pasta, app.assinaturas));

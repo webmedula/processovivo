@@ -9,7 +9,9 @@
  *   ou calendário, e nenhuma ação depende do resultado. O aviso fixo diz isso;
  * - o pedido leva SÓ a chave do ato; o texto é lido pelo servidor, do retrato da conta;
  * - a IA desligada (padrão) não deixa botão nenhum na página; conta sem o plano IA vê o
- *   botão e, ao clicar, a frase fixa de upgrade — sem promessa de link de compra;
+ *   botão e, ao clicar, a frase fixa de upgrade. Desde a v0.50.0 a frase ganha "Ver planos"
+ *   (leva a "Minha conta") SÓ quando o servidor diz que há plano com IA contratável agora
+ *   (`oferta: 'ver_planos'`); conta de chave de API lê "Fale com a gente", sem link;
  * - a resposta demora (p50 ~29 s, p95 ~52 s com raciocínio ligado): o estado "analisando"
  *   diz isso e oferece Cancelar, que aborta a requisição (e, no servidor, a chamada ao modelo);
  * - toda frase de recusa é FIXA aqui — nunca texto do modelo; o resultado verificado traz
@@ -30,7 +32,7 @@ var pv=function(){return window.__pv};
 function esc(s){return pv().esc(s)}
 function digitos(n){return String(n||'').replace(/\D/g,'')}
 
-var D={habilitada:null,promessa:null};
+var D={habilitada:null,promessa:null,oferta:'nenhuma'};
 var E={};
 var L={redesenhar:function(){},anunciar:function(){}};
 
@@ -54,6 +56,7 @@ var RECUSAS={
   texto_insuficiente:'Este ato não traz texto suficiente para analisar. Leia o ato.',
   texto_indisponivel:'O tribunal não liberou o texto deste ato. Abra o processo no tribunal.',
   limite_de_uso:'Há muitas análises em andamento. Tente novamente em instantes.',
+  limite_diario:'Muitas análises hoje. Tente de novo amanhã ou fale com a gente.',
   ato_nao_encontrado:'Esse ato não está mais no último retrato do processo. Atualize a tela e confira de novo.'
 };
 var NAO_VERIFICADO='Não foi possível analisar com segurança. Leia o ato.';
@@ -69,6 +72,20 @@ var MSG_AVISO={
   sem_plano:RECUSAS.sem_plano
 };
 var AVALIACOES=[['util','Útil'],['errado','Errado'],['perigoso','Perigoso']];
+var SEM_PLANO_CHAVE=' Fale com a gente para contratar.';
+
+/* A frase de "sem plano" com a oferta que o servidor indicou (v0.50.0). Conta de chave de API não assina
+   online: troca o "Faça upgrade" pelo "Fale com a gente". Só "ver_planos" ganha o botão, que leva a "Minha
+   conta", onde estão os planos contratáveis; sem plano com IA à venda, a frase de sempre, sem link. Serve
+   também ao resumo (resumoIA.ts), que passa a frase dele. */
+function semPlano(frase,classe){
+  var h='<p class="'+(classe||'pvia-estado')+'">'+esc(textoSemPlano(frase))+'</p>';
+  if(D.oferta==='ver_planos')h+='<p><button type="button" class="nov-btn" data-pv-planos="1">Ver planos</button></p>';
+  return h;
+}
+function textoSemPlano(frase){
+  return D.oferta==='fale_conosco'?String(frase).replace(/ Faça upgrade do plano para usar\.$/,'')+SEM_PLANO_CHAVE:frase;
+}
 
 /* Pergunta uma vez por página se a IA está ligada. Falha de rede = desligada (sem botão). */
 function carregar(){
@@ -77,7 +94,10 @@ function carregar(){
   if(k)h['x-api-key']=k;
   D.promessa=fetch('/v1/analises/disponibilidade',{headers:h})
     .then(function(r){return r.ok?r.json():{habilitada:false}})
-    .then(function(b){D.habilitada=b.habilitada===true;return D.habilitada},
+    .then(function(b){
+      D.habilitada=b.habilitada===true;
+      D.oferta=(b.oferta==='ver_planos'||b.oferta==='fale_conosco')?b.oferta:'nenhuma';
+      return D.habilitada},
       function(){D.habilitada=false;return false});
   return D.promessa;
 }
@@ -208,6 +228,8 @@ function corpo(n){
     h+=blocoResultado(n,e);
   }else if(e.fase==='nao_verificada'){
     h+='<p class="pvia-estado">'+esc(NAO_VERIFICADO)+'</p>';
+  }else if(e.fase==='recusa'&&e.motivo==='sem_plano'){
+    h+=semPlano(RECUSAS.sem_plano);
   }else if(e.fase==='recusa'){
     h+='<p class="pvia-estado">'+esc(RECUSAS[e.motivo]||ERRO)+'</p>';
   }else{
@@ -263,7 +285,7 @@ function iniciar(n){
       if(x.ok&&x.b.estado==='verificada'){e.fase='resultado';e.dados=x.b;refrescar(n,'Análise concluída. Confira no ato.');return}
       if(x.ok&&x.b.estado==='nao_verificada'){e.fase='nao_verificada';refrescar(n,NAO_VERIFICADO);return}
       var motivo=x.b&&x.b.detalhes?x.b.detalhes.motivo:'';
-      if(!x.ok&&motivo&&RECUSAS[motivo]){e.fase='recusa';e.motivo=motivo;refrescar(n,RECUSAS[motivo]);return}
+      if(!x.ok&&motivo&&RECUSAS[motivo]){e.fase='recusa';e.motivo=motivo;refrescar(n,motivo==='sem_plano'?textoSemPlano(RECUSAS.sem_plano):RECUSAS[motivo]);return}
       e.fase='erro';refrescar(n,ERRO);
     })
     .catch(function(err){
@@ -413,6 +435,15 @@ document.addEventListener('change',function(ev){
   if(b)b.disabled=false;
 });
 
+/* "Ver planos" (v0.50.0): vai a "Minha conta", onde ficam os planos contratáveis. Um ouvinte só, para o
+   painel da análise e o do resumo. */
+document.addEventListener('click',function(ev){
+  var b=ev.target&&ev.target.closest?ev.target.closest('[data-pv-planos]'):null;
+  if(!b)return;
+  ev.preventDefault();
+  if(window.__processovivo_ir)window.__processovivo_ir('conta');
+});
+
 /* Esc fecha o painel em que o foco está e devolve o foco ao botão da linha. */
 document.addEventListener('keydown',function(ev){
   if(ev.key!=='Escape')return;
@@ -423,7 +454,8 @@ document.addEventListener('keydown',function(ev){
   if(n&&E[n]){ev.preventDefault();fechar(n,E[n].fase==='analisando'?'Análise cancelada.':'')}
 });
 
-window.__pvAnaliseIA={carregar:carregar,habilitada:habilitada,ligar:ligar,botao:botao,painel:painel,clicar:clicar};
+window.__pvAnaliseIA={carregar:carregar,habilitada:habilitada,ligar:ligar,botao:botao,painel:painel,clicar:clicar,
+  semPlano:semPlano,textoSemPlano:textoSemPlano};
 })();
 `;
 

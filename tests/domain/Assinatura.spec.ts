@@ -83,23 +83,52 @@ describe('Plano — a semente', () => {
 });
 
 describe('Plano — validação', () => {
-  it('a análise com IA está marcada como AINDA NÃO EXISTENTE', () => {
-    /*
-     * O teste que protege a promessa. Antes (até a v0.27.0) a trava era um
-     * `false` fixo no plano de IA; agora é do RECURSO, e vale para qualquer
-     * plano que o inclua — inclusive um criado pelo painel. Quando a análise
-     * ficar pronta, este teste falha e é a hora de mudá-lo conscientemente.
-     */
-    expect(RECURSOS.find((r) => r.recurso === 'analiseIa')?.implementado).toBe(false);
+  /*
+   * REESCRITOS na v0.50.0 (decisão do dono: vender o plano IA). Estes dois testes fixavam `analiseIa` como
+   * "ainda não existente" e o plano IA como invendável — e disseram, no próprio comentário, que falhariam no
+   * dia em que a análise ficasse pronta. A trava fixa virou regra de DADO: o plano com IA vai à venda com
+   * preço e "à venda" no /admin, e sem preço continua recusado (o recurso custa a cada uso).
+   */
+  it('a análise com IA existe e é cobrada por uso', () => {
+    const ia = RECURSOS.find((r) => r.recurso === 'analiseIa');
+    expect(ia?.implementado).toBe(true);
+    expect(ia?.cobradoPorUso).toBe(true);
+    // Só ela: nenhum outro recurso ganhou a regra por tabela.
+    expect(RECURSOS.filter((r) => r.cobradoPorUso === true).map((r) => r.recurso)).toEqual([
+      'analiseIa',
+    ]);
   });
 
-  it('recusa colocar à venda um plano com recurso que não existe', () => {
+  it('plano com IA: sem preço ou sem "à venda" não se vende; com os dois, vende', () => {
     expect(() => validarPlano({ ...IA, disponivelParaContratacao: true })).toThrow(
-      PlanoInvalidoError,
+      /Defina o preço/,
     );
     expect(() =>
-      validarPlano(plano({ recursos: ['consulta', 'analiseIa'], disponivelParaContratacao: true })),
-    ).toThrow(/ainda não existe/);
+      validarPlano({ ...IA, disponivelParaContratacao: true, precoMensalCentavos: 0 }),
+    ).toThrow(PlanoInvalidoError);
+    expect(() =>
+      validarPlano(
+        plano({
+          recursos: ['consulta', 'analiseIa'],
+          disponivelParaContratacao: true,
+          precoMensalCentavos: null,
+        }),
+      ),
+    ).toThrow(/Defina o preço/);
+    // Com preço e à venda: válido, e entra em `planosAVenda`.
+    const vendavel = { ...IA, disponivelParaContratacao: true, precoMensalCentavos: 9990 };
+    expect(() => validarPlano(vendavel)).not.toThrow();
+    expect(planosAVenda([ACOMPANHAMENTO, PECAS, vendavel]).map((p) => p.codigo)).toEqual([
+      'acompanhamento',
+      'pecas',
+      'ia',
+    ]);
+    // Com preço e FORA de venda: válido, e fica fora da lista.
+    expect(planosAVenda([{ ...vendavel, disponivelParaContratacao: false }])).toEqual([]);
+  });
+
+  it('o plano IA é exatamente o Peças mais a análise com IA', () => {
+    expect([...IA.recursos].sort()).toEqual([...PECAS.recursos, 'analiseIa'].sort());
   });
 
   it('o mesmo plano, pausado, é válido — pode ser modelado antes de existir', () => {
@@ -151,11 +180,22 @@ describe('Regras de assinatura — validação', () => {
     ['carência negativa', { diasDeCarencia: -1 }],
     ['carência de 61 dias', { diasDeCarencia: 61 }],
     ['plano do teste inexistente', { planoDoTeste: 'platina' }],
-    ['plano do teste com recurso que não existe', { planoDoTeste: 'ia' }],
+    // v0.50.0: o motivo mudou (a IA existe; o que impede é custar a cada uso), o resultado não.
+    ['plano do teste com a análise por IA (custa a cada uso)', { planoDoTeste: 'ia' }],
   ])('recusa %s', (_nome, mudancas) => {
     expect(() => validarRegras({ ...REGRAS_PADRAO, ...mudancas }, PLANOS_INICIAIS)).toThrow(
       RegrasDeAssinaturaInvalidasError,
     );
+  });
+
+  it('o teste nunca dá a IA, nem com o plano IA à venda e com preço (v0.50.0)', () => {
+    const vendavel = { ...IA, disponivelParaContratacao: true, precoMensalCentavos: 9990 };
+    expect(() =>
+      validarRegras({ ...REGRAS_PADRAO, planoDoTeste: 'ia' }, [ACOMPANHAMENTO, PECAS, vendavel]),
+    ).toThrow(/custa a cada uso/);
+    // O padrão continua sendo o Peças, que não inclui a análise.
+    expect(REGRAS_PADRAO.planoDoTeste).toBe('pecas');
+    expect(PECAS.recursos).not.toContain('analiseIa');
   });
 
   it('aceita carência zero e teste no plano mais simples', () => {
@@ -347,10 +387,11 @@ describe('Plano — recursos (v0.32.0)', () => {
       ['vigilancia', true],
       ['calendario', true],
       ['pecas', true],
-      ['analiseIa', false],
+      // v0.50.0: a análise por IA existe (`true`, era `false`); a venda do plano IA é decidida por
+      // dado (preço e "à venda" no /admin), ver `cobradoPorUso`.
+      ['analiseIa', true],
       // v0.42.0: o envio ao Google Drive existe (`true`); quem o liga é a variável
-      // PROCESSOVIVO_DRIVE_HABILITADO (desligada por padrão). A trava da VENDA do plano IA
-      // continua sendo `analiseIa` — o recurso novo não a destrava.
+      // PROCESSOVIVO_DRIVE_HABILITADO (desligada por padrão).
       ['salvarNoDrive', true],
       // v0.47.0: o centro de custos existe e entra em todos os planos (decisão do dono).
       ['custosDoProcesso', true],

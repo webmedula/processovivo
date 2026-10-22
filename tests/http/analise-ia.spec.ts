@@ -43,7 +43,7 @@ function config() {
   } as NodeJS.ProcessEnv);
 }
 
-async function montar(comIa: boolean): Promise<void> {
+async function montar(comIa: boolean, porDia?: number): Promise<void> {
   agora = new Date('2026-10-05T15:00:00.000Z');
   analisador = new AnalisadorFalso();
   app = aplicacaoDeTeste(
@@ -59,7 +59,12 @@ async function montar(comIa: boolean): Promise<void> {
           }),
       }),
     ],
-    { agora: () => agora, ...(comIa ? { analiseIa: { analisador } } : {}) },
+    {
+      agora: () => agora,
+      ...(comIa
+        ? { analiseIa: { analisador, ...(porDia !== undefined ? { porDia } : {}) } }
+        : {}),
+    },
   );
   servidor = construirServidor(app, config());
   await app.acompanhamento.acompanhar(WS_A, NUMERO_TJSP_A);
@@ -130,7 +135,7 @@ describe('IA habilitada — plano', () => {
     expect(analisador.chamadas).toBe(1);
   });
 
-  it('plano IA (mesmo fora de venda, liberado à mão): analisa, devolve com procedência e NÃO altera o retrato', async () => {
+  it('plano IA (liberado à mão, inclusive fora de venda): analisa, devolve com procedência e NÃO altera o retrato', async () => {
     await app.assinaturas.liberar({ workspace: WS_A, plano: 'ia', meses: 1 });
     const antes = await servidor.inject({
       method: 'GET',
@@ -266,5 +271,21 @@ describe('cancelamento pelo cliente', () => {
     await new Promise((r) => setTimeout(r, 50));
     servidor.server.closeAllConnections();
     expect(sinalVisto?.aborted).toBe(true);
+  });
+});
+
+describe('IA habilitada — teto técnico do dia (v0.50.0)', () => {
+  beforeEach(() => montar(true, 1));
+
+  it('acima do teto: 429 com motivo `limite_diario`, frase neutra e nenhuma chamada a mais ao modelo', async () => {
+    await app.assinaturas.liberar({ workspace: WS_A, plano: 'ia', meses: 1 });
+    expect((await analisar()).statusCode).toBe(200);
+    const r = await analisar();
+    expect(r.statusCode).toBe(429);
+    expect(r.json()).toMatchObject({
+      mensagem: 'Muitas análises hoje. Tente de novo amanhã ou fale com a gente.',
+      detalhes: { motivo: 'limite_diario' },
+    });
+    expect(analisador.chamadas).toBe(1);
   });
 });

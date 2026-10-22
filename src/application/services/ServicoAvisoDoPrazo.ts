@@ -45,7 +45,7 @@ export interface OpcoesServicoAvisoDoPrazo {
   readonly analises: RepositorioAnalises;
   readonly repositorio: RepositorioAcompanhamentos;
   readonly calendario: ServicoCalendario;
-  /** A mesma regra do plano IA da análise (inclui a exceção de teste fechado). */
+  /** A mesma regra do plano IA da análise. */
   readonly exigirPlanoIa: (workspace: string) => Promise<void>;
   /** O recurso `calendario` do plano. */
   readonly exigirCalendario: (workspace: string) => Promise<void>;

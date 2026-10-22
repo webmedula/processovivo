@@ -4,6 +4,7 @@ import { motivoDeNaoContratar } from '../../../application/services/ServicoPagam
 import {
   cicloDoPlano,
   descricaoDoRecurso,
+  planoInclui,
   valorDoCicloEmCentavos,
 } from '../../../domain/entities/Plano.js';
 import type { Plano } from '../../../domain/entities/Plano.js';
@@ -24,6 +25,8 @@ export interface PlanoDaVitrine {
   readonly preco: { readonly valorCentavos: number; readonly ciclo: string } | null;
   /** O plano pode ser contratado agora (à venda, ciclo vendável, com preço). O site ainda confere `pagamentoDisponivel`. */
   readonly assinavel: boolean;
+  /** v0.50.0: o plano inclui a análise com IA — o site destaca, e avisa que o teste grátis não a inclui. */
+  readonly incluiAnaliseIa: boolean;
 }
 
 /** Só o que o site pode mostrar. Nenhum id de banco, contagem, ordem interna ou configuração. */
@@ -36,6 +39,7 @@ export function planoParaVitrine(p: Plano): PlanoDaVitrine {
     recursos: p.recursos.map((r) => descricaoDoRecurso(r).nome),
     preco: valor === null ? null : { valorCentavos: valor, ciclo: cicloDoPlano(p) },
     assinavel: motivoDeNaoContratar(p) === undefined,
+    incluiAnaliseIa: planoInclui(p, 'analiseIa'),
   };
 }
 

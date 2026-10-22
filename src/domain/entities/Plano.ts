@@ -48,12 +48,17 @@ export interface DescricaoDoRecurso {
    * reembolso — volta como reclamação formal. Virar para `true` é o passo
    * consciente de quando a análise existir.
    *
-   * v0.38.0: a análise por IA EXISTE, mas em teste fechado — funciona para a conta que o
-   * operador liberou à mão no plano IA (`ServicoAnaliseDoAto` exige o plano, sem exceção),
-   * e continua `false` aqui: o que esta trava impede é colocar à VENDA, não usar. Virar
-   * `true` é decisão do dono, depois da avaliação com uso real.
+   * v0.38.0: a análise por IA existia em teste fechado e ficou `false` aqui até a v0.50.0,
+   * quando o dono decidiu vendê-la: desde então a venda do plano IA é decidida por DADO (preço
+   * e "à venda" no /admin), com a trava de `cobradoPorUso` abaixo.
    */
   readonly implementado: boolean;
+  /**
+   * Recurso que custa dinheiro a CADA uso (chamada paga a terceiro) — hoje só `analiseIa`
+   * (v0.50.0, decisão do dono). Plano que o inclui só vai à venda COM preço (nunca "valor sob
+   * consulta" na vitrine nem checkout sem valor) e nunca é o plano do teste grátis.
+   */
+  readonly cobradoPorUso?: boolean;
 }
 
 export const RECURSOS: readonly DescricaoDoRecurso[] = Object.freeze([
@@ -77,7 +82,13 @@ export const RECURSOS: readonly DescricaoDoRecurso[] = Object.freeze([
     implementado: true,
   },
   { recurso: 'pecas', nome: 'Peças do processo', frase: 'as peças do processo', implementado: true },
-  { recurso: 'analiseIa', nome: 'Análise com IA', frase: 'a análise com IA', implementado: false },
+  {
+    recurso: 'analiseIa',
+    nome: 'Análise com IA',
+    frase: 'a análise com IA',
+    implementado: true,
+    cobradoPorUso: true,
+  },
   // v0.42.0: grava as peças da Pasta digital no Google Drive do advogado. `implementado: true`
   // porque a funcionalidade existe; quem a liga é `PROCESSOVIVO_DRIVE_HABILITADO`, que nasce
   // desligada — o recurso no plano é inofensivo enquanto o operador não ligar.
@@ -111,6 +122,10 @@ export function descricaoDoRecurso(recurso: RecursoDoPlano): DescricaoDoRecurso 
 
 export function recursoImplementado(recurso: RecursoDoPlano): boolean {
   return descricaoDoRecurso(recurso).implementado;
+}
+
+export function recursoCobradoPorUso(recurso: RecursoDoPlano): boolean {
+  return descricaoDoRecurso(recurso).cobradoPorUso === true;
 }
 
 /** Texto livre desde a v0.28.0 — o conjunto de códigos vem do banco. */
@@ -230,8 +245,8 @@ export const PLANOS_INICIAIS: readonly Plano[] = Object.freeze([
     nome: 'IA',
     resumo: 'Tudo do Peças, mais análise do processo com sugestões.',
     recursos: Object.freeze([...BASE, 'pecas', 'analiseIa', 'salvarNoDrive'] as const),
-    // Não pode ficar à venda enquanto `analiseIa` não estiver implementado —
-    // `validarPlano` recusa, venha a tentativa do código ou do painel.
+    // Nasce fora de venda e sem preço: quem o põe à venda é o operador, no /admin, junto com o
+    // preço (v0.50.0) — `validarPlano` recusa "à venda" sem preço para plano com recurso cobrado por uso.
     disponivelParaContratacao: false,
     precoMensalCentavos: null,
     ordem: 30,
@@ -294,6 +309,16 @@ export function validarPlano(plano: Plano): void {
         `O plano ${nome} inclui ${ausentes.map((r) => descricaoDoRecurso(r).frase).join(', ')}, ` +
           'que ainda não existe no sistema. Plano com recurso que não funciona não pode ' +
           'ser colocado à venda.',
+      );
+    }
+    const cobrados = plano.recursos.filter(recursoCobradoPorUso);
+    if (
+      cobrados.length > 0 &&
+      (plano.precoMensalCentavos === null || plano.precoMensalCentavos <= 0)
+    ) {
+      throw new PlanoInvalidoError(
+        `O plano ${nome} inclui ${cobrados.map((r) => descricaoDoRecurso(r).frase).join(', ')}, ` +
+          'que custa a cada uso. Defina o preço antes de colocá-lo à venda.',
       );
     }
   }

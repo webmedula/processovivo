@@ -4,7 +4,6 @@ import type { NivelLog } from '../../domain/ports/Logger.js';
 import type { NivelDeRaciocinio } from '../adapters/modelo/TransporteOpenRouter.js';
 import { ehApelidoOuVariante } from '../adapters/modelo/endpointsZdr.js';
 import { pareceValorDeExemplo } from './placeholder.js';
-import { FORMATO_DE_WORKSPACE } from '../../domain/entities/workspaceLiberado.js';
 
 /**
  * Configuração validada no arranque.
@@ -248,11 +247,6 @@ const schema = z.object({
   // Nasce DESLIGADA. Não existe variável para desligar a retenção zero (ZDR): ela é
   // exigida em toda chamada, e sem ela a chamada não sai.
   PROCESSOVIVO_IA_HABILITADA: booleano.default('false'),
-  // EXCEÇÃO DE TESTE FECHADO (v0.38.1) — REMOVER ANTES DE ABRIR AO PÚBLICO. Ids de workspace
-  // (16 hex) separados por vírgula que passam na checagem do plano IA SEM assinatura, só para
-  // `analiseIa`. Não cria linha em `assinaturas`, não muda nenhum outro recurso e não dispensa
-  // PROCESSOVIVO_IA_HABILITADA nem as demais travas. Vazia = comportamento de sempre.
-  PROCESSOVIVO_IA_WORKSPACES_LIBERADOS: z.string().default(''),
   // Um modelo REAL do OpenRouter (sem `~` nem `:`). É configuração, nunca constante no código.
   PROCESSOVIVO_IA_MODELO: z.string().default('deepseek/deepseek-v4-flash'),
   // Raciocínio do modelo: desligado por padrão (latência medida p50 29 s / p95 52 s com ele ligado).
@@ -267,6 +261,9 @@ const schema = z.object({
   // Freio por conta, em memória (reiniciar zera). O teto real de gasto é o limite da chave.
   PROCESSOVIVO_IA_MAX_POR_HORA: inteiroPositivo(20),
   PROCESSOVIVO_IA_MAX_SIMULTANEAS: inteiroPositivo(3),
+  // Teto TÉCNICO de segurança por conta e por dia (v0.50.0), em memória, contado no dia de São
+  // Paulo. Não é limite do plano (a venda não tem cota mensal): é o freio contra uso anômalo.
+  PROCESSOVIVO_IA_MAX_POR_DIA: inteiroPositivo(200),
   // Resumo de processo (v0.40.0): mais caro que a análise de um ato (5 a 6 vezes a entrada).
   // Freio próprio por conta, em memória; a saída maior e a espera maior têm teto próprio.
   PROCESSOVIVO_IA_RESUMO_MAX_POR_HORA: inteiroPositivo(6),
@@ -426,8 +423,13 @@ export interface Config {
     readonly resumoMaxPorHora: number;
     readonly resumoMaxTokens: number;
     readonly resumoTimeoutMs: number;
-    /** Exceção de teste fechado (v0.38.1): ids já validados, minúsculos e sem repetição. */
-    readonly workspacesLiberados: readonly string[];
+    /** Teto técnico por conta e por dia (v0.50.0). */
+    readonly maxPorDia: number;
+    /**
+     * A variável da antiga exceção de teste fechado (removida na v0.50.0) ainda está no ambiente.
+     * Não tem efeito; o composition root avisa no log para o operador apagá-la.
+     */
+    readonly variavelDeTesteFechadoPresente: boolean;
     /** Vazia quando a IA está desligada. */
     readonly chave: string;
   };
@@ -551,8 +553,6 @@ export function carregarConfig(fonte: NodeJS.ProcessEnv = process.env): Config {
   validarConfiguracaoDaIa(env);
   validarConfiguracaoDoDrive(env);
   validarConfiguracaoDoPagamento(env, fonte['NODE_ENV'] === 'production');
-  // Validada mesmo com a IA desligada: erro de digitação aparece no deploy, não no dia de ligar.
-  lerWorkspacesLiberados(env.PROCESSOVIVO_IA_WORKSPACES_LIBERADOS);
   return {
     cadeiaDeProviders: env.PROCESSOVIVO_PROVIDER_CHAIN.split(',')
       .map((s) => s.trim())
@@ -664,9 +664,9 @@ export function carregarConfig(fonte: NodeJS.ProcessEnv = process.env): Config {
       resumoMaxPorHora: env.PROCESSOVIVO_IA_RESUMO_MAX_POR_HORA,
       resumoMaxTokens: env.PROCESSOVIVO_IA_RESUMO_MAX_TOKENS,
       resumoTimeoutMs: env.PROCESSOVIVO_IA_RESUMO_TIMEOUT_MS,
-      workspacesLiberados: lerWorkspacesLiberados(
-        env.PROCESSOVIVO_IA_WORKSPACES_LIBERADOS,
-      ),
+      maxPorDia: env.PROCESSOVIVO_IA_MAX_POR_DIA,
+      variavelDeTesteFechadoPresente:
+        (fonte['PROCESSOVIVO_IA_WORKSPACES_LIBERADOS'] ?? '').trim() !== '',
       chave: env.PROCESSOVIVO_IA_HABILITADA ? env.OPENROUTER_API_KEY.trim() : '',
     },
     drive: {
@@ -911,25 +911,6 @@ function validarConfiguracaoDoDrive(env: z.infer<typeof schema>): void {
       `Configuração inválida:\n${problemas.map((p) => `  - ${p}`).join('\n')}`,
     );
   }
-}
-
-/**
- * Lê PROCESSOVIVO_IA_WORKSPACES_LIBERADOS: 16 hex por item, minúsculas, sem repetição.
- * Item fora do formato derruba o arranque dizendo QUAL (pela posição) — o valor NUNCA é
- * ecoado, porque quem cola a chave de API inteira no lugar do id deixaria o segredo
- * no log do contêiner.
- */
-function lerWorkspacesLiberados(valor: string): string[] {
-  const itens = listaSeparadaPorVirgula(valor).map((s) => s.toLowerCase());
-  const ruins = itens.flatMap((id, i) => (FORMATO_DE_WORKSPACE.test(id) ? [] : [i + 1]));
-  if (ruins.length > 0) {
-    throw new Error(
-      'Configuração inválida:\n  - PROCESSOVIVO_IA_WORKSPACES_LIBERADOS: ' +
-        `item ${ruins.join(', ')} fora do formato (use ids de workspace com 16 caracteres ` +
-        'hexadecimais, separados por vírgula; não cole a chave de API)',
-    );
-  }
-  return [...new Set(itens)];
 }
 
 /**

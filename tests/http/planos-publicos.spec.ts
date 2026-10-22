@@ -83,7 +83,7 @@ describe('GET /v1/planos — a vitrine pública', () => {
     expect(pecas['assinavel']).toBe(false);
   });
 
-  it('não expõe NENHUM campo interno: só slug, nome, resumo, recursos, preço e assinável', async () => {
+  it('não expõe NENHUM campo interno: só slug, nome, resumo, recursos, preço, assinável e se inclui IA', async () => {
     const { servidor: s, app } = montar({ pagamento: true });
     await app.planos.atualizar('pecas', { precoMensalCentavos: 4990 });
     const r = await s.inject({ method: 'GET', url: '/v1/planos' });
@@ -92,6 +92,8 @@ describe('GET /v1/planos — a vitrine pública', () => {
     for (const p of corpo['planos'] as Array<Record<string, unknown>>) {
       expect(Object.keys(p).sort()).toEqual([
         'assinavel',
+        // v0.50.0 (aditivo): o site destaca o plano com análise por IA e avisa que o teste não a inclui.
+        'incluiAnaliseIa',
         'nome',
         'preco',
         'recursos',
