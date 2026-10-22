@@ -24,7 +24,10 @@ import {
 } from '../../domain/errors/index.js';
 import type { AnalisadorDePeca } from '../../domain/ports/AnalisadorDePeca.js';
 import type { Clock } from '../../domain/ports/Clock.js';
-import type { ExtratorDeTextoDePdf } from '../../domain/ports/ExtratorDeTextoDePdf.js';
+import type {
+  ExtratorDeTextoDePdf,
+  TextoExtraido,
+} from '../../domain/ports/ExtratorDeTextoDePdf.js';
 import type { Logger } from '../../domain/ports/Logger.js';
 import type { RepositorioAcompanhamentos } from '../../domain/ports/RepositorioAcompanhamentos.js';
 import type { RepositorioAnalisesDePeca } from '../../domain/ports/RepositorioAnalisesDePeca.js';
@@ -149,15 +152,17 @@ const FRASES: Readonly<Record<AnaliseDePecaRecusadaError['motivo'], string>> = {
     'Esta peça tem mais de 80 mil caracteres, acima do limite da análise por IA. Leia a peça.',
   pdf_invalido: 'Não conseguimos ler o PDF desta peça. Leia a peça.',
   pdf_protegido: 'O PDF desta peça tem senha e não pode ser lido. Leia a peça.',
-  arquivo_grande: 'O arquivo desta peça é grande demais para a análise por IA. Leia a peça.',
+  arquivo_grande:
+    'O arquivo desta peça é grande demais para a análise por IA. Leia a peça.',
   limite_de_uso:
     'Há muitas análises em andamento ou o limite por hora foi atingido. Tente novamente em instantes.',
   limite_diario:
     'Muitas análises hoje (cada peça conta como cinco). Tente de novo amanhã ou fale com a gente.',
 };
 
-const recusa = (motivo: AnaliseDePecaRecusadaError['motivo']): AnaliseDePecaRecusadaError =>
-  new AnaliseDePecaRecusadaError(motivo, FRASES[motivo]);
+const recusa = (
+  motivo: AnaliseDePecaRecusadaError['motivo'],
+): AnaliseDePecaRecusadaError => new AnaliseDePecaRecusadaError(motivo, FRASES[motivo]);
 
 export class ServicoAnaliseDePeca {
   private readonly log: Logger;
@@ -195,7 +200,8 @@ export class ServicoAnaliseDePeca {
     try {
       alvo = await this.o.fonte.pecaParaAnalise(workspace, numero, pecaId);
     } catch (erro) {
-      if (erro instanceof SegredoDeJusticaNaoGuardadoError) throw recusa('processo_sigiloso');
+      if (erro instanceof SegredoDeJusticaNaoGuardadoError)
+        throw recusa('processo_sigiloso');
       if (erro instanceof PecaSigilosaNaoGuardadaError) throw recusa('peca_sigilosa');
       if (
         erro instanceof PecaDaPastaNaoEncontradaError ||
@@ -209,7 +215,8 @@ export class ServicoAnaliseDePeca {
       throw recusa('tribunal_nao_suportado');
     }
     if (!alvo.arquivo) throw recusa('peca_nao_baixada');
-    if (alvo.arquivo.tamanho > TAMANHO_MAXIMO_DO_PDF_BYTES) throw recusa('arquivo_grande');
+    if (alvo.arquivo.tamanho > TAMANHO_MAXIMO_DO_PDF_BYTES)
+      throw recusa('arquivo_grande');
 
     // 4. Bytes em memória -> hash -> texto por página -> recusas -> redação. Nada disto é gravado.
     const bytes = await lerTudo(alvo.arquivo);
@@ -217,7 +224,8 @@ export class ServicoAnaliseDePeca {
     const texto = await this.extrair(bytes);
     if (!texto.contagens.temTextoPesquisavel) throw recusa('sem_texto');
     if (texto.contagens.truncadoPorPaginas) throw recusa('acima_de_40_paginas');
-    if (texto.contagens.excedeLimiteDeCaracteres) throw recusa('acima_de_80_mil_caracteres');
+    if (texto.contagens.excedeLimiteDeCaracteres)
+      throw recusa('acima_de_80_mil_caracteres');
     const entrada = montarEntradaDaPeca(texto.paginas, pessoasDoProcesso(processo));
     if (entrada.recusa === 'texto_insuficiente') throw recusa('sem_texto');
     if (entrada.recusa === 'acima_de_40_paginas') throw recusa('acima_de_40_paginas');
@@ -253,16 +261,18 @@ export class ServicoAnaliseDePeca {
       throw recusa(vaga.negada === 'dia' ? 'limite_diario' : 'limite_de_uso');
     }
     try {
-      return await this.chamarEGuardar(
-        pedido,
-        { processoChave, hashDosBytes, entrada, modo },
-      );
+      return await this.chamarEGuardar(pedido, {
+        processoChave,
+        hashDosBytes,
+        entrada,
+        modo,
+      });
     } finally {
       vaga.liberar();
     }
   }
 
-  private async extrair(bytes: Uint8Array) {
+  private async extrair(bytes: Uint8Array): Promise<TextoExtraido> {
     try {
       return await this.o.extrator.extrair(bytes, {
         maxPaginas: LIMITE_DE_PAGINAS_DA_PECA,
@@ -325,7 +335,8 @@ export class ServicoAnaliseDePeca {
             pontosDeAtencao: v.pontosDeAtencao,
           }
         : { estado: 'nao_verificada', motivo: v.motivo };
-    const descartes = v.descartes.citacao + v.descartes.numero + v.descartes.forma + v.descartes.pagina;
+    const descartes =
+      v.descartes.citacao + v.descartes.numero + v.descartes.forma + v.descartes.pagina;
 
     const criadaEm = this.o.clock.agora();
     const analise: AnaliseDePeca = {
@@ -350,7 +361,9 @@ export class ServicoAnaliseDePeca {
       modeloPedido: this.o.modelo,
       medidas: {
         latenciaMs,
-        ...(bruta.tokensEntrada !== undefined ? { tokensEntrada: bruta.tokensEntrada } : {}),
+        ...(bruta.tokensEntrada !== undefined
+          ? { tokensEntrada: bruta.tokensEntrada }
+          : {}),
         ...(bruta.tokensSaida !== undefined ? { tokensSaida: bruta.tokensSaida } : {}),
         ...(bruta.custoUsd !== undefined ? { custoUsd: bruta.custoUsd } : {}),
       },
@@ -422,7 +435,11 @@ function restaurarResultado(
   restaurar: (t: string) => string,
 ): ResultadoDaAnaliseDePeca {
   if (r.estado === 'nao_verificada') return r;
-  const item = (i: { texto: string; trecho: string; pagina: number }) => ({
+  const item = (i: {
+    texto: string;
+    trecho: string;
+    pagina: number;
+  }): { texto: string; trecho: string; pagina: number } => ({
     texto: restaurar(i.texto),
     trecho: restaurar(i.trecho),
     pagina: i.pagina,
@@ -467,7 +484,9 @@ async function lerTudo(arquivo: {
   return saida;
 }
 
-function pessoasDoProcesso(processo: { readonly partes: readonly Parte[] }): PessoasParaRedigir {
+function pessoasDoProcesso(processo: {
+  readonly partes: readonly Parte[];
+}): PessoasParaRedigir {
   return {
     partes: processo.partes.map((p) => ({
       nome: p.nome,
