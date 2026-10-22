@@ -23,6 +23,24 @@ export const AVALIACOES_DA_ANALISE: readonly AvaliacaoDaAnalise[] = [
   'perigoso',
 ];
 
+/**
+ * Motivo OPCIONAL de uma avaliação "errado" ou "perigoso" (v0.52.0). Lista FECHADA, sem texto
+ * livre: texto livre receberia dado pessoal. Só serve para medir onde o modelo erra.
+ */
+export type MotivoDaAvaliacao =
+  | 'erro_de_fato'
+  | 'citacao_inventada'
+  | 'concluiu_prazo'
+  | 'deixou_de_fora'
+  | 'outro';
+export const MOTIVOS_DA_AVALIACAO: readonly MotivoDaAvaliacao[] = [
+  'erro_de_fato',
+  'citacao_inventada',
+  'concluiu_prazo',
+  'deixou_de_fora',
+  'outro',
+];
+
 /** O resultado já verificado (citações presentes no texto enviado), ainda com marcadores. */
 export type ResultadoDaAnalise =
   | {

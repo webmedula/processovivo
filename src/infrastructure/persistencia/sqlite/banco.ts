@@ -970,6 +970,10 @@ const COLUNAS_ACRESCENTADAS: ReadonlyArray<{
     coluna: 'pago_por',
     tipo: "TEXT NOT NULL DEFAULT 'escritorio'",
   },
+  // v0.52.0: motivo OPCIONAL da avaliação "errado"/"perigoso" (lista fechada, sem texto livre). NULL é a
+  // verdade para tudo o que foi avaliado antes. Sem retrocarga.
+  { tabela: 'analises_ia', coluna: 'motivo_avaliacao', tipo: 'TEXT' },
+  { tabela: 'resumos_ia', coluna: 'motivo_avaliacao', tipo: 'TEXT' },
   { tabela: 'custos_processo', coluna: 'cancelado_em', tipo: 'TEXT' },
   { tabela: 'custos_processo', coluna: 'cancelado_motivo', tipo: 'TEXT' },
   { tabela: 'categorias_custo', coluna: 'grupo', tipo: "TEXT NOT NULL DEFAULT '12'" },

@@ -527,8 +527,9 @@ describe.skipIf(sem)('Analisar com IA, no navegador', { timeout: 120_000 }, () =
         ),
       );
     }
-    // O selo "IA" é focável: o aviso de procedência também chega por teclado.
-    expect(visitados).toEqual(['Fechar', 'IA', 'Útil', 'Errado', 'Perigoso']);
+    // v0.52.0: a avaliação subiu para o TOPO do resultado, então vem antes do selo "IA" (focável: o aviso de
+    // procedência também chega por teclado). Antes a ordem era Fechar, IA, Útil, Errado, Perigoso.
+    expect(visitados).toEqual(['Fechar', 'Útil', 'Errado', 'Perigoso', 'IA']);
     await page.keyboard.press('Escape');
     await page.waitForFunction(() => document.querySelectorAll('.pvia').length === 0);
     expect(
@@ -565,6 +566,173 @@ describe.skipIf(sem)('Analisar com IA, no navegador', { timeout: 120_000 }, () =
       .click();
     await painel(NA).getByText('Parece pedir:').waitFor();
     expect(await painel(NA).getByText('Parece pedir:').count()).toBe(1);
+  });
+
+  describe('avaliação no topo e motivo opcional (v0.52.0)', () => {
+    const linhaDeAvaliacao = () =>
+      painel(NA).getByRole('group', { name: 'Esta análise foi útil?' });
+    const grupoDoMotivo = () =>
+      painel(NA).getByRole('group', { name: 'Qual foi o problema? (opcional)' });
+
+    async function abrirAnalise(): Promise<void> {
+      await abrir();
+      await botao(NA).click();
+      await painel(NA).getByText('Parece pedir:').waitFor();
+    }
+
+    for (const largura of [1920, 1366, 1280, 1024, 768, 390]) {
+      it(`a linha "Esta análise foi útil?" fica no topo do resultado, sem rolar, em ${largura} px`, async () => {
+        await abrir({ largura });
+        await botao(NA).click();
+        await painel(NA).getByText('Parece pedir:').waitFor();
+        const medidas = await page.evaluate(
+          (sel) => {
+            const painelEl = document.querySelector(sel) as HTMLElement;
+            const linha = painelEl.querySelector('.pvia-aval') as HTMLElement;
+            const r = linha.getBoundingClientRect();
+            const p = painelEl.getBoundingClientRect();
+            return {
+              desdeOTopoDoPainel: r.top - p.top,
+              dentroDaLargura: r.left >= 0 && r.right <= window.innerWidth,
+              antesDoResumo:
+                linha.compareDocumentPosition(
+                  painelEl.querySelector('.pvia-parece') as HTMLElement,
+                ) === Node.DOCUMENT_POSITION_FOLLOWING,
+              rolagemHorizontal: document.documentElement.scrollWidth > window.innerWidth,
+            };
+          },
+          `#pvia-${NA.replace(/\D/g, '')}`,
+        );
+        expect(medidas.desdeOTopoDoPainel).toBeLessThan(120);
+        expect(medidas.dentroDaLargura).toBe(true);
+        expect(medidas.antesDoResumo).toBe(true);
+        expect(medidas.rolagemHorizontal).toBe(false);
+      });
+    }
+
+    it('o motivo só aparece com "Errado" ou "Perigoso" — nunca com "Útil" nem antes de avaliar', async () => {
+      await abrirAnalise();
+      expect(await grupoDoMotivo().count()).toBe(0);
+      await linhaDeAvaliacao().getByRole('button', { name: 'Útil' }).click();
+      await page.getByText('✓ Avaliação registrada.').waitFor();
+      expect(await grupoDoMotivo().count()).toBe(0);
+      await linhaDeAvaliacao().getByRole('button', { name: 'Errado' }).click();
+      await grupoDoMotivo().waitFor();
+      expect(await grupoDoMotivo().getByRole('button').allTextContents()).toEqual([
+        'Erro de fato',
+        'Citação inventada',
+        'Concluiu prazo',
+        'Deixou de fora algo importante',
+        'Outro',
+      ]);
+      await linhaDeAvaliacao().getByRole('button', { name: 'Útil' }).click();
+      await page.waitForFunction(
+        () => document.querySelectorAll('.pvia-motivo').length === 0,
+      );
+    });
+
+    it('avaliar SEM motivo continua funcionando: o corpo leva só a avaliação', async () => {
+      await abrirAnalise();
+      await linhaDeAvaliacao().getByRole('button', { name: 'Perigoso' }).click();
+      await page.getByText('✓ Avaliação registrada.').waitFor();
+      expect(avaliacoes.map((a) => a.corpo)).toEqual([{ avaliacao: 'perigoso' }]);
+    });
+
+    it('escolher o motivo reenvia a avaliação com ele; clicar no mesmo de novo o tira; só os cinco valores fechados saem', async () => {
+      await abrirAnalise();
+      await linhaDeAvaliacao().getByRole('button', { name: 'Errado' }).click();
+      await grupoDoMotivo().getByRole('button', { name: 'Concluiu prazo' }).click();
+      await page.waitForFunction(
+        () =>
+          document
+            .querySelector('.pvia-motivo [aria-pressed="true"]')
+            ?.textContent?.trim() === 'Concluiu prazo',
+      );
+      await grupoDoMotivo().getByRole('button', { name: 'Concluiu prazo' }).click();
+      await page.waitForFunction(
+        () =>
+          document.querySelectorAll('.pvia-motivo [aria-pressed="true"]').length === 0,
+      );
+      await grupoDoMotivo().getByRole('button', { name: 'Outro' }).click();
+      await page.waitForFunction(
+        () => document.querySelector('.pvia-motivo [aria-pressed="true"]') !== null,
+      );
+      expect(avaliacoes.map((a) => a.corpo)).toEqual([
+        { avaliacao: 'errado' },
+        { avaliacao: 'errado', motivo: 'concluiu_prazo' },
+        { avaliacao: 'errado' },
+        { avaliacao: 'errado', motivo: 'outro' },
+      ]);
+      // Nenhum campo de texto livre existe na linha de avaliação.
+      expect(
+        await painel(NA).locator('.pvia-aval input, .pvia-aval textarea').count(),
+      ).toBe(0);
+    });
+
+    it('teclado: Tab chega aos botões, Espaço avalia, o foco volta ao botão e o motivo é alcançável', async () => {
+      await abrirAnalise();
+      await linhaDeAvaliacao().getByRole('button', { name: 'Errado' }).focus();
+      await page.keyboard.press('Space');
+      await grupoDoMotivo().waitFor();
+      expect(await page.evaluate(() => document.activeElement?.textContent?.trim())).toBe(
+        'Errado',
+      );
+      await page.keyboard.press('Tab');
+      await page.keyboard.press('Tab');
+      expect(await page.evaluate(() => document.activeElement?.textContent?.trim())).toBe(
+        'Erro de fato',
+      );
+      await page.keyboard.press('Space');
+      await page.waitForFunction(
+        () =>
+          document.activeElement?.getAttribute('aria-pressed') === 'true' &&
+          document.activeElement?.textContent?.trim() === 'Erro de fato',
+      );
+      expect(avaliacoes.at(-1)?.corpo).toEqual({
+        avaliacao: 'errado',
+        motivo: 'erro_de_fato',
+      });
+    });
+
+    for (const escuro of [false, true]) {
+      it(`axe sem violações com o motivo à vista (tema ${escuro ? 'escuro' : 'claro'})`, async () => {
+        await abrir({ escuro });
+        await botao(NA).click();
+        await painel(NA).getByText('Parece pedir:').waitFor();
+        await linhaDeAvaliacao().getByRole('button', { name: 'Errado' }).click();
+        await grupoDoMotivo().getByRole('button', { name: 'Outro' }).click();
+        await page.waitForFunction(
+          () => document.querySelector('.pvia-motivo [aria-pressed="true"]') !== null,
+        );
+        await page.addScriptTag({
+          content: (AxeBuilder as unknown as { source: string }).source,
+        });
+        const r = await page.evaluate(() =>
+          (window as unknown as AxeNaPagina).axe.run(
+            document.querySelector('#conteudo')!,
+            { rules: { 'color-contrast': { enabled: true } } },
+          ),
+        );
+        expect(
+          r.violations.map(
+            (v) => `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(' | ')}`,
+          ),
+        ).toEqual([]);
+      });
+    }
+
+    it('regressão: o botão "Analisar com IA" abre e fecha o painel e a avaliação não mexe na tabela', async () => {
+      await abrir();
+      expect(await botao(NA).getAttribute('aria-expanded')).toBe('false');
+      await botao(NA).click();
+      await painel(NA).getByText('Parece pedir:').waitFor();
+      expect(await botao(NA).getAttribute('aria-expanded')).toBe('true');
+      await linhaDeAvaliacao().getByRole('button', { name: 'Útil' }).click();
+      await page.getByText('✓ Avaliação registrada.').waitFor();
+      await painel(NA).getByRole('button', { name: 'Fechar' }).click();
+      await page.waitForFunction(() => document.querySelectorAll('.pvia').length === 0);
+      expect(await botao(NA).getAttribute('aria-expanded')).toBe('false');
+    });
   });
 
   for (const largura of [1920, 1366, 1280, 1024, 768, 390]) {

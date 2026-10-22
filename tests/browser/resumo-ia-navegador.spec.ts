@@ -674,15 +674,129 @@ describe.skipIf(sem)(
           ),
         );
       }
+      // v0.52.0: a avaliação subiu para o topo do resultado (logo depois de "Fechar"); os links dos atos vêm
+      // depois. Antes a ordem era Fechar, três links de ato, Útil, Errado, Perigoso.
       expect(visitados.slice(0, 1)).toEqual(['Fechar']);
-      expect(visitados.slice(1, 4).every((v) => /\d{2}\/\d{2}\/\d{4}/.test(v))).toBe(
-        true,
-      );
-      expect(visitados.slice(4)).toEqual(['Útil', 'Errado', 'Perigoso']);
+      expect(visitados.slice(1, 4)).toEqual(['Útil', 'Errado', 'Perigoso']);
+      expect(visitados.slice(4).every((v) => /\d{2}\/\d{2}\/\d{4}/.test(v))).toBe(true);
       await page.keyboard.press('Escape');
       await page.waitForFunction(() => !document.getElementById('pvres-painel'));
       expect(await page.evaluate(() => document.activeElement?.id)).toBe('pvres-abrir');
       expect(await botao().getAttribute('aria-expanded')).toBe('false');
+    });
+
+    describe('avaliação no topo e motivo opcional (v0.52.0)', () => {
+      const linhaDeAvaliacao = () =>
+        painel().getByRole('group', { name: 'Este resumo foi útil?' });
+      const grupoDoMotivo = () =>
+        painel().getByRole('group', { name: 'Qual foi o problema? (opcional)' });
+
+      async function abrirResumo(largura?: number, escuro = false): Promise<void> {
+        await abrir({ ...(largura ? { largura } : {}), escuro });
+        await botao().click();
+        await painel().getByText('Situação do processo').waitFor();
+      }
+
+      for (const largura of [1920, 1366, 1280, 1024, 768, 390]) {
+        it(`a linha "Este resumo foi útil?" fica logo abaixo do cabeçalho, sem rolar, em ${largura} px`, async () => {
+          await abrirResumo(largura);
+          const medidas = await page.evaluate(() => {
+            const p = document.getElementById('pvres-painel') as HTMLElement;
+            const linha = p.querySelector('.pvres-aval') as HTMLElement;
+            const topo = p.querySelector('.pvres-topo') as HTMLElement;
+            const r = linha.getBoundingClientRect();
+            return {
+              desdeOTopoDoPainel: r.top - p.getBoundingClientRect().top,
+              depoisDoCabecalho: r.top >= topo.getBoundingClientRect().bottom - 1,
+              antesDaSituacao:
+                linha.compareDocumentPosition(
+                  p.querySelector('.pvres-sec') as HTMLElement,
+                ) === Node.DOCUMENT_POSITION_FOLLOWING,
+              dentroDaLargura: r.left >= 0 && r.right <= window.innerWidth,
+              rolagemHorizontal: document.documentElement.scrollWidth > window.innerWidth,
+            };
+          });
+          expect(medidas.desdeOTopoDoPainel).toBeLessThan(120);
+          expect(medidas.depoisDoCabecalho).toBe(true);
+          expect(medidas.antesDaSituacao).toBe(true);
+          expect(medidas.dentroDaLargura).toBe(true);
+          expect(medidas.rolagemHorizontal).toBe(false);
+        });
+      }
+
+      it('o motivo só aparece com "Errado" ou "Perigoso"; sem motivo continua funcionando; escolher e desfazer reenvia', async () => {
+        await abrirResumo();
+        expect(await grupoDoMotivo().count()).toBe(0);
+        await linhaDeAvaliacao().getByRole('button', { name: 'Útil' }).click();
+        await page.getByText('✓ Avaliação registrada.').waitFor();
+        expect(await grupoDoMotivo().count()).toBe(0);
+        await linhaDeAvaliacao().getByRole('button', { name: 'Perigoso' }).click();
+        await grupoDoMotivo().waitFor();
+        await grupoDoMotivo().getByRole('button', { name: 'Citação inventada' }).click();
+        await page.waitForFunction(
+          () => document.querySelector('.pvres-motivo [aria-pressed="true"]') !== null,
+        );
+        await grupoDoMotivo().getByRole('button', { name: 'Citação inventada' }).click();
+        await page.waitForFunction(
+          () =>
+            document.querySelectorAll('.pvres-motivo [aria-pressed="true"]').length === 0,
+        );
+        expect(avaliacoes.map((a) => a.corpo)).toEqual([
+          { avaliacao: 'util' },
+          { avaliacao: 'perigoso' },
+          { avaliacao: 'perigoso', motivo: 'citacao_inventada' },
+          { avaliacao: 'perigoso' },
+        ]);
+        expect(
+          await painel().locator('.pvres-aval input, .pvres-aval textarea').count(),
+        ).toBe(0);
+      });
+
+      it('teclado: o motivo é alcançável com Tab e Espaço, e o foco volta ao botão apertado', async () => {
+        await abrirResumo();
+        await linhaDeAvaliacao().getByRole('button', { name: 'Errado' }).focus();
+        await page.keyboard.press('Space');
+        await grupoDoMotivo().waitFor();
+        expect(await page.evaluate(() => document.activeElement?.id)).toBe(
+          'pvres-av-errado',
+        );
+        await page.keyboard.press('Tab');
+        await page.keyboard.press('Tab');
+        expect(await page.evaluate(() => document.activeElement?.id)).toBe(
+          'pvres-mo-erro_de_fato',
+        );
+        await page.keyboard.press('Space');
+        await page.waitForFunction(
+          () =>
+            document.activeElement?.id === 'pvres-mo-erro_de_fato' &&
+            document.activeElement?.getAttribute('aria-pressed') === 'true',
+        );
+      });
+
+      for (const escuro of [false, true]) {
+        it(`axe sem violações com o motivo à vista (tema ${escuro ? 'escuro' : 'claro'})`, async () => {
+          await abrirResumo(undefined, escuro);
+          await linhaDeAvaliacao().getByRole('button', { name: 'Errado' }).click();
+          await grupoDoMotivo().getByRole('button', { name: 'Outro' }).click();
+          await page.waitForFunction(
+            () => document.querySelector('.pvres-motivo [aria-pressed="true"]') !== null,
+          );
+          await page.addScriptTag({
+            content: (AxeBuilder as unknown as { source: string }).source,
+          });
+          const r = await page.evaluate(() =>
+            (window as unknown as AxeNaPagina).axe.run(
+              document.getElementById('pvres-painel')!,
+              { rules: { 'color-contrast': { enabled: true } } },
+            ),
+          );
+          expect(
+            r.violations.map(
+              (v) => `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(' | ')}`,
+            ),
+          ).toEqual([]);
+        });
+      }
     });
 
     it('Esc durante o resumo cancela', async () => {

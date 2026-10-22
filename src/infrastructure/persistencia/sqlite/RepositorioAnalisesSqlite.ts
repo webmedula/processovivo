@@ -3,6 +3,7 @@ import {
   AVALIACOES_DA_ANALISE,
   type AnaliseDoAto,
   type AvaliacaoDaAnalise,
+  type MotivoDaAvaliacao,
   type ResultadoDaAnalise,
 } from '../../../domain/entities/AnaliseDoAto.js';
 import type { RepositorioAnalises } from '../../../domain/ports/RepositorioAnalises.js';
@@ -86,10 +87,15 @@ export class RepositorioAnalisesSqlite implements RepositorioAnalises {
     workspace: string,
     id: string,
     avaliacao: AvaliacaoDaAnalise,
+    motivo?: MotivoDaAvaliacao,
   ): Promise<boolean> {
+    // O motivo só acompanha "errado" e "perigoso"; avaliar de novo (inclusive como "útil") o apaga ou troca.
+    const guardado = avaliacao === 'util' ? null : (motivo ?? null);
     const r = this.db
-      .prepare('UPDATE analises_ia SET avaliacao = ? WHERE workspace = ? AND id = ?')
-      .run(avaliacao, workspace, id);
+      .prepare(
+        'UPDATE analises_ia SET avaliacao = ?, motivo_avaliacao = ? WHERE workspace = ? AND id = ?',
+      )
+      .run(avaliacao, guardado, workspace, id);
     return Number(r.changes) > 0;
   }
 }

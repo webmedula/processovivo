@@ -54,7 +54,7 @@ import type { RepositorioAcompanhamentos } from '../../domain/ports/RepositorioA
 import { ServicoAnaliseDoAto } from '../../application/services/ServicoAnaliseDoAto.js';
 import { ServicoResumoDoProcesso } from '../../application/services/ServicoResumoDoProcesso.js';
 import { ServicoAvisoDoPrazo } from '../../application/services/ServicoAvisoDoPrazo.js';
-import { LimiteDeAnalises } from '../../application/politicas/limiteDeAnalises.js';
+import { LimiteDeAnalises, TetoDiario } from '../../application/politicas/limiteDeAnalises.js';
 import { clockDoSistema } from '../../domain/ports/Clock.js';
 import { ModeloComZdr } from '../../infrastructure/adapters/modelo/ModeloComZdr.js';
 import { OpenRouterResumidorDeProcesso } from '../../infrastructure/adapters/modelo/OpenRouterResumidorDeProcesso.js';
@@ -789,6 +789,8 @@ function montarAnaliseIa(
         'plano IA (libere pelo /admin) — apague a variável',
     );
   }
+  // Um contador só por conta e por dia de São Paulo, dividido entre a análise de ato e o resumo.
+  const tetoDoDia = new TetoDiario(ia.maxPorDia, clockDoSistema);
   const analiseIa = new ServicoAnaliseDoAto({
     repositorio,
     analises: new RepositorioAnalisesSqlite(db),
@@ -797,7 +799,7 @@ function montarAnaliseIa(
     limite: new LimiteDeAnalises({
       porHora: ia.maxPorHora,
       simultaneasNoTotal: ia.maxSimultaneas,
-      porDia: ia.maxPorDia,
+      teto: tetoDoDia,
       clock: clockDoSistema,
     }),
     clock: clockDoSistema,
@@ -815,9 +817,12 @@ function montarAnaliseIa(
     // A MESMA regra do plano IA da análise de ato.
     exigirPlanoIa: (ws) => analiseIa.exigirPlano(ws),
     // Freio próprio do resumo: mais caro que a análise de um ato.
+    // v0.52.0: o resumo gasta do MESMO teto técnico diário por conta da análise de ato. A frase de recusa
+    // continua a neutra de sempre (`limite_de_uso`): o teto é de segurança, não limite do plano.
     limite: new LimiteDeAnalises({
       porHora: ia.resumoMaxPorHora,
       simultaneasNoTotal: ia.maxSimultaneas,
+      teto: tetoDoDia,
       clock: clockDoSistema,
     }),
     clock: clockDoSistema,

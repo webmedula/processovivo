@@ -1,5 +1,5 @@
 import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
-import { z } from 'zod';
+import { corpoDaAvaliacao } from './avaliacaoDeIa.js';
 import type {
   ItemDoResumoParaATela,
   ServicoResumoDoProcesso,
@@ -12,8 +12,6 @@ function workspaceDe(requisicao: FastifyRequest): string {
   return ws;
 }
 
-/** Sem texto livre: três valores, e só. */
-const corpoDaAvaliacao = z.object({ avaliacao: z.enum(['util', 'errado', 'perigoso']) });
 
 function itemJson(i: ItemDoResumoParaATela): Record<string, unknown> {
   return {
@@ -76,9 +74,9 @@ export function rotasDoResumoIA(
     servidor.post<{ Params: { id: string } }>(
       '/v1/resumos/:id/avaliacao',
       async (req) => {
-        const { avaliacao } = corpoDaAvaliacao.parse(req.body);
-        await servico.avaliar(workspaceDe(req), req.params.id, avaliacao);
-        return { id: req.params.id, avaliacao };
+        const { avaliacao, motivo } = corpoDaAvaliacao.parse(req.body);
+        await servico.avaliar(workspaceDe(req), req.params.id, avaliacao, motivo);
+        return { id: req.params.id, avaliacao, ...(motivo ? { motivo } : {}) };
       },
     );
   };

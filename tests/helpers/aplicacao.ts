@@ -50,7 +50,7 @@ import { RepositorioNotificacaoSqlite } from '../../src/infrastructure/persisten
 import { RepositorioVigilanciasSqlite } from '../../src/infrastructure/persistencia/sqlite/RepositorioVigilanciasSqlite.js';
 import { ServicoAvisoDoPrazo } from '../../src/application/services/ServicoAvisoDoPrazo.js';
 import { ServicoAnaliseDoAto } from '../../src/application/services/ServicoAnaliseDoAto.js';
-import { LimiteDeAnalises } from '../../src/application/politicas/limiteDeAnalises.js';
+import { LimiteDeAnalises, TetoDiario } from '../../src/application/politicas/limiteDeAnalises.js';
 import type { AnalisadorDeAto } from '../../src/domain/ports/AnalisadorDeAto.js';
 import { RepositorioAnalisesSqlite } from '../../src/infrastructure/persistencia/sqlite/RepositorioAnalisesSqlite.js';
 import type { Aplicacao } from '../../src/main/factories/makeProcessoSearchService.js';
@@ -419,6 +419,14 @@ export function aplicacaoDeTeste(
       tarefa: async () => {},
     });
 
+  // Como em produção (v0.52.0): com `porDia`, a análise de ato e o resumo gastam do MESMO teto por conta.
+  const tetoCompartilhado =
+    opcoes.analiseIa?.porDia !== undefined
+      ? new TetoDiario(opcoes.analiseIa.porDia, opcoes.analiseIa.clock ?? {
+          agora: () => (opcoes.agora ? opcoes.agora() : new Date()),
+          monotonico: () => 0,
+        })
+      : undefined;
   const analiseIa = opcoes.analiseIa
     ? new ServicoAnaliseDoAto({
         repositorio: repositorioCru,
@@ -428,9 +436,7 @@ export function aplicacaoDeTeste(
         limite: new LimiteDeAnalises({
           porHora: opcoes.analiseIa.porHora ?? 100,
           simultaneasNoTotal: opcoes.analiseIa.simultaneasNoTotal ?? 10,
-          ...(opcoes.analiseIa.porDia !== undefined
-            ? { porDia: opcoes.analiseIa.porDia }
-            : {}),
+          ...(tetoCompartilhado ? { teto: tetoCompartilhado } : {}),
           clock: opcoes.analiseIa.clock ?? {
             agora: () => (opcoes.agora ? opcoes.agora() : new Date()),
             monotonico: () => 0,
@@ -464,6 +470,7 @@ export function aplicacaoDeTeste(
         limite: new LimiteDeAnalises({
           porHora: opcoes.resumoIa.porHora ?? 100,
           simultaneasNoTotal: 10,
+          ...(tetoCompartilhado ? { teto: tetoCompartilhado } : {}),
           clock: clockDoResumo,
         }),
         clock: clockDoResumo,

@@ -224,6 +224,35 @@ describe('IA habilitada — avaliação', () => {
     expect((await avaliar(id, A, { comentario: 'texto livre' })).statusCode).toBe(400);
   });
 
+  it('motivo (v0.52.0): opcional, só da lista fechada, só com errado/perigoso, sem texto livre', async () => {
+    const { id } = (await analisar()).json() as { id: string };
+    // Sem motivo continua funcionando (o corpo antigo).
+    expect((await avaliar(id, A, { avaliacao: 'errado' })).statusCode).toBe(200);
+    for (const motivo of [
+      'erro_de_fato',
+      'citacao_inventada',
+      'concluiu_prazo',
+      'deixou_de_fora',
+      'outro',
+    ]) {
+      const r = await avaliar(id, A, { avaliacao: 'errado', motivo });
+      expect(r.statusCode, motivo).toBe(200);
+      expect(r.json()).toEqual({ id, avaliacao: 'errado', motivo });
+    }
+    expect((await avaliar(id, A, { avaliacao: 'perigoso', motivo: 'outro' })).statusCode).toBe(
+      200,
+    );
+    // Fora da lista, com "útil" e com campo de texto: 400.
+    for (const corpo of [
+      { avaliacao: 'errado', motivo: 'porque sim' },
+      { avaliacao: 'util', motivo: 'outro' },
+      { avaliacao: 'errado', motivo: 'outro', comentario: 'João da Silva' },
+      { avaliacao: 'errado', texto: 'x' },
+    ]) {
+      expect((await avaliar(id, A, corpo)).statusCode, JSON.stringify(corpo)).toBe(400);
+    }
+  });
+
   it('outra conta recebe 404 idêntico ao de análise inexistente', async () => {
     const { id } = (await analisar()).json() as { id: string };
     const deOutra = await avaliar(id, B, { avaliacao: 'util' });

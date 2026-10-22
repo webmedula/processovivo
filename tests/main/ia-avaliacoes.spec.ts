@@ -91,6 +91,75 @@ describe('ia-avaliacoes — somente leitura e sem texto', () => {
     expect(saida).toContain('informado em 0 de 1');
   });
 
+  it('custo: p50, p95 e máximo por modelo e prompt (nearest-rank), além da média (v1.1.0)', async () => {
+    const db = abrirBanco(caminho);
+    const repo = new RepositorioAnalisesSqlite(db);
+    // Custos 0,001 · 0,002 · … · 0,010 (dez análises): p50 = 5º, p95 = 10º (nearest-rank), máximo = 0,010.
+    for (let n = 1; n <= 10; n++) {
+      await repo.salvar(
+        analise(n, { medidas: { latenciaMs: 1000, custoUsd: 0.001 * n } }),
+      );
+    }
+    // Uma sem custo informado não entra nas medidas de custo, e a linha diz quantas tinham.
+    await repo.salvar(analise(11, { medidas: { latenciaMs: 1000 } }));
+    db.close();
+    const { saida } = rodar();
+    expect(saida).toContain(
+      'Custo médio por análise: US$ 0.00550 (informado em 10 de 11)',
+    );
+    expect(saida).toContain(
+      'Custo p50 US$ 0.00500 · p95 US$ 0.01000 · máximo US$ 0.01000',
+    );
+  });
+
+  it('sem custo informado em nenhuma análise: p50/p95/máximo dizem "não informado"', async () => {
+    const db = abrirBanco(caminho);
+    await new RepositorioAnalisesSqlite(db).salvar(
+      analise(1, { medidas: { latenciaMs: 1000 } }),
+    );
+    db.close();
+    expect(rodar().saida).toContain(
+      'Custo p50 não informado · p95 não informado · máximo não informado',
+    );
+  });
+
+  it('motivos: conta por motivo só entre Errado/Perigoso, com "sem motivo" e sem tocar em Útil (v1.1.0)', async () => {
+    const db = abrirBanco(caminho);
+    const repo = new RepositorioAnalisesSqlite(db);
+    for (let n = 1; n <= 6; n++) await repo.salvar(analise(n));
+    await repo.avaliar('ws-segredo', 'a-1', 'errado', 'erro_de_fato');
+    await repo.avaliar('ws-segredo', 'a-2', 'errado', 'erro_de_fato');
+    await repo.avaliar('ws-segredo', 'a-3', 'perigoso', 'concluiu_prazo');
+    await repo.avaliar('ws-segredo', 'a-4', 'errado'); // sem motivo
+    await repo.avaliar('ws-segredo', 'a-5', 'util', 'outro'); // útil nunca guarda motivo
+    db.close();
+    const { saida } = rodar();
+    expect(saida).toContain(
+      'Motivos (Errado/Perigoso): erro de fato 2 · citação inventada 0 · concluiu prazo 1 · deixou de fora algo importante 0 · outro 0 · sem motivo 1',
+    );
+  });
+
+  it('sem nenhuma avaliação errado/perigoso, a linha de motivos não aparece', async () => {
+    const db = abrirBanco(caminho);
+    const repo = new RepositorioAnalisesSqlite(db);
+    await repo.salvar(analise(1));
+    await repo.avaliar('ws-segredo', 'a-1', 'util');
+    db.close();
+    expect(rodar().saida).not.toContain('Motivos (Errado/Perigoso)');
+  });
+
+  it('banco de ANTES da v0.52.0 (sem a coluna do motivo) continua sendo lido, sem motivos', async () => {
+    const db = abrirBanco(caminho);
+    await new RepositorioAnalisesSqlite(db).salvar(analise(1));
+    db.exec("UPDATE analises_ia SET avaliacao = 'errado'");
+    db.exec('ALTER TABLE analises_ia DROP COLUMN motivo_avaliacao');
+    db.close();
+    const r = rodar();
+    expect(r.codigo).toBe(0);
+    expect(r.saida).toContain('Errado: 1');
+    expect(r.saida).toContain('sem motivo 1');
+  });
+
   it('nunca imprime texto de análise, número de processo nem workspace', async () => {
     const db = abrirBanco(caminho);
     await new RepositorioAnalisesSqlite(db).salvar(analise(1));

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { DatabaseSync } from 'node:sqlite';
-import { LimiteDeAnalises } from '../../src/application/politicas/limiteDeAnalises.js';
+import { LimiteDeAnalises, TetoDiario } from '../../src/application/politicas/limiteDeAnalises.js';
 import { ServicoResumoDoProcesso } from '../../src/application/services/ServicoResumoDoProcesso.js';
 import { chaveDaMovimentacao } from '../../src/domain/entities/Acompanhamento.js';
 import type { Movimentacao } from '../../src/domain/entities/Movimentacao.js';
@@ -51,7 +51,7 @@ describe('ServicoResumoDoProcesso', () => {
   let planoIa: Set<string>;
   let relogio: ClockFalso;
 
-  function servico(porHora = 100): ServicoResumoDoProcesso {
+  function servico(porHora = 100, teto?: TetoDiario): ServicoResumoDoProcesso {
     return new ServicoResumoDoProcesso({
       repositorio: repo,
       resumos: new RepositorioResumosSqlite(db),
@@ -61,7 +61,12 @@ describe('ServicoResumoDoProcesso', () => {
           throw new EntradaNaoAnalisavelError('sem_plano', 'Faça upgrade do plano.');
         }
       },
-      limite: new LimiteDeAnalises({ porHora, simultaneasNoTotal: 10, clock: relogio }),
+      limite: new LimiteDeAnalises({
+        porHora,
+        simultaneasNoTotal: 10,
+        ...(teto ? { teto } : {}),
+        clock: relogio,
+      }),
       clock: relogio,
       logger: log,
       novoId: (() => {
@@ -129,6 +134,30 @@ describe('ServicoResumoDoProcesso', () => {
       await semear(WS_A, ATOS_DO_RESUMO);
       await expect(servico().resumir(pedido(WS_B))).rejects.toBeInstanceOf(
         AcompanhamentoNaoEncontradoError,
+      );
+      expect(resumidor.chamadas).toBe(0);
+    });
+
+    it('teto técnico diário COMPARTILHADO com a análise de ato (v0.52.0): esgotado, é a frase neutra de sempre e zero chamadas', async () => {
+      await semear(WS_A, ATOS_DO_RESUMO);
+      const teto = new TetoDiario(2, relogio);
+      // Duas análises de ato já gastaram o dia desta conta (outro limite, o MESMO contador).
+      const daAnalise = new LimiteDeAnalises({
+        porHora: 100,
+        simultaneasNoTotal: 10,
+        teto,
+        clock: relogio,
+      });
+      for (let n = 0; n < 2; n++) {
+        const v = daAnalise.reservar(WS_A);
+        if ('liberar' in v) v.liberar();
+      }
+      const erro = await servico(100, teto)
+        .resumir(pedido())
+        .catch((e: unknown) => e);
+      expect((erro as EntradaNaoAnalisavelError).motivo).toBe('limite_de_uso');
+      expect((erro as Error).message).toBe(
+        'Há muitos resumos em andamento ou o limite por hora foi atingido. Tente novamente em instantes.',
       );
       expect(resumidor.chamadas).toBe(0);
     });

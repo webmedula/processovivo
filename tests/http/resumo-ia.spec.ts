@@ -142,6 +142,21 @@ describe('IA habilitada', () => {
       expect(resumidor.chamadas).toBe(0);
     });
 
+    it('motivo (v0.52.0): opcional, só da lista fechada e só com errado/perigoso', async () => {
+      const id = (await resumir()).json().id as string;
+      expect((await avaliar(id, { avaliacao: 'errado' })).statusCode).toBe(200);
+      const r = await avaliar(id, { avaliacao: 'perigoso', motivo: 'concluiu_prazo' });
+      expect(r.statusCode).toBe(200);
+      expect(r.json()).toEqual({ id, avaliacao: 'perigoso', motivo: 'concluiu_prazo' });
+      for (const corpo of [
+        { avaliacao: 'errado', motivo: 'texto livre qualquer' },
+        { avaliacao: 'util', motivo: 'outro' },
+        { avaliacao: 'errado', motivo: 'outro', comentario: 'x' },
+      ]) {
+        expect((await avaliar(id, corpo)).statusCode, JSON.stringify(corpo)).toBe(400);
+      }
+    });
+
     it('avalia com três valores e recusa qualquer outro (inclusive texto livre)', async () => {
       const id = (await resumir()).json().id as string;
       for (const v of ['util', 'errado', 'perigoso']) {
