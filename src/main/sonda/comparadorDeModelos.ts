@@ -208,7 +208,7 @@ export interface ResultadoDaComparacao {
   readonly modelosParados: readonly { modelo: string; motivo: string }[];
 }
 
-function custoDoRegistro(
+export function custoDoRegistro(
   r: RegistroDaChamada,
   precos: ReadonlyMap<string, PrecoPorToken>,
 ): { valor: number; fonte: 'openrouter' | 'estimativa' } | undefined {
@@ -481,7 +481,7 @@ export function metricasEmCsv(res: ResultadoDaComparacao): string {
 }
 
 /** Célula de texto que começa com `=`, `+`, `-`, `@`, tabulação ou CR vira texto, nunca fórmula. */
-function celulaSegura(v: string): string {
+export function celulaSegura(v: string): string {
   return /^[=+\-@\t\r]/.test(v) ? `'${v}` : v;
 }
 

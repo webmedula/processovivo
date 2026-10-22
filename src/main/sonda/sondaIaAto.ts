@@ -63,6 +63,8 @@ export interface RegistroDaChamada {
     | 'sem_provedor'
     | 'provedor_nao_confirmado';
   readonly verificacao?: ResultadoDaVerificacao;
+  /** Resultado da verificação de uma TAREFA que não é a do ato (peças). */
+  readonly resultadoDaTarefa?: unknown;
   readonly indeterminado: boolean;
   readonly latenciaMs?: number;
   readonly tokensEntrada?: number;
@@ -92,6 +94,33 @@ export interface RegistroDaChamada {
   readonly sha256DoTextoEnviado?: string;
 }
 
+/**
+ * Outra TAREFA sobre o mesmo transporte (v0.53.0: a leitura de PEÇA, só no comparador). Troca os
+ * três passos que são específicos do ato — montar a entrada, ler a resposta no esquema e verificar —
+ * e deixa de fora de propósito tudo o que protege a chamada: ZDR por requisição, `provider.only`,
+ * conferência do par modelo + provedor, repetição única fora do esquema e a parada por falhas
+ * seguidas. Sem `tarefa`, o comportamento é o de sempre (a análise do ato).
+ */
+export interface TarefaDaSonda {
+  readonly preparar: (caso: CasoDaSonda) => {
+    readonly suficiente: boolean;
+    readonly sistema: string;
+    readonly usuario: string;
+    /** O texto contra o qual a verificação confere as citações. */
+    readonly textoEnviado: string;
+    readonly instrucaoDeFormato?: string;
+    readonly maxTokens?: number;
+    readonly timeoutMs?: number;
+  };
+  /** `undefined` = fora do esquema (uma repetição, depois `resposta_invalida`). */
+  readonly lerResposta: (bruto: unknown) => unknown;
+  readonly verificar: (
+    resposta: unknown,
+    textoEnviado: string,
+    caso: CasoDaSonda,
+  ) => { readonly estado: 'verificada' | 'nao_verificada'; readonly resultado: unknown };
+}
+
 export interface OpcoesDaExecucao {
   readonly casos: readonly CasoDaSonda[];
   readonly modelos: readonly string[];
@@ -110,6 +139,8 @@ export interface OpcoesDaExecucao {
     modeloResolvido: string | undefined,
     provedor: string | undefined,
   ) => boolean;
+  /** Outra tarefa (peças). Ausente = análise do ato. */
+  readonly tarefa?: TarefaDaSonda;
   readonly agora: () => number;
   readonly pausaMs?: number;
   readonly dormir?: (ms: number) => Promise<void>;
@@ -142,6 +173,17 @@ const FALHAS_SEGUIDAS_PARA_DESISTIR = 3;
 function pareceObedecer(caso: CasoDaSonda, bruto: unknown): boolean | undefined {
   if (!caso.injecao || !caso.canario) return undefined;
   return JSON.stringify(bruto ?? '').includes(caso.canario);
+}
+
+/** O que a chamada precisa da entrada, venha ela do ato (`prepararEntrada`) ou de uma tarefa. */
+interface EntradaDaChamada {
+  readonly suficiente: boolean;
+  readonly sistema: string;
+  readonly usuario: string;
+  readonly textoEnviado: string;
+  readonly instrucaoDeFormato?: string;
+  readonly maxTokens?: number;
+  readonly timeoutMs?: number;
 }
 
 export async function executarSonda(op: OpcoesDaExecucao): Promise<ResultadoDaExecucao> {
@@ -179,19 +221,25 @@ export async function executarSonda(op: OpcoesDaExecucao): Promise<ResultadoDaEx
         // A variante "com títulos" só existe para o caso que trouxe títulos.
         if (variante === 'com-titulos' && caso.anteriores.length === 0) continue;
 
-        const entrada = prepararEntrada(
-          {
-            data: caso.data,
-            titulo: caso.titulo,
-            conteudo: caso.texto,
-            ...(caso.tipoComunicacao ? { tipoComunicacao: caso.tipoComunicacao } : {}),
-          },
-          {
-            ...(caso.classe ? { classe: caso.classe } : {}),
-            ...(variante === 'com-titulos' ? { titulosAnteriores: caso.anteriores } : {}),
-          },
-          { pessoas: caso.pessoas },
-        );
+        const entrada: EntradaDaChamada = op.tarefa
+          ? op.tarefa.preparar(caso)
+          : prepararEntrada(
+              {
+                data: caso.data,
+                titulo: caso.titulo,
+                conteudo: caso.texto,
+                ...(caso.tipoComunicacao
+                  ? { tipoComunicacao: caso.tipoComunicacao }
+                  : {}),
+              },
+              {
+                ...(caso.classe ? { classe: caso.classe } : {}),
+                ...(variante === 'com-titulos'
+                  ? { titulosAnteriores: caso.anteriores }
+                  : {}),
+              },
+              { pessoas: caso.pessoas },
+            );
         if (!entrada.suficiente) {
           registros.push({ ...base, estado: 'sem_texto' });
           continue;
@@ -226,8 +274,17 @@ export async function executarSonda(op: OpcoesDaExecucao): Promise<ResultadoDaEx
                 sistema: entrada.sistema,
                 usuario: entrada.usuario,
                 provedoresPermitidos: permitidos,
+                ...(entrada.instrucaoDeFormato
+                  ? { instrucaoDeFormato: entrada.instrucaoDeFormato }
+                  : {}),
+                ...(entrada.maxTokens ? { maxTokens: entrada.maxTokens } : {}),
+                ...(entrada.timeoutMs ? { timeoutMs: entrada.timeoutMs } : {}),
               });
-              resposta = lerRespostaDoModelo(transporteFinal.objeto);
+              resposta = (
+                op.tarefa
+                  ? op.tarefa.lerResposta(transporteFinal.objeto)
+                  : lerRespostaDoModelo(transporteFinal.objeto)
+              ) as RespostaDoModelo | undefined;
               if (!resposta)
                 throw new RespostaInvalidaError(op.transporte.nome, 'fora do esquema');
             } catch (erro) {
@@ -266,13 +323,19 @@ export async function executarSonda(op: OpcoesDaExecucao): Promise<ResultadoDaEx
             parar = true;
             continue;
           }
-          const verificacao = verificarAnalise(resposta, entrada.textoEnviado);
+          const daTarefa = op.tarefa?.verificar(resposta, entrada.textoEnviado, caso);
+          const verificacao = daTarefa
+            ? undefined
+            : verificarAnalise(resposta, entrada.textoEnviado);
           const obedeceu = pareceObedecer(caso, transporteFinal.objeto);
           registros.push({
             ...base,
-            estado: verificacao.estado,
-            verificacao,
-            indeterminado: resposta.parece_pedir === 'indeterminado',
+            estado: daTarefa
+              ? daTarefa.estado
+              : (verificacao as ResultadoDaVerificacao).estado,
+            ...(verificacao ? { verificacao } : {}),
+            ...(daTarefa ? { resultadoDaTarefa: daTarefa.resultado } : {}),
+            indeterminado: daTarefa ? false : resposta.parece_pedir === 'indeterminado',
             latenciaMs,
             ...(transporteFinal.tokensEntrada !== undefined
               ? { tokensEntrada: transporteFinal.tokensEntrada }

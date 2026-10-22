@@ -67,6 +67,10 @@ COPY scripts ./scripts
 # Casos SINTÉTICOS (inventados) da sonda de IA do ato: `scripts/sonda-ia-ato.mjs` os lê.
 # Não há dado real aqui; só texto de teste.
 COPY tests/fixtures/ia-ato ./tests/fixtures/ia-ato
+# Conjuntos SINTÉTICOS do comparador manual de modelos (v0.52.0 análise do ato; v0.53.0 peças):
+# `scripts/ia-comparar-modelos.mjs` os lê no Console. Só texto inventado, nenhum dado real.
+COPY tests/fixtures/ia-avaliacao ./tests/fixtures/ia-avaliacao
+COPY tests/fixtures/ia-pecas ./tests/fixtures/ia-pecas
 
 # Diretório do banco, criado ANTES de trocar de usuário e com dono `node` —
 # senão o processo sobe sem permissão de escrever e quebra na primeira gravação.
