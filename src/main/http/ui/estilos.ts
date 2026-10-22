@@ -203,6 +203,10 @@ body.fora .env{max-width:none;padding:0}
 .beneficio{display:flex;gap:14px;align-items:flex-start;font-size:15.5px;
   line-height:1.5;color:#e4eaf3}
 .beneficio b{color:#fff}
+/* Dentro do texto do benefício (alinhado a ele, não ao check) e não como quarto
+   benefício. #b8c4d6 sobre a lateral é o mesmo cinza do .lead (contraste > 7:1). */
+.beneficio-aviso{display:block;margin-top:6px;font-size:13px;line-height:1.5;
+  color:#b8c4d6;overflow-wrap:anywhere}
 .beneficio .ck{flex-shrink:0;width:28px;height:28px;border-radius:8px;
   background:rgba(0,200,83,.16);display:flex;align-items:center;justify-content:center}
 .promessa{display:flex;align-items:center;gap:12px;padding:14px 16px;
