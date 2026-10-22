@@ -1683,7 +1683,9 @@ function ligarDownloadDePecas(numero){
  * A casca das telas de quem ainda não entrou: a marca à esquerda, o
  * formulário à direita (empilhados no celular).
  *
- * As frases do lado da marca só prometem o que o sistema faz hoje. "Silêncio
+ * As frases do lado da marca só prometem o que o sistema faz hoje — e por isso
+ * as peças levam o aviso de que, por enquanto, só o TJGO as entrega (v0.50.1).
+ * Sem data e sem prazo; sai quando houver outro tribunal. "Silêncio
  * nunca quer dizer sem novidade por engano" é o aviso de silêncio do
  * ServicoNotificacao — é a promessa que diferencia o produto, e ela é
  * verdadeira.
@@ -1695,9 +1697,10 @@ function molduraDeEntrada(formulario){
   document.body.classList.add('fora');
   $('lateral').classList.add('oculto');
   var logo=$('marca')?$('marca').innerHTML:'';
-  var beneficio=function(forte,resto){
+  var beneficio=function(forte,resto,aviso){
     return '<div class="beneficio"><span class="ck">'+ICONE_CHECK+'</span>'+
-      '<span><b>'+forte+'</b>'+resto+'</span></div>';
+      '<span><b>'+forte+'</b>'+resto+
+      (aviso?'<small class="beneficio-aviso">'+aviso+'</small>':'')+'</span></div>';
   };
   $('conteudo').innerHTML='<div class="entrada">'+
     '<section class="entrada-marca">'+logo+
@@ -1707,7 +1710,9 @@ function molduraDeEntrada(formulario){
       '<div class="beneficios">'+
         beneficio('Publicações no seu nome',', encontradas pela sua OAB no Diário de Justiça')+
         beneficio('Andamentos de cada processo',', sem abrir o site do tribunal')+
-        beneficio('Peças das partes',', como petição, contestação e laudo, com o seu acesso ao tribunal')+
+        beneficio('Peças das partes',', como petição, contestação e laudo, com o seu acesso ao tribunal',
+          'Por enquanto, o acesso às peças vale apenas para o Tribunal de Justiça de Goiás (TJGO). '+
+          'Em breve, será estendido a todos os tribunais do Brasil.')+
       '</div></div>'+
       '<div class="promessa"><span class="ponto-vivo"></span><span>Se não conseguirmos '+
       'verificar, você também fica sabendo. Silêncio nunca quer dizer "sem novidade" por engano.</span></div>'+

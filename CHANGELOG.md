@@ -9,6 +9,24 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.50.1] — 2026-10-22
+
+**Tela de entrada: aviso de que as peças valem, por enquanto, só para o TJGO.** Só texto e layout do painel da esquerda
+do login e do cadastro (é o mesmo painel nas duas abas). Nenhuma regra, rota, API, banco, plano, preço ou checkout mudou;
+sem migração e sem dependência nova.
+
+- **Aviso sob "Peças das partes":** "Por enquanto, o acesso às peças vale apenas para o Tribunal de Justiça de Goiás
+  (TJGO). Em breve, será estendido a todos os tribunais do Brasil." Texto simples (sem link nem tooltip), menor e em tom
+  secundário (`.beneficio-aviso`, mesmo cinza do `.lead`), dentro do texto do terceiro benefício: alinhado a ele, sem
+  check e sem virar um quarto benefício. Sem data e sem prazo. **Remover quando houver outro tribunal com peças.**
+- **Até 900 px a lista de benefícios continua escondida** (regra de antes): o aviso some junto com a afirmação a que se
+  refere, e o formulário não é empurrado.
+- **Teste de navegador** `tests/browser/login-aviso-pecas-navegador.spec.ts`: texto exato nas abas "Entrar" e "Criar
+  conta", posição, axe nos temas claro e escuro, seis larguras sem rolagem horizontal e regressão de cadastro e login.
+  Nenhum teste anterior verificava o texto do painel, então nenhum foi reescrito.
+
+---
+
 ## [0.50.0] — 2026-10-22
 
 **Plano IA à venda pelo mesmo caminho dos outros planos, decidido por dado no `/admin`.** Sem migração de banco, sem
