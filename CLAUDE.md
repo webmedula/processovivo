@@ -244,7 +244,7 @@ interface ProcessoProvider {
 | `CalibracaoDeNumeracaoInvalidaError` | número do Projudi informado não serve como âncora (fora dos atos, abaixo da posição, incompatível com os outros, acima de 50) | 400; a mensagem diz qual — conferir o que foi digitado |
 | `FeedDoCalendarioNaoEncontradoError` | token do feed inválido, revogado, assinatura bloqueada ou plano sem o recurso | 404 com o MESMO corpo seco nos quatro casos |
 | `AcompanhamentoNaoEncontradoError` | pediu algo sobre processo que ESTE workspace não acompanha | 404; mesma resposta para "não existe" e "é de outra conta" |
-| `EntradaNaoAnalisavelError` | a análise por IA não se aplica: `sem_plano` (403), `segredo_de_justica` (403), `texto_insuficiente` / `texto_indisponivel` (422), `limite_de_uso` (429), `ato_nao_encontrado` (409) | corpo com `detalhes.motivo`; NENHUM chamou o modelo |
+| `EntradaNaoAnalisavelError` | a análise por IA não se aplica: `sem_plano` (403), `segredo_de_justica` (403), `texto_insuficiente` / `texto_indisponivel` (422), `limite_de_uso` / `limite_diario` (429; o segundo é o teto técnico do dia, v0.50.0), `ato_nao_encontrado` (409) | corpo com `detalhes.motivo`; NENHUM chamou o modelo |
 | `AnaliseNaoEncontradaError` | avaliar análise que não existe PARA ESTE workspace | 404; mesma resposta para "não existe" e "é de outra conta" |
 | `PagamentoRecusadoError` | a cobrança não se aplica: `plano_sem_preco` / `plano_nao_vendavel` / `ciclo_nao_suportado` / `termos_nao_aceitos` / `email_do_pagador_invalido` (422), `conta_sem_email` (403, conta de chave de API), `ja_assinante` / `plano_ja_vigente` / `sem_recorrencia` (409), `plano_desconhecido` (400) | corpo com `detalhes.motivo`; NENHUM chamou o gateway |
 | `AssinaturaDeWebhookInvalidaError` | o aviso do gateway não se prova dele: assinatura ausente, malformada, adulterada, de outro recurso ou velha (> 5 min) | 401 SEM dizer o motivo (vai ao log); NADA é gravado nem consultado |
@@ -848,26 +848,36 @@ Não são detalhes — moldam o código.
   Corpo cru, mensagem do SDK e `requestBodyValues` NUNCA são copiados — o roteador pode ecoar o
   pedido, que leva texto de ato. Ler o tempo: 400/401/402/403/404 falham na 1ª resposta;
   429/5xx/rede repetem com esperas de 1 s e 3 s (~5 s no total).
-- **Exceção de TESTE FECHADO da análise por IA, ligada por variável — REMOVER
-  ANTES DE ABRIR AO PÚBLICO** (v0.38.1). `PROCESSOVIVO_IA_WORKSPACES_LIBERADOS`:
-  ids de workspace (16 hex) separados por vírgula. Workspace da lista passa na
-  checagem do plano IA **sem assinatura, só para `analiseIa`**: a lista é lida em
-  `carregarConfig` (`ia.workspacesLiberados`), vai ao composition root e só
-  `ServicoAnaliseDoAto` a consulta (`workspacesLiberados`, ANTES de perguntar a
-  `temRecursoSemExcecao`). Peças, Pasta, leitor e calendário não mudam,
-  `ServicoAssinaturas` nem fica sabendo, e **nenhuma linha é criada em
-  `assinaturas`** — por isso não nasce vencimento nem carência para uma
-  integração que hoje passa livre. Continua exigindo `PROCESSOVIVO_IA_HABILITADA=true` e
-  TODAS as outras travas (ZDR, redação, verificação, limite de uso, segredo de
-  justiça). Formato inválido derruba o arranque (mesmo com a IA desligada) e a
-  mensagem diz a POSIÇÃO do item, nunca o valor — quem cola a chave de API no
-  lugar do id não pode vê-la no log do contêiner. Log e tela só mostram o id
-  MASCARADO (`1ed3…1867`, `mascararWorkspace`). Quem não está na lista e não tem
-  o plano continua vendo "A análise por IA faz parte do plano IA…". NÃO destrava
-  a venda: `analiseIa` segue `implementado: false`. Para remover: tire a variável
-  do ambiente (lista vazia = comportamento de sempre) e, ao abrir ao público,
-  apague a variável, `lerWorkspacesLiberados`, `workspacesLiberados`
-  e este item.
+- **Plano IA vendável por DADO, teto técnico por dia, e SEM exceção de beta** (v0.50.0, decisões do dono).
+  (1) **A venda do plano IA é decidida no `/admin`, nunca em código:** `analiseIa` virou `implementado: true` e
+  ganhou `cobradoPorUso: true` (só ela). Plano com recurso cobrado por uso **só vai à venda com preço > 0**
+  (`validarPlano`: "Defina o preço antes de colocá-lo à venda") e **nunca é o plano do teste** (`validarRegras`).
+  A semente segue com o IA FORA de venda e SEM preço; o operador põe preço e "à venda" (R$ 99,90 é decisão do
+  dono, gravada só no banco). Daí em diante o IA é um plano como os outros: `motivoDeNaoContratar`, `GET /v1/planos`,
+  checkout, webhook e reconciliação não têm caso especial. IA = Peças + `analiseIa`. Sem cota mensal comercial.
+  (2) **Só quem tem `analiseIa` no plano vigente usa** — assinado ou liberado à mão —, por
+  `temRecursoSemExcecao` (sem o "workspace sem assinatura passa livre"). O teste de 14 dias continua liberando
+  o Peças, SEM a IA. **A exceção de teste fechado (`PROCESSOVIVO_IA_WORKSPACES_LIBERADOS`, v0.38.1) foi
+  REMOVIDA**, como este arquivo mandava ao abrir ao público: a variável, `lerWorkspacesLiberados`,
+  `workspacesLiberados` e `workspaceLiberado.ts` saíram; se a variável ainda estiver no ambiente, o arranque só
+  avisa no log (sem ecoar o valor) e ela não libera nada. `PROCESSOVIVO_IA_HABILITADA` segue sendo a chave geral;
+  ZDR falhando fechado, redação, verificação e segredo de justiça não mudaram. (3) **Teto TÉCNICO de segurança**
+  `PROCESSOVIVO_IA_MAX_POR_DIA` (padrão 200 análises de ato por conta por dia de São Paulo, em memória —
+  reiniciar zera, como os outros freios): **não é limite do plano** e não aparece como tal; atingido, motivo
+  `limite_diario` (429), "Muitas análises hoje. Tente de novo amanhã ou fale com a gente." e ZERO chamadas ao
+  modelo. Os freios por hora, por conta em andamento e global seguem; o resumo tem só o freio próprio por hora.
+  (4) **Aviso de upgrade com oferta do servidor:** `GET /v1/analises/disponibilidade` devolve `oferta`
+  (`ver_planos` só para conta com e-mail quando há plano com `analiseIa` CONTRATÁVEL — mesma
+  `motivoDeNaoContratar` — com a cobrança ligada; `fale_conosco` para conta de chave de API; `nenhuma` no resto).
+  A tela troca a frase só por isso: "Ver planos" leva a "Minha conta"; chave lê "Fale com a gente para contratar.";
+  sem plano à venda, a frase de sempre, sem link. (5) **Vitrine:** `GET /v1/planos` ganhou `incluiAnaliseIa`
+  (aditivo); o site usa `site/planos-v0.50.0.html` (destaque "Inclui análise com IA" e a nota "O teste grátis de
+  14 dias não inclui a análise com IA."); o cartão de planos do app e a confirmação mostram o mesmo destaque. Nada
+  em texto de venda sugere cálculo de prazo ou consultoria jurídica. (6) **Custo por análise:** cada análise
+  concluída é uma linha de `analises_ia` (modelo, provedor, latência, tokens e custo quando o gateway informa;
+  nunca texto do ato) e `scripts/ia-avaliacoes.mjs` mostra o custo médio. **Troca Peças → IA não é automática:**
+  com renovação ativa o checkout recusa (`ja_assinante`); a pessoa cancela a renovação do Peças e assina o IA, e a
+  aprovação renova a partir do vencimento atual com o plano trocado (`Assinatura.renovada`).
 - **Cobrança recorrente atrás de uma PORTA, o webhook como única fonte de verdade e o acesso sempre das
   datas** (v0.44.0, parte 1 do Mercado Pago: assinatura recorrente por CARTÃO; Pix e boleto avulsos são a
   parte 2). (1) **Porta `GatewayDePagamento`** (`domain/ports`): criar assinatura (devolve a URL do
@@ -945,7 +955,7 @@ Não são detalhes — moldam o código.
   (6) **Quem já assina não abre outro checkout:** qualquer recorrência autorizada, de QUALQUER plano, é barrada
   (`ja_assinante`: "para trocar de plano, cancele a renovação atual primeiro" — a troca de plano não existe), e
   plano pago e vigente do mesmo plano por liberação manual é `plano_ja_vigente`; o teste de 14 dias não conta.
-  (7) **O trecho do site** (`site/planos-v0.45.0.html`, um arquivo, sem dependência externa) insere texto da rede
+  (7) **O trecho do site** (`site/planos-v0.45.0.html`; desde a v0.50.0, `site/planos-v0.50.0.html`, um arquivo, sem dependência externa) insere texto da rede
   SÓ por `textContent`, valida o formato do slug, nunca inventa preço (falha ou demora = mensagem neutra e um
   botão) e não traz o rodapé legal. Webhook, adapter, reconciliação e as regras de plano não mudaram.
 - **Recusa do gateway: motivo de lista fechada, log saneado, 422/503 e a última falha no /admin** (v0.45.1).
@@ -981,15 +991,15 @@ Não são detalhes — moldam o código.
 - **Plano que não entrega não se vende.** Desde a v0.28.0 os planos são dado
   (tabela `planos`, editável no painel), então a trava saiu do plano e foi para
   o RECURSO: `RECURSOS` em `domain/entities/Plano.ts` marca `analiseIa` como
-  `implementado: false`, e `validarPlano` recusa pôr à venda QUALQUER plano que
+  `implementado: false` (até a v0.49.6), e `validarPlano` recusa pôr à venda QUALQUER plano que
   inclua recurso não implementado — o de IA ou um criado amanhã pelo painel.
-  `validarRegras` aplica a mesma trava ao plano do teste. Há teste que falha
-  se alguém virar `implementado` antes de a análise existir. Cobrar assinatura
+  `validarRegras` aplica a mesma trava ao plano do teste. Cobrar assinatura
   de funcionalidade ausente, com advogado, não volta como pedido de reembolso —
   volta como reclamação formal. **v0.38.0:** a análise por IA existe, em teste
   fechado, para a conta que o operador liberou à mão no plano IA; `analiseIa`
-  segue `implementado: false` porque o que a trava impede é a VENDA, não o uso.
-  Virar `true` é decisão do dono, depois da avaliação com uso real.
+  seguiu `implementado: false` porque o que a trava impedia era a VENDA, não o uso.
+  **v0.50.0:** o dono decidiu vender; `analiseIa` virou `true` e a venda passou a ser decidida
+  por dado (preço + "à venda" no /admin), ver o item "Plano IA vendável por DADO".
 - **Planos são dado; recursos são código.** Nome, descrição, preço, combinação
   de recursos, ordem e "à venda" moram na tabela `planos` e mudam pelo painel
   sem deploy. O que cada RECURSO faz (e se existe) continua em código, porque
@@ -1459,7 +1469,7 @@ Não são detalhes — moldam o código.
   /v1/acompanhamentos/:numero/resumo`, sem corpo: `ServicoResumoDoProcesso` lê os atos do retrato
   da PRÓPRIA conta (nada de peça, PDF ou consulta ao tribunal) e as MESMAS travas da análise de
   ato valem: plano IA sem exceção (`exigirPlanoIa` reaproveita `ServicoAnaliseDoAto.exigirPlano`,
-  com a lista do teste fechado), segredo de justiça e processo sem ato com texto utilizável
+  sem a lista do teste fechado desde a v0.50.0), segredo de justiça e processo sem ato com texto utilizável
   encerram ANTES de qualquer chamada ao modelo (há teste de zero chamadas). (2) **Seleção**
   (`selecionarAtosParaResumo`): providências em aberto (`atosQuePedemProvidencia`, a mesma regra e
   janela de `lerProvidencia`), os atos recentes com texto, uma linha do tempo só de títulos e a
@@ -1554,8 +1564,8 @@ Não são detalhes — moldam o código.
   Pasta digital (qpdf) o Drive não sobe. Sem o SDK `googleapis`: REST com `HttpClient.requisitar`
   (cabeçalhos na resposta, `tentativas: 1` — a política de repetição é nossa). (10) **Plano:** recurso
   `salvarNoDrive` nos planos Peças e IA (retrocarga UMA vez, só nesses dois códigos, marca em `estado`);
-  plano criado pelo painel não o ganha sozinho; `analiseIa` segue `implementado: false`, então o plano IA
-  continua fora de venda. (11) **Tela** (`ui/drive.ts`, `window.__pvDrive`): cartão em "Meus acessos"
+  plano criado pelo painel não o ganha sozinho; o plano IA ficou fora de venda até a v0.50.0 (agora decidido
+  por dado no /admin). (11) **Tela** (`ui/drive.ts`, `window.__pvDrive`): cartão em "Meus acessos"
   (desconectado, conectado, precisa reconectar, sem plano, e nada com o recurso desligado) e botão
   "Salvar no Drive" na Pasta, que diz o número ("Salvar no Drive (N)" / "Salvar todas no Drive"), com
   progresso, Cancelar e resumo ("12 enviadas · 3 já estavam · 2 sigilosas ficaram de fora · 1 falhou").
@@ -2103,12 +2113,12 @@ teste e carência** (v0.28.0), **visual novo a partir do logo** (v0.29.0),
 **calendário: detecção, agenda, tela e feed ICS** (v0.32.0),
 **ajustes dos advogados: Atualizações por processo, peças no topo, providência em 10 dias** (v0.32.1),
 **Pasta digital: backend (v0.33.0) e tela (v0.33.1) — peça aberta ao clique, guarda por peça, montar pasta completa, baixar marcadas**,
-**ato (movimentação) de cada peça na lista da Pasta, com descrição** (v0.33.2) **e o número da movimentação calculado pela posição do ato, com aviso de atos bloqueados** (v0.34.0; a 0.33.3 havia removido o número errado da 0.33.2), **calibração do número com o Projudi feita pelo advogado: exato quando provado, faixa ou estimado quando não** (v0.35.0), **página inicial: Últimas atualizações mostra só o trecho do texto e o trilho de peças baixadas não estoura a largura** (v0.35.1), **Pasta: número da movimentação no lugar do índice; página inicial: "detectado há N dias" e cartão "pede providência"** (v0.35.2), **Pasta: lista em altura total com avisos compactados** (v0.35.3), **Pasta: todas as movimentações na lista, inclusive as sem peça, com lacuna de numeração provada e lista mais larga** (v0.36.0), **página inicial: tabela de últimas atualizações, uma linha por processo, com filtros que contam no lugar dos cartões; histórico de peças baixadas dentro da Pasta** (v0.37.0), **tabela sem "+N anteriores", "Detectado" enxuto e descrição do ato sem repetição na exibição** (v0.37.1), **classe legível e agrupada no filtro, última movimentação sem repetição e carteira sem rodapé redundante** (v0.37.2), **Atualizações lista todos os processos acompanhados, período como filtro opcional e verificação por conta** (v0.37.3), **Atualizações abre em "Pedem providência", com a lista completa a um clique** (v0.37.4), **intimação do Diário pede providência por 30 dias ou até "cumprido", marca por ato, correção da avalanche de novidades e reparo só com dry-run** (v0.37.5), **conferência com o Projudi: sonda de diagnóstico só de leitura, linha do ato da providência, "Detectado" legível e intimação a outro destinatário** (v0.37.6), **"Analisar com IA": por botão, texto redigido, citação verificada, ZDR falhando fechado, desligada por padrão e só no plano IA** (v0.38.0; sonda de IA v1.2.0 e `ia-avaliacoes.mjs` v1.0.0), **exceção de teste fechado da IA por variável (`PROCESSOVIVO_IA_WORKSPACES_LIBERADOS`), a remover antes de abrir ao público** (v0.38.1), **log da análise por IA com status HTTP, passo e funil do roteamento** (v0.38.2), **análise por IA: rodízio por provedor depois de 429/5xx, sem `allow_fallbacks`** (v0.38.3), **análise por IA: formato da resposta em texto, sem `require_parameters` nem `response_format`, ZDR e lista intactas** (v0.38.4), **análise por IA: ações possíveis como providência sem citação, rejeição de ação que copia o trecho-chave e rodapé sem o nome do modelo** (v0.38.5), **IA como secretária, Etapa 1: prazo escrito no ato, calculadora de prazo (exceção registrada) e "Criar aviso no calendário" com prévia e confirmação** (v0.39.0), **IA como secretária, Etapa 2 (só o servidor): resumo do processo por IA, por clique, com verificação item a item e a contagem das providências do sistema que a IA não citou** (v0.40.0), **tela do resumo do processo: botão na capa, painel com estados, link do ato à linha do tempo e correção do prazo sem opção pré-marcada** (v0.40.1), **Atualizações: busca pelo número do processo, que respeita os filtros e diz quantos casam fora deles** (v0.41.0),
+**ato (movimentação) de cada peça na lista da Pasta, com descrição** (v0.33.2) **e o número da movimentação calculado pela posição do ato, com aviso de atos bloqueados** (v0.34.0; a 0.33.3 havia removido o número errado da 0.33.2), **calibração do número com o Projudi feita pelo advogado: exato quando provado, faixa ou estimado quando não** (v0.35.0), **página inicial: Últimas atualizações mostra só o trecho do texto e o trilho de peças baixadas não estoura a largura** (v0.35.1), **Pasta: número da movimentação no lugar do índice; página inicial: "detectado há N dias" e cartão "pede providência"** (v0.35.2), **Pasta: lista em altura total com avisos compactados** (v0.35.3), **Pasta: todas as movimentações na lista, inclusive as sem peça, com lacuna de numeração provada e lista mais larga** (v0.36.0), **página inicial: tabela de últimas atualizações, uma linha por processo, com filtros que contam no lugar dos cartões; histórico de peças baixadas dentro da Pasta** (v0.37.0), **tabela sem "+N anteriores", "Detectado" enxuto e descrição do ato sem repetição na exibição** (v0.37.1), **classe legível e agrupada no filtro, última movimentação sem repetição e carteira sem rodapé redundante** (v0.37.2), **Atualizações lista todos os processos acompanhados, período como filtro opcional e verificação por conta** (v0.37.3), **Atualizações abre em "Pedem providência", com a lista completa a um clique** (v0.37.4), **intimação do Diário pede providência por 30 dias ou até "cumprido", marca por ato, correção da avalanche de novidades e reparo só com dry-run** (v0.37.5), **conferência com o Projudi: sonda de diagnóstico só de leitura, linha do ato da providência, "Detectado" legível e intimação a outro destinatário** (v0.37.6), **"Analisar com IA": por botão, texto redigido, citação verificada, ZDR falhando fechado, desligada por padrão e só no plano IA** (v0.38.0; sonda de IA v1.2.0 e `ia-avaliacoes.mjs` v1.0.0), **exceção de teste fechado da IA por variável (`PROCESSOVIVO_IA_WORKSPACES_LIBERADOS`), removida na v0.50.0** (v0.38.1), **log da análise por IA com status HTTP, passo e funil do roteamento** (v0.38.2), **análise por IA: rodízio por provedor depois de 429/5xx, sem `allow_fallbacks`** (v0.38.3), **análise por IA: formato da resposta em texto, sem `require_parameters` nem `response_format`, ZDR e lista intactas** (v0.38.4), **análise por IA: ações possíveis como providência sem citação, rejeição de ação que copia o trecho-chave e rodapé sem o nome do modelo** (v0.38.5), **IA como secretária, Etapa 1: prazo escrito no ato, calculadora de prazo (exceção registrada) e "Criar aviso no calendário" com prévia e confirmação** (v0.39.0), **IA como secretária, Etapa 2 (só o servidor): resumo do processo por IA, por clique, com verificação item a item e a contagem das providências do sistema que a IA não citou** (v0.40.0), **tela do resumo do processo: botão na capa, painel com estados, link do ato à linha do tempo e correção do prazo sem opção pré-marcada** (v0.40.1), **Atualizações: busca pelo número do processo, que respeita os filtros e diz quantos casam fora deles** (v0.41.0),
 **tela do processo sem os blocos "Pede providência" e "Última movimentação", Partes logo abaixo das peças** (v0.41.1), **Google Drive: conectar a conta do advogado e salvar as peças da Pasta digital numa pasta "Processo Vivo", por botão, escopo `drive.file`, desligado por padrão, planos Peças e IA** (v0.42.0), **Drive: o retorno do OAuth usa o workspace do `state` assinado e a conta de chave de API também conecta** (v0.42.1), **testes estáveis no CI e a volta do Google sem corrida no console** (v0.42.2), **Atualizações: situação como texto e caixa "Cumprido" como único controle, com aviso para desfazer** (v0.43.0), **cobrança recorrente pelo Mercado Pago, parte 1: assinatura por cartão atrás da porta de pagamento, webhook idempotente, reconciliação e ciclo no plano** (v0.44.0), **ambiente do pagamento declarado em `PROCESSOVIVO_PAGAMENTO_AMBIENTE`, não deduzido do token** (v0.44.1),
 **página de vendas: vitrine pública `GET /v1/planos`, plano escolhido atravessando cadastro e login, confirmação de assinatura com aceite dos Termos obrigatório e trecho para o site** (v0.45.0), **recusa do gateway com motivo de lista fechada, log saneado, 422/503 em JSON e a última falha no /admin** (v0.45.1), **tabela de Atualizações mais limpa: Atualização em uma linha, datas estreitas e coluna "Cumprido" só com a caixa e a dica** (v0.46.0),
 **tabela de Atualizações: caixa "Cumprido" na coluna Ações, Partes mais larga, sem o selo "outro destinatário" na linha e sem a frase fixa sob o filtro** (v0.46.1),
-**centro de custos do processo: lançamentos manuais por processo, categorias próprias, totais no servidor, caixa "Ressarcido" e prestação de contas em PDF para o cliente** (v0.47.0), **custos: recebimentos do cliente com saldo e crédito, quem pagou, depósitos fora das despesas, cancelar com histórico e catálogo Grupo › Subcategoria** (v0.48.0), **custos por cliente: tela no menu, PDF consolidado, CSV, comprovantes no Google Drive do advogado e aviso ao deixar de acompanhar** (v0.49.0), **painel de Custos: colunas de conteúdo, ações em ícones com dica e formulário em grade** (v0.49.1), **Atualizações: linha compacta, número do processo sem quebra e Ações em ícones com dica, inclusive "Analisar com IA"** (v0.49.2), **sincronização mais rápida: pool de até 3 (máx. 4) processos, progresso real "Verificando X de N" e fila sem processo que sempre falha na frente** (v0.49.3), **Atualizações: coluna Atualização em uma linha, sem o link "Abrir processo" na tabela (só nos cartões)** (v0.49.4), **checkout do Mercado Pago: e-mail do pagador informado na tela e checkout novo que substitui a assinatura pendente** (v0.49.5), **textos do checkout sem sugerir conta no Mercado Pago** (v0.49.6),
-Dockerfile multi-stage, CI, 3247 testes.
+**centro de custos do processo: lançamentos manuais por processo, categorias próprias, totais no servidor, caixa "Ressarcido" e prestação de contas em PDF para o cliente** (v0.47.0), **custos: recebimentos do cliente com saldo e crédito, quem pagou, depósitos fora das despesas, cancelar com histórico e catálogo Grupo › Subcategoria** (v0.48.0), **custos por cliente: tela no menu, PDF consolidado, CSV, comprovantes no Google Drive do advogado e aviso ao deixar de acompanhar** (v0.49.0), **painel de Custos: colunas de conteúdo, ações em ícones com dica e formulário em grade** (v0.49.1), **Atualizações: linha compacta, número do processo sem quebra e Ações em ícones com dica, inclusive "Analisar com IA"** (v0.49.2), **sincronização mais rápida: pool de até 3 (máx. 4) processos, progresso real "Verificando X de N" e fila sem processo que sempre falha na frente** (v0.49.3), **Atualizações: coluna Atualização em uma linha, sem o link "Abrir processo" na tabela (só nos cartões)** (v0.49.4), **checkout do Mercado Pago: e-mail do pagador informado na tela e checkout novo que substitui a assinatura pendente** (v0.49.5), **textos do checkout sem sugerir conta no Mercado Pago** (v0.49.6), **plano IA vendável por dado (preço + "à venda" no /admin), sem a exceção de teste fechado, com teto técnico diário e aviso de upgrade com "Ver planos"** (v0.50.0),
+Dockerfile multi-stage, CI, 3275 testes.
 
 **Pasta digital (v0.33.0, backend):** `GET /v1/processos/:numero/pasta` (lista +
 estado de cada peça + intervalos de página + totais SEM filtro + procedência

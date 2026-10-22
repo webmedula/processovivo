@@ -9,6 +9,43 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.50.0] — 2026-10-22
+
+**Plano IA à venda pelo mesmo caminho dos outros planos, decidido por dado no `/admin`.** Sem migração de banco, sem
+dependência nova; webhook, reconciliação, carência, teste grátis, liberação manual, e-mails, modelo, provedor, redação,
+verificação e segredo de justiça não mudaram.
+
+- **Venda por dado, não por trava fixa:** `analiseIa` passou a `implementado: true` e ganhou `cobradoPorUso: true`. Plano
+  com recurso cobrado por uso só vai à venda **com preço** ("Defina o preço antes de colocá-lo à venda") e **nunca** é o
+  plano do teste grátis. A semente não muda: o IA continua **fora de venda e sem preço** até o operador pôr preço e
+  "à venda" no `/admin`. Daí em diante aparece em `GET /v1/planos`, no cartão de planos do app e no checkout como os
+  outros. O `/admin` explica a regra ao lado da caixa do recurso.
+- **Sem exceção de beta:** saiu `PROCESSOVIVO_IA_WORKSPACES_LIBERADOS` (v0.38.1) e o código dela. Só usa a análise quem
+  tem `analiseIa` no plano vigente (assinado ou liberado à mão). Se a variável ainda estiver no ambiente, o arranque
+  só avisa no log, sem ecoar o valor. `PROCESSOVIVO_IA_HABILITADA` segue sendo a chave geral.
+- **Teto técnico de segurança:** `PROCESSOVIVO_IA_MAX_POR_DIA` (padrão **200** análises de ato por conta por dia de São
+  Paulo, em memória). Não é limite do plano. Atingido: 429, motivo `limite_diario`, "Muitas análises hoje. Tente de novo
+  amanhã ou fale com a gente." e nenhuma chamada ao modelo. Os freios por hora, em andamento e global continuam.
+- **Aviso de upgrade:** `GET /v1/analises/disponibilidade` devolve `oferta` (`ver_planos` | `fale_conosco` | `nenhuma`,
+  aditivo). Com plano de IA contratável e cobrança ligada, a frase de sempre ganha o botão **"Ver planos"** (leva a
+  "Minha conta"); conta de chave de API lê "A análise por IA faz parte do plano IA. Fale com a gente para contratar.";
+  sem plano à venda, a frase de sempre, sem link. Vale também para o resumo do processo.
+- **Vitrine e site:** `GET /v1/planos` ganhou `incluiAnaliseIa` (aditivo). Novo trecho do site
+  **`site/planos-v0.50.0.html`** (o da v0.45.0 fica como estava): destaque "Inclui análise com IA" e a nota "O teste
+  grátis de 14 dias não inclui a análise com IA."; três planos lado a lado a partir de ~860 px. O cartão de planos do
+  app e a confirmação de assinatura mostram o mesmo destaque, com preço e ciclo do plano.
+- **Custo por análise:** já registrado desde a v0.38.0 em `analises_ia` (modelo, provedor, latência, tokens e custo
+  quando o OpenRouter informa; sem texto de ato); `node scripts/ia-avaliacoes.mjs` mostra o custo médio.
+- **Testes reescritos (travavam a venda da IA):** `Assinatura.spec.ts` (o recurso "ainda não existente" e o plano IA
+  invendável viraram "sem preço não vende; com preço e à venda vende"), `ServicoPlanos.spec.ts` (mesma troca, no
+  serviço), `admin.spec.ts` (o catálogo e o PUT do plano IA), `planos-publicos.spec.ts` (campo novo na vitrine),
+  `config-ia.spec.ts` (a lista de beta saiu; fica a detecção da variável e o teto) e a remoção de
+  `analise-ia-workspaces-liberados.spec.ts`. Novos: `plano-ia-venda.spec.ts` (venda, liberação pelo gateway falso,
+  teste/Peças sem IA, oferta), teto diário com relógio falso e isolamento, registro sem texto, e navegador (aviso com
+  e sem "Ver planos", chave de API, três planos no site e no app em seis larguras, axe claro e escuro).
+
+---
+
 ## [0.49.6] — 2026-10-21
 
 **Checkout: os textos não sugerem mais que é preciso ter conta no Mercado Pago.** Só textos; nenhuma regra, rota, campo de

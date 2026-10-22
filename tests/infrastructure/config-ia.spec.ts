@@ -115,59 +115,33 @@ describe('tabela analises_ia', () => {
     expect(colunas.some((c) => /texto|conteudo/.test(c))).toBe(false);
   });
 
-  describe('workspaces liberados (teste fechado, v0.38.1)', () => {
-    const ID = '1ed3b9b0ba131867';
-
-    it('vazia por padrão: comportamento de sempre', () => {
-      expect(carregarConfig(BASE).ia.workspacesLiberados).toEqual([]);
+  /*
+   * REESCRITO na v0.50.0: a exceção de teste fechado (`PROCESSOVIVO_IA_WORKSPACES_LIBERADOS`) saiu, como o
+   * CLAUDE.md mandava fazer ao abrir a IA ao público. Os testes que validavam o formato da lista não têm mais
+   * o que validar; o que fica é: a variável não libera nada, não derruba o arranque e só é DETECTADA, para o
+   * composition root avisar no log (sem ecoar o valor).
+   */
+  describe('variável da antiga exceção de teste fechado (removida na v0.50.0)', () => {
+    it('ausente ou vazia: nada a avisar', () => {
+      expect(carregarConfig(BASE).ia.variavelDeTesteFechadoPresente).toBe(false);
       expect(
-        carregarConfig({ ...BASE, PROCESSOVIVO_IA_WORKSPACES_LIBERADOS: ' , ' }).ia
-          .workspacesLiberados,
-      ).toEqual([]);
+        carregarConfig({ ...BASE, PROCESSOVIVO_IA_WORKSPACES_LIBERADOS: '  ' }).ia
+          .variavelDeTesteFechadoPresente,
+      ).toBe(false);
     });
 
-    it('lê a lista separada por vírgula, normaliza caixa e remove repetição', () => {
-      const c = carregarConfig({
-        ...BASE,
-        PROCESSOVIVO_IA_WORKSPACES_LIBERADOS: ` ${ID.toUpperCase()}, aaaa0000bbbb1111 ,${ID}`,
-      });
-      expect(c.ia.workspacesLiberados).toEqual([ID, 'aaaa0000bbbb1111']);
-    });
-
-    it.each([
-      ['curto demais', '1ed3b9b0'],
-      ['longo demais', ID + 'ff'],
-      ['não hexadecimal', '1ed3b9b0ba13186z'],
-      ['um bom e um ruim', ID + ',xyz'],
-    ])('id com formato inválido (%s) derruba o arranque', (_nome, valor) => {
-      expect(() =>
-        carregarConfig({ ...BASE, PROCESSOVIVO_IA_WORKSPACES_LIBERADOS: valor }),
-      ).toThrow(/PROCESSOVIVO_IA_WORKSPACES_LIBERADOS/);
-    });
-
-    it('a mensagem diz a posição do item e NUNCA repete o valor (pode ser uma chave de API colada)', () => {
-      const chaveColada = 'chave-de-api-colada-por-engano-0123456789abcdef';
-      const erro = (() => {
-        try {
-          carregarConfig({
-            ...BASE,
-            PROCESSOVIVO_IA_WORKSPACES_LIBERADOS: `${ID},${chaveColada}`,
-          });
-        } catch (e) {
-          return e as Error;
-        }
-        return undefined;
-      })();
-      expect(erro?.message).toContain('item 2');
-      expect(erro?.message).not.toContain(chaveColada);
-      expect(erro?.message).not.toContain(ID);
-    });
-
-    it('é validada mesmo com a IA desligada, e não liga a IA', () => {
-      const c = carregarConfig({ ...BASE, PROCESSOVIVO_IA_WORKSPACES_LIBERADOS: ID });
+    it('presente, mesmo com valor torto: não derruba o arranque, não liga a IA, só é detectada', () => {
+      const c = carregarConfig({ ...BASE, PROCESSOVIVO_IA_WORKSPACES_LIBERADOS: 'xyz,123' });
+      expect(c.ia.variavelDeTesteFechadoPresente).toBe(true);
       expect(c.ia.habilitada).toBe(false);
-      expect(c.ia.chave).toBe('');
+      expect(JSON.stringify(c)).not.toContain('xyz,123');
     });
+  });
+
+  it('teto técnico por dia (v0.50.0): padrão de 200 por conta, configurável', () => {
+    expect(carregarConfig(BASE).ia.maxPorDia).toBe(200);
+    expect(carregarConfig({ ...BASE, PROCESSOVIVO_IA_MAX_POR_DIA: '50' }).ia.maxPorDia).toBe(50);
+    expect(() => carregarConfig({ ...BASE, PROCESSOVIVO_IA_MAX_POR_DIA: '0' })).toThrow();
   });
 
   it('resumo de processo: padrões de 6 por hora, 1500 tokens e 120 s, todos configuráveis', () => {

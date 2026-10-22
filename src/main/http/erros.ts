@@ -160,7 +160,7 @@ export function mapearErro(erro: unknown): RespostaDeErro {
     const status =
       erro.motivo === 'sem_plano' || erro.motivo === 'segredo_de_justica'
         ? 403
-        : erro.motivo === 'limite_de_uso'
+        : erro.motivo === 'limite_de_uso' || erro.motivo === 'limite_diario'
           ? 429
           : erro.motivo === 'ato_nao_encontrado'
             ? 409

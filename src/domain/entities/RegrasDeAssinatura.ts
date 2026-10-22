@@ -1,6 +1,6 @@
 import { RegrasDeAssinaturaInvalidasError } from '../errors/index.js';
 import { DIAS_DE_CARENCIA_PADRAO, DIAS_DE_TESTE } from './Assinatura.js';
-import { descricaoDoRecurso, recursoImplementado } from './Plano.js';
+import { descricaoDoRecurso, recursoCobradoPorUso, recursoImplementado } from './Plano.js';
 import type { CodigoPlano, Plano } from './Plano.js';
 
 /**
@@ -60,6 +60,15 @@ export function validarRegras(regras: RegrasDeAssinatura, planos: readonly Plano
     throw new RegrasDeAssinaturaInvalidasError(
       `O plano ${plano.nome} inclui ${ausentes.map((r) => descricaoDoRecurso(r).frase).join(', ')}, ` +
         'que ainda não existe no sistema — não pode ser o plano do teste.',
+    );
+  }
+  // v0.50.0 (decisão do dono): o teste grátis não dá recurso que custa a cada uso — a análise
+  // por IA é paga a terceiro por chamada, e o teste é de quem ainda não pagou nada.
+  const cobrados = plano.recursos.filter(recursoCobradoPorUso);
+  if (cobrados.length > 0) {
+    throw new RegrasDeAssinaturaInvalidasError(
+      `O plano ${plano.nome} inclui ${cobrados.map((r) => descricaoDoRecurso(r).frase).join(', ')}, ` +
+        'que custa a cada uso — não pode ser o plano do teste.',
     );
   }
 }

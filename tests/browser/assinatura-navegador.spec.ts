@@ -450,7 +450,49 @@ describe.skipIf(sem)('Assinatura online, no navegador', { timeout: 90_000 }, () 
     ).toBe(1);
   });
 
+  /** v0.50.0: os três planos à venda, com o IA pelo preço que o operador pôs no /admin (sintético). */
+  const tresPlanos = async (c: CenarioDePagamento): Promise<void> => {
+    await precificar(c, 'acompanhamento', 2990);
+    await precificar(c, 'ia', 9990);
+  };
+
   for (const largura of [1920, 1366, 1280, 1024, 768, 390]) {
+    it(`três planos (v0.50.0) em ${largura}px: todos com "Assinar", o IA com o destaque, sem rolagem horizontal`, async () => {
+      await abrir({ largura, termos: true, antes: tresPlanos });
+      await cartao().waitFor();
+      for (const nome of ['Acompanhamento', 'Peças', 'IA']) {
+        expect(
+          await cartao()
+            .getByRole('button', { name: `Assinar o plano ${nome}` })
+            .count(),
+        ).toBe(1);
+      }
+      const destaques = cartao().locator('.pgto-ia');
+      expect(await destaques.count()).toBe(1);
+      expect(await destaques.innerText()).toBe('Inclui análise com IA');
+      expect(
+        await cartao()
+          .locator('.pgto-plano', { has: page.locator('.pgto-ia') })
+          .innerText(),
+      ).toMatch(/R\$\s99,90 por mês/);
+      const m = await page.evaluate(() => ({
+        sw: document.documentElement.scrollWidth,
+        cw: document.documentElement.clientWidth,
+      }));
+      expect(m.sw).toBeLessThanOrEqual(m.cw);
+      // A confirmação do IA traz o preço e o ciclo DO PLANO, e o destaque.
+      await cartao().getByRole('button', { name: 'Assinar o plano IA' }).click();
+      const conf = page.locator('.pgto-conf');
+      await conf.waitFor();
+      expect(await conf.innerText()).toMatch(/R\$\s99,90 por mês/);
+      expect(await conf.innerText()).toContain('Inclui análise com IA');
+      const m2 = await page.evaluate(() => ({
+        sw: document.documentElement.scrollWidth,
+        cw: document.documentElement.clientWidth,
+      }));
+      expect(m2.sw).toBeLessThanOrEqual(m2.cw);
+    });
+
     it(`sem rolagem horizontal em ${largura}px; alvos de toque de 44px no celular`, async () => {
       await abrir({ largura, termos: true });
       await cartao().waitFor();
@@ -500,6 +542,28 @@ describe.skipIf(sem)('Assinatura online, no navegador', { timeout: 90_000 }, () 
   }
 
   for (const escuro of [false, true]) {
+    it(`axe sem violações com os três planos (tema ${escuro ? 'escuro' : 'claro'}, v0.50.0)`, async () => {
+      await abrir({ escuro, termos: true, antes: tresPlanos });
+      await cartao().locator('.pgto-ia').waitFor();
+      await page.addScriptTag({
+        content: (AxeBuilder as unknown as { source: string }).source,
+      });
+      // O cartão de assinatura, como os outros testes de axe desta tela (o subtítulo da conta é anterior).
+      const r = await page.evaluate(() =>
+        (window as unknown as AxeNaPagina).axe.run(
+          document.querySelector('#pv-pagamento')!,
+          {
+            rules: { 'color-contrast': { enabled: true } },
+          },
+        ),
+      );
+      expect(
+        r.violations.map(
+          (v) => `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(' | ')}`,
+        ),
+      ).toEqual([]);
+    });
+
     it(`axe sem violações (tema ${escuro ? 'escuro' : 'claro'}): planos, processando, ativa e confirmação`, async () => {
       await abrir({ escuro, termos: true });
       await cartao().waitFor();

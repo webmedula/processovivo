@@ -147,6 +147,8 @@ function corpo(){
     h+=resultadoHtml(S.dados);
   }else if(S.fase==='nao_verificado'){
     h+='<p class="pvres-estado">'+esc(NAO_VERIFICADO)+'</p>';
+  }else if(S.fase==='recusa'&&S.motivo==='sem_plano'&&window.__pvAnaliseIA){
+    h+=window.__pvAnaliseIA.semPlano(RECUSAS.sem_plano,'pvres-estado');
   }else if(S.fase==='recusa'){
     h+='<p class="pvres-estado">'+esc(RECUSAS[S.motivo]||ERRO)+'</p>';
   }else{
@@ -213,7 +215,9 @@ function iniciar(){
       if(x.ok&&x.b.estado==='verificado'){e.fase='resultado';e.dados=x.b;refrescar('Resumo concluído. Confira nos atos.');return}
       if(x.ok&&x.b.estado==='nao_verificado'){e.fase='nao_verificado';refrescar(NAO_VERIFICADO);return}
       var motivo=x.b&&x.b.detalhes?x.b.detalhes.motivo:'';
-      if(!x.ok&&motivo&&RECUSAS[motivo]){e.fase='recusa';e.motivo=motivo;refrescar(RECUSAS[motivo]);return}
+      if(!x.ok&&motivo&&RECUSAS[motivo]){
+        e.fase='recusa';e.motivo=motivo;
+        refrescar(motivo==='sem_plano'&&window.__pvAnaliseIA?window.__pvAnaliseIA.textoSemPlano(RECUSAS.sem_plano):RECUSAS[motivo]);return}
       if(!x.ok&&x.status===404){e.fase='recusa';e.motivo='nao_acompanhado';refrescar(RECUSAS.nao_acompanhado);return}
       e.fase='erro';refrescar(ERRO);
     })

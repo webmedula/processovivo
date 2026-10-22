@@ -2,7 +2,11 @@ import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { ServicoAnaliseDoAto } from '../../../application/services/ServicoAnaliseDoAto.js';
 import type { ServicoAvisoDoPrazo } from '../../../application/services/ServicoAvisoDoPrazo.js';
+import type { ServicoPlanos } from '../../../application/services/ServicoPlanos.js';
+import { motivoDeNaoContratar } from '../../../application/services/ServicoPagamentos.js';
+import { planoInclui } from '../../../domain/entities/Plano.js';
 import { WorkspaceNaoResolvidoError } from '../../../domain/errors/index.js';
+import type { RepositorioUsuarios } from '../../../domain/ports/RepositorioUsuarios.js';
 
 function workspaceDe(requisicao: FastifyRequest): string {
   const ws = requisicao.workspace;
@@ -27,6 +31,34 @@ const corpoDoAviso = z.object({
 const corpoDaAvaliacao = z.object({ avaliacao: z.enum(['util', 'errado', 'perigoso']) });
 
 /**
+ * O que o aviso "faz parte do plano IA" oferece (v0.50.0):
+ * - `ver_planos`: conta com e-mail e um plano com a análise CONTRATÁVEL agora (à venda, com preço,
+ *   ciclo vendável — a MESMA `motivoDeNaoContratar` do checkout) com a cobrança online ligada;
+ * - `fale_conosco`: conta de chave de API (sem e-mail, não assina online);
+ * - `nenhuma`: o resto — a frase de sempre, sem link para uma tela onde nada se contrata.
+ */
+export type OfertaDoPlanoIa = 'ver_planos' | 'fale_conosco' | 'nenhuma';
+
+export interface FontesDaOferta {
+  readonly planos: Pick<ServicoPlanos, 'aVenda'>;
+  readonly usuarios: Pick<RepositorioUsuarios, 'porWorkspace'>;
+  readonly pagamentoDisponivel: boolean;
+}
+
+export async function ofertaDoPlanoIa(
+  workspace: string,
+  fontes: FontesDaOferta,
+): Promise<OfertaDoPlanoIa> {
+  if (!(await fontes.usuarios.porWorkspace(workspace))) return 'fale_conosco';
+  if (!fontes.pagamentoDisponivel) return 'nenhuma';
+  const aVenda = await fontes.planos.aVenda();
+  const contratavel = aVenda.some(
+    (p) => planoInclui(p, 'analiseIa') && motivoDeNaoContratar(p) === undefined,
+  );
+  return contratavel ? 'ver_planos' : 'nenhuma';
+}
+
+/**
  * Análise de ato por IA (v0.38.0). Sem try/catch: o `errorHandler` traduz os erros de
  * domínio (403 sem plano/segredo, 422 sem texto, 429 limite, 404 análise de outra conta).
  *
@@ -36,11 +68,17 @@ const corpoDaAvaliacao = z.object({ avaliacao: z.enum(['util', 'errado', 'perigo
 export function rotasDaAnaliseIA(
   servico: ServicoAnaliseDoAto | undefined,
   aviso?: ServicoAvisoDoPrazo,
+  fontesDaOferta?: FontesDaOferta,
 ): FastifyPluginAsync {
   return async (servidor) => {
-    servidor.get('/v1/analises/disponibilidade', async () => ({
-      habilitada: servico !== undefined,
-    }));
+    // `oferta` só com a IA ligada: desligada, a tela nem desenha o botão.
+    servidor.get('/v1/analises/disponibilidade', async (req) => {
+      if (!servico) return { habilitada: false };
+      const ws = req.workspace;
+      const oferta: OfertaDoPlanoIa =
+        ws && fontesDaOferta ? await ofertaDoPlanoIa(ws, fontesDaOferta) : 'nenhuma';
+      return { habilitada: true, oferta };
+    });
     if (!servico) return;
 
     servidor.post<{ Params: { numero: string } }>(

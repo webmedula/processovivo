@@ -49,7 +49,6 @@ import { RepositorioNotificacaoSqlite } from '../../infrastructure/persistencia/
 import { RepositorioVigilanciasSqlite } from '../../infrastructure/persistencia/sqlite/RepositorioVigilanciasSqlite.js';
 import type { Logger } from '../../domain/ports/Logger.js';
 import type { RepositorioAcompanhamentos } from '../../domain/ports/RepositorioAcompanhamentos.js';
-import { mascararWorkspace } from '../../domain/entities/workspaceLiberado.js';
 import { ServicoAnaliseDoAto } from '../../application/services/ServicoAnaliseDoAto.js';
 import { ServicoResumoDoProcesso } from '../../application/services/ServicoResumoDoProcesso.js';
 import { ServicoAvisoDoPrazo } from '../../application/services/ServicoAvisoDoPrazo.js';
@@ -743,13 +742,11 @@ function montarAnaliseIa(
     raciocinio: ia.raciocinio,
     provedoresDoOperador: ia.provedoresPermitidos.length,
   });
-  if (ia.workspacesLiberados.length > 0) {
-    // Só ids MASCARADOS: o workspace identifica de quem é a carteira.
+  if (ia.variavelDeTesteFechadoPresente) {
+    // A exceção saiu na v0.50.0: a variável não libera mais nada. Sem ecoar o valor.
     logger.warn(
-      'análise por IA: exceção de teste fechado ligada (remover antes de abrir ao público)',
-      {
-        workspaces: ia.workspacesLiberados.map(mascararWorkspace),
-      },
+      'PROCESSOVIVO_IA_WORKSPACES_LIBERADOS não tem mais efeito: a análise por IA exige o ' +
+        'plano IA (libere pelo /admin) — apague a variável',
     );
   }
   const analiseIa = new ServicoAnaliseDoAto({
@@ -760,12 +757,12 @@ function montarAnaliseIa(
     limite: new LimiteDeAnalises({
       porHora: ia.maxPorHora,
       simultaneasNoTotal: ia.maxSimultaneas,
+      porDia: ia.maxPorDia,
       clock: clockDoSistema,
     }),
     clock: clockDoSistema,
     logger,
     novoId: () => randomUUID(),
-    workspacesLiberados: new Set(ia.workspacesLiberados),
   });
   const resumoDoProcesso = new ServicoResumoDoProcesso({
     repositorio,
@@ -775,7 +772,7 @@ function montarAnaliseIa(
       maxTokens: ia.resumoMaxTokens,
       timeoutMs: ia.resumoTimeoutMs,
     }),
-    // A MESMA regra do plano IA da análise de ato, inclusive a exceção de teste fechado.
+    // A MESMA regra do plano IA da análise de ato.
     exigirPlanoIa: (ws) => analiseIa.exigirPlano(ws),
     // Freio próprio do resumo: mais caro que a análise de um ato.
     limite: new LimiteDeAnalises({

@@ -204,6 +204,7 @@ function desenhar(){
         (esc1?'<div class="pgto-escolhido">Plano escolhido</div>':'')+
         '<div class="tt">'+esc(p.nome)+'</div>'+
         '<div class="cp">'+esc(p.resumo)+'</div>'+
+        (temIa(p)?'<div class="pgto-ia">Inclui análise com IA</div>':'')+
         '<div class="pgto-preco">'+esc(reais(p.valorDoCicloCentavos))+' por '+(p.ciclo==='mensal'?'mês':esc(p.ciclo))+'</div></div>'+
         '<button type="button" class="bt" data-assinar="'+esc(p.codigo)+'" aria-label="Assinar o plano '+esc(p.nome)+'">Assinar</button></div>';
     }).join('')+'</div>'+
@@ -215,6 +216,9 @@ function desenhar(){
   ligarBotoes();
   proximaVolta();
 }
+
+/* v0.50.0: o plano que inclui a análise com IA ganha o destaque, pelo código do recurso (nunca pelo nome). */
+function temIa(p){return !!(p&&p.recursos&&p.recursos.indexOf('analiseIa')>=0)}
 
 function planoDe(codigo){
   var l=(dados&&dados.planos)||[];
@@ -234,6 +238,7 @@ function painelDeConfirmacao(p,pg){
     '<h4 class="tt" id="pgto-conf-t" tabindex="-1">Confirmar assinatura</h4>'+
     ((pg.ambiente==='teste'||pg.ambiente==='falso')?'<div class="nota pgto-aviso-teste" role="note">'+esc(AMBIENTE_DE_TESTE)+'</div>':'')+
     '<div class="cp">Plano <strong>'+esc(p.nome)+'</strong></div>'+
+    (temIa(p)?'<div class="pgto-ia">Inclui análise com IA</div>':'')+
     '<div class="pgto-preco">'+esc(reais(p.valorDoCicloCentavos))+' por '+(p.ciclo==='mensal'?'mês':esc(p.ciclo))+'</div>'+
     '<div class="nota">'+esc(RENOVACAO)+'</div>'+
     campoDoEmail(pg)+caixaDeAceite(pg)+
@@ -386,5 +391,6 @@ export const ESTILOS_PAGAMENTO = `
 .pgto-aviso-teste{color:var(--tinta);font-weight:600}
 .pgto-plano-escolhido{border:2px solid var(--acento)}
 .pgto-escolhido{display:inline-block;margin-bottom:4px;padding:1px 8px;border:1px solid var(--acento);border-radius:999px;font-size:12.5px;font-weight:700;color:var(--tinta)}
+.pgto-ia{display:inline-block;margin:4px 0;padding:1px 8px;border-radius:999px;font-size:12.5px;font-weight:700;background:var(--acento-bg);color:var(--tinta)}
 .pgto :focus-visible{outline:2px solid var(--acento);outline-offset:2px}
 `;

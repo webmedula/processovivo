@@ -390,10 +390,10 @@ describe('Área administrativa — planos e regras', () => {
       'ia',
     ]);
     expect(corpo.planos[1].assinantes).toBeDefined();
-    expect(
-      corpo.recursos.find((x: { recurso: string }) => x.recurso === 'analiseIa')
-        .implementado,
-    ).toBe(false);
+    // v0.50.0: a análise existe (implementado) e é cobrada por uso — a tela do /admin avisa disso.
+    const ia = corpo.recursos.find((x: { recurso: string }) => x.recurso === 'analiseIa');
+    expect(ia.implementado).toBe(true);
+    expect(ia.cobradoPorUso).toBe(true);
     expect(corpo.regras).toEqual({
       diasDeTeste: 14,
       planoDoTeste: 'pecas',
@@ -462,7 +462,11 @@ describe('Área administrativa — planos e regras', () => {
     ).toBe(9990);
   });
 
-  it('recusa colocar à venda o plano de IA, com a razão', async () => {
+  /*
+   * REESCRITO na v0.50.0: antes o plano IA nunca ia à venda ("ainda não existe"). Agora vai, pelo /admin,
+   * com preço e "à venda"; sem preço segue recusado, com a razão.
+   */
+  it('o plano de IA só vai à venda com preço: sem preço, 400 com a razão; com preço, à venda', async () => {
     const r = await servidor.inject({
       method: 'PUT',
       url: '/admin/api/planos/ia',
@@ -471,7 +475,22 @@ describe('Área administrativa — planos e regras', () => {
     });
     expect(r.statusCode).toBe(400);
     expect(r.json().erro).toBe('PLANO_INVALIDO');
-    expect(r.json().mensagem).toMatch(/ainda não existe/);
+    expect(r.json().mensagem).toMatch(/Defina o preço/);
+
+    const ok = await servidor.inject({
+      method: 'PUT',
+      url: '/admin/api/planos/ia',
+      headers: auth,
+      payload: { disponivelParaContratacao: true, precoMensalCentavos: 9990 },
+    });
+    expect(ok.statusCode).toBe(200);
+    // Volta ao estado da semente para não contaminar os testes seguintes deste servidor.
+    await servidor.inject({
+      method: 'PUT',
+      url: '/admin/api/planos/ia',
+      headers: auth,
+      payload: { disponivelParaContratacao: false },
+    });
   });
 
   it('recusa preço com fração de centavo (400 no formato)', async () => {

@@ -114,12 +114,26 @@ describe('ServicoPlanos — criar', () => {
     await expect(servico.criar({ ...NOVO, codigo: 'pecas' })).rejects.toThrow(PlanoJaExisteError);
   });
 
-  it('recusa criar à venda com recurso que não existe', async () => {
+  /*
+   * REESCRITO na v0.50.0: antes recusava por `analiseIa` "não existir" (implementado: false). A IA passou a
+   * ser vendável por DADO; o que segue recusado é o plano com IA à venda SEM preço (recurso cobrado por uso).
+   */
+  it('recusa criar à venda, sem preço, um plano com a análise por IA (custa a cada uso)', async () => {
     const { servico, planos } = montar();
     await expect(
-      servico.criar({ ...NOVO, recursos: ['consulta', 'analiseIa'] }),
+      servico.criar({ ...NOVO, recursos: ['consulta', 'analiseIa'], precoMensalCentavos: null }),
     ).rejects.toThrow(PlanoInvalidoError);
     expect(await planos.porCodigo('escritorio')).toBeUndefined();
+  });
+
+  it('cria à venda um plano com a análise por IA quando tem preço', async () => {
+    const { servico } = montar();
+    const criado = await servico.criar({
+      ...NOVO,
+      recursos: ['consulta', 'analiseIa'],
+      precoMensalCentavos: 9990,
+    });
+    expect(criado.disponivelParaContratacao).toBe(true);
   });
 });
 
@@ -142,17 +156,32 @@ describe('ServicoPlanos — atualizar', () => {
     expect((await servico.aVenda()).map((p) => p.codigo)).toEqual(['acompanhamento', 'pecas']);
   });
 
-  it('recusa colocar o plano de IA à venda enquanto a análise não existe', async () => {
+  /*
+   * REESCRITO na v0.50.0: a trava fixa ("a análise ainda não existe") virou regra de dado — o plano IA vai à
+   * venda quando o operador põe PREÇO e "à venda" no /admin; sem preço continua recusado.
+   */
+  it('o plano de IA não vai à venda sem preço, e vai com preço e "à venda"', async () => {
     const { servico, planos } = montar();
     await expect(
       servico.atualizar('ia', { disponivelParaContratacao: true }),
-    ).rejects.toThrow(/ainda não existe/);
+    ).rejects.toThrow(/Defina o preço/);
     expect((await planos.porCodigo('ia'))?.disponivelParaContratacao).toBe(false);
+
+    const depois = await servico.atualizar('ia', {
+      disponivelParaContratacao: true,
+      precoMensalCentavos: 9990,
+    });
+    expect(depois.disponivelParaContratacao).toBe(true);
+    expect((await servico.aVenda()).map((p) => p.codigo)).toContain('ia');
+    // Com preço e à venda, tirar o preço é recusado: nunca "IA à venda sem valor".
+    await expect(
+      servico.atualizar('ia', { precoMensalCentavos: null }),
+    ).rejects.toThrow(/Defina o preço/);
   });
 
   it('recusa uma edição que tornaria inválido o plano do teste', async () => {
-    // Pela porta dos fundos: as regras apontam para `pecas`, e dar a ele um
-    // recurso que não existe faria o teste presentear o que não se entrega.
+    // Pela porta dos fundos: as regras apontam para `pecas`, e dar a ele a análise por IA
+    // faria o teste grátis presentear um recurso que custa a cada uso (v0.50.0).
     const { servico, planos } = montar();
     await expect(
       servico.atualizar('pecas', {

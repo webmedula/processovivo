@@ -7,23 +7,39 @@ import type { Clock } from '../../domain/ports/Clock.js';
  *
  * - no máximo `porHora` análises iniciadas por workspace na última hora;
  * - no máximo UMA em andamento por workspace (clique repetido não empilha);
- * - um teto global baixo de análises em andamento no processo inteiro.
+ * - um teto global baixo de análises em andamento no processo inteiro;
+ * - (v0.50.0, opcional) um TETO TÉCNICO por workspace e por dia de São Paulo: freio de
+ *   segurança contra uso anômalo, não limite do plano (a venda não tem cota). Vira o dia, zera.
  *
  * Clique repetido depois de terminar simplesmente analisa de novo: sem cache, sem cota mensal.
  */
 export interface OpcoesDoLimite {
   readonly porHora: number;
   readonly simultaneasNoTotal: number;
+  /** Teto por workspace no dia de São Paulo. Ausente = sem teto diário (o resumo não o usa). */
+  readonly porDia?: number;
   readonly clock: Clock;
 }
 
 const UMA_HORA_MS = 3_600_000;
+/** São Paulo em -03:00 fixo (sem horário de verão desde 2019), como o calendário. */
+const FUSO_DE_SAO_PAULO_MS = -3 * UMA_HORA_MS;
 
-export type NegativaDoLimite = 'hora' | 'em_andamento' | 'global';
+export type NegativaDoLimite = 'hora' | 'em_andamento' | 'global' | 'dia';
+
+/** `AAAA-MM-DD` do instante no fuso de São Paulo. */
+function diaEmSaoPaulo(instanteMs: number): string {
+  return new Date(instanteMs + FUSO_DE_SAO_PAULO_MS).toISOString().slice(0, 10);
+}
 
 export class LimiteDeAnalises {
   private readonly inicios = new Map<string, number[]>();
   private readonly emAndamento = new Set<string>();
+  /** Só a conta do dia corrente de cada workspace: o dia anterior é descartado ao virar. */
+  private readonly doDia = new Map<
+    string,
+    { readonly dia: string; quantidade: number }
+  >();
 
   constructor(private readonly opcoes: OpcoesDoLimite) {}
 
@@ -39,6 +55,12 @@ export class LimiteDeAnalises {
     if (this.emAndamento.size >= this.opcoes.simultaneasNoTotal) {
       return { negada: 'global' };
     }
+    const dia = diaEmSaoPaulo(agora);
+    const contagem = this.doDia.get(workspace);
+    const doDia = contagem?.dia === dia ? contagem.quantidade : 0;
+    if (this.opcoes.porDia !== undefined && doDia >= this.opcoes.porDia) {
+      return { negada: 'dia' };
+    }
     const recentes = (this.inicios.get(workspace) ?? []).filter(
       (t) => agora - t < UMA_HORA_MS,
     );
@@ -48,6 +70,7 @@ export class LimiteDeAnalises {
     }
     recentes.push(agora);
     this.inicios.set(workspace, recentes);
+    this.doDia.set(workspace, { dia, quantidade: doDia + 1 });
     this.emAndamento.add(workspace);
     let liberada = false;
     return {

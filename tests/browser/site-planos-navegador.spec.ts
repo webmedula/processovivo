@@ -8,12 +8,13 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { CHROMIUM } from './ambiente.js';
 
 /*
- * O trecho de planos do SITE (`site/planos-v0.45.0.html`) NUM NAVEGADOR. O site e o app são simulados por
+ * O trecho de planos do SITE NUM NAVEGADOR — desde a v0.50.0, `site/planos-v0.50.0.html` (o da v0.45.0 fica
+ * no repositório como estava, para quem ainda o tem colado; o novo só acrescenta o destaque da IA). O site e o app são simulados por
  * rotas do Playwright (nenhuma rede): o "site" é servido em https://site-exemplo.test e o app responde
  * em https://app.processovivo.com.br/v1/planos. Planos e textos sintéticos.
  */
 const sem = CHROMIUM === undefined;
-const CAMINHO = resolve(__dirname, '../../site/planos-v0.45.0.html');
+const CAMINHO = resolve(__dirname, '../../site/planos-v0.50.0.html');
 const HTML = readFileSync(CAMINHO, 'utf8');
 const SITE = 'https://site-exemplo.test';
 const APP = 'https://app.processovivo.com.br';
@@ -36,6 +37,24 @@ const PLANOS = {
       recursos: ['Consulta', 'Peças do processo'],
       preco: { valorCentavos: 4990, ciclo: 'mensal' },
       assinavel: true,
+    },
+  ],
+};
+
+/** Os três planos da semente, com o IA à venda e com preço (v0.50.0). Valores sintéticos. */
+const PLANOS_TRES = {
+  pagamentoDisponivel: true,
+  planos: [
+    { ...PLANOS.planos[0], incluiAnaliseIa: false },
+    { ...PLANOS.planos[1], incluiAnaliseIa: false },
+    {
+      slug: 'ia',
+      nome: 'IA',
+      resumo: 'Tudo do Peças, mais análise do processo com sugestões.',
+      recursos: ['Consulta', 'Peças do processo', 'Análise com IA'],
+      preco: { valorCentavos: 9990, ciclo: 'mensal' },
+      assinavel: true,
+      incluiAnaliseIa: true,
     },
   ],
 };
@@ -329,6 +348,50 @@ describe.skipIf(sem)(
       expect(alcancados.size).toBe(3);
     });
 
+    it('três planos (v0.50.0): o IA destaca "Inclui análise com IA" e avisa que o teste grátis não a inclui', async () => {
+      await abrir(ok(PLANOS_TRES));
+      await cartoes().first().waitFor();
+      expect(await cartoes().count()).toBe(3);
+      const ia = cartoes().nth(2);
+      expect(await ia.locator('.pv-ia').innerText()).toBe('Inclui análise com IA');
+      expect(await ia.innerText()).toContain(
+        'O teste grátis de 14 dias não inclui a análise com IA.',
+      );
+      expect(await ia.locator('.pv-preco').innerText()).toMatch(/R\$\s99,90\s+por mês/);
+      expect(
+        await ia
+          .getByRole('link', { name: 'Assinar agora o plano IA' })
+          .getAttribute('href'),
+      ).toBe(`${APP}/?plano=ia&assinar=1&conta=1`);
+      // Os outros cartões não ganham o destaque; e nada sugere cálculo de prazo ou consultoria.
+      expect(await page.locator('#pv-planos .pv-ia').count()).toBe(1);
+      expect(await page.locator('#pv-planos').innerText()).not.toMatch(
+        /prazo|jur[ií]dic|consultoria/i,
+      );
+    });
+
+    for (const largura of [1920, 1366, 1280, 1024, 768, 390]) {
+      it(`três planos sem rolagem horizontal em ${largura}px; lado a lado a partir de 1024px`, async () => {
+        await abrir(ok(PLANOS_TRES), { largura });
+        await cartoes().first().waitFor();
+        const m = await page.evaluate(() => ({
+          sw: document.documentElement.scrollWidth,
+          cw: document.documentElement.clientWidth,
+          topos: Array.from(document.querySelectorAll('#pv-planos .pv-cartao')).map((c) =>
+            Math.round(c.getBoundingClientRect().top),
+          ),
+          direita: Math.max(
+            ...Array.from(document.querySelectorAll('#pv-planos .pv-cartao')).map(
+              (c) => c.getBoundingClientRect().right,
+            ),
+          ),
+        }));
+        expect(m.sw).toBeLessThanOrEqual(m.cw);
+        expect(m.direita).toBeLessThanOrEqual(m.cw);
+        if (largura >= 1024) expect(new Set(m.topos).size).toBe(1);
+      });
+    }
+
     for (const largura of [320, 390, 768, 1024, 1366, 1920]) {
       it(`sem rolagem horizontal em ${largura}px; alvos de 44px`, async () => {
         await abrir(ok(PLANOS), { largura });
@@ -350,11 +413,12 @@ describe.skipIf(sem)(
       it(`axe sem violações (tema ${escuro ? 'escuro' : 'claro'}): planos e mensagem neutra`, async () => {
         for (const [nome, resposta] of [
           ['planos', ok(PLANOS)],
+          ['três planos', ok(PLANOS_TRES)],
           ['falha', (r: Route) => r.abort('failed')],
         ] as Array<[string, Resposta]>) {
           await abrir(resposta, { escuro });
           await page
-            .locator(nome === 'planos' ? '#pv-planos .pv-cartao' : '#pv-planos a')
+            .locator(nome === 'falha' ? '#pv-planos a' : '#pv-planos .pv-cartao')
             .first()
             .waitFor();
           await page.addScriptTag({

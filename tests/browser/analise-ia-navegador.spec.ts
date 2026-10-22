@@ -107,7 +107,12 @@ describe.skipIf(sem)('Analisar com IA, no navegador', { timeout: 120_000 }, () =
   });
 
   async function abrir(
-    opcoes: { habilitada?: boolean; largura?: number; escuro?: boolean } = {},
+    opcoes: {
+      habilitada?: boolean;
+      largura?: number;
+      escuro?: boolean;
+      oferta?: 'ver_planos' | 'fale_conosco' | 'nenhuma';
+    } = {},
   ): Promise<void> {
     pedidos = [];
     avaliacoes = [];
@@ -187,7 +192,10 @@ describe.skipIf(sem)('Analisar com IA, no navegador', { timeout: 120_000 }, () =
       });
     });
     await ctx.route('**/v1/analises/disponibilidade', (rota) =>
-      json(rota, 200, { habilitada: opcoes.habilitada ?? true }),
+      json(rota, 200, {
+        habilitada: opcoes.habilitada ?? true,
+        ...(opcoes.oferta ? { oferta: opcoes.oferta } : {}),
+      }),
     );
     await ctx.route('**/v1/acompanhamentos/*/analise', async (rota) => {
       pedidos.push({
@@ -458,6 +466,11 @@ describe.skipIf(sem)('Analisar com IA, no navegador', { timeout: 120_000 }, () =
           429,
           'Há muitas análises em andamento. Tente novamente em instantes.',
         ],
+        [
+          'limite_diario',
+          429,
+          'Muitas análises hoje. Tente de novo amanhã ou fale com a gente.',
+        ],
       ] as const
     ).map(([motivo, status, texto]) => ({
       nome: `recusa: ${motivo}`,
@@ -614,6 +627,97 @@ describe.skipIf(sem)('Analisar com IA, no navegador', { timeout: 120_000 }, () =
       expect(await rodar(), 'recusa').toBe('');
     });
   }
+
+  describe('aviso de upgrade (v0.50.0)', () => {
+    const SEM_PLANO =
+      'A análise por IA faz parte do plano IA. Faça upgrade do plano para usar.';
+    const recusarSemPlano = (rota: Route) =>
+      json(rota, 403, {
+        erro: 'ENTRADA_NAO_ANALISAVEL',
+        mensagem: 'x',
+        detalhes: { motivo: 'sem_plano' },
+      });
+
+    it('com o plano IA à venda: a frase de sempre e "Ver planos", que leva a Minha conta', async () => {
+      await abrir({ oferta: 'ver_planos' });
+      responder = recusarSemPlano;
+      await botao(NA).click();
+      const p = painel(NA);
+      await p.getByText(SEM_PLANO, { exact: true }).waitFor();
+      const ver = p.getByRole('button', { name: 'Ver planos' });
+      expect(await ver.count()).toBe(1);
+      expect(await p.innerText()).not.toMatch(/Fale com a gente/);
+      await ver.click();
+      // Conta de chave de API nesta página: a tela "Minha conta" diz que é chave. O que importa é ter ido.
+      await page.waitForFunction(() => document.querySelectorAll('.pvia').length === 0);
+      expect(await page.locator('#conteudo').innerText()).toMatch(
+        /chave de API|Minha conta/,
+      );
+    });
+
+    it('com o plano IA fora de venda: só a frase, sem link', async () => {
+      await abrir({ oferta: 'nenhuma' });
+      responder = recusarSemPlano;
+      await botao(NA).click();
+      const p = painel(NA);
+      await p.getByText(SEM_PLANO, { exact: true }).waitFor();
+      expect(await p.getByRole('button', { name: 'Ver planos' }).count()).toBe(0);
+      expect(await p.locator('a').count()).toBe(0);
+    });
+
+    it('servidor antigo (sem `oferta`): igual a "fora de venda", sem link', async () => {
+      await abrir();
+      responder = recusarSemPlano;
+      await botao(NA).click();
+      await painel(NA).getByText(SEM_PLANO, { exact: true }).waitFor();
+      expect(await painel(NA).getByRole('button', { name: 'Ver planos' }).count()).toBe(
+        0,
+      );
+    });
+
+    it('conta de chave de API: "Fale com a gente", sem link e sem "upgrade"', async () => {
+      await abrir({ oferta: 'fale_conosco' });
+      responder = recusarSemPlano;
+      await botao(NA).click();
+      const p = painel(NA);
+      await p
+        .getByText(
+          'A análise por IA faz parte do plano IA. Fale com a gente para contratar.',
+          {
+            exact: true,
+          },
+        )
+        .waitFor();
+      expect(await p.getByRole('button', { name: 'Ver planos' }).count()).toBe(0);
+      expect(await p.innerText()).not.toMatch(/upgrade/i);
+      expect(await live().textContent()).toContain('Fale com a gente para contratar.');
+    });
+
+    for (const escuro of [false, true]) {
+      it(`axe sem violações no aviso com "Ver planos" (tema ${escuro ? 'escuro' : 'claro'})`, async () => {
+        await abrir({ escuro, oferta: 'ver_planos' });
+        responder = recusarSemPlano;
+        await botao(NA).click();
+        await painel(NA).getByRole('button', { name: 'Ver planos' }).waitFor();
+        await page.addScriptTag({
+          content: (AxeBuilder as unknown as { source: string }).source,
+        });
+        const r = await page.evaluate(() =>
+          (window as unknown as AxeNaPagina).axe.run(
+            document.querySelector('#conteudo')!,
+            {
+              rules: { 'color-contrast': { enabled: true } },
+            },
+          ),
+        );
+        expect(
+          r.violations.map(
+            (v) => `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(' | ')}`,
+          ),
+        ).toEqual([]);
+      });
+    }
+  });
 
   describe('aviso no calendário (v0.39.0)', () => {
     async function abrirAnalise(resultado: object): Promise<void> {
