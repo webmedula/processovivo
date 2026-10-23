@@ -71,6 +71,7 @@ function irPara(aba){
   $('nav-assinaturas').className=aba==='assinaturas'?'ativo':'';
   $('nav-chaves').className=aba==='chaves'?'ativo':'';
   $('nav-planos').className=aba==='planos'?'ativo':'';
+  $('nav-ia').className=aba==='ia'?'ativo':'';
   render();
 }
 
@@ -79,6 +80,7 @@ function render(){
   c.innerHTML='<div class="vazio"><span class="gira"></span>carregando…</div>';
   if(estado.aba==='chaves'){renderChaves()}
   else if(estado.aba==='planos'){renderPlanos()}
+  else if(estado.aba==='ia'){window.__pvIaAdmin.render(c)}
   else{renderAssinaturas()}
 }
 
@@ -563,6 +565,15 @@ function desenharChaves(){
 $('nav-assinaturas').addEventListener('click',function(){irPara('assinaturas')});
 $('nav-chaves').addEventListener('click',function(){irPara('chaves')});
 $('nav-planos').addEventListener('click',function(){irPara('planos')});
+$('nav-ia').addEventListener('click',function(){irPara('ia')});
+/* O painel de IA (v0.58.0) mora em ui/iaAdmin.ts. O e-mail do alerta de custo leva a /admin#ia. */
+window.__pvIrParaIa=function(){irPara('ia')};
+if(location.hash==='#ia')estado.aba='ia';
+if(estado.aba==='ia'){
+  $('nav-assinaturas').className='';
+  $('nav-ia').className='ativo';
+}
+window.__pvIaAdmin.banner($('aviso-ia'));
 render();
 })();
 `;

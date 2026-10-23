@@ -50,6 +50,13 @@ import { RepositorioNotificacaoSqlite } from '../../src/infrastructure/persisten
 import { RepositorioVigilanciasSqlite } from '../../src/infrastructure/persistencia/sqlite/RepositorioVigilanciasSqlite.js';
 import { ServicoAvisoDoPrazo } from '../../src/application/services/ServicoAvisoDoPrazo.js';
 import { ServicoAnaliseDoAto } from '../../src/application/services/ServicoAnaliseDoAto.js';
+import { ServicoControleDaIa } from '../../src/application/services/ServicoControleDaIa.js';
+import { ServicoPainelDeIa } from '../../src/application/services/ServicoPainelDeIa.js';
+import {
+  LeitorDeUsoDeIaSqlite,
+  RegistroDeOcorrenciasDeIaSqlite,
+  RepositorioDeConfigDeIaSqlite,
+} from '../../src/infrastructure/persistencia/sqlite/RepositoriosDoPainelDeIaSqlite.js';
 import { LimiteDeAnalises, TetoDiario } from '../../src/application/politicas/limiteDeAnalises.js';
 import type { AnalisadorDeAto } from '../../src/domain/ports/AnalisadorDeAto.js';
 import { RepositorioAnalisesSqlite } from '../../src/infrastructure/persistencia/sqlite/RepositorioAnalisesSqlite.js';
@@ -440,14 +447,38 @@ export function aplicacaoDeTeste(
       tarefa: async () => {},
     });
 
-  // Como em produção (v0.52.0): com `porDia`, a análise de ato e o resumo gastam do MESMO teto por conta.
-  const tetoCompartilhado =
-    opcoes.analiseIa?.porDia !== undefined
-      ? new TetoDiario(opcoes.analiseIa.porDia, opcoes.analiseIa.clock ?? {
-          agora: () => (opcoes.agora ? opcoes.agora() : new Date()),
-          monotonico: () => 0,
-        })
-      : undefined;
+  // Painel de IA do /admin (v0.58.0), como em produção: o ambiente do teste é "o que o teste ligou".
+  const relogioDoPainel: Clock = {
+    agora: () => (opcoes.agora ? opcoes.agora() : new Date()),
+    monotonico: () => 0,
+  };
+  const ocorrenciasDaIa = new RegistroDeOcorrenciasDeIaSqlite(db, relogioDoPainel, loggerSilencioso);
+  const controleDaIa = new ServicoControleDaIa({
+    repositorio: new RepositorioDeConfigDeIaSqlite(db),
+    ambiente: {
+      permite: {
+        ato: opcoes.analiseIa !== undefined,
+        resumo: opcoes.resumoIa !== undefined,
+        peca: opcoes.analiseDePeca !== undefined,
+      },
+      tetoPorContaDoAmbiente: opcoes.analiseIa?.porDia ?? 1_000_000,
+    },
+    clock: relogioDoPainel,
+    logger: loggerSilencioso,
+    // Sem cache nos testes: a mudança no painel vale na chamada seguinte.
+    validadeDoCacheMs: 0,
+  });
+  const painelDeIa = new ServicoPainelDeIa({
+    controle: controleDaIa,
+    leitor: new LeitorDeUsoDeIaSqlite(db, ocorrenciasDaIa),
+    clock: relogioDoPainel,
+  });
+  // Como em produção (v0.52.0): a análise de ato, o resumo e a peça gastam do MESMO teto por conta.
+  const tetoCompartilhado = new TetoDiario(
+    opcoes.analiseIa?.porDia ?? Number.MAX_SAFE_INTEGER,
+    opcoes.analiseIa?.clock ?? relogioDoPainel,
+    controleDaIa,
+  );
   const analiseIa = opcoes.analiseIa
     ? new ServicoAnaliseDoAto({
         repositorio: repositorioCru,
@@ -457,7 +488,8 @@ export function aplicacaoDeTeste(
         limite: new LimiteDeAnalises({
           porHora: opcoes.analiseIa.porHora ?? 100,
           simultaneasNoTotal: opcoes.analiseIa.simultaneasNoTotal ?? 10,
-          ...(tetoCompartilhado ? { teto: tetoCompartilhado } : {}),
+          teto: tetoCompartilhado,
+          funcao: 'ato',
           clock: opcoes.analiseIa.clock ?? {
             agora: () => (opcoes.agora ? opcoes.agora() : new Date()),
             monotonico: () => 0,
@@ -469,6 +501,8 @@ export function aplicacaoDeTeste(
         },
         logger: loggerSilencioso,
         novoId: () => randomUUID(),
+        controle: controleDaIa,
+        ocorrencias: ocorrenciasDaIa,
       })
     : undefined;
   const clockDoResumo: Clock = opcoes.resumoIa?.clock ?? {
@@ -491,12 +525,15 @@ export function aplicacaoDeTeste(
         limite: new LimiteDeAnalises({
           porHora: opcoes.resumoIa.porHora ?? 100,
           simultaneasNoTotal: 10,
-          ...(tetoCompartilhado ? { teto: tetoCompartilhado } : {}),
+          teto: tetoCompartilhado,
+          funcao: 'resumo',
           clock: clockDoResumo,
         }),
         clock: clockDoResumo,
         logger: loggerSilencioso,
         novoId: () => randomUUID(),
+        controle: controleDaIa,
+        ocorrencias: ocorrenciasDaIa,
         janelaDePendenciaDias: 10,
       })
     : undefined;
@@ -516,7 +553,8 @@ export function aplicacaoDeTeste(
           limite: new LimiteDeAnalises({
             porHora: opcoes.analiseDePeca.porHora ?? 100,
             simultaneasNoTotal: 10,
-            ...(tetoCompartilhado ? { teto: tetoCompartilhado } : {}),
+            teto: tetoCompartilhado,
+            funcao: 'peca',
             clock: clockDaPeca,
           }),
           liberacao: opcoes.analiseDePeca.liberacao,
@@ -526,6 +564,8 @@ export function aplicacaoDeTeste(
           clock: clockDaPeca,
           logger: loggerSilencioso,
           novoId: () => randomUUID(),
+          controle: controleDaIa,
+          ocorrencias: ocorrenciasDaIa,
         })
       : undefined;
   const analisesRepo = new RepositorioAnalisesSqlite(db);
@@ -642,6 +682,9 @@ export function aplicacaoDeTeste(
     agendadorCalendario: undefined,
     resumoDoCalendario,
     agendadorResumoDoCalendario: undefined,
+    controleDaIa,
+    painelDeIa,
+    agendadorAlertaDeCustoDaIa: undefined,
     custos,
     custosPorCliente,
     usuarios,

@@ -64,7 +64,8 @@ var RECUSAS={
   arquivo_grande:'O arquivo desta peça é grande demais para a análise por IA. Leia a peça.',
   limite_de_uso:'Há muitas análises em andamento ou o limite por hora foi atingido. Tente novamente em instantes.',
   limite_diario:'Muitas análises hoje (cada peça conta como cinco). Tente de novo amanhã ou fale com a gente.',
-  nao_acompanhado:'Este processo não está entre os que você acompanha.'
+  nao_acompanhado:'Este processo não está entre os que você acompanha.',
+  desligada:'Este recurso está indisponível no momento.'
 };
 var DOWNLOAD={
   428:'Cadastre o acesso ao tribunal em “Meus acessos” para baixar a peça.',

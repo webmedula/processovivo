@@ -786,6 +786,31 @@ O plano IA (Peças + análise com IA) é vendido pelo mesmo caminho dos outros: 
    A coluna de custo médio é por modelo e versão do prompt. Análise que falhou antes de chegar ao modelo (sem plano,
    sigilo, teto) não gera linha; análise que o modelo não concluiu (erro) também não.
 
+## Painel de IA no /admin (v0.58.0)
+
+Observar o uso das três funções de IA (análise de ato, resumo do processo e análise de peça) e controlar o que está ligado.
+**O ambiente continua mandando:** uma função só funciona se a variável de ambiente permite **e** o painel está ligado. O painel
+pode **desligar** e **reduzir** teto; nunca liga o que o ambiente desligou. Se o painel falhar, a IA segue como o ambiente manda.
+
+1. **Abrir:** `https://SEU-DOMINIO/admin` → aba **IA** (o mesmo usuário e senha do `/admin`; ninguém mais entra). O link
+   `https://SEU-DOMINIO/admin#ia` abre direto nela.
+2. **Ver os números:** escolha **Hoje**, **7 dias** ou **30 dias**. Cada função tem um cartão: análises, polegares, "não foi
+   possível", falhas de verificação, repetições, custo (total, médio, p50, p95, máximo) e tempo. Só números — nenhum texto de ato.
+3. **Desligar uma função:** botão **Desligar** → **Sim, desligar**. Na hora, o botão da função some para todas as contas e o
+   modelo não é mais chamado. **Ligar** restaura. Se o cartão diz *"Desligada pelo ambiente do servidor"*, o painel não pode
+   ligar: mude a variável no Easypanel.
+4. **Tetos:** em cada cartão, *Teto por conta e por dia* (a peça conta 5); em *Limites e alerta de custo*, o *Teto global*
+   (todas as contas). O teto efetivo é o menor entre a variável `PROCESSOVIVO_IA_MAX_POR_DIA` e o painel.
+5. **Alerta de custo:** padrão **US$ 3,00 por dia** (dia de São Paulo), ajustável na mesma seção. Passou do limite: um aviso
+   vermelho aparece no topo de **qualquer** aba do `/admin` e um e-mail sai **uma vez por dia**. Para o e-mail chegar:
+   `SMTP_HOST` e `SMTP_FROM` (SMTP de verdade) e `PROCESSOVIVO_ADMIN_EMAIL=<seu e-mail>` (opcional; se estiver vazia, usa
+   `PROCESSOVIVO_PAGAMENTO_AVISO_EMAIL`). Sem isso, só o aviso na tela. O e-mail diz só a data, o valor do dia, o limite e o link.
+6. **Histórico:** as últimas 50 mudanças (quando, função, de → para, e um identificador curto do operador). Para desfazer uma
+   mudança, ponha o valor anterior de volta pela própria tela; isso também fica registrado.
+7. **Backup:** as tabelas `ia_config`, `ia_alteracoes`, `ia_alertas_custo` e `ia_ocorrencias_dia` ficam no mesmo banco e
+   entram no backup de sempre. Nenhuma guarda texto de ato ou de peça.
+8. **Relatório por linha de comando** (o mesmo cálculo do painel): `node scripts/ia-avaliacoes.mjs`.
+
 ## Análise de peça por IA, "Analisar peça com IA" (v0.55.0)
 
 O botão aparece ao lado de cada peça na linha do tempo. **Nasce desligado.** Duas chaves decidem quem vê:

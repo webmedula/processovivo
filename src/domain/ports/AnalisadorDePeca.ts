@@ -13,6 +13,8 @@ export interface PedidoDeAnaliseDePeca {
   readonly sistema: string;
   readonly usuario: string;
   readonly sinal?: AbortSignal;
+  /** Chamado a cada repetição automática da chamada (painel de IA, v0.58.0). Só conta; nunca recebe texto. */
+  readonly aoRepetir?: () => void;
 }
 
 export interface RespostaDoAnalisadorDePeca {

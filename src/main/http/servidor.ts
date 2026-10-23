@@ -158,11 +158,16 @@ export function construirServidor(app: Aplicacao, config: Config): FastifyInstan
   void servidor.register(rotasDeAcompanhamento(app.acompanhamento, config.telas));
   void servidor.register(rotasDePecas(app.pecas, app.assinaturas));
   void servidor.register(
-    rotasDaAnaliseIA(app.analiseIa, app.avisoDoPrazo, {
-      planos: app.planos,
-      usuarios: app.usuarios,
-      pagamentoDisponivel: app.pagamentos !== undefined,
-    }),
+    rotasDaAnaliseIA(
+      app.analiseIa,
+      app.avisoDoPrazo,
+      {
+        planos: app.planos,
+        usuarios: app.usuarios,
+        pagamentoDisponivel: app.pagamentos !== undefined,
+      },
+      app.resumoDoProcesso,
+    ),
   );
   void servidor.register(rotasDoResumoIA(app.resumoDoProcesso));
   void servidor.register(rotasDaAnaliseDePecaIA(app.analiseDePeca, app.pasta));
@@ -203,6 +208,7 @@ export function construirServidor(app: Aplicacao, config: Config): FastifyInstan
       repositorioAssinaturas: app.repositorioAssinaturas,
       pagamentos: app.pagamentos,
       emProducao: config.pagamento.emProducao,
+      ia: { controle: app.controleDaIa, painel: app.painelDeIa },
       usuarios: app.usuarios,
       chavesApi: app.chavesApi,
       localizador: new LocalizadorDeWorkspace({
@@ -347,6 +353,7 @@ export async function iniciar(app: Aplicacao, config: Config): Promise<FastifyIn
   app.agendadorLimpezaAnalisesDePeca?.iniciar();
   app.agendadorCalendario?.iniciar();
   app.agendadorResumoDoCalendario?.iniciar();
+  app.agendadorAlertaDeCustoDaIa?.iniciar();
 
   app.logger.info('Processo Vivo no ar', {
     versao: VERSAO,

@@ -846,7 +846,9 @@ export class AtoDaProvidenciaInvalidoError extends DomainError {
  *   problema, outra frase: o advogado precisa abrir o processo no tribunal;
  * - `limite_de_uso`: limite por hora da conta, ou análises demais em curso;
  * - `limite_diario`: o teto técnico de segurança do dia (v0.50.0) — não é limite do plano;
- * - `ato_nao_encontrado`: o ato saiu do retrato (a tela estava desatualizada).
+ * - `ato_nao_encontrado`: o ato saiu do retrato (a tela estava desatualizada);
+ * - `desligada`: o operador desligou a função no painel de IA do /admin (v0.58.0) — vale para a
+ *   análise de ato e para o resumo, e vem ANTES de qualquer outra checagem.
  */
 export type MotivoDeEntradaNaoAnalisavel =
   | 'sem_plano'
@@ -855,7 +857,8 @@ export type MotivoDeEntradaNaoAnalisavel =
   | 'texto_indisponivel'
   | 'limite_de_uso'
   | 'limite_diario'
-  | 'ato_nao_encontrado';
+  | 'ato_nao_encontrado'
+  | 'desligada';
 
 export class EntradaNaoAnalisavelError extends DomainError {
   readonly codigo = 'ENTRADA_NAO_ANALISAVEL';
@@ -1264,13 +1267,41 @@ export type MotivoDeAnaliseDePecaRecusada =
   | 'pdf_protegido'
   | 'arquivo_grande'
   | 'limite_de_uso'
-  | 'limite_diario';
+  | 'limite_diario'
+  | 'desligada';
 
 export class AnaliseDePecaRecusadaError extends DomainError {
   readonly codigo = 'ANALISE_DE_PECA_RECUSADA';
 
   constructor(
     readonly motivo: MotivoDeAnaliseDePecaRecusada,
+    mensagem: string,
+  ) {
+    super(mensagem);
+  }
+}
+
+/**
+ * O painel de IA do /admin (v0.58.0) recusou a mudança. O pedido é do operador, não de um
+ * assinante, e nada foi gravado. A mensagem é nossa e nunca repete o valor recebido.
+ *
+ * - `funcao_desconhecida`: não é `ato`, `resumo` nem `peca`;
+ * - `valor_invalido`: teto fora de 1–100.000 (ou não inteiro) ou alerta fora de US$ 0,01–10.000;
+ * - `confirmacao_necessaria`: desligar uma função exige a confirmação explícita no pedido;
+ * - `ambiente_bloqueia`: a variável de ambiente desligou a função, e o painel nunca liga o que o
+ *   ambiente desligou.
+ */
+export type MotivoDeConfiguracaoDeIaRecusada =
+  | 'funcao_desconhecida'
+  | 'valor_invalido'
+  | 'confirmacao_necessaria'
+  | 'ambiente_bloqueia';
+
+export class ConfiguracaoDeIaRecusadaError extends DomainError {
+  readonly codigo = 'CONFIGURACAO_DE_IA_RECUSADA';
+
+  constructor(
+    readonly motivo: MotivoDeConfiguracaoDeIaRecusada,
     mensagem: string,
   ) {
     super(mensagem);

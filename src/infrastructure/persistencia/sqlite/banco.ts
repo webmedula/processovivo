@@ -232,6 +232,44 @@ const ESQUEMA = [
   `CREATE INDEX IF NOT EXISTS idx_analises_pecas_expira
      ON analises_pecas_ia (expira_em)`,
 
+  // Painel de IA do /admin (v0.58.0). Tabelas NOVAS e aditivas, só com números, rótulos de lista fechada e
+  // o identificador CURTO do operador: nenhum texto de ato ou de peça, nome, número de processo, e-mail ou
+  // chave. `ia_config` tem uma linha por função (`ato`, `resumo`, `peca`) e a linha `global`; linha ausente
+  // = o padrão do código (nada restringido), então o painel nunca precisa de retrocarga.
+  `CREATE TABLE IF NOT EXISTS ia_config (
+     chave                TEXT PRIMARY KEY,
+     ligada               INTEGER,
+     teto_dia_conta       INTEGER,
+     teto_dia_global      INTEGER,
+     alerta_custo_dia_usd REAL,
+     atualizado_em        TEXT NOT NULL
+   )`,
+  // Registro SOMENTE DE ACRÉSCIMO: o repositório só insere e lê.
+  `CREATE TABLE IF NOT EXISTS ia_alteracoes (
+     id             INTEGER PRIMARY KEY AUTOINCREMENT,
+     em             TEXT NOT NULL,
+     autor          TEXT NOT NULL,
+     funcao         TEXT NOT NULL,
+     tipo           TEXT NOT NULL,
+     valor_anterior TEXT NOT NULL,
+     valor_novo     TEXT NOT NULL
+   )`,
+  `CREATE TABLE IF NOT EXISTS ia_alertas_custo (
+     dia         TEXT PRIMARY KEY,
+     valor_usd   REAL NOT NULL,
+     limite_usd  REAL NOT NULL,
+     tentativas  INTEGER NOT NULL DEFAULT 0,
+     enviado_em  TEXT
+   )`,
+  // Falhas de verificação e repetições automáticas: só a CONTAGEM por dia, função e motivo.
+  `CREATE TABLE IF NOT EXISTS ia_ocorrencias_dia (
+     dia      TEXT NOT NULL,
+     funcao   TEXT NOT NULL,
+     motivo   TEXT NOT NULL,
+     contagem INTEGER NOT NULL,
+     PRIMARY KEY (dia, funcao, motivo)
+   )`,
+
   `CREATE TABLE IF NOT EXISTS estado (
      chave TEXT PRIMARY KEY,
      valor TEXT NOT NULL

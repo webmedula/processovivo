@@ -41,6 +41,7 @@ export class OpenRouterAnalisadorDeAto implements AnalisadorDeAto {
       sistema: pedido.sistema,
       usuario: pedido.usuario,
       ...(pedido.sinal ? { sinal: pedido.sinal } : {}),
+      ...(pedido.aoRepetir ? { aoRepetir: pedido.aoRepetir } : {}),
     });
     const lida = lerRespostaDoModelo(r.objeto);
     if (!lida) {

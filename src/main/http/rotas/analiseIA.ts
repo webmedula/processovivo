@@ -68,15 +68,27 @@ export function rotasDaAnaliseIA(
   servico: ServicoAnaliseDoAto | undefined,
   aviso?: ServicoAvisoDoPrazo,
   fontesDaOferta?: FontesDaOferta,
+  /** O resumo divide esta pergunta com a análise de ato; o painel de IA liga/desliga cada um (v0.58.0). */
+  resumo?: { disponivel(): boolean },
 ): FastifyPluginAsync {
   return async (servidor) => {
-    // `oferta` só com a IA ligada: desligada, a tela nem desenha o botão.
+    // `oferta` só com a IA ligada: desligada, a tela nem desenha o botão. `funcoes` (v0.58.0) diz, por
+    // função, se o painel do /admin a deixa ligada: desligada lá, o botão some para TODAS as contas.
     servidor.get('/v1/analises/disponibilidade', async (req) => {
       if (!servico) return { habilitada: false };
+      const ato = servico.disponivel();
+      // Sem serviço de resumo montado (só nos testes) vale o que sempre valeu: acompanha a análise de ato.
+      const resumoLigado = resumo ? resumo.disponivel() : true;
+      if (!ato && !resumoLigado) return { habilitada: false };
       const ws = req.workspace;
       const oferta: OfertaDoPlanoIa =
         ws && fontesDaOferta ? await ofertaDoPlanoIa(ws, fontesDaOferta) : 'nenhuma';
-      return { habilitada: true, oferta };
+      // `funcoes` só aparece quando o painel desligou UMA das duas: o contrato de antes não muda.
+      return {
+        habilitada: true,
+        oferta,
+        ...(ato && resumoLigado ? {} : { funcoes: { ato, resumo: resumoLigado } }),
+      };
     });
     if (!servico) return;
 

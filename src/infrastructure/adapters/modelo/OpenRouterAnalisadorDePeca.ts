@@ -36,11 +36,13 @@ export class OpenRouterAnalisadorDePeca implements AnalisadorDePeca {
         sistema: pedido.sistema,
         usuario: pedido.usuario,
         ...(pedido.sinal ? { sinal: pedido.sinal } : {}),
+        ...(pedido.aoRepetir ? { aoRepetir: pedido.aoRepetir } : {}),
         instrucaoDeFormato: INSTRUCAO_DE_FORMATO_DA_PECA,
         maxTokens: this.o.maxTokens,
         timeoutMs: this.o.timeoutMs,
       });
       const lida = lerRespostaDaAnaliseDePeca(r.objeto);
+      if (!lida && tentativa === 1) pedido.aoRepetir?.();
       if (lida) {
         return {
           resposta: lida,

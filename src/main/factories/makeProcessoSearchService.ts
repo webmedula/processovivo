@@ -39,6 +39,17 @@ import { FilaDeJobsSqlite } from '../../infrastructure/persistencia/sqlite/FilaD
 import { ServicoVigilanciaOab } from '../../application/services/ServicoVigilanciaOab.js';
 import type { BuscaPorOabComPeriodo } from '../../application/services/ServicoVigilanciaOab.js';
 import { Agendador } from '../../infrastructure/agenda/Agendador.js';
+import { ServicoAlertaDeCustoDaIa } from '../../application/services/ServicoAlertaDeCustoDaIa.js';
+import { ServicoControleDaIa } from '../../application/services/ServicoControleDaIa.js';
+import { ServicoPainelDeIa } from '../../application/services/ServicoPainelDeIa.js';
+import type { AmbienteDaIa } from '../../domain/entities/ControleDaIa.js';
+import type { RegistroDeOcorrenciasDeIa } from '../../domain/ports/PainelDeIa.js';
+import {
+  LeitorDeUsoDeIaSqlite,
+  RegistroDeOcorrenciasDeIaSqlite,
+  RepositorioDeConfigDeIaSqlite,
+  RepositorioDoAlertaDeCustoSqlite,
+} from '../../infrastructure/persistencia/sqlite/RepositoriosDoPainelDeIaSqlite.js';
 import type { Notificador } from '../../domain/ports/Notificador.js';
 import type { RepositorioNotificacao } from '../../domain/ports/RepositorioNotificacao.js';
 import {
@@ -187,6 +198,13 @@ export interface Aplicacao {
   /** v0.51.0. Ausente quando não há SMTP de verdade: sem entrega, não há resumo. */
   readonly resumoDoCalendario: ServicoResumoDoCalendario | undefined;
   readonly agendadorResumoDoCalendario: Agendador | undefined;
+  /**
+   * O painel de IA do /admin (v0.58.0). `controleDaIa` existe SEMPRE (é ele que o interruptor consulta,
+   * e vale o ambiente se o painel falhar); `painelDeIa` e o alerta só fazem sentido com o /admin ligado.
+   */
+  readonly controleDaIa: ServicoControleDaIa;
+  readonly painelDeIa: ServicoPainelDeIa;
+  readonly agendadorAlertaDeCustoDaIa: Agendador | undefined;
   /** Centro de custos do processo (v0.47.0). Sempre montado — só depende do banco. */
   readonly custos: ServicoCustos;
   /** Custos por cliente, PDF consolidado e CSV (v0.49.0). */
@@ -601,8 +619,64 @@ export function montarAplicacao(config: Config): Aplicacao {
         })
       : undefined;
 
+  // Painel de IA do /admin (v0.58.0). O AMBIENTE é a trava mestra: o painel só desliga ou reduz.
+  const ambienteDaIa: AmbienteDaIa = {
+    permite: {
+      ato: config.ia.habilitada,
+      resumo: config.ia.habilitada,
+      peca:
+        config.ia.habilitada &&
+        (config.ia.pecas.habilitada || config.ia.pecas.workspaces.length > 0) &&
+        pasta !== undefined,
+    },
+    tetoPorContaDoAmbiente: config.ia.maxPorDia,
+  };
+  const ocorrenciasDaIa = new RegistroDeOcorrenciasDeIaSqlite(db, clockDoSistema, logger);
+  const controleDaIa = new ServicoControleDaIa({
+    repositorio: new RepositorioDeConfigDeIaSqlite(db),
+    ambiente: ambienteDaIa,
+    clock: clockDoSistema,
+    logger,
+  });
+  const painelDeIa = new ServicoPainelDeIa({
+    controle: controleDaIa,
+    leitor: new LeitorDeUsoDeIaSqlite(db, ocorrenciasDaIa),
+    clock: clockDoSistema,
+  });
   const { analiseIa, resumoDoProcesso, analiseDePeca, repositorioDeAnalisesDePeca } =
-    montarAnaliseIa(config, db, logger, repositorio, assinaturas, pasta);
+    montarAnaliseIa(
+      config,
+      db,
+      logger,
+      repositorio,
+      assinaturas,
+      pasta,
+      controleDaIa,
+      ocorrenciasDaIa,
+    );
+  // Alerta de custo: só com a IA ligada no ambiente e o /admin configurado. O e-mail só sai com SMTP de
+  // verdade ("log não é entrega"); sem ele, ou sem e-mail do operador, vale o banner da tela.
+  const alertaDeCusto =
+    config.ia.habilitada && adminHabilitado(config.admin.usuario, config.admin.senha)
+      ? new ServicoAlertaDeCustoDaIa({
+          painel: painelDeIa,
+          repositorio: new RepositorioDoAlertaDeCustoSqlite(db),
+          notificador,
+          destinatario: entregaDeVerdade(config) ? config.admin.email : '',
+          urlBase: config.notificacao.urlBase,
+          clock: clockDoSistema,
+          logger,
+        })
+      : undefined;
+  // Tick de 15 min: a decisão de "já avisou hoje" é do serviço, pelo relógio; falha só repete no próximo ciclo.
+  const agendadorAlertaDeCustoDaIa = alertaDeCusto
+    ? new Agendador({
+        intervaloHoras: 0.25,
+        atrasoInicialMs: 150_000,
+        logger,
+        tarefa: () => alertaDeCusto.executar(),
+      })
+    : undefined;
   const agendadorLimpezaAnalisesDePeca =
     analiseDePeca && repositorioDeAnalisesDePeca
       ? new Agendador({
@@ -680,6 +754,9 @@ export function montarAplicacao(config: Config): Aplicacao {
     agendadorCalendario,
     resumoDoCalendario,
     agendadorResumoDoCalendario,
+    controleDaIa,
+    painelDeIa,
+    agendadorAlertaDeCustoDaIa,
     custos,
     custosPorCliente,
     contas,
@@ -709,6 +786,7 @@ export function montarAplicacao(config: Config): Aplicacao {
       agendadorLimpezaLeitor?.parar();
       agendadorCalendario.parar();
       agendadorResumoDoCalendario?.parar();
+      agendadorAlertaDeCustoDaIa?.parar();
       db.close();
     },
   };
@@ -782,6 +860,8 @@ function montarAnaliseIa(
   repositorio: RepositorioAcompanhamentos,
   assinaturas: ServicoAssinaturas,
   pasta: ServicoPasta | undefined,
+  controleDaIa: ServicoControleDaIa,
+  ocorrencias: RegistroDeOcorrenciasDeIa,
 ): {
   analiseIa: ServicoAnaliseDoAto | undefined;
   resumoDoProcesso: ServicoResumoDoProcesso | undefined;
@@ -832,7 +912,8 @@ function montarAnaliseIa(
     );
   }
   // Um contador só por conta e por dia de São Paulo, dividido entre a análise de ato e o resumo.
-  const tetoDoDia = new TetoDiario(ia.maxPorDia, clockDoSistema);
+  // O painel só pode REDUZIR o teto (menor entre a variável e o painel) e acrescenta o teto global.
+  const tetoDoDia = new TetoDiario(ia.maxPorDia, clockDoSistema, controleDaIa);
   const analiseIa = new ServicoAnaliseDoAto({
     repositorio,
     analises: new RepositorioAnalisesSqlite(db),
@@ -842,11 +923,14 @@ function montarAnaliseIa(
       porHora: ia.maxPorHora,
       simultaneasNoTotal: ia.maxSimultaneas,
       teto: tetoDoDia,
+      funcao: 'ato',
       clock: clockDoSistema,
     }),
     clock: clockDoSistema,
     logger,
     novoId: () => randomUUID(),
+    controle: controleDaIa,
+    ocorrencias,
   });
   const resumoDoProcesso = new ServicoResumoDoProcesso({
     repositorio,
@@ -865,11 +949,14 @@ function montarAnaliseIa(
       porHora: ia.resumoMaxPorHora,
       simultaneasNoTotal: ia.maxSimultaneas,
       teto: tetoDoDia,
+      funcao: 'resumo',
       clock: clockDoSistema,
     }),
     clock: clockDoSistema,
     logger,
     novoId: () => randomUUID(),
+    controle: controleDaIa,
+    ocorrencias,
     janelaDePendenciaDias: config.telas.pendenciaJanelaDias,
     // v0.54.0: só LÊ a listagem que a tela da Pasta já gravou (nunca consulta o tribunal).
     pasta: new RepositorioDaPastaSqlite(db),
@@ -921,6 +1008,7 @@ function montarAnaliseIa(
           porHora: pecas.maxPorHora,
           simultaneasNoTotal: ia.maxSimultaneas,
           teto: tetoDoDia,
+          funcao: 'peca',
           clock: clockDoSistema,
         }),
         liberacao: { habilitada: pecas.habilitada, workspaces: pecas.workspaces },
@@ -930,6 +1018,8 @@ function montarAnaliseIa(
         clock: clockDoSistema,
         logger,
         novoId: () => randomUUID(),
+        controle: controleDaIa,
+        ocorrencias,
       });
       logger.info('análise de peça por IA habilitada', {
         modelo: pecas.modelo,

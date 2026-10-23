@@ -1,7 +1,7 @@
 import { MOTIVOS_DA_AVALIACAO } from '../../domain/entities/AnaliseDoAto.js';
 import type { MotivoDaAvaliacao } from '../../domain/entities/AnaliseDoAto.js';
 import { abrirSomenteLeitura } from '../../infrastructure/persistencia/diagnosticoDeProvidencia.js';
-import { media, percentil } from './sondaIaAto.js';
+import { metricasDoConjunto } from '../../application/politicas/metricasDeIa.js';
 
 /**
  * Avaliações da análise por IA (`scripts/ia-avaliacoes.mjs`, v1.0.0) — SOMENTE LEITURA.
@@ -60,43 +60,34 @@ export function agruparAvaliacoes(linhas: readonly Linha[]): LinhaDeAvaliacoes[]
   return [...grupos.values()]
     .map((g) => {
       const primeira = g[0] as Linha;
-      const custos = g.flatMap((l) =>
-        l.custo_usd === null ? [] : [Number(l.custo_usd)],
+      // O cálculo é o do painel do /admin (v0.58.0): uma função só, nenhum percentil duplicado aqui.
+      const m = metricasDoConjunto(
+        g.map((l) => ({
+          avaliacao: l.avaliacao,
+          motivoAvaliacao: l.motivo_avaliacao ?? null,
+          naoVerificada: Number(l.nao_verificada) === 1,
+          latenciaMs: Number(l.latencia_ms),
+          custoUsd: l.custo_usd === null ? null : Number(l.custo_usd),
+        })),
       );
-      const latencias = g.map((l) => Number(l.latencia_ms));
-      const conta = (v: string): number => g.filter((l) => l.avaliacao === v).length;
-      const dosMotivos = g.filter(
-        (l) => l.avaliacao === 'errado' || l.avaliacao === 'perigoso',
-      );
-      const motivos = Object.fromEntries(
-        MOTIVOS_DA_AVALIACAO.map((m) => [
-          m,
-          dosMotivos.filter((l) => l.motivo_avaliacao === m).length,
-        ]),
-      ) as Record<MotivoDaAvaliacao, number>;
       return {
         modelo: primeira.modelo,
         versaoPrompt: primeira.versao_prompt,
-        analises: g.length,
-        util: conta('util'),
-        errado: conta('errado'),
-        perigoso: conta('perigoso'),
-        semAvaliacao: g.filter((l) => l.avaliacao === null).length,
-        naoVerificadas: g.filter((l) => Number(l.nao_verificada) === 1).length,
-        latenciaP50Ms: percentil(latencias, 0.5),
-        latenciaP95Ms: percentil(latencias, 0.95),
-        custoMedioUsd: media(custos),
-        comCusto: custos.length,
-        custoP50Usd: percentil(custos, 0.5),
-        custoP95Usd: percentil(custos, 0.95),
-        custoMaximoUsd: custos.length === 0 ? undefined : Math.max(...custos),
-        motivos,
-        semMotivo: dosMotivos.filter(
-          (l) =>
-            l.motivo_avaliacao === null ||
-            l.motivo_avaliacao === undefined ||
-            !(MOTIVOS_DA_AVALIACAO as readonly string[]).includes(l.motivo_avaliacao),
-        ).length,
+        analises: m.analises,
+        util: m.util,
+        errado: m.errado,
+        perigoso: m.perigoso,
+        semAvaliacao: m.semAvaliacao,
+        naoVerificadas: m.naoVerificadas,
+        latenciaP50Ms: m.latenciaP50Ms,
+        latenciaP95Ms: m.latenciaP95Ms,
+        custoMedioUsd: m.custo.medio,
+        comCusto: m.custo.comCusto,
+        custoP50Usd: m.custo.p50,
+        custoP95Usd: m.custo.p95,
+        custoMaximoUsd: m.custo.maximo,
+        motivos: m.motivos,
+        semMotivo: m.semMotivo,
       };
     })
     .sort(

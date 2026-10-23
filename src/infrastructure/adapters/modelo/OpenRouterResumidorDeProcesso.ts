@@ -33,6 +33,7 @@ export class OpenRouterResumidorDeProcesso implements ResumidorDeProcesso {
       sistema: pedido.sistema,
       usuario: pedido.usuario,
       ...(pedido.sinal ? { sinal: pedido.sinal } : {}),
+      ...(pedido.aoRepetir ? { aoRepetir: pedido.aoRepetir } : {}),
       instrucaoDeFormato: INSTRUCAO_DE_FORMATO_DO_RESUMO,
       maxTokens: this.o.maxTokens,
       timeoutMs: this.o.timeoutMs,

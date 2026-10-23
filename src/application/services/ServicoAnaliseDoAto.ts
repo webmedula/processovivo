@@ -31,7 +31,20 @@ import {
   temTextoSuficiente,
   type AtoParaAnalisar,
 } from '../politicas/entradaDoModelo.js';
+import {
+  CONTROLE_SEM_PAINEL,
+  type ControleDaIa,
+} from '../../domain/entities/ControleDaIa.js';
+import {
+  SEM_REGISTRO_DE_OCORRENCIAS,
+  type RegistroDeOcorrenciasDeIa,
+} from '../../domain/ports/PainelDeIa.js';
 import type { LimiteDeAnalises } from '../politicas/limiteDeAnalises.js';
+import {
+  contagensDoAto,
+  motivoDaFalhaDaChamada,
+  registrarContagens,
+} from '../politicas/ocorrenciasDeIa.js';
 import type { PessoasParaRedigir } from '../politicas/redigirParaIA.js';
 import { verificarAnalise } from '../politicas/verificarAnalise.js';
 import type { ServicoAssinaturas } from './ServicoAssinaturas.js';
@@ -87,6 +100,10 @@ export interface OpcoesServicoAnaliseDoAto {
   readonly clock: Clock;
   readonly logger: Logger;
   readonly novoId: () => string;
+  /** O painel de IA do /admin (v0.58.0). Ausente = só vale o ambiente. */
+  readonly controle?: ControleDaIa;
+  /** Contagem de falhas e repetições, por motivo (v0.58.0). Ausente = não conta. */
+  readonly ocorrencias?: RegistroDeOcorrenciasDeIa;
 }
 
 export interface PedidoDeAnaliseDoAto {
@@ -98,9 +115,11 @@ export interface PedidoDeAnaliseDoAto {
 
 export class ServicoAnaliseDoAto {
   private readonly log: Logger;
+  private readonly ocorrencias: RegistroDeOcorrenciasDeIa;
 
   constructor(private readonly o: OpcoesServicoAnaliseDoAto) {
     this.log = o.logger.child({ servico: 'analise-do-ato' });
+    this.ocorrencias = o.ocorrencias ?? SEM_REGISTRO_DE_OCORRENCIAS;
   }
 
   /**
@@ -117,8 +136,21 @@ export class ServicoAnaliseDoAto {
     }
   }
 
+  /** A função está ligada no painel (e o ambiente a permite, já que o serviço existe)? */
+  disponivel(): boolean {
+    return (this.o.controle ?? CONTROLE_SEM_PAINEL).ligada('ato');
+  }
+
   async analisar(pedido: PedidoDeAnaliseDoAto): Promise<RespostaDoServico> {
     const { workspace } = pedido;
+    // 0. Desligada no painel: nada além da frase fixa. ANTES de tudo — sem plano, sem retrato, sem
+    // vaga no limite (o teto não é consumido) e, claro, sem chamada ao modelo.
+    if (!this.disponivel()) {
+      throw new EntradaNaoAnalisavelError(
+        'desligada',
+        'Este recurso está indisponível no momento.',
+      );
+    }
     const numero = NumeroCNJ.criar(pedido.numero).digitos;
 
     // 1. Plano: sem ele, nada além da frase fixa. Antes de ler o retrato.
@@ -218,8 +250,10 @@ export class ServicoAnaliseDoAto {
         sistema: entrada.sistema,
         usuario: entrada.usuario,
         ...(pedido.sinal ? { sinal: pedido.sinal } : {}),
+        aoRepetir: () => this.ocorrencias.registrar('ato', 'repeticao_automatica'),
       });
     } catch (erro) {
+      this.ocorrencias.registrar('ato', motivoDaFalhaDaChamada(erro));
       // Só a CLASSE do erro e o roteamento SANEADO vão ao log: a mensagem de um roteador pode
       // ecoar o pedido (que leva texto de ato), então ela nunca é copiada.
       const r = erro instanceof ProviderIndisponivelError ? erro.roteamento : undefined;
@@ -249,6 +283,9 @@ export class ServicoAnaliseDoAto {
             ...(verificada.prazo !== undefined ? { prazo: verificada.prazo } : {}),
           }
         : { estado: 'nao_verificada', motivo: verificada.motivo };
+    if (verificada.estado !== 'verificada') {
+      registrarContagens(this.ocorrencias, 'ato', contagensDoAto(verificada.motivo));
+    }
 
     const analise: AnaliseDoAto = {
       id: this.o.novoId(),

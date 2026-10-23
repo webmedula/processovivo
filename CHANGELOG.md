@@ -9,6 +9,44 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.58.0] — 2026-10-23
+
+**Painel de IA no /admin, Fase A: observar e controlar as três funções de IA (análise de ato, resumo do processo e análise de peça).** Nada mudou em modelo, prompts, verificação, ZDR, redação, planos, preços, políticas, `exigir()` dos outros
+recursos nem calendário. Sem dependência nova, sem migração destrutiva, sem botão novo fora do `/admin`. Especificação: `docs/ia-painel-admin-especificacao-v1.0.0.md`.
+
+- **A regra que não se discute: o ambiente é a trava mestra.** Uma função só funciona se a variável de ambiente permite **e** o painel está ligado. O painel pode desligar e reduzir teto; **nunca liga o que o ambiente desligou** (o pedido é recusado,
+  409, e nada é gravado) nem sobe o teto acima da variável: o teto efetivo é o **menor** dos dois. **Falha segura:** se o banco do painel falhar (ou uma linha vier torta), a IA segue com o padrão do código — o painel não restringe nada — e
+  o aviso vai ao log uma vez por minuto, sem a mensagem do erro. O painel nunca derruba a IA.
+- **Quem acessa.** Só o operador do `/admin` (o mesmo Basic Auth, fora da tabela de usuários). Sessão de assinante e chave de API recebem 401 em toda rota nova. O autor das mudanças é um **identificador curto** (8 hex de um SHA-256 do usuário do
+  `/admin`), nunca o nome nem o e-mail. Divergência registrada: o `/admin` tem uma credencial só, não pessoas; por isso o autor é derivado e não "a conta".
+- **Tabelas novas e aditivas** (nenhuma coluna alterada, nenhuma retrocarga): `ia_config` (uma linha por função e a `global`; linha ausente = padrão), `ia_alteracoes` (**só acréscimo**: instante, autor, função, tipo, valor anterior e novo, valores simples),
+  `ia_alertas_custo` (dia, valor, limite, tentativas, enviado em) e `ia_ocorrencias_dia` (só contagem por dia, função e motivo de lista fechada). Nenhuma guarda texto de ato ou de peça, nome, número de processo, e-mail ou chave.
+- **O interruptor** (`ServicoControleDaIa`, cache de 5 s): cada função consulta o painel **antes de tudo** — antes do plano, do retrato, da vaga no limite e do modelo. Desligada: **zero chamadas ao provedor, zero consumo do teto** (há teste com teto de
+  1 e três tentativas seguidas), erro **503** com a frase fixa "Este recurso está indisponível no momento." (`motivo: desligada`) e o botão some **para todas as contas**: `GET /v1/analises/disponibilidade` ganhou `funcoes` (**só quando o painel
+  desligou uma das duas**, então o contrato de antes não mudou) e `GET /v1/analises-de-peca/disponibilidade` passa a dizer `liberado: false`. Avaliar (polegar) uma análise que já existe segue funcionando com a função desligada. Ligar de novo restaura.
+  Desligar exige **confirmação na tela e no pedido** (`confirmado: true`; sem ela, 409).
+- **Tetos do painel** (só reduzem): por função e por conta/dia (a peça pesa 5, como sempre) e **global** por dia (todas as contas e funções). Entram no `TetoDiario` que já existia (o painel que lança é ignorado: vale o ambiente).
+- **A tela "IA"** (`ui/iaAdmin.ts`, módulo próprio; o `scriptAdmin.ts` ganhou só o gancho): período Hoje/7 dias/30 dias; um cartão por função com análises, polegar para cima/baixo e motivos, "não foi possível" e não verificadas (e a taxa), falhas de
+  verificação por motivo, repetições automáticas, custo total/médio/p50/p95/máximo e tempo p50/p95; contas que mais usaram (**só os 8 primeiros caracteres** do id, nunca e-mail ou nome); liga/desliga com confirmação na tela; tetos e limite do alerta;
+  últimas 50 mudanças. Estado efetivo (ambiente × painel) explícito, com a razão quando o ambiente bloqueia. Teclado, foco que só vai ao controle que a pessoa usou, região `aria-live` discreta, temas claro e escuro, sem rolagem horizontal de 390 a 1920 px.
+- **Alerta de custo diário** (`ServicoAlertaDeCustoDaIa`, tick de 15 min, dia de São Paulo, relógio injetado): padrão **US$ 3,00**, ajustável. Passou do limite: **banner em qualquer aba do `/admin`** e **um** e-mail por dia (só data, valor do dia, limite e o
+  link `/admin#ia`). Falha de envio não derruba o agendador: soma tentativa (**máximo 3 por dia**), vai ao log sem dado pessoal e só tenta de novo no próximo ciclo. Sem SMTP de verdade ("log não é entrega") ou sem e-mail do operador, não envia nem gasta tentativa;
+  o banner continua. Variável nova **opcional** `PROCESSOVIVO_ADMIN_EMAIL` (cai em `PROCESSOVIVO_PAGAMENTO_AVISO_EMAIL`); o endereço nunca vai a log.
+- **Contagens de falha** (`ia_ocorrencias_dia`): citação inválida, número ou data que o texto não tem, expressão proibida, ação copiada do trecho, nenhum item verificado, ato mais recente fora da situação, "sem pendências" indevido, ato antigo como atual,
+  forma, página inexistente, chamada que falhou, formato fora do esquema, tempo esgotado e **repetição automática** (o transporte e a repetição por esquema da peça chamam um gancho opcional `aoRepetir`, que só conta). Contar nunca derruba a análise.
+- **O relatório e o painel fazem a mesma conta.** `percentil`/`média` viraram `application/politicas/estatistica.ts` (o comparador reexporta) e `scripts/ia-avaliacoes.mjs` (`agruparAvaliacoes`) passou a usar a `metricasDoConjunto` do painel: uma implementação só.
+  A saída do relatório não mudou. Há teste que compara os dois com as mesmas linhas e outro que falha se a conta for reescrita num dos lados.
+- **Rotas novas** (todas sob o Basic Auth): `GET /admin/api/ia?periodo=hoje|7d|30d`, `GET`/`PUT /admin/api/ia/alerta`, `PUT /admin/api/ia/funcoes/:funcao`, `PUT /admin/api/ia/funcoes/:funcao/teto`, `PUT /admin/api/ia/teto-global`.
+  Erro novo `ConfiguracaoDeIaRecusadaError` (`funcao_desconhecida`/`valor_invalido` 400, `confirmacao_necessaria`/`ambiente_bloqueia` 409); `desligada` (503) entrou em `EntradaNaoAnalisavelError` e `AnaliseDePecaRecusadaError`.
+- **Fases B, C e D: futuro, não implementado** (troca de modelo pelo painel, edição de prompt com teste e reversão, canário). Ver a especificação.
+- **Testes novos** (sem rede e sem tempo real): precedência e falha segura, teto efetivo, as três funções desligadas (zero chamadas, zero consumo, frase e reativação), segurança do acesso, registro de mudanças, métricas e percentis, o relatório igual ao painel,
+  o alerta (uma vez por dia, virada do dia às 03:00 UTC, falha e 3 tentativas, e-mail falso), ausência de texto/nome/número/e-mail/chave nas respostas e, no Chromium, a tela (teclado, confirmação, foco, axe nos dois temas, seis larguras, aviso em qualquer aba, `/admin#ia` e o resto do `/admin`).
+- **Reescritos (só os que assumiam a leitura direta do ambiente):** nenhum teste de comportamento precisou mudar. Duas adaptações de **infraestrutura de teste**: (1) `tests/helpers/aplicacao.ts` monta o controle da IA e o `TetoDiario` compartilhado sempre
+  (antes só com `porDia`; sem `porDia` o teto é "infinito", como antes); (2) `tests/http/admin-script.spec.ts` passou a rodar o ESLint nos dois scripts do `/admin`.
+- **Anotado, não alterado:** o rodapé da lateral do `/admin` (`.sub` "administração" e `.versao`) falha no contraste do axe no tema escuro — é anterior a esta versão; o teste do painel mede só a área do painel e do aviso.
+
+---
+
 ## [0.57.0] — 2026-10-23
 
 **Navegação por hash: o Voltar/Avançar do navegador e o F5 passam a funcionar dentro do sistema.** Só navegação do console: regras, rotas da API, dados, planos, IA, calendário e custos não mudaram. Sem rota nova no servidor,

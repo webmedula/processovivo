@@ -7,6 +7,7 @@ import {
   AtoDaProvidenciaInvalidoError,
   EntradaNaoAnalisavelError,
   AnaliseDePecaRecusadaError,
+  ConfiguracaoDeIaRecusadaError,
   PrazoNaoCalculavelError,
   DriveRecusadoError,
   AssinaturaDeWebhookInvalidaError,
@@ -165,7 +166,9 @@ export function mapearErro(erro: unknown): RespostaDeErro {
           ? 429
           : erro.motivo === 'ato_nao_encontrado'
             ? 409
-            : 422;
+            : erro.motivo === 'desligada'
+              ? 503
+              : 422;
     return {
       status,
       corpo: {
@@ -195,6 +198,21 @@ export function mapearErro(erro: unknown): RespostaDeErro {
       pdf_invalido: 422,
       pdf_protegido: 422,
       arquivo_grande: 422,
+      desligada: 503,
+    };
+    return {
+      status: status[erro.motivo],
+      corpo: { erro: erro.codigo, mensagem: erro.message, detalhes: { motivo: erro.motivo } },
+    };
+  }
+
+  // Painel de IA do /admin (v0.58.0): pedido do operador recusado, nada gravado.
+  if (erro instanceof ConfiguracaoDeIaRecusadaError) {
+    const status: Record<ConfiguracaoDeIaRecusadaError['motivo'], number> = {
+      funcao_desconhecida: 400,
+      valor_invalido: 400,
+      confirmacao_necessaria: 409,
+      ambiente_bloqueia: 409,
     };
     return {
       status: status[erro.motivo],

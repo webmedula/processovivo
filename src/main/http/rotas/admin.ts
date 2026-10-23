@@ -8,6 +8,13 @@ import type {
   MudancasNoPlano,
   ServicoPlanos,
 } from '../../../application/services/ServicoPlanos.js';
+import type { ServicoControleDaIa } from '../../../application/services/ServicoControleDaIa.js';
+import {
+  PERIODOS_DO_PAINEL,
+  type PainelDeIa,
+  type ServicoPainelDeIa,
+} from '../../../application/services/ServicoPainelDeIa.js';
+import { identificarOperador } from '../operadorDoAdmin.js';
 import { RECURSOS } from '../../../domain/entities/Plano.js';
 import type { CicloDoPlano, RecursoDoPlano } from '../../../domain/entities/Plano.js';
 import type { RepositorioAssinaturas } from '../../../domain/ports/RepositorioAssinaturas.js';
@@ -34,6 +41,12 @@ export const ROTA_ADMIN_REGRAS = '/admin/api/regras';
 /** Cobrança recorrente (v0.44.0): o ambiente do gateway e a reconciliação. */
 export const ROTA_ADMIN_PAGAMENTO = '/admin/api/pagamento';
 export const ROTA_ADMIN_PAGAMENTO_RECONCILIAR = '/admin/api/pagamento/reconciliar';
+/** Painel de IA (v0.58.0): observar e controlar a IA. Só o operador do /admin chega aqui. */
+export const ROTA_ADMIN_IA = '/admin/api/ia';
+export const ROTA_ADMIN_IA_ALERTA = '/admin/api/ia/alerta';
+export const ROTA_ADMIN_IA_FUNCAO = '/admin/api/ia/funcoes/:funcao';
+export const ROTA_ADMIN_IA_FUNCAO_TETO = '/admin/api/ia/funcoes/:funcao/teto';
+export const ROTA_ADMIN_IA_TETO_GLOBAL = '/admin/api/ia/teto-global';
 
 /** Toda rota administrativa, na ordem em que faz sentido ler — para `rotasPublicas`. */
 export const ROTAS_ADMIN: readonly string[] = [
@@ -52,6 +65,11 @@ export const ROTAS_ADMIN: readonly string[] = [
   ROTA_ADMIN_REGRAS,
   ROTA_ADMIN_PAGAMENTO,
   ROTA_ADMIN_PAGAMENTO_RECONCILIAR,
+  ROTA_ADMIN_IA,
+  ROTA_ADMIN_IA_ALERTA,
+  ROTA_ADMIN_IA_FUNCAO,
+  ROTA_ADMIN_IA_FUNCAO_TETO,
+  ROTA_ADMIN_IA_TETO_GLOBAL,
 ];
 
 const corpoLiberar = z.object({
@@ -99,6 +117,11 @@ const corpoAlterarPlano = z.object({
   ciclo: z.string().optional(),
 });
 
+const consultaDoPainelDeIa = z.object({ periodo: z.enum(PERIODOS_DO_PAINEL).default('hoje') });
+const corpoFuncaoDeIa = z.object({ ligada: z.boolean(), confirmado: z.boolean().optional() }).strict();
+const corpoTetoDeIa = z.object({ teto: z.number().int().nullable() }).strict();
+const corpoAlertaDeIa = z.object({ valorUsd: z.number() }).strict();
+
 const corpoReconciliar = z.object({ workspace: z.string().trim().min(1).max(40).optional() });
 
 const corpoRegras = z.object({
@@ -126,6 +149,11 @@ export interface OpcoesRotasAdmin {
   readonly pagamentos?: ServicoPagamentos | undefined;
   /** O servidor está em produção (NODE_ENV)? Só para avisar de token de TESTE em produção. */
   readonly emProducao?: boolean;
+  /** Painel de IA (v0.58.0). Ausente = as rotas `/admin/api/ia/*` respondem 404. */
+  readonly ia?: {
+    readonly controle: ServicoControleDaIa;
+    readonly painel: ServicoPainelDeIa;
+  };
 }
 
 /**
@@ -182,6 +210,12 @@ export function rotasDeAdmin(opcoes: OpcoesRotasAdmin): FastifyPluginAsync {
       servidor.put(ROTA_ADMIN_REGRAS, desligada);
       servidor.get(ROTA_ADMIN_PAGAMENTO, desligada);
       servidor.post(ROTA_ADMIN_PAGAMENTO_RECONCILIAR, desligada);
+      servidor.get(ROTA_ADMIN_IA, desligada);
+      servidor.get(ROTA_ADMIN_IA_ALERTA, desligada);
+      servidor.put(ROTA_ADMIN_IA_ALERTA, desligada);
+      servidor.put(ROTA_ADMIN_IA_FUNCAO, desligada);
+      servidor.put(ROTA_ADMIN_IA_FUNCAO_TETO, desligada);
+      servidor.put(ROTA_ADMIN_IA_TETO_GLOBAL, desligada);
       return;
     }
 
@@ -482,6 +516,71 @@ export function rotasDeAdmin(opcoes: OpcoesRotasAdmin): FastifyPluginAsync {
       };
     });
 
+    // --- Painel de IA (v0.58.0) -------------------------------------------------------------------
+    // Só o operador do /admin chega aqui (o hook de Basic Auth vale para todas as rotas deste plugin).
+    // Nenhuma resposta leva texto de ato ou de peça, nome, número de processo, e-mail ou chave: só números,
+    // rótulos de lista fechada e ids CURTOS de conta. O autor das mudanças é um hash curto do usuário.
+    const autor = identificarOperador(opcoes.credenciais.usuario);
+    const semPainel = (resposta: FastifyReply): { erro: string; mensagem: string } => {
+      void resposta.code(404);
+      return { erro: 'IA_DESLIGADA', mensagem: 'O painel de IA não está disponível neste servidor.' };
+    };
+
+    servidor.get<{ Querystring: unknown }>(ROTA_ADMIN_IA, async (req, resposta) => {
+      const ia = opcoes.ia;
+      if (!ia) return semPainel(resposta);
+      resposta.header('cache-control', 'no-store');
+      const { periodo } = consultaDoPainelDeIa.parse(req.query ?? {});
+      return painelParaJson(ia.painel.painel(periodo));
+    });
+
+    // Só o necessário para o aviso no topo do /admin, de qualquer aba.
+    servidor.get(ROTA_ADMIN_IA_ALERTA, async (_req, resposta) => {
+      const ia = opcoes.ia;
+      if (!ia) return semPainel(resposta);
+      resposta.header('cache-control', 'no-store');
+      return ia.painel.custoDoDia();
+    });
+
+    servidor.put<{ Body: unknown }>(ROTA_ADMIN_IA_ALERTA, async (req, resposta) => {
+      const ia = opcoes.ia;
+      if (!ia) return semPainel(resposta);
+      const c = corpoAlertaDeIa.parse(req.body);
+      ia.controle.definirAlertaDeCusto(autor, c.valorUsd);
+      return ia.painel.custoDoDia();
+    });
+
+    servidor.put<{ Params: { funcao: string }; Body: unknown }>(
+      ROTA_ADMIN_IA_FUNCAO,
+      async (req, resposta) => {
+        const ia = opcoes.ia;
+        if (!ia) return semPainel(resposta);
+        const c = corpoFuncaoDeIa.parse(req.body);
+        // Desligar exige `confirmado: true` NO PEDIDO: a confirmação da tela não é só enfeite.
+        ia.controle.ligarOuDesligar(autor, req.params.funcao, c.ligada, c.confirmado === true);
+        return { estados: ia.controle.estados() };
+      },
+    );
+
+    servidor.put<{ Params: { funcao: string }; Body: unknown }>(
+      ROTA_ADMIN_IA_FUNCAO_TETO,
+      async (req, resposta) => {
+        const ia = opcoes.ia;
+        if (!ia) return semPainel(resposta);
+        const c = corpoTetoDeIa.parse(req.body);
+        ia.controle.definirTetoDaFuncao(autor, req.params.funcao, c.teto);
+        return { estados: ia.controle.estados() };
+      },
+    );
+
+    servidor.put<{ Body: unknown }>(ROTA_ADMIN_IA_TETO_GLOBAL, async (req, resposta) => {
+      const ia = opcoes.ia;
+      if (!ia) return semPainel(resposta);
+      const c = corpoTetoDeIa.parse(req.body);
+      ia.controle.definirTetoGlobal(autor, c.teto);
+      return { tetoGlobal: ia.controle.config().tetoGlobal };
+    });
+
     /** Consulta o gateway e corrige divergências (aviso perdido). Sem corpo = todas as contas. */
     servidor.post<{ Body: unknown }>(ROTA_ADMIN_PAGAMENTO_RECONCILIAR, async (req, resposta) => {
       const p = opcoes.pagamentos;
@@ -526,5 +625,60 @@ function pagamentoParaAdmin(
     ultimoPagamento: c.ultimoPagamento ?? null,
     ultimoPagamentoEm: c.ultimoPagamentoEm?.toISOString() ?? null,
     renovacaoCanceladaEm: c.renovacaoCanceladaEm?.toISOString() ?? null,
+  };
+}
+
+const numeroOuNulo = (v: number | undefined): number | null => (v === undefined ? null : v);
+
+/** O painel como JSON: datas em ISO, `undefined` vira `null` (forma estável para a tela). */
+function painelParaJson(p: PainelDeIa): Record<string, unknown> {
+  return {
+    periodo: p.periodo,
+    desde: p.desde,
+    funcoes: p.funcoes.map((f) => ({
+      funcao: f.funcao,
+      rotulo: f.rotulo,
+      ambientePermite: f.ambientePermite,
+      painelLigado: f.painelLigado,
+      efetivamenteLigada: f.efetivamenteLigada,
+      tetoDoPainel: f.tetoDoPainel,
+      tetoEfetivoPorConta: f.tetoEfetivoPorConta,
+      analises: f.metricas.analises,
+      util: f.metricas.util,
+      errado: f.metricas.errado,
+      perigoso: f.metricas.perigoso,
+      semAvaliacao: f.metricas.semAvaliacao,
+      motivosDaAvaliacao: f.metricas.motivos,
+      semMotivo: f.metricas.semMotivo,
+      naoVerificadas: f.metricas.naoVerificadas,
+      naoFoiPossivel: f.naoFoiPossivel,
+      taxaNaoFoiPossivel: numeroOuNulo(f.taxaNaoFoiPossivel),
+      taxaNaoVerificado: numeroOuNulo(f.taxaNaoVerificado),
+      chamadasQueFalharam: f.chamadasQueFalharam,
+      repeticoesAutomaticas: f.repeticoesAutomaticas,
+      falhasDeVerificacao: f.falhasDeVerificacao,
+      latenciaP50Ms: numeroOuNulo(f.metricas.latenciaP50Ms),
+      latenciaP95Ms: numeroOuNulo(f.metricas.latenciaP95Ms),
+      custo: {
+        total: f.metricas.custo.total,
+        medio: numeroOuNulo(f.metricas.custo.medio),
+        p50: numeroOuNulo(f.metricas.custo.p50),
+        p95: numeroOuNulo(f.metricas.custo.p95),
+        maximo: numeroOuNulo(f.metricas.custo.maximo),
+        comCusto: f.metricas.custo.comCusto,
+      },
+    })),
+    contas: p.contas,
+    tetoGlobal: p.tetoGlobal,
+    custoDoDia: p.custoDoDia,
+    alteracoes: p.alteracoes.map((a) => ({
+      id: a.id ?? null,
+      em: a.em.toISOString(),
+      autor: a.autor,
+      funcao: a.funcao,
+      tipo: a.tipo,
+      anterior: a.anterior,
+      novo: a.novo,
+    })),
   };
 }
