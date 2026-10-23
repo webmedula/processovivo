@@ -808,6 +808,8 @@ Em qualquer caso a conta **também precisa do plano IA** (liberado no `/admin` o
 
 **Limites e custo:** só TJGO; só peça com texto pesquisável (PDF escaneado é recusado, sem OCR); até 40 páginas e 80 mil caracteres. Cada análise pesa **5** no teto diário `PROCESSOVIVO_IA_MAX_POR_DIA` (padrão 200 → 40 peças por conta por dia) e conta uma no freio `PROCESSOVIVO_IA_PECAS_MAX_POR_HORA` (6). Modelo: `PROCESSOVIVO_IA_PECAS_MODELO` (vazio = o de `PROCESSOVIVO_IA_MODELO`). O resultado fica guardado 30 dias (`PROCESSOVIVO_IA_PECAS_RESULTADO_DIAS`); o texto da peça nunca é gravado.
 
+**Depois de subir a 0.56.1 (despacho e decisão):** não há variável nova nem migração. O prompt mudou (`peca-1.1.0`), então uma peça já analisada é analisada de novo no próximo clique (e pesa 5 no teto outra vez). Conferência em produção: abra um despacho curto e clique em "Analisar peça com IA". Deve aparecer o tipo "Despacho", o bloco **O que determina** com quem/o quê/"Prazo escrito no ato" e "Ver trecho · pág. N" em cada item, e **nenhum** ponto de atenção de "peça longa" ou "texto incompleto". Peça com mais de 20 páginas continua mostrando "Peça extensa" (agora calculado pelo sistema).
+
 **Conferir uso e custo (somente leitura, só contagens):**
 
 ```bash

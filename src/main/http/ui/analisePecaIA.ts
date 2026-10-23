@@ -39,11 +39,12 @@ var S=null;
 var ESPERA_MS=2500,LIMITE_DE_ESPERA_MS=120000;
 
 var TIPOS={peticao_inicial:'Petição inicial',contestacao:'Contestação',replica:'Réplica',embargos:'Embargos',
-  recurso:'Recurso',laudo_pericial:'Laudo pericial',manifestacao:'Manifestação',outro:'Outro tipo de peça',
+  recurso:'Recurso',laudo_pericial:'Laudo pericial',manifestacao:'Manifestação',despacho:'Despacho',decisao:'Decisão',
+  sentenca:'Sentença',acordao:'Acórdão',outro:'Outro tipo de peça',
   indeterminado:'Tipo não identificado'};
 var ATENCAO={
-  peca_longa_demais_para_leitura_completa:'A peça é longa: a leitura pode ter deixado pontos de fora.',
-  texto_incompleto_ou_ilegivel:'O texto da peça pode estar incompleto ou ilegível.',
+  peca_extensa:'Peça extensa: confira a peça inteira, a leitura pode ter deixado pontos de fora.',
+  pouco_texto_por_pagina:'Há pouco texto por página: algumas páginas podem ser imagem e não foram lidas.',
   peca_cita_documentos_nao_anexados:'A peça cita documentos que podem não estar anexados.',
   conferir_peca_inteira:'Confira a peça inteira.'
 };
@@ -128,6 +129,14 @@ function lista(itens,rotulo){
     itens.map(function(i){return '<li><p class="pvpe-texto">'+esc(i.texto)+'</p>'+citacao(i)+'</li>'}).join('')+
     '</ul></section>';
 }
+function determinacoes(itens){
+  if(!itens||!itens.length)return '';
+  return '<section class="pvpe-sec"><h4 class="pvpe-rot">O que determina</h4><ul class="pvpe-itens">'+
+    itens.map(function(i){
+      return '<li><p class="pvpe-texto">'+(i.quem?'<strong>'+esc(i.quem)+'</strong>: ':'')+esc(i.texto)+'</p>'+
+        (i.prazo?'<p class="pvpe-prazo">Prazo escrito no ato: <strong>'+esc(i.prazo)+'</strong></p>':'')+citacao(i)+'</li>'}).join('')+
+    '</ul></section>';
+}
 function citados(r){
   var docs=r.documentos||[],vals=r.valores||[],n=docs.length+vals.length;
   if(!n)return '';
@@ -144,6 +153,7 @@ function resultadoHtml(d){
   var r=d.resultado;
   var h='<p class="pvpe-tipo"><span class="pvpe-selo">'+esc(TIPOS[r.tipo]||'Peça')+'</span></p>';
   if(r.emUmaFrase)h+='<section class="pvpe-sec"><h4 class="pvpe-rot">Em uma frase</h4><p class="pvpe-texto">'+esc(r.emUmaFrase)+'</p></section>';
+  h+=determinacoes(r.determinacoes);
   h+=lista(r.pedidos,'O que pede');
   h+=lista(r.alegacoes,'O que alega');
   h+=lista(r.preliminares,'Preliminares e defesas formais');
@@ -513,6 +523,7 @@ export const ESTILOS_ANALISE_PECA_IA = `
 .pvpe-itens-simples>li{margin:0 0 4px}
 .pvpe-texto{margin:0 0 3px;font-weight:600}
 .pvpe-pg{color:var(--tinta2);font-size:12px}
+.pvpe-prazo{margin:2px 0 0;color:var(--tinta2);font-size:13px}
 .pvpe-cit{margin:3px 0 0}
 .pvpe-cit summary{cursor:pointer;color:var(--tinta2);font-size:12.5px}
 .pvpe-cit blockquote{margin:4px 0 0;padding:6px 10px;border-left:3px solid var(--linha);background:var(--papel);color:var(--tinta2);font-style:italic}

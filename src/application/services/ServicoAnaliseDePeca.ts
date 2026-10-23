@@ -3,10 +3,13 @@ import type {
   AvaliacaoDaAnalise,
   MotivoDaAvaliacao,
 } from '../../domain/entities/AnaliseDoAto.js';
-import type {
-  AnaliseDePeca,
-  ContagensDaAnaliseDePeca,
-  ResultadoDaAnaliseDePeca,
+import {
+  PONTOS_DE_ATENCAO_DO_MODELO,
+  pontosDeAtencaoDoSistema,
+  type AnaliseDePeca,
+  type ContagensDaAnaliseDePeca,
+  type PontoDeAtencaoDoSistema,
+  type ResultadoDaAnaliseDePeca,
 } from '../../domain/entities/AnaliseDePeca.js';
 import { NumeroCNJ } from '../../domain/entities/NumeroCNJ.js';
 import type { Parte } from '../../domain/entities/Parte.js';
@@ -116,6 +119,11 @@ export interface AnaliseDePecaParaATela {
   readonly modo: ModoDaAnaliseDePeca;
   readonly resultado: ResultadoDaAnaliseDePeca;
   readonly contagens: ContagensDaAnaliseDePeca;
+  /**
+   * Fatos que o SISTEMA mediu (v0.56.1): peça extensa, pouco texto por página. Calculados aqui, do que o
+   * código contou — nunca do modelo — e só quando verdadeiros; peça de uma página nunca é "extensa".
+   */
+  readonly pontosDoSistema: readonly PontoDeAtencaoDoSistema[];
   /** A mesma peça já tinha sido analisada: nada foi gasto agora. */
   readonly reaproveitada: boolean;
   /**
@@ -340,6 +348,7 @@ export class ServicoAnaliseDePeca {
             documentos: v.documentos,
             valores: v.valores,
             pontosDeAtencao: v.pontosDeAtencao,
+            determinacoes: v.determinacoes,
           }
         : { estado: 'nao_verificada', motivo: v.motivo };
     const descartes =
@@ -422,6 +431,7 @@ export class ServicoAnaliseDePeca {
       modo,
       resultado: restaurarResultado(a.resultado, entrada.restaurar),
       contagens: a.contagens,
+      pontosDoSistema: pontosDeAtencaoDoSistema(a.contagens),
       reaproveitada,
       conversao,
       modelo: a.procedencia.modelo,
@@ -459,6 +469,22 @@ function restaurarResultado(
   });
   return {
     ...r,
+    // Resultado guardado antes da 0.56.1 pode trazer os códigos de fato do sistema que o modelo emitia:
+    // saem aqui (o fato, se verdadeiro, volta pelo cálculo).
+    pontosDeAtencao: r.pontosDeAtencao.filter((p) =>
+      (PONTOS_DE_ATENCAO_DO_MODELO as readonly string[]).includes(p),
+    ),
+    ...(r.determinacoes
+      ? {
+          determinacoes: r.determinacoes.map((d) => ({
+            quem: restaurar(d.quem),
+            texto: restaurar(d.texto),
+            prazo_escrito: d.prazo_escrito === null ? null : restaurar(d.prazo_escrito),
+            trecho: restaurar(d.trecho),
+            pagina: d.pagina,
+          })),
+        }
+      : {}),
     emUmaFrase: restaurar(r.emUmaFrase),
     pedidos: r.pedidos.map(item),
     alegacoes: r.alegacoes.map(item),

@@ -2,7 +2,10 @@ import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import { corpoDaAvaliacao } from './avaliacaoDeIa.js';
 import type { ServicoAnaliseDePeca } from '../../../application/services/ServicoAnaliseDePeca.js';
 import type { ServicoPasta } from '../../../application/services/ServicoPasta.js';
-import type { ResultadoDaAnaliseDePeca } from '../../../domain/entities/AnaliseDePeca.js';
+import type {
+  PontoDeAtencaoDoSistema,
+  ResultadoDaAnaliseDePeca,
+} from '../../../domain/entities/AnaliseDePeca.js';
 import {
   AnaliseDePecaRecusadaError,
   PecaDaPastaNaoEncontradaError,
@@ -15,7 +18,10 @@ function workspaceDe(requisicao: FastifyRequest): string {
   return ws;
 }
 
-function resultadoJson(r: ResultadoDaAnaliseDePeca): Record<string, unknown> {
+function resultadoJson(
+  r: ResultadoDaAnaliseDePeca,
+  doSistema: readonly PontoDeAtencaoDoSistema[],
+): Record<string, unknown> {
   if (r.estado === 'nao_verificada') return { estado: r.estado, motivo: r.motivo };
   return {
     estado: r.estado,
@@ -24,14 +30,25 @@ function resultadoJson(r: ResultadoDaAnaliseDePeca): Record<string, unknown> {
     pedidos: r.pedidos,
     alegacoes: r.alegacoes,
     preliminares: r.preliminares,
-    documentos: r.documentos.map((d) => ({ nome: d.nome_como_escrito, pagina: d.pagina })),
+    documentos: r.documentos.map((d) => ({
+      nome: d.nome_como_escrito,
+      pagina: d.pagina,
+    })),
     valores: r.valores.map((v) => ({
       valor: v.valor_literal,
       contexto: v.contexto_curto,
       trecho: v.trecho,
       pagina: v.pagina,
     })),
-    pontosDeAtencao: r.pontosDeAtencao,
+    determinacoes: (r.determinacoes ?? []).map((d) => ({
+      quem: d.quem,
+      texto: d.texto,
+      prazo: d.prazo_escrito,
+      trecho: d.trecho,
+      pagina: d.pagina,
+    })),
+    // Os fatos do sistema vêm primeiro; o modelo só acrescenta o que depende do conteúdo.
+    pontosDeAtencao: [...doSistema, ...r.pontosDeAtencao],
   };
 }
 
@@ -97,7 +114,7 @@ export function rotasDaAnaliseDePecaIA(
           estado: r.estado,
           id: r.id,
           modo: r.modo,
-          resultado: resultadoJson(r.resultado),
+          resultado: resultadoJson(r.resultado, r.pontosDoSistema),
           contagens: r.contagens,
           reaproveitada: r.reaproveitada,
           conversao: r.conversao,
