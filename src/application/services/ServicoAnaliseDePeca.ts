@@ -42,6 +42,19 @@ import {
   VERSAO_PROMPT_DA_PECA,
   type EntradaDaPeca,
 } from '../politicas/entradaDaPeca.js';
+import {
+  CONTROLE_SEM_PAINEL,
+  type ControleDaIa,
+} from '../../domain/entities/ControleDaIa.js';
+import {
+  SEM_REGISTRO_DE_OCORRENCIAS,
+  type RegistroDeOcorrenciasDeIa,
+} from '../../domain/ports/PainelDeIa.js';
+import {
+  contagensDaPeca,
+  motivoDaFalhaDaChamada,
+  registrarContagens,
+} from '../politicas/ocorrenciasDeIa.js';
 import type { LimiteDeAnalises } from '../politicas/limiteDeAnalises.js';
 import {
   modoDaAnaliseDePeca,
@@ -103,6 +116,10 @@ export interface OpcoesServicoAnaliseDePeca {
   readonly clock: Clock;
   readonly logger: Logger;
   readonly novoId: () => string;
+  /** O painel de IA do /admin (v0.58.0). Ausente = só vale o ambiente. */
+  readonly controle?: ControleDaIa;
+  /** Contagem de falhas e repetições, por motivo (v0.58.0). Ausente = não conta. */
+  readonly ocorrencias?: RegistroDeOcorrenciasDeIa;
 }
 
 export interface PedidoDeAnaliseDePeca {
@@ -171,6 +188,7 @@ const FRASES: Readonly<Record<AnaliseDePecaRecusadaError['motivo'], string>> = {
     'Há muitas análises em andamento ou o limite por hora foi atingido. Tente novamente em instantes.',
   limite_diario:
     'Muitas análises hoje (cada peça conta como cinco). Tente de novo amanhã ou fale com a gente.',
+  desligada: 'Este recurso está indisponível no momento.',
 };
 
 const recusa = (
@@ -179,18 +197,36 @@ const recusa = (
 
 export class ServicoAnaliseDePeca {
   private readonly log: Logger;
+  private readonly ocorrencias: RegistroDeOcorrenciasDeIa;
 
   constructor(private readonly o: OpcoesServicoAnaliseDePeca) {
     this.log = o.logger.child({ servico: 'analise-de-peca' });
+    this.ocorrencias = o.ocorrencias ?? SEM_REGISTRO_DE_OCORRENCIAS;
   }
 
-  /** A conta está liberada pelas chaves? (O botão só aparece para quem está; o plano é conferido no clique.) */
+  /** A função está ligada no painel (e o ambiente a permite, já que o serviço existe)? */
+  disponivel(): boolean {
+    return (this.o.controle ?? CONTROLE_SEM_PAINEL).ligada('peca');
+  }
+
+  /**
+   * A conta está liberada pelas chaves E a função está ligada no painel? (O botão só aparece para
+   * quem está; o plano é conferido no clique.) Desligada no painel, ninguém está liberado: o botão
+   * não é desenhado em conta nenhuma.
+   */
   modoDa(workspace: string): ModoDaAnaliseDePeca | undefined {
+    return this.disponivel() ? this.liberadaPelasChaves(workspace) : undefined;
+  }
+
+  private liberadaPelasChaves(workspace: string): ModoDaAnaliseDePeca | undefined {
     return modoDaAnaliseDePeca(workspace, this.o.liberacao);
   }
 
   async analisar(pedido: PedidoDeAnaliseDePeca): Promise<RespostaDaAnaliseDePeca> {
     const { workspace, pecaId } = pedido;
+
+    // 0. Desligada no painel: nada além da frase fixa, antes de tudo (sem teto consumido, sem modelo).
+    if (!this.disponivel()) throw recusa('desligada');
 
     // 1. Liberação e plano. Antes de ler qualquer coisa. Sem a chave: a rota "não existe".
     const modo = this.modoDa(workspace);
@@ -320,8 +356,10 @@ export class ServicoAnaliseDePeca {
         sistema: c.entrada.sistema,
         usuario: c.entrada.usuario,
         ...(pedido.sinal ? { sinal: pedido.sinal } : {}),
+        aoRepetir: () => this.ocorrencias.registrar('peca', 'repeticao_automatica'),
       });
     } catch (erro) {
+      this.ocorrencias.registrar('peca', motivoDaFalhaDaChamada(erro));
       // Só a CLASSE do erro e o roteamento SANEADO vão ao log: a mensagem de um roteador pode ecoar o
       // pedido, que leva texto de peça.
       const r = erro instanceof ProviderIndisponivelError ? erro.roteamento : undefined;
@@ -353,6 +391,11 @@ export class ServicoAnaliseDePeca {
         : { estado: 'nao_verificada', motivo: v.motivo };
     const descartes =
       v.descartes.citacao + v.descartes.numero + v.descartes.forma + v.descartes.pagina;
+    registrarContagens(
+      this.ocorrencias,
+      'peca',
+      contagensDaPeca(v.descartes, v.estado === 'nao_verificada' ? v.motivo : undefined),
+    );
 
     const criadaEm = this.o.clock.agora();
     const analise: AnaliseDePeca = {
@@ -413,7 +456,8 @@ export class ServicoAnaliseDePeca {
     avaliacao: AvaliacaoDaAnalise,
     motivo?: MotivoDaAvaliacao,
   ): Promise<void> {
-    if (!this.modoDa(workspace)) throw recusa('indisponivel');
+    // Avaliar o que já foi feito não depende do interruptor do painel, só da liberação.
+    if (!this.liberadaPelasChaves(workspace)) throw recusa('indisponivel');
     const ok = await this.o.analises.avaliar(workspace, id, avaliacao, motivo);
     if (!ok) throw new AnaliseNaoEncontradaError();
   }

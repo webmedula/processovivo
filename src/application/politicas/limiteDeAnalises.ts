@@ -1,3 +1,4 @@
+import type { ControleDaIa, FuncaoDeIa } from '../../domain/entities/ControleDaIa.js';
 import type { Clock } from '../../domain/ports/Clock.js';
 
 /**
@@ -23,6 +24,8 @@ export interface OpcoesDoLimite {
    * Ausente e sem `porDia` = sem teto diário.
    */
   readonly teto?: TetoDiario;
+  /** A função a que este limite serve: o painel de IA (v0.58.0) pode reduzir o teto POR função. */
+  readonly funcao?: FuncaoDeIa;
   readonly clock: Clock;
 }
 
@@ -41,10 +44,23 @@ export class TetoDiario {
     string,
     { readonly dia: string; quantidade: number }
   >();
+  /** O mesmo, por (workspace, função): o painel de IA pode limitar uma função sozinha. */
+  private readonly doDiaPorFuncao = new Map<
+    string,
+    { readonly dia: string; quantidade: number }
+  >();
+  /** O dia corrente do servidor inteiro (todas as contas e funções), para o teto global do painel. */
+  private totalDoDia: { dia: string; quantidade: number } = { dia: '', quantidade: 0 };
 
+  /**
+   * `porDia` é o da variável de ambiente (a trava mestra). `painel` (v0.58.0) só pode REDUZIR: o teto
+   * efetivo de uma função é o menor entre `porDia` e o do painel, e o painel acrescenta o teto global.
+   * Ausente = só o ambiente, como sempre foi.
+   */
   constructor(
     readonly porDia: number,
     private readonly clock: Clock,
+    private readonly painel?: Pick<ControleDaIa, 'limites'>,
   ) {}
 
   cheio(workspace: string): boolean {
@@ -53,21 +69,64 @@ export class TetoDiario {
 
   /**
    * Cabe mais uma operação de `peso` hoje? (v0.55.0: a análise de uma peça pesa 5, a de um ato 1.)
-   * Com peso 1 é exatamente `!cheio`. Uma conta que gastou 198 de 200 pode fazer atos, não uma peça.
+   * Com peso 1 e sem painel é exatamente `!cheio`. Uma conta que gastou 198 de 200 pode fazer atos, não
+   * uma peça. Com o painel (v0.58.0) valem também o teto da função e o global — o MENOR de todos.
    */
-  cabe(workspace: string, peso = 1): boolean {
-    return this.quantidadeHoje(workspace) + peso <= this.porDia;
+  cabe(workspace: string, peso = 1, funcao?: FuncaoDeIa): boolean {
+    if (this.quantidadeHoje(workspace) + peso > this.porDia) return false;
+    const limites = this.limitesDoPainel();
+    if (limites) {
+      const daFuncao = funcao ? limites.porFuncao[funcao] : undefined;
+      if (
+        daFuncao !== undefined &&
+        funcao !== undefined &&
+        this.quantidadeDaFuncaoHoje(workspace, funcao) + peso > Math.min(this.porDia, daFuncao)
+      ) {
+        return false;
+      }
+      if (limites.global !== undefined && this.totalHoje() + peso > limites.global) {
+        return false;
+      }
+    }
+    return true;
   }
 
-  registrar(workspace: string, peso = 1): void {
+  registrar(workspace: string, peso = 1, funcao?: FuncaoDeIa): void {
     const dia = diaEmSaoPaulo(this.clock.agora().getTime());
     this.doDia.set(workspace, { dia, quantidade: this.quantidadeHoje(workspace) + peso });
+    if (funcao) {
+      this.doDiaPorFuncao.set(`${workspace}|${funcao}`, {
+        dia,
+        quantidade: this.quantidadeDaFuncaoHoje(workspace, funcao) + peso,
+      });
+    }
+    this.totalDoDia = { dia, quantidade: this.totalHoje() + peso };
+  }
+
+  /** O painel nunca derruba o freio: se ele falhar, vale só o ambiente. */
+  private limitesDoPainel(): ReturnType<ControleDaIa['limites']> | undefined {
+    try {
+      return this.painel?.limites();
+    } catch {
+      return undefined;
+    }
   }
 
   private quantidadeHoje(workspace: string): number {
     const dia = diaEmSaoPaulo(this.clock.agora().getTime());
     const c = this.doDia.get(workspace);
     return c?.dia === dia ? c.quantidade : 0;
+  }
+
+  private quantidadeDaFuncaoHoje(workspace: string, funcao: FuncaoDeIa): number {
+    const dia = diaEmSaoPaulo(this.clock.agora().getTime());
+    const c = this.doDiaPorFuncao.get(`${workspace}|${funcao}`);
+    return c?.dia === dia ? c.quantidade : 0;
+  }
+
+  private totalHoje(): number {
+    const dia = diaEmSaoPaulo(this.clock.agora().getTime());
+    return this.totalDoDia.dia === dia ? this.totalDoDia.quantidade : 0;
   }
 }
 
@@ -102,7 +161,9 @@ export class LimiteDeAnalises {
     if (this.emAndamento.size >= this.opcoes.simultaneasNoTotal) {
       return { negada: 'global' };
     }
-    if (this.teto && !this.teto.cabe(workspace, peso)) return { negada: 'dia' };
+    if (this.teto && !this.teto.cabe(workspace, peso, this.opcoes.funcao)) {
+      return { negada: 'dia' };
+    }
     const recentes = (this.inicios.get(workspace) ?? []).filter(
       (t) => agora - t < UMA_HORA_MS,
     );
@@ -112,7 +173,7 @@ export class LimiteDeAnalises {
     }
     recentes.push(agora);
     this.inicios.set(workspace, recentes);
-    this.teto?.registrar(workspace, peso);
+    this.teto?.registrar(workspace, peso, this.opcoes.funcao);
     this.emAndamento.add(workspace);
     let liberada = false;
     return {

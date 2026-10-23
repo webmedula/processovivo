@@ -34,6 +34,19 @@ import {
   VERSAO_PROMPT_DO_RESUMO,
   type AtoEnviado,
 } from '../politicas/entradaDoResumo.js';
+import {
+  CONTROLE_SEM_PAINEL,
+  type ControleDaIa,
+} from '../../domain/entities/ControleDaIa.js';
+import {
+  SEM_REGISTRO_DE_OCORRENCIAS,
+  type RegistroDeOcorrenciasDeIa,
+} from '../../domain/ports/PainelDeIa.js';
+import {
+  contagensDoResumo,
+  motivoDaFalhaDaChamada,
+  registrarContagens,
+} from '../politicas/ocorrenciasDeIa.js';
 import type { LimiteDeAnalises } from '../politicas/limiteDeAnalises.js';
 import type { PessoasParaRedigir } from '../politicas/redigirParaIA.js';
 import { diaLocal } from '../politicas/mesmoAtoParaOResumo.js';
@@ -147,6 +160,10 @@ export interface OpcoesServicoResumoDoProcesso {
   readonly clock: Clock;
   readonly logger: Logger;
   readonly novoId: () => string;
+  /** O painel de IA do /admin (v0.58.0). Ausente = só vale o ambiente. */
+  readonly controle?: ControleDaIa;
+  /** Contagem de falhas e repetições, por motivo (v0.58.0). Ausente = não conta. */
+  readonly ocorrencias?: RegistroDeOcorrenciasDeIa;
   /** A janela única de "pede providência" (`PENDENCIA_JANELA_DIAS`). */
   readonly janelaDePendenciaDias: number;
   /**
@@ -164,13 +181,27 @@ export interface PedidoDeResumoDoProcesso {
 
 export class ServicoResumoDoProcesso {
   private readonly log: Logger;
+  private readonly ocorrencias: RegistroDeOcorrenciasDeIa;
 
   constructor(private readonly o: OpcoesServicoResumoDoProcesso) {
+    this.ocorrencias = o.ocorrencias ?? SEM_REGISTRO_DE_OCORRENCIAS;
     this.log = o.logger.child({ servico: 'resumo-do-processo' });
+  }
+
+  /** A função está ligada no painel (e o ambiente a permite, já que o serviço existe)? */
+  disponivel(): boolean {
+    return (this.o.controle ?? CONTROLE_SEM_PAINEL).ligada('resumo');
   }
 
   async resumir(pedido: PedidoDeResumoDoProcesso): Promise<RespostaDoResumo> {
     const { workspace } = pedido;
+    // 0. Desligada no painel: nada além da frase fixa, antes de plano, retrato, vaga e modelo.
+    if (!this.disponivel()) {
+      throw new EntradaNaoAnalisavelError(
+        'desligada',
+        'Este recurso está indisponível no momento.',
+      );
+    }
     const numero = NumeroCNJ.criar(pedido.numero).digitos;
 
     // 1. Plano: sem ele, nada além da frase fixa. Antes de ler o retrato.
@@ -263,8 +294,10 @@ export class ServicoResumoDoProcesso {
         sistema: entrada.sistema,
         usuario: entrada.usuario,
         ...(pedido.sinal ? { sinal: pedido.sinal } : {}),
+        aoRepetir: () => this.ocorrencias.registrar('resumo', 'repeticao_automatica'),
       });
     } catch (erro) {
+      this.ocorrencias.registrar('resumo', motivoDaFalhaDaChamada(erro));
       // Só a CLASSE do erro e o roteamento SANEADO vão ao log: a mensagem de um roteador pode
       // ecoar o pedido (que leva texto de ato), então ela nunca é copiada.
       const r = erro instanceof ProviderIndisponivelError ? erro.roteamento : undefined;
@@ -294,6 +327,14 @@ export class ServicoResumoDoProcesso {
           }
         : {}),
     });
+    registrarContagens(
+      this.ocorrencias,
+      'resumo',
+      contagensDoResumo(
+        verificada.descartes,
+        verificada.estado === 'nao_verificado' ? verificada.motivo : undefined,
+      ),
+    );
     const resultado: ResultadoDoResumo =
       verificada.estado === 'verificado'
         ? {

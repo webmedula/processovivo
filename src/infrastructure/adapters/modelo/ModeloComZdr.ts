@@ -47,6 +47,8 @@ export interface PedidoComZdr {
   readonly sistema: string;
   readonly usuario: string;
   readonly sinal?: AbortSignal;
+  /** Chamado a cada repetição automática da chamada (painel de IA, v0.58.0). Só conta; nunca recebe texto. */
+  readonly aoRepetir?: () => void;
   /** Instrução do formato da saída em texto; ausente = a do ato (ver o transporte). */
   readonly instrucaoDeFormato?: string;
   readonly maxTokens?: number;
@@ -96,6 +98,7 @@ export class ModeloComZdr {
       usuario: pedido.usuario,
       provedoresPermitidos: permitidos,
       ...(pedido.sinal ? { sinal: pedido.sinal } : {}),
+      ...(pedido.aoRepetir ? { aoRepetir: pedido.aoRepetir } : {}),
       ...(pedido.instrucaoDeFormato
         ? { instrucaoDeFormato: pedido.instrucaoDeFormato }
         : {}),

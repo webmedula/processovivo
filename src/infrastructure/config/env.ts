@@ -242,6 +242,9 @@ const schema = z.object({
   // configuração — ver `validarConfiguracaoAdmin`.
   PROCESSOVIVO_ADMIN_USUARIO: z.string().default(''),
   PROCESSOVIVO_ADMIN_SENHA: z.string().default(''),
+  // E-mail do operador para o ALERTA DE CUSTO da IA (v0.58.0). Opcional: vazio = só o banner no /admin.
+  // Nunca vai a log. Sem ele, cai no `PROCESSOVIVO_PAGAMENTO_AVISO_EMAIL` (o mesmo operador).
+  PROCESSOVIVO_ADMIN_EMAIL: z.string().default(''),
 
   // --- Análise de ato por IA (v0.38.0) ----------------------------------------
   // Nasce DESLIGADA. Não existe variável para desligar a retenção zero (ZDR): ela é
@@ -499,6 +502,8 @@ export interface Config {
     /** Vazio quando a área administrativa está desligada (as duas variáveis vazias). */
     readonly usuario: string;
     readonly senha: string;
+    /** E-mail do operador (alerta de custo da IA). Vazio = sem e-mail. Nunca vai a log. */
+    readonly email: string;
   };
 }
 
@@ -757,6 +762,10 @@ export function carregarConfig(fonte: NodeJS.ProcessEnv = process.env): Config {
     admin: {
       usuario: env.PROCESSOVIVO_ADMIN_USUARIO.trim(),
       senha: env.PROCESSOVIVO_ADMIN_SENHA,
+      email: (
+        env.PROCESSOVIVO_ADMIN_EMAIL.trim() ||
+        env.PROCESSOVIVO_PAGAMENTO_AVISO_EMAIL.trim()
+      ).replace(/\s+/g, ''),
     },
   };
 }

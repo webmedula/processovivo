@@ -11,6 +11,8 @@ export interface PedidoDeResumo {
   readonly usuario: string;
   /** Aborta a chamada em curso (a pessoa cancelou ou o tempo acabou). */
   readonly sinal?: AbortSignal;
+  /** Chamado a cada repetição automática da chamada (painel de IA, v0.58.0). Só conta; nunca recebe texto. */
+  readonly aoRepetir?: () => void;
 }
 
 export interface RespostaDoResumidor {

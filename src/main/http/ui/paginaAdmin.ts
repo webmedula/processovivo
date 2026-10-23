@@ -1,6 +1,7 @@
 import { ESTILOS } from './estilos.js';
 import { FAVICON_DATA_URI, LOGO_FUNDO_ESCURO } from './marca.js';
 import { SCRIPT_TEMA } from './pagina.js';
+import { ESTILOS_IA_ADMIN, SCRIPT_IA_ADMIN } from './iaAdmin.js';
 import { SCRIPT_ADMIN } from './scriptAdmin.js';
 
 /**
@@ -36,7 +37,7 @@ export function paginaAdmin(versao: string): string {
 <title>Processo Vivo — administração</title>
 <link rel="icon" type="image/svg+xml" href="${FAVICON_DATA_URI}">
 <script>${SCRIPT_TEMA}</script>
-<style>${ESTILOS}${ESTILOS_ADMIN}</style>
+<style>${ESTILOS}${ESTILOS_ADMIN}${ESTILOS_IA_ADMIN}</style>
 </head>
 <body>
 
@@ -50,15 +51,20 @@ export function paginaAdmin(versao: string): string {
       <button id="nav-assinaturas" class="ativo">Assinaturas</button>
       <button id="nav-planos">Planos</button>
       <button id="nav-chaves">Chaves de API</button>
+      <button id="nav-ia">IA</button>
     </nav>
     <div class="lateral-pe">
       <div class="versao">v${versao}</div>
     </div>
   </aside>
 
-  <main class="env" id="conteudo"></main>
+  <main class="env">
+    <div id="aviso-ia" role="status" hidden></div>
+    <div id="conteudo"></div>
+  </main>
 </div>
 
+<script>${SCRIPT_IA_ADMIN}</script>
 <script>${SCRIPT_ADMIN}</script>
 </body>
 </html>`;

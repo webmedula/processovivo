@@ -1,6 +1,7 @@
 import { Linter } from 'eslint';
 import globals from 'globals';
 import { describe, expect, it } from 'vitest';
+import { SCRIPT_IA_ADMIN } from '../../src/main/http/ui/iaAdmin.js';
 import { SCRIPT_ADMIN } from '../../src/main/http/ui/scriptAdmin.js';
 
 /*
@@ -10,11 +11,14 @@ import { SCRIPT_ADMIN } from '../../src/main/http/ui/scriptAdmin.js';
  * enxergam nada dentro de um `String.raw`; isto tira a string do arquivo e
  * manda o ESLint olhar o que ela tem dentro.
  */
-describe('área administrativa — o JavaScript da interface', () => {
+describe.each([
+  ['da administração', SCRIPT_ADMIN],
+  ['da tela de IA (v0.58.0)', SCRIPT_IA_ADMIN],
+])('área administrativa — o JavaScript %s', (_nome, SCRIPT) => {
   const linter = new Linter();
 
   function analisar() {
-    return linter.verify(SCRIPT_ADMIN, {
+    return linter.verify(SCRIPT, {
       languageOptions: {
         ecmaVersion: 2020,
         sourceType: 'script',

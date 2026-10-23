@@ -64,7 +64,8 @@ var RECUSAS={
   segredo_de_justica:'Processo em segredo de justiça: o resumo por IA não é feito. Leia os atos.',
   texto_insuficiente:'Este processo não tem atos com texto suficiente para resumir. Leia os atos.',
   limite_de_uso:'Há muitos resumos em andamento ou o limite por hora foi atingido. Tente novamente em instantes.',
-  nao_acompanhado:'Este processo não está entre os que você acompanha.'
+  nao_acompanhado:'Este processo não está entre os que você acompanha.',
+  desligada:'Este recurso está indisponível no momento.'
 };
 var ANALISANDO='Resumindo o processo… isso pode levar até 2 minutos.';
 var NAO_VERIFICADO='Não foi possível resumir com segurança. Leia os atos.';
@@ -343,8 +344,9 @@ function aposDesenhar(numero,acompanhado){
   if(!acompanhado)return;
   var ia=window.__pvAnaliseIA;
   if(!ia)return;
-  ia.carregar().then(function(ligada){
-    if(!ligada)return;
+  ia.carregar().then(function(){
+    /* O resumo tem o interruptor dele no painel do /admin (v0.58.0), separado do da análise de ato. */
+    if(!ia.resumoLigado())return;
     var capa=document.querySelector('#conteudo .capa'),parar=document.getElementById('parar');
     var num=capa?capa.querySelector('.num'):null;
     if(!capa||!parar||!num||digitos(num.textContent)!==n)return;

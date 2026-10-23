@@ -21,6 +21,7 @@ import type {
   TransporteDeModelo,
 } from '../../infrastructure/adapters/modelo/TransporteOpenRouter.js';
 import { escreverCsv, lerCsv, type CasoDaSonda } from './casosDaSonda.js';
+import { percentil, media } from '../../application/politicas/estatistica.js';
 
 /**
  * Núcleo da sonda de IA do ato (v1.2.0). Não consulta tribunal, não abre banco.
@@ -434,22 +435,8 @@ export async function executarSonda(op: OpcoesDaExecucao): Promise<ResultadoDaEx
 
 // --- métricas ----------------------------------------------------------------
 
-export function percentil(valores: readonly number[], p: number): number | undefined {
-  if (valores.length === 0) return undefined;
-  const ordenados = [...valores].sort((a, b) => a - b);
-  const posicao = Math.min(
-    ordenados.length - 1,
-    Math.max(0, Math.ceil(p * ordenados.length) - 1),
-  );
-  return ordenados[posicao];
-}
-
-export function media(valores: readonly number[]): number | undefined {
-  return valores.length === 0
-    ? undefined
-    : valores.reduce((a, b) => a + b, 0) / valores.length;
-}
-
+// `percentil` e `media` moraram aqui; agora são UMA implementação só, compartilhada com o painel de IA.
+export { percentil, media } from '../../application/politicas/estatistica.js';
 export interface MetricasDoGrupo {
   readonly modelo: string;
   readonly variante: Variante;

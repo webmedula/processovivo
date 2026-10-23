@@ -32,6 +32,8 @@ export interface PedidoAoModelo {
   readonly provedoresPermitidos: readonly string[];
   /** Cancelamento (a pessoa fechou a tela): aborta a chamada em curso e impede nova tentativa. */
   readonly sinal?: AbortSignal;
+  /** Chamado a cada repetição automática da chamada (painel de IA, v0.58.0). Só conta; nunca recebe texto. */
+  readonly aoRepetir?: () => void;
   /**
    * Instrução do formato da saída em texto (v0.40.0). Ausente = a do ato
    * (`INSTRUCAO_DE_FORMATO_EM_TEXTO`). O resumo de processo manda a dele.
@@ -499,6 +501,7 @@ export class TransporteOpenRouter implements TransporteDeModelo {
           !listaEsgotada &&
           tentativa < repeticoes;
         if (!podeRepetir) throw traduzido;
+        pedido.aoRepetir?.();
         if (trocaProvedor) {
           const proximoProvedor = todos[proximo++];
           if (proximoProvedor !== undefined) only = [proximoProvedor];

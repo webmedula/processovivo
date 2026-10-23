@@ -32,7 +32,7 @@ var pv=function(){return window.__pv};
 function esc(s){return pv().esc(s)}
 function digitos(n){return String(n||'').replace(/\D/g,'')}
 
-var D={habilitada:null,promessa:null,oferta:'nenhuma'};
+var D={habilitada:null,resumo:false,promessa:null,oferta:'nenhuma'};
 var E={};
 var L={redesenhar:function(){},anunciar:function(){}};
 
@@ -57,7 +57,8 @@ var RECUSAS={
   texto_indisponivel:'O tribunal não liberou o texto deste ato. Abra o processo no tribunal.',
   limite_de_uso:'Há muitas análises em andamento. Tente novamente em instantes.',
   limite_diario:'Muitas análises hoje. Tente de novo amanhã ou fale com a gente.',
-  ato_nao_encontrado:'Esse ato não está mais no último retrato do processo. Atualize a tela e confira de novo.'
+  ato_nao_encontrado:'Esse ato não está mais no último retrato do processo. Atualize a tela e confira de novo.',
+  desligada:'Este recurso está indisponível no momento.'
 };
 var NAO_VERIFICADO='Não foi possível analisar com segurança. Leia o ato.';
 var ERRO='Não foi possível analisar agora. Tente de novo em alguns minutos.';
@@ -94,13 +95,17 @@ function carregar(){
   D.promessa=fetch('/v1/analises/disponibilidade',{headers:h})
     .then(function(r){return r.ok?r.json():{habilitada:false}})
     .then(function(b){
-      D.habilitada=b.habilitada===true;
+      /* v0.58.0: o painel do /admin liga e desliga cada função; sem "funcoes" (servidor antigo) vale "habilitada". */
+      var f=b.funcoes||{};
+      D.habilitada=b.habilitada===true&&f.ato!==false;
+      D.resumo=b.habilitada===true&&f.resumo!==false;
       D.oferta=(b.oferta==='ver_planos'||b.oferta==='fale_conosco')?b.oferta:'nenhuma';
       return D.habilitada},
       function(){D.habilitada=false;return false});
   return D.promessa;
 }
 function habilitada(){return D.habilitada===true}
+function resumoLigado(){return D.resumo===true}
 function ligar(callbacks){
   L.redesenhar=callbacks.redesenhar||L.redesenhar;
   L.anunciar=callbacks.anunciar||L.anunciar;
@@ -428,7 +433,7 @@ document.addEventListener('keydown',function(ev){
   if(n&&E[n]){ev.preventDefault();fechar(n,E[n].fase==='analisando'?'Análise cancelada.':'')}
 });
 
-window.__pvAnaliseIA={carregar:carregar,habilitada:habilitada,ligar:ligar,botao:botao,painel:painel,clicar:clicar,
+window.__pvAnaliseIA={carregar:carregar,habilitada:habilitada,resumoLigado:resumoLigado,ligar:ligar,botao:botao,painel:painel,clicar:clicar,
   semPlano:semPlano,textoSemPlano:textoSemPlano};
 })();
 `;
