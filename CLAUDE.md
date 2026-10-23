@@ -2075,7 +2075,7 @@ Não são detalhes — moldam o código.
   `migracao:custos-0.48.0` em `estado`): categorias antigas → CUS-020, PER-001, DIL-001, ADM-001, ADM-004, DIL-010 (Publicações:
   a antiga era genérica) e OUT-001; próprias → Grupo 12; cada lançamento reembolsável ressarcido gera UM recebimento
   ("Migrado da versão anterior", id derivado do lançamento). O servidor ainda traduz os códigos antigos. (7) **PDF** (continua
-  sem partes, sem texto de ato, sem gravar): categoria "Grupo › Subcategoria", "pago por", depósitos em bloco à parte,
+  sem partes, sem texto de ato, sem gravar; **a coluna Data tem 56 pt desde a v0.56.2 e a data "dd/mm/aaaa" nunca quebra** — teste com 30/12/2026 nas três tabelas): categoria "Grupo › Subcategoria", "pago por", depósitos em bloco à parte,
   recebimentos, saldo e crédito; cancelados nunca aparecem. **Fica para a v0.49.0:** tela "Custos" por cliente (depende do
   rótulo de cliente, que só existe em processo ACOMPANHADO — sem ele o processo cai em "Sem cliente"; "Deixar de acompanhar"
   avisa disso), PDF consolidado, CSV e comprovantes — **tudo isso foi feito na v0.49.0, no item seguinte**.

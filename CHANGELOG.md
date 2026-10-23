@@ -9,6 +9,19 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.56.2] — 2026-10-23
+
+**PDF da prestação de contas: a coluna Data cabe sempre em UMA linha.** Só apresentação do PDF; a planilha (CSV), os totais, as rotas, os dados e as regras não mudaram. Sem dependência nova, sem migração.
+
+- **O defeito:** a coluna Data tinha 50 pt (42 pt úteis, descontado o recuo de 4 pt de cada lado) e "30/12/2026" mede cerca de 42,5 pt em Helvetica de 8,5 pt: o último dígito ("6") caía na linha de baixo
+  ("20/10/202" + "6"). Datas com dígitos mais largos ou em dezembro estouravam; as de setembro e outubro dos testes antigos coincidiam em caber.
+- **A correção:** a coluna Data passou de **50 pt para 56 pt**, e a Descrição de 150 para **144 pt** (a Descrição já quebra em palavras; categoria, valor e situação ficam como estavam). As três tabelas
+  (despesas, "Depósitos e garantias" e "Recebimentos do cliente") usam as mesmas colunas, então as três foram corrigidas juntas; a soma segue igual à largura útil da página (511,28 pt), sem estourar a margem.
+- **Teste:** gera o PDF com a data mais larga (30/12/2026) nas três tabelas e falha se alguma data aparecer partida (verificado contra a largura antiga: falha; com a nova: passa). Nenhum teste anterior assumia a
+  largura antiga (todos usavam datas que cabiam), então nenhum foi reescrito.
+
+---
+
 ## [0.56.1] — 2026-10-23
 
 **Análise de peça: despacho e decisão curtos deixam de receber pontos de atenção falsos e ganham o bloco "O que determina".** Prompt `peca-1.1.0`, regras de verificação `1.1.0`.
