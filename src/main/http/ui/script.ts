@@ -238,7 +238,7 @@ function atualizarBolha(){
 function ir(aba){
   // Sair do processo fecha a Pasta: o painel é do processo, não da aba.
   if(window.__pvPasta)window.__pvPasta.fechar();
-  estado.aba=aba;estado.detalhe=null;pintarNav();render()}
+  if(window.__pvNav)window.__pvNav.aba(aba);estado.aba=aba;estado.detalhe=null;pintarNav();render()}
 window.__processovivo_ir=ir;
 
 /* ---------------- aba: novidades ---------------- */
@@ -995,7 +995,7 @@ function atualizarRotuloLote(lista){
 /* ---------------- detalhe ---------------- */
 function abrir(numero){
   if(window.__pvPasta)window.__pvPasta.trocouProcesso(numero);
-  estado.detalhe=numero;pintarNav();
+  if(window.__pvNav)window.__pvNav.processo(numero);estado.detalhe=numero;pintarNav();
   $('conteudo').classList.remove('env-larga');
   var alvo=$('conteudo');
   alvo.innerHTML='<div class="cartao"><span class="gira"></span>Carregando…</div>';
@@ -1013,7 +1013,7 @@ function abrir(numero){
           '<button class="bt bt2" id="parar">Deixar de acompanhar</button>');
       ligarBotoesDetalhe(numero,true);
     }
-    $('voltar').addEventListener('click',function(){estado.detalhe=null;pintarNav();render()});
+    $('voltar').addEventListener('click',function(){if(window.__pvNav&&window.__pvNav.voltarDoProcesso())return;estado.detalhe=null;pintarNav();render()});
     api('/v1/novidades/marcar-vistas',{method:'POST',body:{numero:numero}})
       .then(atualizarBolha).catch(function(){});
   }).catch(function(e){
@@ -1024,7 +1024,7 @@ function abrir(numero){
           processoHtml(p,null,{buscaAvulsa:true})+'<div id="pecas"></div>';
         ligarBotoesDetalhe(numero,false);
         carregarPecas(numero);
-        $('voltar').addEventListener('click',function(){estado.detalhe=null;pintarNav();render()});
+        $('voltar').addEventListener('click',function(){if(window.__pvNav&&window.__pvNav.voltarDoProcesso())return;estado.detalhe=null;pintarNav();render()});
       }).catch(function(e2){alvo.innerHTML=erroBloco(e2)});
       return;
     }
@@ -1034,7 +1034,7 @@ function abrir(numero){
 window.__processovivo_abrir=abrir;
 /* O que a Pasta digital (scriptPasta.ts) e o calendário (calendario.ts) usam do console.
    Um objeto pequeno e explícito: eles não leem o estado da tela por dentro. */
-window.__pv={api:api,esc:esc,explicar:explicar,dth:dth,erroBloco:erroBloco,vazio:vazio,abrir:abrir,chave:function(){return estado.chave},dt:dt,diaMes:diaMes,humano:humano,mascara:mascara,tamanho:tamanho};
+window.__pv={api:api,esc:esc,explicar:explicar,dth:dth,erroBloco:erroBloco,vazio:vazio,abrir:abrir,chave:function(){return estado.chave},detalhe:function(){return estado.detalhe},logado:function(){return !!(estado.eu||estado.chave)},dt:dt,diaMes:diaMes,humano:humano,mascara:mascara,tamanho:tamanho};
 
 function ligarBotoesDetalhe(numero,acompanhado){
   var b=$('acompanhar');
@@ -1073,7 +1073,7 @@ function agrupar(movs){
 function processoHtml(p,acomp,op){
   op=op||{};
   var movs=p.movimentacoes||[];
-  var h='<div class="capa"><div class="num">'+esc(p.numero)+'</div>'+
+  var h='<div class="capa"><div class="num" tabindex="-1" role="heading" aria-level="2">'+esc(p.numero)+'</div>'+
     '<div class="sob">'+esc(p.classe||'Classe não informada')+
     (p.assunto?' · '+esc(p.assunto):'')+'</div><div class="selos">'+
     '<span class="selo">'+esc(p.tribunal||'—')+'</span>'+
@@ -2274,7 +2274,7 @@ function iniciar(){
     estado.facetas=f;
     atualizarBolha();
     pintarNav();
-    render();if(window.__pvAoIniciar)window.__pvAoIniciar();// link /?processo= (ui/calendario.ts)
+    if(!(window.__pvNav&&window.__pvNav.inicial()))render();if(window.__pvAoIniciar)window.__pvAoIniciar();// link /?processo= (ui/calendario.ts)
   }).catch(function(e){
     if(e.status===401){
       estado.chave='';try{localStorage.removeItem(CH)}catch(x){}
@@ -2293,7 +2293,7 @@ $('sair').addEventListener('click',function(){
      continuaria abrindo a conta. */
   var fim=function(){
     estado.chave='';try{localStorage.removeItem(CH)}catch(e){}
-    estado.eu=null;estado.trilha=null;
+    estado.eu=null;estado.trilha=null;estado.detalhe=null;if(window.__pvNav)window.__pvNav.sair();
     $('lateral').classList.add('oculto');telaEntrada('entrar');
   };
   api('/v1/sessoes',{method:'DELETE'}).then(fim,fim);

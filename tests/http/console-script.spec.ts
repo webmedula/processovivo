@@ -14,6 +14,7 @@ import { SCRIPT_RESUMO_IA } from '../../src/main/http/ui/resumoIA.js';
 import { SCRIPT_ANALISE_PECA_IA } from '../../src/main/http/ui/analisePecaIA.js';
 import { SCRIPT_PAGAMENTO } from '../../src/main/http/ui/pagamento.js';
 import { SCRIPT_PLANO_ESCOLHIDO } from '../../src/main/http/ui/planoEscolhido.js';
+import { SCRIPT_NAVEGACAO } from '../../src/main/http/ui/navegacao.js';
 
 /*
  * O console é JavaScript dentro de uma string.
@@ -52,6 +53,7 @@ describe.each([
   ['análise de peça por IA', SCRIPT_ANALISE_PECA_IA],
   ['assinatura online e confirmação', SCRIPT_PAGAMENTO],
   ['plano escolhido no site', SCRIPT_PLANO_ESCOLHIDO],
+  ['navegação por hash', SCRIPT_NAVEGACAO],
 ])('console web — o JavaScript da interface (%s)', (_nome, codigo) => {
   const linter = new Linter();
 

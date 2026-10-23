@@ -270,7 +270,11 @@ describe.skipIf(sem)(
         numero.replace(/^(\d{7})(\d{2})(\d{4})(\d)(\d{2})(\d{4})$/, '$1-$2.$3.$4.$5.$6'),
       );
       expect(await num.evaluate((e) => getComputedStyle(e).fontFamily)).toMatch(/mono/i);
-      expect(await num.getAttribute('href')).toContain('processo=' + numero);
+      // Reescrito na 0.57.0: o link deixou de levar o número CNJ (`/?processo=<número>`) e passou a ser o endereço
+      // opaco da navegação por hash — número de processo nunca vai à URL, ao histórico nem ao `Referer`.
+      const href = (await num.getAttribute('href')) ?? '';
+      expect(href).toMatch(/^#\/processo\/[a-z0-9]{6,20}$/);
+      expect(href).not.toContain(numero);
       expect(await l.locator('.c-partes').innerText()).toBe(
         'Autora Sintética × Empresa Fictícia Ltda',
       );

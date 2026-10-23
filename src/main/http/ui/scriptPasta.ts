@@ -197,7 +197,8 @@ function montarPainel(){
 }
 
 function ligarEventos(){
-  $('pasta-fechar').addEventListener('click',fechar);
+  /* "Fechar a pasta" usa o histórico do navegador (ui/navegacao.ts): volta um passo, ou vai ao processo quando a pessoa chegou por link. */
+  $('pasta-fechar').addEventListener('click',function(){if(window.__pvNav&&window.__pvNav.fecharPasta())return;fechar()});
   $('pasta-montar').addEventListener('click',pedirMontagem);
   $('pasta-tudo').addEventListener('click',alternarTudo);
   $('pasta-baixadas-bt').addEventListener('click',function(){
@@ -209,7 +210,7 @@ function ligarEventos(){
   mw.addEventListener('keydown',function(ev){if(ev.key==='Escape')mw.classList.add('dica-fechada')});
   mw.addEventListener('mouseleave',function(){mw.classList.remove('dica-fechada')});
   $('pasta-montar').addEventListener('blur',function(){mw.classList.remove('dica-fechada')});
-  $('pasta-voltar').addEventListener('click',voltarParaLista);
+  $('pasta-voltar').addEventListener('click',function(){if(window.__pvNav&&window.__pvNav.voltarDaPeca())return;voltarParaLista()});
   $('pasta-busca').addEventListener('input',function(){
     st.busca=$('pasta-busca').value;desenharLista();
   });
@@ -239,7 +240,7 @@ function ligarEventos(){
   $('pasta-baixar-este').addEventListener('click',baixarEste);
   $('pasta-paginas').addEventListener('scroll',aoRolar);
   $('pasta').addEventListener('keydown',function(e){
-    if(e.key==='Escape'&&document.body.classList.contains('pasta-lendo'))voltarParaLista();
+    if(e.key==='Escape'&&document.body.classList.contains('pasta-lendo')){if(window.__pvNav&&window.__pvNav.voltarDaPeca())return;voltarParaLista()}
   });
 }
 
@@ -297,6 +298,7 @@ function ligarDivisor(){
 
 /* ---------- abrir e fechar ---------- */
 function abrirPasta(){
+  if(window.__pvNav)window.__pvNav.pasta(st.numero);
   montarPainel();
   st.aberta=true;
   st.gatilho=document.activeElement;
@@ -377,7 +379,19 @@ function receber(r){
     var p=pecaDe(id); if(!p||p.estado==='sigilo')delete st.sel[id];
   });
   desenharTudo();
+  /* Peça pedida pelo endereço (F5, link, Avançar): abre agora que a lista chegou. */
+  if(pecaPedida){var pd=pecaPedida;pecaPedida=null;if(Date.now()<pd.ate)restaurarPeca(pd.id)}
   decidirPoll();
+}
+
+/* Reabrir uma peça pelo endereço NÃO consulta o tribunal: só abre a que já está disponível, sigilosa ou em andamento.
+   A que precisaria ser pedida fica na lista (o endereço volta a ser o da Pasta) — "sem pré-busca" vale também aqui. */
+var pecaPedida=null;
+function restaurarPeca(id){
+  var p=pecaDe(id);
+  var abre=p&&(p.semPeca||p.estado==='disponivel'||p.estado==='sigilo'||p.estado==='na_fila'||p.estado==='baixando');
+  if(abre){abrirPeca(id,true);return}
+  if(window.__pvNav)window.__pvNav.pecaNaoAberta();
 }
 
 function fechar(){
@@ -829,6 +843,7 @@ function desenharTudo(){
 /* ---------- abrir UMA peça ---------- */
 function abrirPeca(id,imediato){
   var p=pecaDe(id); if(!p)return;
+  if(window.__pvNav)window.__pvNav.peca(id);
   st.peca=id;
   if(st.pedidoFalhou&&st.pedidoFalhou.id===id)st.pedidoFalhou=null;
   /* No celular a peça abre em tela cheia, com "voltar" para a lista. */
@@ -1405,7 +1420,20 @@ window.__pvPasta={
     if(aberturaPedida&&aberturaPedida.n!==soDigitos(numero))aberturaPedida=null;
     if(soDigitos(numero)!==soDigitos(st.numero))fechar();
   },
-  fechar:fechar
+  fechar:fechar,
+  /* Para o histórico (ui/navegacao.ts): abre a Pasta se a tela do processo já a oferece; diz se está aberta; abre a peça
+     (ou a guarda até a lista chegar); volta do visualizador para a lista. */
+  abrir:function(){
+    if(st.aberta)return true;
+    if(!st.numero||!document.getElementById('pasta-abrir'))return false;
+    abrirPasta();return true;
+  },
+  aberta:function(){return !!st.aberta},
+  pedirPeca:function(id){
+    if(st.aberta&&st.visao&&pecaDe(id))restaurarPeca(id);
+    else pecaPedida={id:id,ate:Date.now()+60000};
+  },
+  mostrarLista:voltarParaLista
 };
 })();
 `;

@@ -269,7 +269,7 @@ button.bt2{font:inherit;font-weight:700;font-size:14px;min-height:44px;padding:0
   justify-content:center;gap:8px;background:var(--papel);color:var(--tinta);
   border:1px solid var(--linha)}
 button.bt2:hover{background:var(--papel2);border-color:var(--tinta3)}
-button.bt3{background:transparent;color:var(--tinta3);border:0;padding:5px 8px;
+button.bt3{background:transparent;color:var(--tinta2);border:0;padding:5px 8px;
   font-size:13px;font-weight:600;cursor:pointer}
 button.bt3:hover{color:var(--erro)}
 .nota{font-size:12.5px;color:var(--tinta3);margin-top:7px}

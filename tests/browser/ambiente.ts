@@ -24,6 +24,8 @@ export const TEXTO_LONGO =
   'documento documento documento documento documento documento FIM-DO-TEXTO-LONGO';
 
 export const CHAVE = 'chave-do-teste-de-navegador-1234567890';
+/** Uma SEGUNDA conta (v0.57.0), para provar que o endereço de uma não abre nada na outra. Sem processo na carteira. */
+export const CHAVE_B = 'outra-chave-do-teste-de-navegador-0987654321';
 
 /** O Chromium instalado no ambiente (Playwright não baixa nada aqui). */
 export const CHROMIUM = [
@@ -200,7 +202,8 @@ export async function iniciar(
             drive: {
               destino: opcoes.drive.destino,
               // O envio espera a Pasta entregar a peça: tempo de verdade, curtíssimo.
-              esperar: (ms: number) => new Promise<void>((r) => setTimeout(r, Math.min(ms, 5))),
+              esperar: (ms: number) =>
+                new Promise<void>((r) => setTimeout(r, Math.min(ms, 5))),
             },
           }
         : {}),
@@ -219,7 +222,7 @@ export async function iniciar(
       PROCESSOVIVO_PROVIDER_CHAIN: 'mock-crawler-tjsp',
       LOG_LEVEL: 'silent',
       CACHE_ENABLED: 'false',
-      PROCESSOVIVO_API_KEYS: CHAVE,
+      PROCESSOVIVO_API_KEYS: `${CHAVE},${CHAVE_B}`,
       // Uma suíte inteira de navegador passa por aqui com a mesma chave: sem isso o limite de
       // requisições do servidor vira a causa de falhas que não são da tela.
       RATE_LIMIT_MAX: '100000',
