@@ -284,6 +284,33 @@ describe('PrestacaoDeContasPdf', () => {
     expect(t).toContain('Depósitos e garantias (fora do total de despesas) R$ 500,00');
   });
 
+  it('a data mais larga (30/12/2026) cabe em UMA linha nas três tabelas: despesas, depósitos e recebimentos (0.56.2)', async () => {
+    // Antes da 0.56.2 a coluna Data tinha 50 pt (42 úteis) e "30/12/2026" mede ~42,5 pt em 8,5 pt de
+    // Helvetica: o "6" caía na linha de baixo. O teste anterior só usava datas de setembro e outubro, por
+    // isso nunca viu — daí a data larga aqui. A largura vem agora da medida real do texto.
+    const d = documento(1);
+    const larga = '30/12/2026';
+    const bytes = await gerador.gerar({
+      ...d,
+      linhas: [{ ...d.linhas[0]!, data: larga }],
+      depositos: [
+        {
+          data: larga,
+          descricao: 'Depósito judicial sintético',
+          categoria: 'Depósitos e garantias › Depósito judicial',
+          valor: 'R$ 500,00',
+          situacao: 'Pago pelo escritório · a cobrar do cliente',
+        },
+      ],
+      recebimentos: [{ data: larga, observacao: 'Pix sintético', valor: 'R$ 30,00' }],
+    });
+    const t = texto(bytes, undefined, true);
+    expect(t.match(/30\/12\/2026/g)).toHaveLength(3);
+    // Nenhum pedaço da data sozinho: "30/12/202" seguido de outra coisa que não o "6" é a data partida.
+    expect(t.match(/30\/12\/202(?!6)/g)).toBeNull();
+    expect(t).not.toMatch(/^6$/m);
+  });
+
   it('o gerador e o serviço não escrevem em disco', () => {
     for (const f of [
       '../../src/infrastructure/pdf/PrestacaoDeContasPdf.ts',

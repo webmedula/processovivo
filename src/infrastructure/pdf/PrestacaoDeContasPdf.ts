@@ -33,7 +33,10 @@ const ENTRELINHA = 11;
 const FOLGA_DA_LINHA = 4;
 
 // data | descrição | categoria | valor (à direita) | situação — somam LARGURA_UTIL (511,28).
-const COLUNAS = [50, 150, 120, 70, 121.28] as const;
+// A data tem de caber em UMA linha: "30/12/2026" em Helvetica 8,5 pt mede ~42,5 pt e a célula tem 4 pt de
+// recuo de cada lado, então 50 pt (a largura até a 0.56.1) estourava por meio ponto e o último dígito caía
+// na linha de baixo. 56 pt dá folga; os 6 pt saíram da descrição, que já quebra em palavras.
+const COLUNAS = [56, 144, 120, 70, 121.28] as const;
 const X = COLUNAS.map((_, i) =>
   COLUNAS.slice(0, i).reduce((soma, largura) => soma + largura, MARGEM),
 );
