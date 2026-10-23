@@ -1,7 +1,8 @@
 import { z } from 'zod';
 import {
   LIMITES_DA_ANALISE_DE_PECA as L,
-  PONTOS_DE_ATENCAO_DE_PECA,
+  PONTOS_DE_ATENCAO_ANTIGOS_DO_SISTEMA,
+  PONTOS_DE_ATENCAO_DO_MODELO,
   TIPOS_DE_PECA,
   type RespostaDoModeloDePeca,
 } from '../../../domain/entities/AnaliseDePeca.js';
@@ -35,18 +36,36 @@ const valorCitado = z
   })
   .strict();
 
+const determinacao = z
+  .object({
+    quem: z.string().min(1).max(L.quem),
+    texto: z.string().min(1).max(L.texto),
+    prazo_escrito: z.string().min(1).max(L.prazoEscrito).nullable().default(null),
+    trecho: z.string().min(1).max(L.trecho),
+    pagina,
+  })
+  .strict();
+
 export const esquemaDaAnaliseDePeca = z
   .object({
     tipo_da_peca: z.enum(TIPOS_DE_PECA),
     em_uma_frase: z.string().min(1).max(L.umaFrase),
     pedidos: z.array(itemComTrecho).max(L.pedidos).default([]),
     alegacoes_principais: z.array(itemComTrecho).max(L.alegacoes).default([]),
-    preliminares_ou_defesas_formais: z.array(itemComTrecho).max(L.preliminares).default([]),
+    preliminares_ou_defesas_formais: z
+      .array(itemComTrecho)
+      .max(L.preliminares)
+      .default([]),
     documentos_citados: z.array(documentoCitado).max(L.documentos).default([]),
     valores_citados: z.array(valorCitado).max(L.valores).default([]),
+    determinacoes: z.array(determinacao).max(L.determinacoes).default([]),
+    // Tolera os dois códigos de fato do sistema que o prompt anterior pedia: modelo que ainda os
+    // emite não derruba a resposta; a verificação os descarta (o fato é calculado pelo código).
     pontos_de_atencao: z
-      .array(z.enum(PONTOS_DE_ATENCAO_DE_PECA))
-      .max(L.pontosDeAtencao)
+      .array(
+        z.enum([...PONTOS_DE_ATENCAO_DO_MODELO, ...PONTOS_DE_ATENCAO_ANTIGOS_DO_SISTEMA]),
+      )
+      .max(L.pontosDeAtencao + PONTOS_DE_ATENCAO_ANTIGOS_DO_SISTEMA.length)
       .default([]),
   })
   .strict();

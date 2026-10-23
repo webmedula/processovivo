@@ -89,7 +89,7 @@ describe('esquema fechado da análise de peça', () => {
 
   it.each([
     ['campo a mais', { ...respostaDaPeca(), parecer: 'x' }],
-    ['tipo desconhecido', { ...respostaDaPeca(), tipo_da_peca: 'sentenca' }],
+    ['tipo desconhecido', { ...respostaDaPeca(), tipo_da_peca: 'parecer' }],
     ['sem a frase única', { ...respostaDaPeca(), em_uma_frase: undefined }],
     [
       'frase acima de 200 caracteres',
@@ -184,5 +184,47 @@ describe('OpenRouterAnalisadorDePeca', () => {
     const r = await m.analisador.analisar(PEDIDO);
     expect(r.resposta.tipo_da_peca).toBe('peticao_inicial');
     expect(m.corpos).toHaveLength(2);
+  });
+});
+
+describe('esquema da análise de peça: determinações (0.56.1)', () => {
+  it('aceita a determinação com prazo literal e tolera os códigos antigos de fato do sistema', () => {
+    const r = lerRespostaDaAnaliseDePeca({
+      ...respostaDaPeca(),
+      tipo_da_peca: 'despacho',
+      determinacoes: [
+        {
+          quem: 'Estado',
+          texto: 'Determina que individualize a conta',
+          prazo_escrito: '10 (dez) dias',
+          trecho: 'individualize a conta',
+          pagina: 1,
+        },
+      ],
+      pontos_de_atencao: ['peca_longa_demais_para_leitura_completa'],
+    });
+    expect(r?.determinacoes?.[0]?.prazo_escrito).toBe('10 (dez) dias');
+  });
+
+  it('recusa campo a mais e mais de cinco determinações', () => {
+    const d = {
+      quem: 'A',
+      texto: 'Manda x',
+      prazo_escrito: null,
+      trecho: 'trecho',
+      pagina: 1,
+    };
+    expect(
+      lerRespostaDaAnaliseDePeca({
+        ...respostaDaPeca(),
+        determinacoes: [{ ...d, data: 'x' }],
+      }),
+    ).toBeUndefined();
+    expect(
+      lerRespostaDaAnaliseDePeca({
+        ...respostaDaPeca(),
+        determinacoes: Array(6).fill(d),
+      }),
+    ).toBeUndefined();
   });
 });

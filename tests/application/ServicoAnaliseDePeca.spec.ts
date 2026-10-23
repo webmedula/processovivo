@@ -33,8 +33,10 @@ import { RepositorioAnalisesDePecaSqlite } from '../../src/infrastructure/persis
 import {
   AnalisadorDePecaFalso,
   PAGINA_1,
+  PAGINA_DO_DESPACHO,
   PAGINAS_DA_PECA,
   respostaDaPeca,
+  respostaDoDespacho,
 } from '../helpers/analiseDePeca.js';
 import { LoggerColetor, NOME_DA_PARTE } from '../helpers/analiseIa.js';
 import { NUMERO_TJSP_A } from '../helpers/fabricas.js';
@@ -582,6 +584,97 @@ describe('ServicoAnaliseDePeca', () => {
       expect(
         motivoDe(await erroDe(servico({ workspaces: [] }).avaliar(WS, r.id, 'util'))),
       ).toBe('indisponivel');
+    });
+  });
+
+  describe('despacho curto (0.56.1)', () => {
+    beforeEach(async () => {
+      pdf = await pdfComPaginas([PAGINA_DO_DESPACHO]);
+    });
+    const pontos = async (r: RespostaDaAnaliseDePeca): Promise<string[]> => {
+      verificada(r);
+      if (r.estado === 'erro') return [];
+      return [...r.pontosDoSistema, ...verificada(r).pontosDeAtencao];
+    };
+
+    it('despacho de 1 página nunca recebe "peça longa" nem "texto incompleto", mesmo que o modelo os emita', async () => {
+      analisador.responderCom(
+        respostaDoDespacho({
+          pontos_de_atencao: [
+            'peca_longa_demais_para_leitura_completa',
+            'texto_incompleto_ou_ilegivel',
+          ],
+        }),
+      );
+      const r = await servico().analisar(pedido());
+      const todos = await pontos(r);
+      expect(todos).not.toContain('peca_longa_demais_para_leitura_completa');
+      expect(todos).not.toContain('texto_incompleto_ou_ilegivel');
+      expect(todos).not.toContain('peca_extensa');
+      expect(todos).not.toContain('pouco_texto_por_pagina');
+      expect(todos).toEqual([]);
+    });
+
+    it('devolve as duas determinações com o prazo literal, o trecho e a página — sem calcular data', async () => {
+      analisador.responderCom(respostaDoDespacho());
+      const r = verificada(await servico().analisar(pedido()));
+      expect(r.tipo).toBe('despacho');
+      const det = r.determinacoes ?? [];
+      expect(det.map((d) => d.prazo_escrito)).toEqual([
+        '10 (dez) dias',
+        '5 (cinco) dias',
+      ]);
+      expect(det.every((d) => d.pagina === 1 && d.trecho.length > 8)).toBe(true);
+      expect(JSON.stringify(det)).not.toMatch(/\d{2}\/\d{2}\/\d{4}/);
+      expect(r.pedidos).toEqual([]);
+      expect(r.alegacoes).toEqual([]);
+    });
+
+    it('pedidos e alegações vazios não tornam o despacho "não verificado"', async () => {
+      analisador.responderCom(respostaDoDespacho());
+      const r = await servico().analisar(pedido());
+      expect(r.estado).toBe('verificada');
+    });
+
+    it('prazo que não está escrito na página sai; a determinação fica sem prazo', async () => {
+      const base = respostaDoDespacho();
+      analisador.responderCom(
+        respostaDoDespacho({
+          determinacoes: [
+            { ...base.determinacoes![0]!, prazo_escrito: '15 (quinze) dias' },
+          ],
+        }),
+      );
+      const r = verificada(await servico().analisar(pedido()));
+      expect(r.determinacoes?.[0]?.prazo_escrito).toBeNull();
+    });
+
+    it('determinação com trecho que não está na página é descartada', async () => {
+      const base = respostaDoDespacho();
+      analisador.responderCom(
+        respostaDoDespacho({
+          determinacoes: [
+            { ...base.determinacoes![0]!, trecho: 'texto que nao existe na pagina' },
+          ],
+        }),
+      );
+      const r = verificada(await servico().analisar(pedido()));
+      expect(r.determinacoes).toEqual([]);
+    });
+
+    it('determinação fora de ato do juízo é descartada', async () => {
+      analisador.responderCom(respostaDoDespacho({ tipo_da_peca: 'manifestacao' }));
+      const r = verificada(await servico().analisar(pedido()));
+      expect(r.determinacoes).toEqual([]);
+    });
+
+    it('peça extensa e pouco texto por página são fatos calculados pelo código, só quando verdadeiros', async () => {
+      const muitas = Array.from({ length: 22 }, () => PAGINA_DO_DESPACHO);
+      pdf = await pdfComPaginas(muitas);
+      analisador.responderCom(respostaDoDespacho());
+      const r = await servico().analisar(pedido());
+      if (r.estado === 'erro') throw new Error('erro');
+      expect(r.pontosDoSistema).toContain('peca_extensa');
     });
   });
 });

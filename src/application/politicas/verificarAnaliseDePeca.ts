@@ -1,10 +1,13 @@
-import type {
-  DocumentoDaPeca,
-  ItemDaPeca,
-  PontoDeAtencaoDePeca,
-  RespostaDoModeloDePeca,
-  TipoDePeca,
-  ValorDaPeca,
+import {
+  ehAtoDoJuizo,
+  PONTOS_DE_ATENCAO_DO_MODELO,
+  type DeterminacaoDaPeca,
+  type DocumentoDaPeca,
+  type ItemDaPeca,
+  type PontoDeAtencaoDoModelo,
+  type RespostaDoModeloDePeca,
+  type TipoDePeca,
+  type ValorDaPeca,
 } from '../../domain/entities/AnaliseDePeca.js';
 import { paginasDoTextoEnviado } from './entradaDaPeca.js';
 import { normalizarParaComparar } from './normalizacaoDeTexto.js';
@@ -23,11 +26,18 @@ import { EXPRESSOES_PROIBIDAS, numerosForaDoTexto } from './verificarAnalise.js'
  *    resultado inteiro. O trecho não entra: é cópia da peça, e uma contestação pode escrever
  *    "improcedente" mesmo.
  * 5. Petição ou contestação sem nenhum pedido e nenhuma alegação verificados = "não verificado".
+ *    Despacho, decisão, sentença e acórdão (1.1.0) NÃO têm essa regra: quem determina não pede nem
+ *    alega, e lista vazia ali é resposta válida.
+ * 6. (1.1.0) Determinação: só em ato do juízo; trecho na página; começa por "determina", "intima" ou
+ *    "manda"; o `prazo_escrito` tem de estar LITERALMENTE na página (senão só o prazo sai, a
+ *    determinação fica sem ele — nunca se conta nem se converte em data).
+ * 7. (1.1.0) Pontos de atenção que são FATO do sistema (tamanho, texto, conversão) nunca vêm do
+ *    modelo: o que ele emitir fora da lista dos códigos de conteúdo é descartado.
  *
  * Mude `VERSAO_DAS_REGRAS_DA_PECA` junto com qualquer alteração aqui. É a ÚNICA implementação: o
  * comparador de peças (Fase 0) delega a esta função.
  */
-export const VERSAO_DAS_REGRAS_DA_PECA = '1.0.0';
+export const VERSAO_DAS_REGRAS_DA_PECA = '1.1.0';
 
 export const EXPRESSOES_PROIBIDAS_DE_PECA: readonly string[] = Object.freeze([
   ...EXPRESSOES_PROIBIDAS,
@@ -83,7 +93,8 @@ export interface PecaVerificada {
   readonly preliminares: readonly ItemDaPeca[];
   readonly documentos: readonly DocumentoDaPeca[];
   readonly valores: readonly ValorDaPeca[];
-  readonly pontosDeAtencao: readonly PontoDeAtencaoDePeca[];
+  readonly pontosDeAtencao: readonly PontoDeAtencaoDoModelo[];
+  readonly determinacoes: readonly DeterminacaoDaPeca[];
   readonly citacoes: ContagemDeCitacoesDePeca;
   readonly descartes: DescartesDaPeca;
 }
@@ -201,6 +212,43 @@ export function verificarAnaliseDePeca(
     valores.push(v);
   }
 
+  const juizo = ehAtoDoJuizo(resposta.tipo_da_peca);
+  const determinacoes: DeterminacaoDaPeca[] = [];
+  for (const det of resposta.determinacoes ?? []) {
+    emitidas += 1;
+    if (!juizo) {
+      d.forma += 1;
+      continue;
+    }
+    if (!paginaValida(det.pagina)) {
+      d.pagina += 1;
+      continue;
+    }
+    if (!trechoNaPagina(det.trecho, det.pagina, normalizadas)) {
+      d.citacao += 1;
+      continue;
+    }
+    validas += 1;
+    if (!/^(determina|intima|manda)\b/.test(normalizarParaComparar(det.texto))) {
+      d.forma += 1;
+      continue;
+    }
+    if (!numerosOk(det.texto, det.quem)) {
+      d.numero += 1;
+      continue;
+    }
+    const prazoLiteral =
+      det.prazo_escrito !== null &&
+      semEspaco(normalizadas[det.pagina - 1] ?? '').includes(
+        semEspaco(normalizarParaComparar(det.prazo_escrito)),
+      );
+    if (det.prazo_escrito !== null && !prazoLiteral) d.forma += 1;
+    determinacoes.push({
+      ...det,
+      prazo_escrito: prazoLiteral ? det.prazo_escrito : null,
+    });
+  }
+
   const pedidos = comTrecho(resposta.pedidos, false);
   const alegacoes = comTrecho(resposta.alegacoes_principais, true);
   const preliminares = comTrecho(resposta.preliminares_ou_defesas_formais, true);
@@ -213,9 +261,17 @@ export function verificarAnaliseDePeca(
     ...resposta.alegacoes_principais.map((i) => i.texto),
     ...resposta.preliminares_ou_defesas_formais.map((i) => i.texto),
     ...resposta.valores_citados.map((i) => i.contexto_curto),
+    ...(resposta.determinacoes ?? []).flatMap((i) => [i.texto, i.quem]),
   ];
-  if (textosDoModelo.some((t) => t !== '' && expressaoProibidaDePecaEm(t) !== undefined)) {
-    return { estado: 'nao_verificada', motivo: 'expressao_proibida', citacoes, descartes: d };
+  if (
+    textosDoModelo.some((t) => t !== '' && expressaoProibidaDePecaEm(t) !== undefined)
+  ) {
+    return {
+      estado: 'nao_verificada',
+      motivo: 'expressao_proibida',
+      citacoes,
+      descartes: d,
+    };
   }
   // A frase única não tem trecho: só vale se os números dela estão no texto enviado.
   let emUmaFrase = umaFrase;
@@ -224,9 +280,15 @@ export function verificarAnaliseDePeca(
     emUmaFrase = '';
   }
   const tipoExigePedido =
-    resposta.tipo_da_peca === 'peticao_inicial' || resposta.tipo_da_peca === 'contestacao';
+    resposta.tipo_da_peca === 'peticao_inicial' ||
+    resposta.tipo_da_peca === 'contestacao';
   if (tipoExigePedido && pedidos.length === 0 && alegacoes.length === 0) {
-    return { estado: 'nao_verificada', motivo: 'sem_item_verificado', citacoes, descartes: d };
+    return {
+      estado: 'nao_verificada',
+      motivo: 'sem_item_verificado',
+      citacoes,
+      descartes: d,
+    };
   }
   return {
     estado: 'verificada',
@@ -237,7 +299,10 @@ export function verificarAnaliseDePeca(
     preliminares,
     documentos,
     valores,
-    pontosDeAtencao: resposta.pontos_de_atencao,
+    pontosDeAtencao: resposta.pontos_de_atencao.filter((p): p is PontoDeAtencaoDoModelo =>
+      (PONTOS_DE_ATENCAO_DO_MODELO as readonly string[]).includes(p),
+    ),
+    determinacoes,
     citacoes,
     descartes: d,
   };

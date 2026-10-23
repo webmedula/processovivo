@@ -17,6 +17,62 @@ export const PAGINA_2 =
   'Da-se a causa o valor de R$ 9.200,00. Nestes termos, pede deferimento.';
 export const PAGINAS_DA_PECA = [PAGINA_1, PAGINA_2] as const;
 
+/**
+ * Despacho SINTÉTICO de UMA página (~960 caracteres), equivalente ao caso real que motivou a 0.56.1: o juízo
+ * manda o Estado individualizar a conta gráfica do FGTS em 10 dias, sob multa diária, e depois ouvir a parte
+ * autora em 5 dias. Texto 100% inventado: sem nome real, sem número de processo real.
+ */
+export const PAGINA_DO_DESPACHO =
+  'PODER JUDICIARIO - COMARCA FICTICIA - VARA DA FAZENDA PUBLICA. DESPACHO. Vistos. ' +
+  'Trata-se de acao de conhecimento em que a parte autora pretende a recomposicao de saldo de conta vinculada do FGTS. ' +
+  'Compulsando os autos, verifico que a controversia depende da identificacao dos depositos efetuados no periodo. ' +
+  'Assim, DETERMINO que o Estado requerido individualize, no prazo de 10 (dez) dias, a conta grafica do FGTS referente ao periodo discutido, ' +
+  'sob pena de multa diaria de R$ 500,00 (quinhentos reais). ' +
+  'Apresentada a conta grafica, INTIME-SE a parte autora para manifestar-se no prazo de 5 (cinco) dias. ' +
+  'Em seguida, voltem os autos conclusos para deliberacao. Publique-se e cumpra-se. ' +
+  'Cidade Ficticia, data da assinatura eletronica. Juiz de Direito substituto, assinado digitalmente.';
+
+/** O que um modelo correto devolve para o despacho acima — com o vício antigo (códigos de fato do sistema) de brinde. */
+export function respostaDoDespacho(
+  sobrescrever: Partial<RespostaDoModeloDePeca> = {},
+): RespostaDoModeloDePeca {
+  return {
+    tipo_da_peca: 'despacho',
+    em_uma_frase:
+      'Despacho que determina que o Estado individualize a conta gráfica do FGTS e depois ouve a parte autora.',
+    pedidos: [],
+    alegacoes_principais: [],
+    preliminares_ou_defesas_formais: [],
+    documentos_citados: [],
+    valores_citados: [
+      {
+        valor_literal: 'R$ 500,00',
+        contexto_curto: 'multa diária',
+        trecho: 'multa diaria de R$ 500,00',
+        pagina: 1,
+      },
+    ],
+    determinacoes: [
+      {
+        quem: 'Estado requerido',
+        texto: 'Determina que individualize a conta gráfica do FGTS do período discutido',
+        prazo_escrito: '10 (dez) dias',
+        trecho: 'individualize, no prazo de 10 (dez) dias, a conta grafica do FGTS',
+        pagina: 1,
+      },
+      {
+        quem: 'Parte autora',
+        texto: 'Intima a parte autora a se manifestar sobre a conta apresentada',
+        prazo_escrito: '5 (cinco) dias',
+        trecho: 'INTIME-SE a parte autora para manifestar-se no prazo de 5 (cinco) dias',
+        pagina: 1,
+      },
+    ],
+    pontos_de_atencao: [],
+    ...sobrescrever,
+  };
+}
+
 /** Uma resposta que um modelo perfeito daria: tudo citado literalmente, na página certa. */
 export function respostaDaPeca(
   sobrescrever: Partial<RespostaDoModeloDePeca> = {},

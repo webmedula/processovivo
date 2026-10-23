@@ -9,6 +9,30 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.56.1] — 2026-10-23
+
+**Análise de peça: despacho e decisão curtos deixam de receber pontos de atenção falsos e ganham o bloco "O que determina".** Prompt `peca-1.1.0`, regras de verificação `1.1.0`.
+**Não mudaram:** modelo, provedor, ZDR, redação, segredo de justiça, planos, preços, teto diário, calendário, análise do ato, resumo e a avaliação por polegar. Sem dependência
+nova; sem migração (resultado guardado antes continua legível; a mudança de prompt invalida o reaproveitamento sozinha).
+
+- **A causa.** Os dois pontos falsos ("peça longa" e "texto incompleto ou ilegível") vinham do **MODELO**: o prompt `peca-1.0.0` pedia `pontos_de_atencao` com os quatro códigos, e
+  a verificação só conferia que o código existia — nunca que era verdade. Num despacho de uma página o modelo os emitia por insegurança, e nenhuma regra do sistema os barrava.
+  (Também não era "pedidos e alegações vazios": essa regra só vale para petição e contestação e o resultado saiu verificado.)
+- **Fatos do sistema são calculados pelo código** (`pontosDeAtencaoDoSistema`, do que foi contado, nunca de texto): **peça extensa** (mais de 20 páginas ou 50 mil caracteres) e
+  **pouco texto por página** (3 páginas ou mais com média abaixo de 200 caracteres: sugere páginas escaneadas). Só aparecem se verdadeiros; peça de uma página nunca é "extensa".
+  O modelo só pode apontar o que depende do conteúdo (`peca_cita_documentos_nao_anexados`, `conferir_peca_inteira`); os códigos antigos que ele ainda emita, ou que um
+  resultado guardado traga, são ignorados. A conversão do HTML do tribunal segue sendo aviso do sistema (`conversao`).
+- **Novos tipos:** despacho, decisão, sentença e acórdão, com o bloco **"O que determina"**: até 5 itens `{ quem, texto, prazo, trecho, pagina }`, com os verbos "determina",
+  "intima" e "manda". O **prazo é o literal escrito no ato** ("10 (dez) dias"): se não está LITERALMENTE na página, só o prazo sai e a determinação fica sem ele; nada é calculado
+  nem convertido em data. Continuam: trecho na página indicada, número/valor só se estiver no texto, expressões proibidas (mérito, conselho, prazo calculado). Para esses
+  tipos, pedidos e alegações vazios **não** tornam o resultado "não verificado".
+- **Tela:** o bloco "O que determina" mostra quem, o quê e "Prazo escrito no ato", e todo item com citação traz "Ver trecho · pág. N" visível (o trecho abre ao clique).
+- **Teste:** fixture sintética de um despacho de 1 página (~960 caracteres, texto fictício) e dublê de provedor que EMITE os dois códigos antigos: o teste falha se aparecer
+  "peça longa" em peça de uma página ou se faltar um dos dois prazos.
+- Os testes que olhavam `peca-1.0.0`/regras `1.0.0` foram atualizados para a nova versão.
+
+---
+
 ## [0.56.0] — 2026-10-22
 
 **Acabamento das IAs: resumo conciso, avaliação por polegar e o botão de peça também na Pasta digital.** Prompt `resumo-1.2.0` e regras de verificação `1.2.0`.
