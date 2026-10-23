@@ -110,6 +110,8 @@ function esc(s){return pv().esc(s)}
 function prov(){return window.__pvProvidencia}
 function ia(){return window.__pvAnaliseIA}
 function digitos(n){return String(n||'').replace(/\D/g,'')}
+/* O endereço do processo nunca leva o número CNJ (v0.57.0): é o identificador opaco da navegação por hash (ui/navegacao.ts). */
+function hrefDoProcesso(n){return window.__pvNav?'#/processo/'+window.__pvNav.token(n):'#/processos'}
 
 /* O "há N dias" desta lista conta desde a DETECÇÃO, nunca desde a data do ato. A
    célula mostra só "há 11 dias" (o cabeçalho já diz "Detectado"); a frase completa
@@ -148,7 +150,7 @@ function icone(classe,acao,g,foco,nome,dica,ico,texto){
 function celulaProcesso(g){
   var m=pv().mascara(g.numero);
   return '<td class="c-proc" data-rotulo="Processo"><div class="nvt-proc">'+
-    '<a class="nvt-num" href="/?processo='+esc(digitos(g.numero))+'" data-acao="abrir" data-num="'+esc(g.numero)+'">'+esc(m)+'</a>'+
+    '<a class="nvt-num" href="'+esc(hrefDoProcesso(g.numero))+'" data-acao="abrir" data-num="'+esc(g.numero)+'">'+esc(m)+'</a>'+
     icone(' nvt-copiar','copiar',g,'copiar-','Copiar o número do processo '+esc(m),'Copiar número',ICO_COPIAR,'Copiar número')+'</div></td>';
 }
 

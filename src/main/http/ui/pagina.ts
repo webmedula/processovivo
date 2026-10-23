@@ -18,6 +18,7 @@ import { ESTILOS_CUSTOS_CLIENTE, SCRIPT_CUSTOS_CLIENTE } from './custosPorClient
 import { ESTILOS_PAGAMENTO, SCRIPT_PAGAMENTO } from './pagamento.js';
 import { SCRIPT_PLANO_ESCOLHIDO } from './planoEscolhido.js';
 import { ESTILOS_VERIFICACAO, SCRIPT_VERIFICACAO } from './verificacao.js';
+import { SCRIPT_NAVEGACAO } from './navegacao.js';
 
 /**
  * Ícones da navegação: traço, sem preenchimento, na cor do texto
@@ -140,6 +141,7 @@ export function paginaConsole(versao: string): string {
 <script>${SCRIPT_PAGAMENTO}</script>
 <script>${SCRIPT_PLANO_ESCOLHIDO}</script>
 <script>${SCRIPT_ATUALIZACOES}</script>
+<script>${SCRIPT_NAVEGACAO}</script>
 </body>
 </html>`;
 }

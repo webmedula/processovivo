@@ -273,7 +273,11 @@ describe.skipIf(sem)(
         expect(await l.locator('.c-atu').innerText()).not.toContain('Abrir processo');
         const num = l.locator('.nvt-num');
         expect(await num.evaluate((a) => a.tagName)).toBe('A');
-        expect(await num.getAttribute('href')).toBe('/?processo=' + n.replace(/\D/g, ''));
+        // Reescrito na 0.57.0: o link do número passou de `/?processo=<número>` ao endereço opaco da navegação por hash;
+        // o número do processo nunca vai à URL. Continua sendo "o link que abre o processo".
+        const href = (await num.getAttribute('href')) ?? '';
+        expect(href).toMatch(/^#\/processo\/[a-z0-9]{6,20}$/);
+        expect(href).not.toContain(n.replace(/\D/g, ''));
         // O botão de copiar é outro controle, ao lado.
         expect(
           await l.getByRole('button', { name: /^Copiar o número do processo / }).count(),

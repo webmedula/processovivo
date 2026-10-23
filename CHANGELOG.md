@@ -9,6 +9,34 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.57.0] — 2026-10-23
+
+**Navegação por hash: o Voltar/Avançar do navegador e o F5 passam a funcionar dentro do sistema.** Só navegação do console: regras, rotas da API, dados, planos, IA, calendário e custos não mudaram. Sem rota nova no servidor,
+sem dependência nova e sem nada gravado no banco ou no servidor.
+
+- **O defeito.** As telas trocavam por variável (`estado.aba`/`estado.detalhe`) e não criavam entrada no histórico: o Voltar saía do app para o site anterior e o F5 voltava à tela inicial, em qualquer tela.
+- **Como as telas se trocavam (investigação).** `ir(aba)` (menu lateral e botões que mudam de aba) e `abrir(numero)` (detalhe do processo) em `ui/script.ts`; a Pasta digital e o visualizador de peça, em `ui/scriptPasta.ts` (`abrirPasta`,
+  `abrirPeca`, `fechar`); Atualizações, Calendário, Custos e Minha conta são abas do mesmo `render()`; os painéis (resumo, análise de peça, Custos do processo) são camadas sobre a tela, sem estado de navegação. O controle novo mora em módulo
+  próprio, `ui/navegacao.ts` (`window.__pvNav`); `script.ts` **não cresceu** (2.341 linhas, as mesmas de antes): os ganchos entraram em linhas que já existiam.
+- **Endereços** (`#/…`): `#/atualizacoes`, `#/processos`, `#/calendario`, `#/custos`, `#/buscar`, `#/vigilancia`, `#/acessos`, `#/conta`, `#/processo/<id>`, `#/processo/<id>/pasta` e `#/processo/<id>/pasta/peca/<peça>`. Usa só `history.pushState`,
+  `replaceState` e `popstate`.
+- **Nenhum dado pessoal na URL.** O número CNJ nunca vai ao endereço (nem ao histórico, favorito, `Referer` ou título da aba): o processo é um **identificador opaco**, calculado neste navegador com um sal aleatório que só ele conhece (o mesmo
+  processo dá o mesmo identificador neste navegador, então F5, favorito e outra aba funcionam; quem vê o endereço não recupera o número). O `<peça>` é o id interno que a API já usa. O `document.title` também não leva o número. O link "número do processo"
+  de Atualizações deixou de ser `/?processo=<número>` e passou a ser o endereço opaco (o link `/?processo=` que vem do calendário continua aceito, é lido e **apagado** da barra, como antes).
+- **Um passo por tela**: lista, detalhe, Pasta digital e peça aberta. Painéis grandes (resumo, análise de peça, Custos do processo) **não** criam entrada: fechar painel não gasta um "Voltar". Trocar de peça dentro do visualizador **substitui** a
+  entrada, então o "Voltar" da peça leva à lista.
+- **"Fechar a pasta", "← lista de peças", Esc e "← voltar" do processo usam o mesmo mecanismo**: voltam um passo quando a origem é do app e vão à tela pai (Pasta → processo → lista) quando a pessoa chegou por link direto.
+- **F5 e link direto**: abrir `#/processo/<id>` carrega a tela certa (logado) ou mostra a entrada e leva à tela pedida depois do login. Identificador inválido, de outra conta ou que já não existe: tela de aviso neutra ("Não encontramos esta página"),
+  sem dado nenhum do processo. **Reabrir uma peça pelo endereço não consulta o tribunal**: abre a que já está disponível; a que precisaria ser pedida fica na lista.
+- **Login e logout usam `replaceState`**: o login não vira entrada, e sair troca a entrada por `#/entrar` (apaga também o mapa de processos da aba). Voltar depois de sair mostra a entrada, nunca o app; sem laço de redirecionamento.
+- **Foco e leitor de tela**: ao navegar, o foco vai para o título da tela (na tela do processo, o número da capa, que passa a ser anunciado como título) e o `document.title` muda ("Meus processos · Processo Vivo", "Processo · …", "Pasta digital · …").
+- **Acessibilidade:** o botão "← voltar" da tela do processo usava `--tinta3` (contraste 4,39:1 no tema claro, abaixo dos 4,5:1); passou a `--tinta2`. Foi o axe do teste novo que apontou.
+- **Testes** (Chromium): lista → processo → Pasta → peça e Voltar passo a passo até sair do app, Avançar refazendo, F5 em cada tela, link direto logado e deslogado, processo de outra conta (com o mesmo sal e carteira vazia), sair e Voltar, painel sem passo,
+  foco e título, as abas, e 6 larguras (1920, 1366, 1280, 1024, 768, 390) em tema claro e escuro com axe. Teste de que nenhuma URL nem título tem o número do processo.
+- **Reescritos (só os que assumiam a navegação antiga):** (1) os dois testes de Atualizações que esperavam `href` com `processo=<número>` agora esperam o endereço opaco e que o número não esteja nele.
+
+---
+
 ## [0.56.2] — 2026-10-23
 
 **PDF da prestação de contas: a coluna Data cabe sempre em UMA linha.** Só apresentação do PDF; a planilha (CSV), os totais, as rotas, os dados e as regras não mudaram. Sem dependência nova, sem migração.
