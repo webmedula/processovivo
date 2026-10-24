@@ -760,6 +760,38 @@ plano há o campo **Ciclo de renovação**; hoje só `mensal` é vendável.
 
 ---
 
+## Sonda do MNI do TRT18 (PJe), só leitura (v0.59.0)
+
+Um teste de viabilidade: o MNI do TRT18 aceita a sua credencial de advogado e devolve a consulta de um processo e dos documentos?
+**Não é recurso para clientes** e não muda nada no sistema. Uma execução faz, no máximo, um `GET` da descrição do serviço e duas
+consultas do mesmo processo, **para na primeira recusa** e não consulta avisos pendentes (risco de ciência).
+
+1. **Descubra o endereço do serviço MNI** com o suporte do PJe do TRT18 (ou olhando o endereço da descrição do serviço): costuma ser
+   `https://pje.trt18.jus.br/pje/intercomunicacao` — **isso não está confirmado**; a sonda não tem endereço padrão de propósito.
+2. **No Console do serviço (Easypanel):** a senha NÃO vai na linha de comando. Digite-a quando o programa perguntar (sem eco):
+
+   ```bash
+   node scripts/sonda-mni-pje.mjs --url=https://ENDERECO-DO-SERVICO --processo=NUMERO-DO-PROCESSO
+   ```
+
+   Se o Console não aceitar digitar sem eco, use uma variável só para aquele comando (e apague depois):
+
+   ```bash
+   read -s SONDA_MNI_SENHA && export SONDA_MNI_SENHA
+   export SONDA_MNI_CPF=SEU-CPF
+   node scripts/sonda-mni-pje.mjs --url=https://ENDERECO-DO-SERVICO --processo=NUMERO-DO-PROCESSO
+   unset SONDA_MNI_SENHA SONDA_MNI_CPF
+   ```
+
+   Não coloque a senha na aba *Environment* do Easypanel; se um dia o fizer, apague a variável e reimplante.
+3. **Como ler:** a saída traz só contagens e categorias, e termina em `VEREDITO: viável`, `viável com ressalvas` (com a lista) ou
+   `inviável` (com o motivo). Opções: `--timeout=` (segundos, padrão 60), `--soap-action=vazio` (se o serviço recusar o cabeçalho
+   padrão antes de olhar a credencial), `--max-pdfs=` (quantos PDFs têm a camada de texto conferida).
+4. **Se o tribunal pedir certificado digital, segundo fator ou cadastro prévio:** a sonda já parou. Não repita, não troque de senha
+   nem tente de novo — avise o responsável. Cada tentativa errada conta para o bloqueio da conta do advogado.
+5. **Depois:** apague o que digitou no histórico do Console (se usou variável) e não guarde a saída fora do ambiente do serviço
+   sem conferir: ela não tem dado do processo, mas o responsável deve ler antes de repassar.
+
 ## Plano IA à venda (v0.50.0)
 
 O plano IA (Peças + análise com IA) é vendido pelo mesmo caminho dos outros: site, app e checkout do Mercado Pago.
