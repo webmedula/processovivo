@@ -25,6 +25,7 @@ import { TokenBucketRateLimiter } from '../../ratelimit/TokenBucketRateLimiter.j
 import {
   ACAO_CONSULTAR_ALTERACAO,
   ACAO_CONSULTAR_PROCESSO,
+  acaoSoap,
   envelopeConsultarAlteracao,
   envelopeConsultarProcesso,
 } from './mni.envelope.js';
@@ -40,6 +41,7 @@ import {
   extrairPecas,
   tribunalEntregouOConteudo,
 } from './mni.mapper.js';
+import type { ModoDoSoapAction } from './mni.envelope.js';
 import type { RespostaMni } from './mni.mapper.js';
 import { lerRespostaSoap, MultipartInvalidoError } from './mtom.js';
 import type { ParteMultipart } from './mtom.js';
@@ -125,6 +127,17 @@ export interface OpcoesMniAdapter {
   /** Duração da pausa global depois de um HTTP 403. */
   readonly pausaApos403Ms?: number;
   readonly clock?: Clock;
+  /**
+   * Como o `SOAPAction` é escrito (v0.59.0). Padrão `cnj`, o do TJGO. Só a sonda do PJe usa `vazio`.
+   */
+  readonly soapAction?: ModoDoSoapAction;
+}
+
+/** O que `consultarProcessoBruto` devolve: a resposta aberta, sem virar entidade do domínio. */
+export interface ConsultaBrutaDoMni {
+  readonly resposta: RespostaMni;
+  readonly anexos: ReadonlyMap<string, ParteMultipart>;
+  readonly bytesResposta: number;
 }
 
 /**
@@ -162,6 +175,7 @@ export class MniAdapter implements ProvedorDePecas {
   private readonly logger: Logger;
   private readonly clock: Clock;
   private readonly pausaApos403Ms: number;
+  private readonly soapAction: ModoDoSoapAction;
   /**
    * Disjuntor de 403: até quando o MNI inteiro fica sem consulta.
    *
@@ -182,6 +196,7 @@ export class MniAdapter implements ProvedorDePecas {
     this.logger = (opcoes.logger ?? loggerSilencioso).child({ provider: this.nome });
     this.clock = opcoes.clock ?? clockDoSistema;
     this.pausaApos403Ms = opcoes.pausaApos403Ms ?? PAUSA_PADRAO_APOS_403_MS;
+    this.soapAction = opcoes.soapAction ?? 'cnj';
     this.http =
       opcoes.httpClient ??
       new HttpClient({
@@ -379,6 +394,33 @@ export class MniAdapter implements ProvedorDePecas {
     };
   }
 
+  /**
+   * UMA `consultarProcesso`, sem virar `Peca`/`Movimentacao` (v0.59.0, sonda do PJe).
+   *
+   * Existe para quem precisa CONTAR o que o tribunal devolveu (partes, tipos de arquivo, documentos sem
+   * teor) sem que o adapter conheça esse relatório. É SÓ consulta: monta `consultarProcesso` e nenhum outro
+   * envelope — não há aqui como pedir manifestação, ciência ou aviso. Mesmo balde, mesmo disjuntor de 403 e
+   * mesma ausência de retry de todo o resto. `movimentos: true` sempre, porque no Projudi é o que destrava os
+   * documentos e no PJe é inofensivo.
+   */
+  async consultarProcessoBruto(
+    numeroProcesso: string,
+    credencial: CredencialTribunal,
+    opcoes: { readonly incluirCabecalho: boolean; readonly incluirDocumentos: boolean },
+  ): Promise<ConsultaBrutaDoMni> {
+    return this.chamar(
+      envelopeConsultarProcesso({
+        numeroProcesso,
+        credencial,
+        movimentos: true,
+        incluirCabecalho: opcoes.incluirCabecalho,
+        incluirDocumentos: opcoes.incluirDocumentos,
+      }),
+      ACAO_CONSULTAR_PROCESSO,
+      numeroProcesso,
+    );
+  }
+
   async assinaturaDeMudanca(
     numeroProcesso: string,
     credencial: CredencialTribunal,
@@ -409,7 +451,9 @@ export class MniAdapter implements ProvedorDePecas {
 
     let bruta;
     try {
-      bruta = await this.http.postXml(this.endpoint, xml, { SOAPAction: acao });
+      bruta = await this.http.postXml(this.endpoint, xml, {
+        SOAPAction: acaoSoap(acao, this.soapAction),
+      });
     } catch (erro) {
       throw new ProviderIndisponivelError(
         this.nome,

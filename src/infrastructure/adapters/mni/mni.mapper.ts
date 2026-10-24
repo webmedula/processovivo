@@ -290,6 +290,28 @@ export function extrairConteudosDoLote(
 }
 
 /**
+ * Quantas PARTES o cabeçalho traz (v0.59.0, só a sonda do PJe usa). `polo > parte`, como no MNI 2.2.2; nunca
+ * devolve nome nem documento — só a contagem. Cabeçalho ausente = 0.
+ */
+export function contarPartes(conteudo: Registro): number {
+  const processo = registro(conteudo['processo']);
+  const dados = registro(processo?.['dadosBasicos']);
+  let total = 0;
+  for (const polo of lista(dados?.['polo'])) {
+    total += lista(registro(polo)?.['parte']).length;
+  }
+  return total;
+}
+
+/** Todos os ids de documento da resposta, anexos (`documentoVinculado`) incluídos, na ordem em que vieram. */
+export function idsDeTodosOsDocumentos(conteudo: Registro): string[] {
+  const processo = registro(conteudo['processo']);
+  return achatarDocumentos(lista(processo?.['documento']))
+    .map((d) => atributo(d, 'idDocumento'))
+    .filter((id): id is string => id !== undefined);
+}
+
+/**
  * Nível de sigilo do PROCESSO, do `dadosBasicos`. `undefined` sem cabeçalho.
  *
  * Só existe na resposta que pede o cabeçalho (`incluirCabecalho: true`), que é

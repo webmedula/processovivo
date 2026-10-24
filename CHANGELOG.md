@@ -9,6 +9,33 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.59.0] — 2026-10-24
+
+**Sonda somente leitura do MNI do TRT18 (PJe): descobrir, com um único teste, se o tribunal aceita a credencial de advogado e devolve a consulta de um processo e dos documentos.** É teste de viabilidade, **sem mudança para o usuário final**:
+nenhuma tela, rota, plano, preço, IA, política, termo, `Agendador`, cofre de credenciais, banco ou dependência mudou. A sonda não é chamada por rota nem pelo agendador.
+
+- **`scripts/sonda-mni-pje.mjs`** (lógica testada em `src/main/sonda/sondaMniPje.ts` e `comandoSondaMniPje.ts`). Argumentos: `--url=` (obrigatório, https), `--processo=`, `--timeout=` (60 s), `--soap-action=cnj|vazio`, `--max-pdfs=` (40). A URL do TRT18
+  **não está confirmada** na documentação pública (o padrão da comunidade é `https://pje.<tribunal>.jus.br/pje/intercomunicacao`), por isso é parâmetro obrigatório e não há padrão no código.
+- **A credencial só existe em tempo de execução**: nunca por argumento (a sonda recusa `--senha`, `--cpf`, `--token` etc. sem repetir o valor); digitada sem eco quando o programa pergunta, ou lida de `SONDA_MNI_CPF`/`SONDA_MNI_SENHA` do ambiente daquele
+  comando — e **apagadas do ambiente do processo logo depois de lidas** (o `pdftotext` que a sonda dispara herdaria o ambiente). Nada em disco, banco, log ou cofre de produção.
+- **Só consulta, uma tentativa por operação, para na primeira recusa.** No máximo: um `GET` da descrição do serviço (WSDL) sem credencial, uma `consultarProcesso` sem documentos e uma com documentos. Recusa de credencial, exigência de certificado, segundo fator,
+  cadastro prévio, HTTP 401/403/404 ou processo não encontrado encerram a sonda na hora; tempo esgotado e erro de rede também (sem repetição). Não testa outro número, não varre, não contorna bloqueio. A lista de operações permitidas
+  (`OPERACOES_PERMITIDAS`) tem uma entrada, `consultarProcesso`, e há teste que falha se ela crescer.
+- **Nunca gera ciência nem prazo.** `consultarAvisosPendentes` e `consultarTeorComunicacao` **não são chamadas**: a documentação oficial lida não prova qual delas registra ciência (uma fonte secundária diz que é a do teor), então a etapa de avisos sai como
+  "não testado por risco de ciência". `consultarProcesso` é, pela especificação do MNI, uma consulta; o efeito colateral dela no PJe não está provado na documentação pública e fica registrado como risco residual.
+- **Saída só de contagens e categorias**: conexão/TLS (dns, recusada, reiniciada, tempo esgotado, certificado do servidor, exige certificado de cliente, 404, 5xx), autenticação (aceita, recusada, exige certificado, exige segundo fator, exige cadastro/perfil, 401, 403),
+  movimentos, partes (só quantidade), segredo de justiça, documentos por tipo (pdf/html/outro), com conteúdo × só referência, tamanho mínimo/mediano/máximo em KB e PDFs com camada de texto (pelo extrator que já existe, só contagem), e o veredito
+  ("viável", "viável com ressalvas" com a lista, "inviável" com o motivo). Nenhum número de processo, nome, CPF, id de documento, URL ou trecho. Mensagem desconhecida do tribunal só sai **mascarada** (credencial e número literais, a redação da IA —
+  CPF/CNPJ, e-mail, telefone, OAB, processo —, dígitos, endereços e pares de nomes próprios), cortada em 100 caracteres.
+- **Adaptador MNI (aditivo; o TJGO não muda).** O `MniAdapter` já aceitava endpoint e tribunais por opção, e o envelope do MNI 2.2.2 é o mesmo do PJe — então não houve extração de "perfil de tribunal". Três acréscimos, todos fora do caminho do TJGO:
+  (1) `consultarProcessoBruto`, que monta SÓ `consultarProcesso` e devolve a resposta aberta (a sonda conta o que veio; não há como pedir outra operação); (2) a opção `soapAction: 'cnj' | 'vazio'` (padrão `cnj`, o de sempre);
+  (3) `contarPartes` e `idsDeTodosOsDocumentos` no mapper (contagens, nunca nomes). Os testes do MNI/TJGO seguem intactos; há teste de que o `SOAPAction` padrão é o do CNJ.
+- **Testes** (servidor MNI do PJe FALSO e sintético, sem rede): caminho feliz com PDFs com e sem texto, HTML, documento só com ficha e anexo vinculado; recusa de credencial, certificado, segundo fator, perfil, 401, 403, 404, tempo esgotado, resposta malformada e
+  sem habilitação — sempre uma chamada só; erros de conexão/TLS antes de qualquer credencial; o servidor sem `consultarProcesso`; nenhum envelope que não seja `consultarProcesso`; a credencial fora do argumento e fora do ambiente; e sentinelas (número, CPF, senha,
+  nomes, texto do PDF, id de documento, URL) que **não podem aparecer** na saída em nenhum cenário, inclusive quando o tribunal ecoa dados pessoais na mensagem.
+
+---
+
 ## [0.58.0] — 2026-10-23
 
 **Painel de IA no /admin, Fase A: observar e controlar as três funções de IA (análise de ato, resumo do processo e análise de peça).** Nada mudou em modelo, prompts, verificação, ZDR, redação, planos, preços, políticas, `exigir()` dos outros
