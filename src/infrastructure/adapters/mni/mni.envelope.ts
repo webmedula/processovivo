@@ -21,6 +21,17 @@ const NS_TIPOS = 'http://www.cnj.jus.br/tipos-servico-intercomunicacao-2.2.2';
 export const ACAO_CONSULTAR_PROCESSO = `${NS_SERVICO}consultarProcesso`;
 export const ACAO_CONSULTAR_ALTERACAO = `${NS_SERVICO}consultarAlteracao`;
 
+/**
+ * Como o `SOAPAction` vai no cabeçalho (v0.59.0). `cnj` é o de sempre (o do TJGO, que NÃO muda);
+ * `vazio` manda `""`, que é o que alguns serviços JAX-WS esperam. Só existe para a sonda do PJe, que
+ * não sabe qual dos dois o tribunal exige — e uma tentativa errada aqui é recusa ANTES da
+ * autenticação, sem contar contra a conta.
+ */
+export type ModoDoSoapAction = 'cnj' | 'vazio';
+export function acaoSoap(acao: string, modo: ModoDoSoapAction): string {
+  return modo === 'vazio' ? '""' : acao;
+}
+
 export interface OpcoesConsultarProcesso {
   readonly numeroProcesso: string;
   readonly credencial: CredencialTribunal;
