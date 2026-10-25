@@ -1,5 +1,17 @@
 # CLAUDE.md — Processo Vivo
 
+## Regras de trabalho do agente (kit v1.1.0)
+
+**Antes de codar.** Investigue primeiro, sem alterar nada. Se o prompt conflitar com o código ou com este arquivo, **pare e avise**. Não adicione dependência nova nem faça migração destrutiva sem autorização explícita no prompt.
+
+**Repositório público.** Nunca commite chave, token ou senha. Fixtures são sempre fictícias.
+
+**Entrega.** `git fetch` + `git merge origin/main` (sem rebase, sem force-push). `npm run check` com `npm run build` e a suíte completa duas vezes verdes. Abra a PR e **não faça merge**. Informe a versão usada. Use a skill `entrega-pr` para o relatório final.
+
+**Interface.** Módulo próprio em `ui/`; `script.ts` não cresce. Siga a skill `teste-de-tela`.
+
+**Banco.** Só migração aditiva, no padrão que o repositório já usa (skill `migracao-aditiva`).
+
 Regras de trabalho neste repositório. Vale para agentes de IA e para pessoas.
 Se algo aqui conflitar com o código, **o código está errado ou este arquivo está
 desatualizado** — resolva a divergência, não a ignore.
