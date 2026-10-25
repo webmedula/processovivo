@@ -15,6 +15,11 @@ import {
 import { lerRespostaDePeca, type RespostaDePeca } from './esquemaDePeca.js';
 import { montarEntradaDePeca, VERSAO_DO_PROMPT_DE_PECA } from './promptDePeca.js';
 import {
+  INSTRUCAO_DE_FORMATO_DA_PECA,
+  montarEntradaDaPeca,
+} from '../../application/politicas/entradaDaPeca.js';
+import { lerRespostaDaAnaliseDePeca } from '../../infrastructure/adapters/modelo/esquemaDaPeca.js';
+import {
   executarSonda,
   media,
   percentil,
@@ -43,6 +48,29 @@ export const CRITERIO_DA_FASE_1 = Object.freeze({
   pedidosPrincipaisMinimo: 0.9,
 });
 
+/** Teto de saída e espera da análise de peça em produção (os padrões de `PROCESSOVIVO_IA_PECAS_*`). */
+const MAX_TOKENS_DA_PECA_EM_PRODUCAO = 2500;
+const TIMEOUT_DA_PECA_EM_PRODUCAO_MS = 120_000;
+
+/**
+ * A entrada que a PRODUÇÃO montaria (prompt `peca-1.1.0`, mesma redação, mesmo formato). A do comparador
+ * manual é a da Fase 0; o teste obrigatório do painel de IA (v0.60.0) mede o modelo com a de produção.
+ */
+function entradaDeProducao(c: CasoDePeca): ReturnType<typeof montarEntradaDePeca> {
+  const m = pecaParaMontar(c);
+  const e = montarEntradaDaPeca(m.paginas, m.pessoas ?? {});
+  return {
+    suficiente: e.suficiente,
+    ...(e.recusa ? { recusa: e.recusa } : {}),
+    sistema: e.sistema,
+    usuario: e.usuario,
+    textoEnviado: e.textoEnviado,
+    instrucaoDeFormato: INSTRUCAO_DE_FORMATO_DA_PECA,
+    maxTokens: MAX_TOKENS_DA_PECA_EM_PRODUCAO,
+    timeoutMs: TIMEOUT_DA_PECA_EM_PRODUCAO_MS,
+  };
+}
+
 const TOKENS_DE_SAIDA_ESTIMADOS = 900;
 const CARACTERES_POR_TOKEN = 3.5;
 
@@ -50,9 +78,12 @@ export function estimarCustoDePecas(
   casos: readonly CasoDePeca[],
   modelos: readonly string[],
   precos: ReadonlyMap<string, PrecoPorToken>,
+  entradaDeProducaoDoPainel = false,
 ): EstimativaDoModelo[] {
   const entradas = casos.flatMap((c) => {
-    const e = montarEntradaDePeca(pecaParaMontar(c));
+    const e = entradaDeProducaoDoPainel
+      ? entradaDeProducao(c)
+      : montarEntradaDePeca(pecaParaMontar(c));
     return e.suficiente
       ? [
           (e.sistema.length + e.usuario.length + e.instrucaoDeFormato.length) /
@@ -93,6 +124,8 @@ export interface OpcoesDoComparadorDePecas {
   readonly dormir?: (ms: number) => Promise<void>;
   readonly progresso?: (linha: string) => void;
   readonly teto?: TransporteComTeto;
+  /** Usa o prompt, o esquema e a verificação de PRODUÇÃO (teste de modelo do painel). Padrão: os da Fase 0. */
+  readonly entradaDeProducao?: boolean;
 }
 
 export interface DetalheDaPeca {
@@ -149,13 +182,20 @@ export async function compararPecas(
   op: OpcoesDoComparadorDePecas,
 ): Promise<ResultadoDaComparacaoDePecas> {
   const porId = new Map(op.casos.map((c) => [c.id, c]));
+  const producao = op.entradaDeProducao === true;
+  // O esquema de produção é um superconjunto do da Fase 0 (acrescenta `determinacoes` e os tipos de ato do
+  // juízo); a avaliação só lê os campos que os dois têm.
+  const ler = (bruto: unknown): RespostaDePeca | undefined =>
+    producao
+      ? (lerRespostaDaAnaliseDePeca(bruto) as unknown as RespostaDePeca | undefined)
+      : lerRespostaDePeca(bruto);
   const tarefa: TarefaDaSonda = {
     preparar: (caso) => {
       const c = porId.get(caso.id);
       if (!c) throw new Error('caso de peça desconhecido');
-      return montarEntradaDePeca(pecaParaMontar(c));
+      return producao ? entradaDeProducao(c) : montarEntradaDePeca(pecaParaMontar(c));
     },
-    lerResposta: lerRespostaDePeca,
+    lerResposta: ler,
     verificar: (resposta, texto) => {
       const v = verificarPeca(resposta as RespostaDePeca, texto);
       return { estado: v.estado, resultado: v };
@@ -187,8 +227,7 @@ export async function compararPecas(
     const caso = porId.get(r.casoId);
     if (!caso) continue;
     const verificacao = r.resultadoDaTarefa as ResultadoDaVerificacaoDePeca | undefined;
-    const resposta =
-      r.respostaCrua !== undefined ? lerRespostaDePeca(r.respostaCrua) : undefined;
+    const resposta = r.respostaCrua !== undefined ? ler(r.respostaCrua) : undefined;
     if (verificacao && resposta) {
       const avaliacao = avaliarPeca(caso, resposta, verificacao, r.respostaCrua);
       medidas.push({ r, caso, verificacao, avaliacao });

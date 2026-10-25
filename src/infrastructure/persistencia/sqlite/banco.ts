@@ -254,6 +254,32 @@ const ESQUEMA = [
      valor_anterior TEXT NOT NULL,
      valor_novo     TEXT NOT NULL
    )`,
+  // Fase B do painel de IA (v0.60.0): o teste obrigatório antes de trocar o modelo de uma função. SÓ números,
+  // ids de modelo e rótulos de lista fechada — nunca texto de fixture, de ato, de peça nem resposta do modelo.
+  // As métricas dos dois modelos ficam em JSON de números (`MetricasDoModelo`).
+  `CREATE TABLE IF NOT EXISTS ia_testes_modelo (
+     id                    TEXT PRIMARY KEY,
+     funcao                TEXT NOT NULL,
+     candidato             TEXT NOT NULL,
+     referencia            TEXT NOT NULL,
+     estado                TEXT NOT NULL,
+     autor                 TEXT NOT NULL,
+     criado_em             TEXT NOT NULL,
+     iniciado_em           TEXT,
+     terminado_em          TEXT,
+     chamadas_previstas    INTEGER NOT NULL DEFAULT 0,
+     chamadas_feitas       INTEGER NOT NULL DEFAULT 0,
+     estimativa_usd        REAL,
+     gasto_usd             REAL,
+     metricas_candidato    TEXT,
+     metricas_referencia   TEXT,
+     veredito              TEXT,
+     bloqueios             TEXT NOT NULL DEFAULT '[]',
+     ressalvas             TEXT NOT NULL DEFAULT '[]',
+     falha                 TEXT
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_ia_testes_modelo_funcao
+     ON ia_testes_modelo (funcao, criado_em)`,
   `CREATE TABLE IF NOT EXISTS ia_alertas_custo (
      dia         TEXT PRIMARY KEY,
      valor_usd   REAL NOT NULL,
@@ -952,6 +978,13 @@ const COLUNAS_ACRESCENTADAS: ReadonlyArray<{
   readonly tipo: string;
 }> = [
   { tabela: 'acompanhamentos', coluna: 'partes_texto', tipo: 'TEXT' },
+  // Fase B do painel de IA (v0.60.0): modelo por função. NULL = vale o ambiente/padrão do código, então não
+  // há retrocarga. `ia_alteracoes` ganha o id do teste e a aprovação de uma ressalva (texto curto, lista fechada).
+  { tabela: 'ia_config', coluna: 'modelo', tipo: 'TEXT' },
+  { tabela: 'ia_config', coluna: 'modelo_anterior', tipo: 'TEXT' },
+  { tabela: 'ia_config', coluna: 'modelo_desde', tipo: 'TEXT' },
+  { tabela: 'ia_alteracoes', coluna: 'teste_id', tipo: 'TEXT' },
+  { tabela: 'ia_alteracoes', coluna: 'aprovacao', tipo: 'TEXT' },
   /*
    * `total_atos_recebidos` (v0.34.0) NÃO tem retrocarga: o "N" só existe na
    * resposta do MNI, e consultar o tribunal sem a pessoa pedir é o que a regra

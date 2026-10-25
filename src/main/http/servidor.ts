@@ -208,7 +208,12 @@ export function construirServidor(app: Aplicacao, config: Config): FastifyInstan
       repositorioAssinaturas: app.repositorioAssinaturas,
       pagamentos: app.pagamentos,
       emProducao: config.pagamento.emProducao,
-      ia: { controle: app.controleDaIa, painel: app.painelDeIa },
+      ia: {
+        controle: app.controleDaIa,
+        painel: app.painelDeIa,
+        modelos: app.modelosDeIa,
+        testes: app.testeDeModelo,
+      },
       usuarios: app.usuarios,
       chavesApi: app.chavesApi,
       localizador: new LocalizadorDeWorkspace({

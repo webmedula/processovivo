@@ -101,7 +101,7 @@ export class RepositorioDeConfigDeIaSqlite implements RepositorioDeConfigDeIa {
   alteracoes(limite: number): AlteracaoDeConfigDeIa[] {
     const linhas = this.db
       .prepare(
-        `SELECT id, em, autor, funcao, tipo, valor_anterior, valor_novo
+        `SELECT id, em, autor, funcao, tipo, valor_anterior, valor_novo, teste_id, aprovacao
            FROM ia_alteracoes ORDER BY id DESC LIMIT ?`,
       )
       .all(limite) as unknown as Array<{
@@ -112,6 +112,8 @@ export class RepositorioDeConfigDeIaSqlite implements RepositorioDeConfigDeIa {
       tipo: string;
       valor_anterior: string;
       valor_novo: string;
+      teste_id: string | null;
+      aprovacao: string | null;
     }>;
     return linhas.map((l) => ({
       id: l.id,
@@ -121,6 +123,8 @@ export class RepositorioDeConfigDeIaSqlite implements RepositorioDeConfigDeIa {
       tipo: l.tipo as TipoDeAlteracao,
       anterior: l.valor_anterior,
       novo: l.valor_novo,
+      ...(l.teste_id ? { testeId: l.teste_id } : {}),
+      ...(l.aprovacao ? { aprovacao: l.aprovacao } : {}),
     }));
   }
 }

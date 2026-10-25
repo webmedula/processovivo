@@ -7,7 +7,7 @@ import type {
 import { INSTRUCAO_DE_FORMATO_DA_PECA } from '../../../application/politicas/entradaDaPeca.js';
 import { NOME_DO_OPENROUTER } from './endpointsZdr.js';
 import { lerRespostaDaAnaliseDePeca } from './esquemaDaPeca.js';
-import type { ModeloComZdr } from './ModeloComZdr.js';
+import type { ExecutorDeModelo } from './ModeloComZdr.js';
 
 export interface OpcoesDoAnalisadorDePecaOpenRouter {
   /**
@@ -15,7 +15,7 @@ export interface OpcoesDoAnalisadorDePecaOpenRouter {
    * produção se vazio). Tudo o que protege o texto mora nela: modelo real (sem `~`/`:`), lista ZDR de
    * 24 h que falha fechada, `provider.only`, conferência do par modelo + provedor.
    */
-  readonly modeloZdr: ModeloComZdr;
+  readonly modeloZdr: ExecutorDeModelo;
   readonly maxTokens: number;
   readonly timeoutMs: number;
 }

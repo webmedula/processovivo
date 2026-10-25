@@ -29,7 +29,8 @@ var ROTULO_DA_FALHA={citacao_invalida:'citação inválida',numero_invalido:'nú
   forma:'forma fora do contrato',pagina_invalida:'página inexistente',chamada_falhou:'a chamada ao modelo falhou',
   formato_fora_do_esquema:'formato fora do esquema',tempo_esgotado:'tempo esgotado'};
 var ROTULO_DO_TIPO={ligada:'Liga/desliga',teto_dia_conta:'Teto por conta e dia',teto_dia_global:'Teto global do dia',
-  alerta_custo:'Alerta de custo'};
+  alerta_custo:'Alerta de custo',modelo_publicado:'Modelo publicado',modelo_revertido:'Modelo revertido',
+  teste_modelo_iniciado:'Teste de modelo iniciado'};
 var ROTULO_DA_FUNCAO={ato:'Análise de ato',resumo:'Resumo do processo',peca:'Análise de peça',global:'Geral'};
 
 var FRASE={
@@ -129,6 +130,19 @@ function motivosDaAvaliacao(f){
   return partes.length?partes.join(' · '):'<span class="ia-suave">Nenhum.</span>';
 }
 
+function quebraPorModelo(f){
+  var l=f.porModelo||[];
+  if(!l.length)return '';
+  var h='<div class="ia-campo"><p class="ia-m-h5">Por modelo, neste período</p><ul class="ia-lista ia-por-modelo">';
+  for(var i=0;i<l.length;i++){
+    var m=l[i];
+    h+='<li><span class="ia-mono">'+esc(m.modelo)+'</span>: '+n(m.analises)+' análises · polegar para cima '+n(m.util)+
+      ' · para baixo '+n(m.errado+m.perigoso)+' · não verificadas '+n(m.naoVerificadas)+' · custo médio '+esc(usd(m.custoMedio,4))+
+      ' · tempo p95 '+esc(seg(m.latenciaP95Ms))+'</li>';
+  }
+  return h+'</ul></div>';
+}
+
 function cartaoDaFuncao(f){
   var id='ia-f-'+f.funcao,est=estadoDaFuncao(f);
   var avaliadas=f.util+f.errado+f.perigoso;
@@ -150,6 +164,7 @@ function cartaoDaFuncao(f){
   h+=linha('Custo p50 · p95 · máximo',esc(usd(f.custo.p50,4))+' · '+esc(usd(f.custo.p95,4))+' · '+esc(usd(f.custo.maximo,4)));
   h+=linha('Tempo p50 · p95',esc(seg(f.latenciaP50Ms))+' · '+esc(seg(f.latenciaP95Ms)));
   h+='</dl>';
+  h+=quebraPorModelo(f);
 
   /* Liga/desliga. Desligar pede confirmação NA TELA e no pedido (confirmado:true). */
   h+='<div class="ia-acoes">';
@@ -174,6 +189,8 @@ function cartaoDaFuncao(f){
   h+='<button type="button" class="bt2" data-ia-teto="'+esc(f.funcao)+'">Salvar teto</button></div>';
   h+='<p class="ia-suave">Teto efetivo agora: <strong>'+n(f.tetoEfetivoPorConta)+'</strong> (o menor entre o ambiente e o painel). O painel só reduz.</p>';
   h+='</div>';
+  /* Modelo da função (Fase B): o módulo iaAdminModelos desenha aqui dentro. */
+  h+='<div class="ia-modelos" data-ia-modelos="'+esc(f.funcao)+'"></div>';
   return h+'</article>';
 }
 
@@ -206,7 +223,10 @@ function secaoDeContas(d){
 
 function descreverAlteracao(a){
   var tipo=ROTULO_DO_TIPO[a.tipo]||a.tipo;
-  return esc(tipo)+': '+esc(valorDaAlteracao(a,a.anterior))+' → '+esc(valorDaAlteracao(a,a.novo));
+  var h=esc(tipo)+': '+esc(valorDaAlteracao(a,a.anterior))+' → '+esc(valorDaAlteracao(a,a.novo));
+  if(a.testeId)h+=' · teste <span class="ia-mono">'+esc(String(a.testeId).slice(0,8))+'</span>';
+  if(a.aprovacao)h+=' · aprovação: '+esc(a.aprovacao);
+  return h;
 }
 
 function secaoDeHistorico(d){
@@ -233,7 +253,7 @@ function desenhar(){
   if(!d){return h+'<p class="vazio" id="ia-estado">'+esc(S.msg||FRASE.carregando)+'</p><div id="ia-live" class="ia-so-leitor" role="status" aria-live="polite"></div>'}
   h+='<section aria-labelledby="ia-fun-t" class="ia-secao"><h2 id="ia-fun-t" class="ia-h2">Funções</h2><div class="ia-grade">';
   for(var j=0;j<d.funcoes.length;j++)h+=cartaoDaFuncao(d.funcoes[j]);
-  h+='</div></section>';
+  h+='</div><div data-ia-modelos-nota="1"></div></section>';
   h+=secaoDeLimites(d)+secaoDeContas(d)+secaoDeHistorico(d);
   h+='<div id="ia-live" class="ia-so-leitor" role="status" aria-live="polite"></div>';
   return h;
@@ -244,6 +264,8 @@ function pintar(){
   var tinhaFoco=document.activeElement&&document.activeElement.id;
   S.raiz.innerHTML=desenhar();
   ligar();
+  /* A parte "Modelo" de cada cartão (Fase B) é de outro módulo; ele redesenha só o espaço dele. */
+  if(S.dados&&window.__pvIaModelos)window.__pvIaModelos.montar(S.raiz);
   /* Foco só volta ao controle que a PESSOA acabou de usar; nunca é roubado em recarga. */
   if(S.foco){
     var el=$(S.foco)||S.raiz.querySelector('[data-foco="'+S.foco+'"]');
@@ -345,6 +367,7 @@ function ligar(){
 /* Entrada da aba: desenha "carregando", busca e leva o foco ao título da tela (a pessoa mudou de tela). */
 function render(raiz){
   S.raiz=raiz;S.dados=null;S.confirmando=null;S.msg='';
+  if(window.__pvIaModelos)window.__pvIaModelos.reiniciar();
   pintar();
   return carregar().then(function(){
     var t=$('ia-titulo');if(t)t.focus();
@@ -352,7 +375,7 @@ function render(raiz){
   });
 }
 
-window.__pvIaAdmin={render:render,banner:banner};
+window.__pvIaAdmin={render:render,banner:banner,recarregar:function(){return carregar()}};
 })();
 `;
 
@@ -394,6 +417,7 @@ button.bt-perigo{background:var(--erro-bg);color:var(--erro);border:2px solid va
 .ia-campo label{display:block;font-size:13.5px;font-weight:700;margin-bottom:5px}
 .ia-linha{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 .ia-linha input{width:100%;max-width:12rem;min-width:0}
+.ia-por-modelo{padding-left:18px;font-size:13px}
 .ia-so-leitor{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 #aviso-ia{margin:0 0 14px;border:1px solid var(--erro);background:var(--erro-bg);border-radius:10px;padding:12px 14px}
 #aviso-ia a{text-decoration:underline;font-weight:700}

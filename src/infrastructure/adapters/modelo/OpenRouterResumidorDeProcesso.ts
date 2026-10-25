@@ -9,11 +9,11 @@ import {
   INSTRUCAO_DE_FORMATO_DO_RESUMO,
   lerRespostaDoResumo,
 } from './esquemaDoResumo.js';
-import type { ModeloComZdr } from './ModeloComZdr.js';
+import type { ExecutorDeModelo } from './ModeloComZdr.js';
 
 export interface OpcoesDoResumidorOpenRouter {
   /** A MESMA peça comum do analisador de ato: uma lista ZDR e as mesmas travas para os dois. */
-  readonly modeloZdr: ModeloComZdr;
+  readonly modeloZdr: ExecutorDeModelo;
   readonly maxTokens: number;
   readonly timeoutMs: number;
 }

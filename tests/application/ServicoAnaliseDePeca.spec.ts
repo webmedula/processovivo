@@ -92,7 +92,7 @@ describe('ServicoAnaliseDePeca', () => {
       workspaces?: string[];
       porHora?: number;
       porDia?: number;
-      modelo?: string;
+      modelo?: string | (() => string);
       tribunais?: string[];
       dias?: number;
     } = {},
@@ -524,6 +524,19 @@ describe('ServicoAnaliseDePeca', () => {
       await s.analisar(pedido('p9'));
       await s.analisar(pedido('p9'));
       expect(analisador.chamadas).toBe(5);
+    });
+
+    it('o modelo pode vir do painel (função): trocá-lo invalida o reaproveitamento sem reiniciar nada', async () => {
+      let atual = 'modelo/pedido';
+      const s = servico({ modelo: () => atual });
+      await s.analisar(pedido());
+      await s.analisar(pedido());
+      expect(analisador.chamadas).toBe(1);
+      atual = 'modelo/publicado-no-painel';
+      await s.analisar(pedido());
+      expect(analisador.chamadas).toBe(2);
+      await s.analisar(pedido());
+      expect(analisador.chamadas).toBe(2);
     });
 
     it('outra conta não aproveita o resultado da primeira', async () => {

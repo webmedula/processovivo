@@ -31,7 +31,7 @@ import { RepositorioDeEventosSqlite } from '../../infrastructure/persistencia/sq
 import { RepositorioDoResumoDoCalendarioSqlite } from '../../infrastructure/persistencia/sqlite/RepositorioDoResumoDoCalendarioSqlite.js';
 import { createHmac, randomBytes, randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import type { CredencialTribunal } from '../../domain/ports/ProvedorDePecas.js';
 import { ArmazemEmDisco } from '../../infrastructure/arquivos/ArmazemEmDisco.js';
 import { QpdfMontador } from '../../infrastructure/pdf/QpdfMontador.js';
@@ -42,6 +42,15 @@ import { Agendador } from '../../infrastructure/agenda/Agendador.js';
 import { ServicoAlertaDeCustoDaIa } from '../../application/services/ServicoAlertaDeCustoDaIa.js';
 import { ServicoControleDaIa } from '../../application/services/ServicoControleDaIa.js';
 import { ServicoPainelDeIa } from '../../application/services/ServicoPainelDeIa.js';
+import { ServicoModelosDeIa } from '../../application/services/ServicoModelosDeIa.js';
+import { ServicoTesteDeModelo } from '../../application/services/ServicoTesteDeModelo.js';
+import { CATALOGO_DE_MODELOS } from '../../infrastructure/ia/modelos-permitidos.js';
+import { ModeloDaFuncao } from '../../infrastructure/adapters/modelo/ModeloDaFuncao.js';
+import { ExecutorDoTesteDeModeloComSonda } from '../sonda/executorDoTesteDeModelo.js';
+import {
+  RepositorioDeModelosDeIaSqlite,
+  RepositorioDeTestesDeModeloSqlite,
+} from '../../infrastructure/persistencia/sqlite/RepositoriosDeModelosDeIaSqlite.js';
 import type { AmbienteDaIa } from '../../domain/entities/ControleDaIa.js';
 import type { RegistroDeOcorrenciasDeIa } from '../../domain/ports/PainelDeIa.js';
 import {
@@ -204,6 +213,10 @@ export interface Aplicacao {
    */
   readonly controleDaIa: ServicoControleDaIa;
   readonly painelDeIa: ServicoPainelDeIa;
+  /** Modelo por função (Fase B, v0.60.0): resolução, publicar e reverter. Existe sempre. */
+  readonly modelosDeIa: ServicoModelosDeIa;
+  /** O teste obrigatório antes de publicar; sem chave do provedor, `disponivel` é falso. */
+  readonly testeDeModelo: ServicoTesteDeModelo;
   readonly agendadorAlertaDeCustoDaIa: Agendador | undefined;
   /** Centro de custos do processo (v0.47.0). Sempre montado — só depende do banco. */
   readonly custos: ServicoCustos;
@@ -638,11 +651,24 @@ export function montarAplicacao(config: Config): Aplicacao {
     clock: clockDoSistema,
     logger,
   });
+  const leitorDeUsoDaIa = new LeitorDeUsoDeIaSqlite(db, ocorrenciasDaIa);
   const painelDeIa = new ServicoPainelDeIa({
     controle: controleDaIa,
-    leitor: new LeitorDeUsoDeIaSqlite(db, ocorrenciasDaIa),
+    leitor: leitorDeUsoDaIa,
     clock: clockDoSistema,
   });
+  // Modelo por função (Fase B): painel (se válido e na lista) → ambiente → padrão do código.
+  const modelosDeIa = new ServicoModelosDeIa({
+    repositorio: new RepositorioDeModelosDeIaSqlite(db),
+    testes: new RepositorioDeTestesDeModeloSqlite(db),
+    catalogo: CATALOGO_DE_MODELOS,
+    doAmbiente: { ato: config.ia.modelo, resumo: config.ia.modelo, peca: config.ia.pecas.modelo },
+    leitor: leitorDeUsoDaIa,
+    clock: clockDoSistema,
+    logger,
+    ocorrencias: ocorrenciasDaIa,
+  });
+  const testeDeModelo = montarTesteDeModelo(config, db, logger, modelosDeIa);
   const { analiseIa, resumoDoProcesso, analiseDePeca, repositorioDeAnalisesDePeca } =
     montarAnaliseIa(
       config,
@@ -653,6 +679,7 @@ export function montarAplicacao(config: Config): Aplicacao {
       pasta,
       controleDaIa,
       ocorrenciasDaIa,
+      modelosDeIa,
     );
   // Alerta de custo: só com a IA ligada no ambiente e o /admin configurado. O e-mail só sai com SMTP de
   // verdade ("log não é entrega"); sem ele, ou sem e-mail do operador, vale o banner da tela.
@@ -756,6 +783,8 @@ export function montarAplicacao(config: Config): Aplicacao {
     agendadorResumoDoCalendario,
     controleDaIa,
     painelDeIa,
+    modelosDeIa,
+    testeDeModelo,
     agendadorAlertaDeCustoDaIa,
     custos,
     custosPorCliente,
@@ -849,6 +878,48 @@ function montarPagamentos(
 }
 
 /**
+ * O teste obrigatório de modelo (Fase B, v0.60.0). Sem a IA ligada no ambiente (portanto sem chave do
+ * provedor) não há executor: o painel ainda mostra, publica e reverte, mas o teste responde "indisponível".
+ * Reiniciar o servidor marca como falho o teste que estava rodando (nunca retoma sozinho).
+ */
+function montarTesteDeModelo(
+  config: Config,
+  db: ReturnType<typeof abrirBanco>,
+  logger: Logger,
+  modelos: ServicoModelosDeIa,
+): ServicoTesteDeModelo {
+  const ia = config.ia;
+  const executor =
+    ia.habilitada && ia.chave !== ''
+      ? new ExecutorDoTesteDeModeloComSonda({
+          pastaDosConjuntos: resolve(process.cwd(), 'tests/fixtures'),
+          buscarListaZdr: async () =>
+            (await buscarEndpointsZdr(new HttpClient({ timeoutMs: 20_000, tentativas: 2 }), ia.chave))
+              .endpoints,
+          criarTransporte: () =>
+            new TransporteOpenRouter({
+              chave: ia.chave,
+              timeoutMs: ia.timeoutMs,
+              ajustes: { raciocinio: ia.raciocinio, maxTokens: ia.maxTokens },
+            }),
+          agora: () => Date.now(),
+        })
+      : undefined;
+  const repositorio = new RepositorioDeModelosDeIaSqlite(db);
+  const servico = new ServicoTesteDeModelo({
+    executor,
+    modelos,
+    testes: new RepositorioDeTestesDeModeloSqlite(db),
+    registro: repositorio,
+    clock: clockDoSistema,
+    logger,
+    novoId: () => randomUUID(),
+  });
+  servico.recuperarNoArranque();
+  return servico;
+}
+
+/**
  * Monta a análise de ato por IA — ou não monta (desligada por padrão). A configuração
  * já foi validada no arranque (`carregarConfig`): com a IA ligada há chave real e modelo real.
  * O transporte, o limite e a lista ZDR são UMA instância cada, para o processo inteiro.
@@ -862,6 +933,7 @@ function montarAnaliseIa(
   pasta: ServicoPasta | undefined,
   controleDaIa: ServicoControleDaIa,
   ocorrencias: RegistroDeOcorrenciasDeIa,
+  modelosDeIa: ServicoModelosDeIa,
 ): {
   analiseIa: ServicoAnaliseDoAto | undefined;
   resumoDoProcesso: ServicoResumoDoProcesso | undefined;
@@ -890,17 +962,33 @@ function montarAnaliseIa(
     timeoutMs: ia.timeoutMs,
     ajustes: { raciocinio: ia.raciocinio, maxTokens: ia.maxTokens },
   });
-  const modeloZdr = new ModeloComZdr({
-    transporte: transporteOpenRouter,
-    modelo: ia.modelo,
-    buscarListaZdr: async () => (await buscarEndpointsZdr(http, ia.chave)).endpoints,
-    provedoresDoOperador: ia.provedoresPermitidos,
-    clock: clockDoSistema,
-    logger,
-  });
-  const analisador = new OpenRouterAnalisadorDeAto({ modeloZdr });
+  // UMA peça comum (e portanto UMA lista ZDR de 24 h) por modelo, dividida entre as três funções. O modelo
+  // de cada função é escolhido a cada chamada (`ModeloDaFuncao`); TODA chamada passa por `ModeloComZdr`
+  // (ZDR, `provider.only`, conferência do par), qualquer que seja o modelo: o painel não tem como evitá-la.
+  const pecasComuns = new Map<string, ModeloComZdr>();
+  const pecaComumDo = (modelo: string): ModeloComZdr => {
+    let p = pecasComuns.get(modelo);
+    if (!p) {
+      p = new ModeloComZdr({
+        transporte: transporteOpenRouter,
+        modelo,
+        buscarListaZdr: async () => (await buscarEndpointsZdr(http, ia.chave)).endpoints,
+        provedoresDoOperador: ia.provedoresPermitidos,
+        clock: clockDoSistema,
+        logger,
+      });
+      pecasComuns.set(modelo, p);
+    }
+    return p;
+  };
+  const modeloDa = (funcao: 'ato' | 'resumo' | 'peca'): ModeloDaFuncao =>
+    new ModeloDaFuncao({
+      escolher: () => modelosDeIa.modeloParaChamada(funcao),
+      fabrica: pecaComumDo,
+    });
+  const analisador = new OpenRouterAnalisadorDeAto({ modeloZdr: modeloDa('ato') });
   logger.info('análise de ato por IA habilitada', {
-    modelo: ia.modelo,
+    modelo: modelosDeIa.efetivo('ato').modelo,
     raciocinio: ia.raciocinio,
     provedoresDoOperador: ia.provedoresPermitidos.length,
   });
@@ -936,7 +1024,7 @@ function montarAnaliseIa(
     repositorio,
     resumos: new RepositorioResumosSqlite(db),
     resumidor: new OpenRouterResumidorDeProcesso({
-      modeloZdr,
+      modeloZdr: modeloDa('resumo'),
       maxTokens: ia.resumoMaxTokens,
       timeoutMs: ia.resumoTimeoutMs,
     }),
@@ -978,19 +1066,6 @@ function montarAnaliseIa(
           ignorados: pecas.workspacesInvalidos,
         });
       }
-      // Mesmo modelo da produção: a MESMA peça comum (uma lista ZDR só). Outro modelo: peça comum própria,
-      // com o mesmo transporte e as mesmas travas.
-      const modeloDePecas =
-        pecas.modelo === ia.modelo
-          ? modeloZdr
-          : new ModeloComZdr({
-              transporte: transporteOpenRouter,
-              modelo: pecas.modelo,
-              buscarListaZdr: async () => (await buscarEndpointsZdr(http, ia.chave)).endpoints,
-              provedoresDoOperador: ia.provedoresPermitidos,
-              clock: clockDoSistema,
-              logger,
-            });
       repositorioDeAnalisesDePeca = new RepositorioAnalisesDePecaSqlite(db);
       analiseDePeca = new ServicoAnaliseDePeca({
         repositorio,
@@ -999,7 +1074,7 @@ function montarAnaliseIa(
         fonte: pasta,
         extrator: new PdftotextExtrator(),
         analisador: new OpenRouterAnalisadorDePeca({
-          modeloZdr: modeloDePecas,
+          modeloZdr: modeloDa('peca'),
           maxTokens: pecas.maxTokens,
           timeoutMs: pecas.timeoutMs,
         }),
@@ -1013,7 +1088,7 @@ function montarAnaliseIa(
         }),
         liberacao: { habilitada: pecas.habilitada, workspaces: pecas.workspaces },
         tribunais: ['TJGO'],
-        modelo: pecas.modelo,
+        modelo: () => modelosDeIa.efetivo('peca').modelo,
         resultadoDias: pecas.resultadoDias,
         clock: clockDoSistema,
         logger,
@@ -1022,7 +1097,7 @@ function montarAnaliseIa(
         ocorrencias,
       });
       logger.info('análise de peça por IA habilitada', {
-        modelo: pecas.modelo,
+        modelo: modelosDeIa.efetivo('peca').modelo,
         paraTodasAsContas: pecas.habilitada,
         contasDaLista: pecas.workspaces.length,
         resultadoDias: pecas.resultadoDias,
