@@ -1307,3 +1307,37 @@ export class ConfiguracaoDeIaRecusadaError extends DomainError {
     super(mensagem);
   }
 }
+
+/**
+ * O painel de IA do /admin (Fase B, v0.60.0) recusou testar, publicar ou reverter um modelo. Nada foi
+ * gravado nem enviado. A mensagem é nossa e nunca repete o que foi recebido (nem o id forjado).
+ */
+export type MotivoDeModeloDeIaRecusado =
+  | 'funcao_desconhecida'
+  | 'modelo_fora_da_lista'
+  | 'modelo_igual_ao_atual'
+  | 'teste_em_andamento'
+  | 'teste_indisponivel'
+  | 'estimativa_acima_do_teto'
+  | 'confirmacao_necessaria'
+  | 'teste_nao_encontrado'
+  | 'teste_nao_concluido'
+  | 'teste_de_outro_modelo'
+  | 'teste_antigo'
+  | 'modelo_atual_mudou'
+  | 'veredito_bloqueado'
+  | 'ressalva_exige_aprovacao'
+  | 'aprovacao_invalida'
+  | 'sem_modelo_anterior'
+  | 'modelo_anterior_indisponivel';
+
+export class ModeloDeIaRecusadoError extends DomainError {
+  readonly codigo = 'MODELO_DE_IA_RECUSADO';
+
+  constructor(
+    readonly motivo: MotivoDeModeloDeIaRecusado,
+    mensagem: string,
+  ) {
+    super(mensagem);
+  }
+}

@@ -9,6 +9,9 @@ import type {
   ServicoPlanos,
 } from '../../../application/services/ServicoPlanos.js';
 import type { ServicoControleDaIa } from '../../../application/services/ServicoControleDaIa.js';
+import type { ServicoModelosDeIa } from '../../../application/services/ServicoModelosDeIa.js';
+import type { ServicoTesteDeModelo } from '../../../application/services/ServicoTesteDeModelo.js';
+import { modelosParaJson, testeParaJson } from './modelosDeIaJson.js';
 import {
   PERIODOS_DO_PAINEL,
   type PainelDeIa,
@@ -47,6 +50,14 @@ export const ROTA_ADMIN_IA_ALERTA = '/admin/api/ia/alerta';
 export const ROTA_ADMIN_IA_FUNCAO = '/admin/api/ia/funcoes/:funcao';
 export const ROTA_ADMIN_IA_FUNCAO_TETO = '/admin/api/ia/funcoes/:funcao/teto';
 export const ROTA_ADMIN_IA_TETO_GLOBAL = '/admin/api/ia/teto-global';
+/** Modelo por função e teste obrigatório (Fase B, v0.60.0). */
+export const ROTA_ADMIN_IA_MODELOS = '/admin/api/ia/modelos';
+export const ROTA_ADMIN_IA_MODELOS_ESTIMATIVA = '/admin/api/ia/modelos/:funcao/estimativa';
+export const ROTA_ADMIN_IA_MODELOS_TESTES = '/admin/api/ia/modelos/:funcao/testes';
+export const ROTA_ADMIN_IA_MODELOS_PUBLICAR = '/admin/api/ia/modelos/:funcao/publicar';
+export const ROTA_ADMIN_IA_MODELOS_REVERTER = '/admin/api/ia/modelos/:funcao/reverter';
+export const ROTA_ADMIN_IA_MODELOS_TESTE = '/admin/api/ia/modelos/testes/:id';
+export const ROTA_ADMIN_IA_MODELOS_CANCELAR = '/admin/api/ia/modelos/testes/:id/cancelar';
 
 /** Toda rota administrativa, na ordem em que faz sentido ler — para `rotasPublicas`. */
 export const ROTAS_ADMIN: readonly string[] = [
@@ -70,6 +81,13 @@ export const ROTAS_ADMIN: readonly string[] = [
   ROTA_ADMIN_IA_FUNCAO,
   ROTA_ADMIN_IA_FUNCAO_TETO,
   ROTA_ADMIN_IA_TETO_GLOBAL,
+  ROTA_ADMIN_IA_MODELOS,
+  ROTA_ADMIN_IA_MODELOS_ESTIMATIVA,
+  ROTA_ADMIN_IA_MODELOS_TESTES,
+  ROTA_ADMIN_IA_MODELOS_PUBLICAR,
+  ROTA_ADMIN_IA_MODELOS_REVERTER,
+  ROTA_ADMIN_IA_MODELOS_TESTE,
+  ROTA_ADMIN_IA_MODELOS_CANCELAR,
 ];
 
 const corpoLiberar = z.object({
@@ -122,6 +140,21 @@ const corpoFuncaoDeIa = z.object({ ligada: z.boolean(), confirmado: z.boolean().
 const corpoTetoDeIa = z.object({ teto: z.number().int().nullable() }).strict();
 const corpoAlertaDeIa = z.object({ valorUsd: z.number() }).strict();
 
+const corpoDoCandidato = z.object({ candidato: z.string().trim().min(1).max(120) }).strict();
+const corpoDoTeste = z
+  .object({ candidato: z.string().trim().min(1).max(120), confirmado: z.boolean().optional() })
+  .strict();
+const corpoDaPublicacao = z
+  .object({
+    testeId: z.string().trim().min(1).max(64),
+    confirmado: z.boolean().optional(),
+    palavra: z.string().max(40).optional(),
+    motivo: z.string().max(40).optional(),
+    observacao: z.string().max(200).optional(),
+  })
+  .strict();
+const corpoDaReversao = z.object({ confirmado: z.boolean().optional() }).strict();
+
 const corpoReconciliar = z.object({ workspace: z.string().trim().min(1).max(40).optional() });
 
 const corpoRegras = z.object({
@@ -153,6 +186,9 @@ export interface OpcoesRotasAdmin {
   readonly ia?: {
     readonly controle: ServicoControleDaIa;
     readonly painel: ServicoPainelDeIa;
+    /** Fase B (v0.60.0): modelo por função, publicar, reverter e o teste obrigatório. */
+    readonly modelos: ServicoModelosDeIa;
+    readonly testes: ServicoTesteDeModelo;
   };
 }
 
@@ -581,6 +617,82 @@ export function rotasDeAdmin(opcoes: OpcoesRotasAdmin): FastifyPluginAsync {
       return { tetoGlobal: ia.controle.config().tetoGlobal };
     });
 
+
+    // --- Modelo por função (Fase B, v0.60.0) -------------------------------------------------------
+    // Só o operador do /admin (o hook de Basic Auth vale para todo o plugin); nenhuma rota pública chama
+    // o teste. O id do modelo recebido só é aceito se estiver na lista permitida, e a recusa nunca o repete.
+    servidor.get(ROTA_ADMIN_IA_MODELOS, async (_req, resposta) => {
+      const ia = opcoes.ia;
+      if (!ia) return semPainel(resposta);
+      resposta.header('cache-control', 'no-store');
+      return modelosParaJson(ia.modelos, ia.testes);
+    });
+
+    servidor.post<{ Params: { funcao: string }; Body: unknown }>(
+      ROTA_ADMIN_IA_MODELOS_ESTIMATIVA,
+      async (req, resposta) => {
+        const ia = opcoes.ia;
+        if (!ia) return semPainel(resposta);
+        const c = corpoDoCandidato.parse(req.body);
+        return ia.testes.estimar(req.params.funcao, c.candidato);
+      },
+    );
+
+    servidor.post<{ Params: { funcao: string }; Body: unknown }>(
+      ROTA_ADMIN_IA_MODELOS_TESTES,
+      async (req, resposta) => {
+        const ia = opcoes.ia;
+        if (!ia) return semPainel(resposta);
+        const c = corpoDoTeste.parse(req.body);
+        const t = ia.testes.iniciar(autor, req.params.funcao, c.candidato, c.confirmado === true);
+        void resposta.code(202);
+        return testeParaJson(t, ia.modelos.catalogo, ia.modelos.volumeRecente(t.funcao));
+      },
+    );
+
+    servidor.get<{ Params: { id: string } }>(ROTA_ADMIN_IA_MODELOS_TESTE, async (req, resposta) => {
+      const ia = opcoes.ia;
+      if (!ia) return semPainel(resposta);
+      resposta.header('cache-control', 'no-store');
+      const t = ia.testes.consultar(req.params.id);
+      return testeParaJson(t, ia.modelos.catalogo, ia.modelos.volumeRecente(t.funcao));
+    });
+
+    servidor.post<{ Params: { id: string } }>(ROTA_ADMIN_IA_MODELOS_CANCELAR, async (req, resposta) => {
+      const ia = opcoes.ia;
+      if (!ia) return semPainel(resposta);
+      const t = ia.testes.cancelar(req.params.id);
+      return testeParaJson(t, ia.modelos.catalogo, ia.modelos.volumeRecente(t.funcao));
+    });
+
+    servidor.post<{ Params: { funcao: string }; Body: unknown }>(
+      ROTA_ADMIN_IA_MODELOS_PUBLICAR,
+      async (req, resposta) => {
+        const ia = opcoes.ia;
+        if (!ia) return semPainel(resposta);
+        const c = corpoDaPublicacao.parse(req.body);
+        ia.modelos.publicar(autor, req.params.funcao, {
+          testeId: c.testeId,
+          confirmado: c.confirmado === true,
+          ...(c.palavra !== undefined ? { palavra: c.palavra } : {}),
+          ...(c.motivo !== undefined ? { motivo: c.motivo } : {}),
+          ...(c.observacao !== undefined ? { observacao: c.observacao } : {}),
+        });
+        return modelosParaJson(ia.modelos, ia.testes);
+      },
+    );
+
+    servidor.post<{ Params: { funcao: string }; Body: unknown }>(
+      ROTA_ADMIN_IA_MODELOS_REVERTER,
+      async (req, resposta) => {
+        const ia = opcoes.ia;
+        if (!ia) return semPainel(resposta);
+        const c = corpoDaReversao.parse(req.body);
+        ia.modelos.reverter(autor, req.params.funcao, c.confirmado === true);
+        return modelosParaJson(ia.modelos, ia.testes);
+      },
+    );
+
     /** Consulta o gateway e corrige divergências (aviso perdido). Sem corpo = todas as contas. */
     servidor.post<{ Body: unknown }>(ROTA_ADMIN_PAGAMENTO_RECONCILIAR, async (req, resposta) => {
       const p = opcoes.pagamentos;
@@ -656,6 +768,17 @@ function painelParaJson(p: PainelDeIa): Record<string, unknown> {
       taxaNaoVerificado: numeroOuNulo(f.taxaNaoVerificado),
       chamadasQueFalharam: f.chamadasQueFalharam,
       repeticoesAutomaticas: f.repeticoesAutomaticas,
+      porModelo: f.porModelo.map((m) => ({
+        modelo: m.modelo,
+        analises: m.metricas.analises,
+        util: m.metricas.util,
+        errado: m.metricas.errado,
+        perigoso: m.metricas.perigoso,
+        naoVerificadas: m.metricas.naoVerificadas,
+        latenciaP95Ms: numeroOuNulo(m.metricas.latenciaP95Ms),
+        custoMedio: numeroOuNulo(m.metricas.custo.medio),
+        custoTotal: m.metricas.custo.total,
+      })),
       falhasDeVerificacao: f.falhasDeVerificacao,
       latenciaP50Ms: numeroOuNulo(f.metricas.latenciaP50Ms),
       latenciaP95Ms: numeroOuNulo(f.metricas.latenciaP95Ms),
@@ -679,6 +802,8 @@ function painelParaJson(p: PainelDeIa): Record<string, unknown> {
       tipo: a.tipo,
       anterior: a.anterior,
       novo: a.novo,
+      testeId: a.testeId ?? null,
+      aprovacao: a.aprovacao ?? null,
     })),
   };
 }

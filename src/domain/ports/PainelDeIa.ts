@@ -10,7 +10,14 @@ import type { ConfigDoPainel, FuncaoDeIa } from '../entities/ControleDaIa.js';
  * padrão do código, nunca uma IA fora do ar.
  */
 export type TipoDeAlteracao =
-  'ligada' | 'teto_dia_conta' | 'teto_dia_global' | 'alerta_custo';
+  | 'ligada'
+  | 'teto_dia_conta'
+  | 'teto_dia_global'
+  | 'alerta_custo'
+  // Fase B (v0.60.0): modelo por função.
+  | 'modelo_publicado'
+  | 'modelo_revertido'
+  | 'teste_modelo_iniciado';
 
 export interface AlteracaoDeConfigDeIa {
   readonly id?: number;
@@ -22,6 +29,10 @@ export interface AlteracaoDeConfigDeIa {
   /** Valores simples ("ligada", "desligada", "200", "sem teto", "3.00"). */
   readonly anterior: string;
   readonly novo: string;
+  /** Fase B: id do teste de modelo (uuid), quando a mudança nasce de um. */
+  readonly testeId?: string;
+  /** Fase B: a aprovação de uma ressalva (`motivo` de lista fechada + observação curta). */
+  readonly aprovacao?: string;
 }
 
 export interface RepositorioDeConfigDeIa {
@@ -49,6 +60,8 @@ export const MOTIVOS_DE_OCORRENCIA_DA_IA = [
   'atualidade',
   'forma',
   'pagina_invalida',
+  // Fase B (v0.60.0): o modelo guardado no painel saiu da lista (ou foi descontinuado) e a chamada usou o ambiente.
+  'modelo_do_painel_invalido',
 ] as const;
 export type MotivoDeOcorrenciaDaIa = (typeof MOTIVOS_DE_OCORRENCIA_DA_IA)[number];
 

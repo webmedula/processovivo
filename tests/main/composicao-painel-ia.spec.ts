@@ -29,6 +29,43 @@ function montar(extra: Record<string, string>) {
   return montarAplicacao(carregarConfig({ ...BASE, ...extra } as NodeJS.ProcessEnv));
 }
 
+describe('o modelo por função na composição (Fase B)', () => {
+  it('sem IA no ambiente: o modelo vem do ambiente e o teste é indisponível, mas o painel lê', () => {
+    const app = montar({});
+    try {
+      expect(app.modelosDeIa.efetivo('ato')).toMatchObject({ modelo: 'deepseek/deepseek-v4-flash', origem: 'ambiente' });
+      expect(app.testeDeModelo.disponivel).toBe(false);
+    } finally {
+      app.encerrar();
+    }
+  });
+
+  it('com IA ligada: o teste é disponível, o teto da rodada é US$ 1 e cada função segue o seu ambiente', () => {
+    const app = montar({ ...IA, PROCESSOVIVO_IA_MODELO: 'fab/producao', PROCESSOVIVO_IA_PECAS_MODELO: 'fab/pecas' });
+    try {
+      expect(app.testeDeModelo.disponivel).toBe(true);
+      expect(app.testeDeModelo.teto).toBe(1);
+      expect(app.modelosDeIa.efetivo('ato').modelo).toBe('fab/producao');
+      expect(app.modelosDeIa.efetivo('resumo').modelo).toBe('fab/producao');
+      expect(app.modelosDeIa.efetivo('peca').modelo).toBe('fab/pecas');
+    } finally {
+      app.encerrar();
+    }
+  });
+
+  it('ninguém sai do modelo do ambiente sem um teste válido: o painel recém-criado não tem modelo gravado', () => {
+    const app = montar({ ...IA });
+    try {
+      expect(app.modelosDeIa.gravados().ato.modelo).toBeNull();
+      expect(() => app.modelosDeIa.publicar('op', 'ato', { testeId: 'inventado', confirmado: true })).toThrowError(
+        /Teste não encontrado/,
+      );
+    } finally {
+      app.encerrar();
+    }
+  });
+});
+
 describe('o painel de IA na composição', () => {
   it('IA desligada no ambiente: nenhuma função liga, e o painel NÃO a liga', () => {
     const app = montar({});

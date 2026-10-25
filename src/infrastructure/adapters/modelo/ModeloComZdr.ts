@@ -56,6 +56,16 @@ export interface PedidoComZdr {
 }
 
 /**
+ * O que os adaptadores de ato, resumo e peça pedem à peça comum. Existe para que o modelo possa ser
+ * escolhido a cada chamada (`ModeloDaFuncao`, Fase B) sem que nenhum adaptador saiba disso — e sem que
+ * nenhum caminho chegue ao transporte por fora da ZDR.
+ */
+export interface ExecutorDeModelo {
+  executar(pedido: PedidoComZdr): Promise<RespostaConfirmada>;
+  healthCheck(): Promise<boolean>;
+}
+
+/**
  * A peça COMUM de todo uso do modelo (v0.40.0): extraída, sem mudar comportamento, do
  * adaptador que analisa um ato. Tudo o que protege o texto mora aqui, uma vez só: modelo
  * real (sem `~`/`:`), lista ZDR de 24 h que falha FECHADA, `provider.only` com os provedores
@@ -64,7 +74,7 @@ export interface PedidoComZdr {
  * resposta de fora é descartada e o log leva só nomes. Os adaptadores de ato e de resumo só
  * diferem no esquema Zod que aplicam ao `objeto`.
  */
-export class ModeloComZdr {
+export class ModeloComZdr implements ExecutorDeModelo {
   private readonly ttlMs: number;
   private readonly log: Logger;
   private lista:

@@ -8,6 +8,7 @@ import {
   EntradaNaoAnalisavelError,
   AnaliseDePecaRecusadaError,
   ConfiguracaoDeIaRecusadaError,
+  ModeloDeIaRecusadoError,
   PrazoNaoCalculavelError,
   DriveRecusadoError,
   AssinaturaDeWebhookInvalidaError,
@@ -213,6 +214,33 @@ export function mapearErro(erro: unknown): RespostaDeErro {
       valor_invalido: 400,
       confirmacao_necessaria: 409,
       ambiente_bloqueia: 409,
+    };
+    return {
+      status: status[erro.motivo],
+      corpo: { erro: erro.codigo, mensagem: erro.message, detalhes: { motivo: erro.motivo } },
+    };
+  }
+
+  // Painel de IA do /admin, Fase B (v0.60.0): testar, publicar ou reverter modelo recusado; nada gravado.
+  if (erro instanceof ModeloDeIaRecusadoError) {
+    const status: Record<ModeloDeIaRecusadoError['motivo'], number> = {
+      funcao_desconhecida: 400,
+      modelo_fora_da_lista: 400,
+      aprovacao_invalida: 400,
+      teste_nao_encontrado: 404,
+      estimativa_acima_do_teto: 422,
+      teste_indisponivel: 503,
+      modelo_igual_ao_atual: 409,
+      teste_em_andamento: 409,
+      confirmacao_necessaria: 409,
+      teste_nao_concluido: 409,
+      teste_de_outro_modelo: 409,
+      teste_antigo: 409,
+      modelo_atual_mudou: 409,
+      veredito_bloqueado: 409,
+      ressalva_exige_aprovacao: 409,
+      sem_modelo_anterior: 409,
+      modelo_anterior_indisponivel: 409,
     };
     return {
       status: status[erro.motivo],

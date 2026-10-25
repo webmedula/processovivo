@@ -843,6 +843,38 @@ pode **desligar** e **reduzir** teto; nunca liga o que o ambiente desligou. Se o
    entram no backup de sempre. Nenhuma guarda texto de ato ou de peça.
 8. **Relatório por linha de comando** (o mesmo cálculo do painel): `node scripts/ia-avaliacoes.mjs`.
 
+## Painel de IA, Fase B: escolher o modelo de cada função (v0.60.0)
+
+Trocar o modelo da **análise de ato**, do **resumo do processo** ou da **análise de peça** pela tela do `/admin`, **sempre com um teste antes** e com **reversão em um clique**. Nada muda sozinho: o modelo em uso continua o de `PROCESSOVIVO_IA_MODELO`
+(e `PROCESSOVIVO_IA_PECAS_MODELO` para a peça) até você publicar outro. **Nenhuma variável de ambiente nova.** ZDR (retenção zero) vale em toda chamada, de qualquer modelo; a tela não tem como desligá-la.
+
+**Pré-requisito do teste:** a IA ligada no servidor (`PROCESSOVIVO_IA_HABILITADA=true` e `OPENROUTER_API_KEY`). Sem isso a tela mostra "o teste de modelo não está disponível".
+
+### Testar, publicar e reverter
+
+1. **Abrir:** `https://SEU-DOMINIO/admin` → aba **IA** → em cada cartão, a parte **Modelo de IA**: modelo em uso, de onde vem (painel ou ambiente) e, se houver, desde quando.
+2. **Escolher:** no seletor **Modelo para testar** aparecem só os modelos da **lista permitida** (preço, janela de contexto e a data/fonte da confirmação de ZDR). Se o seletor está vazio, nenhum outro modelo está confirmado na lista (veja "Incluir um modelo novo").
+3. **Estimar:** **Testar este modelo** mostra quantas chamadas serão feitas e o custo estimado, com o **teto de US$ 1,00 por rodada**. Nada é enviado ainda. **Confirmar e iniciar o teste** começa. O teste chama o provedor de verdade com casos **inventados**, nos dois modelos (o novo e o atual), e pode levar **vários minutos**; você pode sair da tela. **Só um teste roda por vez.** **Cancelar o teste** interrompe. Se o servidor reiniciar no meio, o teste aparece como "Falhou" e é só refazer.
+4. **Ler o veredito:** *Aprovado* (tudo igual ou melhor), *Aprovado com ressalvas* (piora dentro do limite) ou *Bloqueado* (com os motivos em português). A tabela mostra cada medida do modelo atual e do novo e a diferença. As regras estão em **Regras desta decisão** na própria tela:
+   bloqueiam sem aprovação manual (sem ZDR, mais violações que o atual, citação verificada abaixo de 95%, falhas de formato mais de 2 pontos acima do atual, teste incompleto ou com erro do provedor); passam só com a sua aprovação (pontos obrigatórios até 3 pontos abaixo, tempo p95 até 30% maior, custo médio maior — mostrado com o impacto estimado por dia).
+5. **Publicar:** **Publicar este modelo** → **Sim, publicar**. Vale na hora, para todas as contas, só para aquela função. O teste precisa ser **do mesmo modelo, de no máximo 24 horas**, e o modelo em uso não pode ter mudado depois dele. Com ressalvas, digite **PUBLICAR**, escolha o motivo e, se quiser, uma observação curta **sem dados pessoais**. Bloqueado: o botão fica desabilitado e a tela diz por quê.
+6. **Conferir:** o cartão mostra o novo modelo e a data da troca; **Últimas 50 mudanças** registra "Modelo publicado" (com o teste e a aprovação); e, nos dias seguintes, a linha **Por modelo, neste período** compara uso, polegares, custo e tempo do antes e do depois.
+7. **Reverter:** **Reverter para o modelo anterior** → **Sim, reverter**. Não precisa de novo teste. Também fica no histórico. Sem modelo anterior, o botão fica desabilitado.
+
+### Incluir um modelo novo na lista (mudança de código)
+
+A lista fica em `src/infrastructure/ia/modelos-permitidos.ts` e **não é editável pela tela**. Para incluir um modelo:
+
+1. **Revise a Política de Privacidade** (o novo provedor passa a receber trechos redigidos de atos e peças). Só siga depois.
+2. No Console do Easypanel: `node scripts/sonda-ia-ato.mjs --listar-modelos-zdr=<parte do nome>` — lê a lista oficial de endpoints com ZDR do OpenRouter, sem enviar texto. Anote a **data** e a **fonte**.
+3. Pegue o **preço de lista** (US$ por milhão de tokens, entrada e saída) e a **janela de contexto** na mesma fonte. **Nunca escreva um número que você não leu.**
+4. Acrescente o item (`confirmacao: 'confirmada'`, data e fonte do ZDR, preços, janela, funções permitidas, `status: 'ativo'`) e abra a PR. O arranque valida o item com Zod e há teste que falha se faltar ZDR ou preço.
+5. Para aposentar um modelo, mude o `status` para `descontinuado`: se ele estiver publicado, a função volta sozinha ao modelo do ambiente e a tela avisa.
+
+### Backup
+
+`ia_config` (agora com `modelo`, `modelo_anterior`, `modelo_desde`), `ia_alteracoes` e a nova `ia_testes_modelo` ficam no mesmo banco e entram no backup de sempre. Nenhuma guarda texto de caso, de ato, de peça nem resposta do modelo.
+
 ## Análise de peça por IA, "Analisar peça com IA" (v0.55.0)
 
 O botão aparece ao lado de cada peça na linha do tempo. **Nasce desligado.** Duas chaves decidem quem vê:

@@ -51,6 +51,15 @@ import { RepositorioVigilanciasSqlite } from '../../src/infrastructure/persisten
 import { ServicoAvisoDoPrazo } from '../../src/application/services/ServicoAvisoDoPrazo.js';
 import { ServicoAnaliseDoAto } from '../../src/application/services/ServicoAnaliseDoAto.js';
 import { ServicoControleDaIa } from '../../src/application/services/ServicoControleDaIa.js';
+import { ServicoModelosDeIa } from '../../src/application/services/ServicoModelosDeIa.js';
+import { ServicoTesteDeModelo } from '../../src/application/services/ServicoTesteDeModelo.js';
+import type { CatalogoDeModelos } from '../../src/domain/entities/ModelosDeIa.js';
+import type { ExecutorDoTesteDeModelo } from '../../src/domain/ports/ModelosDeIa.js';
+import { CATALOGO_DE_MODELOS } from '../../src/infrastructure/ia/modelos-permitidos.js';
+import {
+  RepositorioDeModelosDeIaSqlite,
+  RepositorioDeTestesDeModeloSqlite,
+} from '../../src/infrastructure/persistencia/sqlite/RepositoriosDeModelosDeIaSqlite.js';
 import { ServicoPainelDeIa } from '../../src/application/services/ServicoPainelDeIa.js';
 import {
   LeitorDeUsoDeIaSqlite,
@@ -223,6 +232,18 @@ export interface OpcoesAplicacaoDeTeste {
    * Pasta digital (`leitor`). Ausente = desligada. O PDF é lido de verdade pelo `pdftotext` (como no CI),
    * a menos que o teste passe um extrator. As duas chaves de liberação são as do servidor.
    */
+  /**
+   * Modelo por função e teste de modelo (Fase B, v0.60.0). Sempre montados (o painel os lê mesmo sem IA);
+   * o teste só é "disponível" com um `executor` dublê — nenhum teste toca a rede.
+   */
+  readonly modelosDeIa?: {
+    readonly catalogo?: CatalogoDeModelos;
+    readonly doAmbiente?: Partial<Record<'ato' | 'resumo' | 'peca', string>>;
+    readonly executor?: ExecutorDoTesteDeModelo;
+    readonly tetoUsd?: number;
+    readonly novoId?: () => string;
+    readonly clock?: Clock;
+  };
   readonly analiseDePeca?: {
     readonly analisador: AnalisadorDePeca;
     readonly liberacao: LiberacaoDaAnaliseDePeca;
@@ -468,11 +489,41 @@ export function aplicacaoDeTeste(
     // Sem cache nos testes: a mudança no painel vale na chamada seguinte.
     validadeDoCacheMs: 0,
   });
+  const leitorDeUsoDaIa = new LeitorDeUsoDeIaSqlite(db, ocorrenciasDaIa);
   const painelDeIa = new ServicoPainelDeIa({
     controle: controleDaIa,
-    leitor: new LeitorDeUsoDeIaSqlite(db, ocorrenciasDaIa),
+    leitor: leitorDeUsoDaIa,
     clock: relogioDoPainel,
   });
+  const MODELO_PADRAO_DOS_TESTES = 'deepseek/deepseek-v4-flash';
+  const relogioDosModelos: Clock = opcoes.modelosDeIa?.clock ?? relogioDoPainel;
+  const modelosDeIa = new ServicoModelosDeIa({
+    repositorio: new RepositorioDeModelosDeIaSqlite(db),
+    testes: new RepositorioDeTestesDeModeloSqlite(db),
+    catalogo: opcoes.modelosDeIa?.catalogo ?? CATALOGO_DE_MODELOS,
+    doAmbiente: {
+      ato: opcoes.modelosDeIa?.doAmbiente?.ato ?? MODELO_PADRAO_DOS_TESTES,
+      resumo: opcoes.modelosDeIa?.doAmbiente?.resumo ?? MODELO_PADRAO_DOS_TESTES,
+      peca: opcoes.modelosDeIa?.doAmbiente?.peca ?? MODELO_PADRAO_DOS_TESTES,
+    },
+    leitor: leitorDeUsoDaIa,
+    clock: relogioDosModelos,
+    logger: loggerSilencioso,
+    ocorrencias: ocorrenciasDaIa,
+    // Sem cache nos testes: a mudança no painel vale na chamada seguinte.
+    validadeDoCacheMs: 0,
+  });
+  const testeDeModelo = new ServicoTesteDeModelo({
+    executor: opcoes.modelosDeIa?.executor,
+    modelos: modelosDeIa,
+    testes: new RepositorioDeTestesDeModeloSqlite(db),
+    registro: new RepositorioDeModelosDeIaSqlite(db),
+    clock: relogioDosModelos,
+    logger: loggerSilencioso,
+    novoId: opcoes.modelosDeIa?.novoId ?? (() => randomUUID()),
+    ...(opcoes.modelosDeIa?.tetoUsd !== undefined ? { tetoUsd: opcoes.modelosDeIa.tetoUsd } : {}),
+  });
+  testeDeModelo.recuperarNoArranque();
   // Como em produção (v0.52.0): a análise de ato, o resumo e a peça gastam do MESMO teto por conta.
   const tetoCompartilhado = new TetoDiario(
     opcoes.analiseIa?.porDia ?? Number.MAX_SAFE_INTEGER,
@@ -684,6 +735,8 @@ export function aplicacaoDeTeste(
     agendadorResumoDoCalendario: undefined,
     controleDaIa,
     painelDeIa,
+    modelosDeIa,
+    testeDeModelo,
     agendadorAlertaDeCustoDaIa: undefined,
     custos,
     custosPorCliente,

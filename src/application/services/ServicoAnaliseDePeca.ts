@@ -110,8 +110,11 @@ export interface OpcoesServicoAnaliseDePeca {
   readonly liberacao: LiberacaoDaAnaliseDePeca;
   /** Siglas dos tribunais com peça: hoje só o TJGO. */
   readonly tribunais: readonly string[];
-  /** O modelo que a configuração pede (gravado junto, para o reaproveitamento). */
-  readonly modelo: string;
+  /**
+   * O modelo que a configuração pede (gravado junto, para o reaproveitamento). Função desde a Fase B do
+   * painel de IA (v0.60.0): o modelo pode mudar pelo painel, e o reaproveitamento tem de olhar o de agora.
+   */
+  readonly modelo: string | (() => string);
   readonly resultadoDias: number;
   readonly clock: Clock;
   readonly logger: Logger;
@@ -292,7 +295,7 @@ export class ServicoAnaliseDePeca {
         pecaId,
         hashDosBytes,
         versaoPrompt: VERSAO_PROMPT_DA_PECA,
-        modeloPedido: this.o.modelo,
+        modeloPedido: this.modeloPedido(),
       },
       agora,
     );
@@ -320,6 +323,10 @@ export class ServicoAnaliseDePeca {
     } finally {
       vaga.liberar();
     }
+  }
+
+  private modeloPedido(): string {
+    return typeof this.o.modelo === 'function' ? this.o.modelo() : this.o.modelo;
   }
 
   private async extrair(bytes: Uint8Array): Promise<TextoExtraido> {
@@ -417,7 +424,7 @@ export class ServicoAnaliseDePeca {
         provedor: bruta.provedor,
         criadaEm,
       },
-      modeloPedido: this.o.modelo,
+      modeloPedido: this.modeloPedido(),
       medidas: {
         latenciaMs,
         ...(bruta.tokensEntrada !== undefined

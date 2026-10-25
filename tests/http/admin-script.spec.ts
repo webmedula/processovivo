@@ -2,6 +2,7 @@ import { Linter } from 'eslint';
 import globals from 'globals';
 import { describe, expect, it } from 'vitest';
 import { SCRIPT_IA_ADMIN } from '../../src/main/http/ui/iaAdmin.js';
+import { SCRIPT_IA_ADMIN_MODELOS } from '../../src/main/http/ui/iaAdminModelos.js';
 import { SCRIPT_ADMIN } from '../../src/main/http/ui/scriptAdmin.js';
 
 /*
@@ -14,6 +15,7 @@ import { SCRIPT_ADMIN } from '../../src/main/http/ui/scriptAdmin.js';
 describe.each([
   ['da administração', SCRIPT_ADMIN],
   ['da tela de IA (v0.58.0)', SCRIPT_IA_ADMIN],
+  ['dos modelos da tela de IA (v0.60.0)', SCRIPT_IA_ADMIN_MODELOS],
 ])('área administrativa — o JavaScript %s', (_nome, SCRIPT) => {
   const linter = new Linter();
 

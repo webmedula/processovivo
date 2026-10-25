@@ -40,6 +40,8 @@ export interface PainelDaFuncao extends EstadoDaFuncao {
   readonly taxaNaoVerificado: number | undefined;
   readonly chamadasQueFalharam: number;
   readonly repeticoesAutomaticas: number;
+  /** Fase B (v0.60.0): as mesmas métricas quebradas pelo modelo que serviu cada análise (mais usado primeiro). */
+  readonly porModelo: ReadonlyArray<{ readonly modelo: string; readonly metricas: MetricasDoConjunto }>;
   readonly falhasDeVerificacao: ReadonlyArray<{
     readonly motivo: MotivoDeOcorrenciaDaIa;
     readonly contagem: number;
@@ -109,6 +111,8 @@ export class ServicoPainelDeIa {
         porConta.set(l.workspace, (porConta.get(l.workspace) ?? 0) + 1);
       }
       const metricas = metricasDoConjunto(linhas);
+      const porModelo = new Map<string, typeof linhas>();
+      for (const l of linhas) porModelo.set(l.modelo, [...(porModelo.get(l.modelo) ?? []), l]);
       const doFuncao = ocorrencias.filter((x) => x.funcao === estado.funcao);
       const total = (m: MotivoDeOcorrenciaDaIa): number =>
         doFuncao.find((x) => x.motivo === m)?.contagem ?? 0;
@@ -122,8 +126,12 @@ export class ServicoPainelDeIa {
         taxaNaoVerificado: taxa(metricas.naoVerificadas, metricas.analises),
         chamadasQueFalharam,
         repeticoesAutomaticas: total('repeticao_automatica'),
+        porModelo: [...porModelo.entries()]
+          .map(([modelo, ls]) => ({ modelo, metricas: metricasDoConjunto(ls) }))
+          .sort((a, b) => b.metricas.analises - a.metricas.analises || a.modelo.localeCompare(b.modelo)),
         falhasDeVerificacao: MOTIVOS_DE_OCORRENCIA_DA_IA.filter(
-          (m) => m !== 'repeticao_automatica' && total(m) > 0,
+          (m) =>
+            m !== 'repeticao_automatica' && m !== 'modelo_do_painel_invalido' && total(m) > 0,
         ).map((m) => ({ motivo: m, contagem: total(m) })),
       } satisfies PainelDaFuncao;
     });

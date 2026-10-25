@@ -9,6 +9,7 @@ import { NOME_DO_OPENROUTER } from './endpointsZdr.js';
 import {
   ModeloComZdr,
   TTL_DA_LISTA_ZDR_MS,
+  type ExecutorDeModelo,
   type OpcoesDoModeloComZdr,
 } from './ModeloComZdr.js';
 
@@ -20,7 +21,7 @@ export { TTL_DA_LISTA_ZDR_MS };
  * só.
  */
 export type OpcoesDoAnalisadorOpenRouter =
-  OpcoesDoModeloComZdr | { readonly modeloZdr: ModeloComZdr };
+  OpcoesDoModeloComZdr | { readonly modeloZdr: ExecutorDeModelo };
 
 /**
  * Adaptador de análise de ato sobre o OpenRouter. A ZDR falha FECHADA e não tem chave
@@ -30,7 +31,7 @@ export type OpcoesDoAnalisadorOpenRouter =
  */
 export class OpenRouterAnalisadorDeAto implements AnalisadorDeAto {
   readonly nome = NOME_DO_OPENROUTER;
-  private readonly modelo: ModeloComZdr;
+  private readonly modelo: ExecutorDeModelo;
 
   constructor(o: OpcoesDoAnalisadorOpenRouter) {
     this.modelo = 'modeloZdr' in o ? o.modeloZdr : new ModeloComZdr(o);
