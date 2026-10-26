@@ -1,6 +1,6 @@
 # Painel de IA no /admin — especificação v1.0.0 (Fase A) e Fase B
 
-Versão do produto: **0.58.0** (Fase A) e **0.60.0** (Fase B, seção 15). Decisões do dono. Este documento descreve o que cada fase **faz** e o que deixa **de propósito para depois**.
+Versão do produto: **0.58.0** (Fase A) e **0.60.0** (Fase B, seção 15) e **0.61.0** (Fase C, seção 16). Decisões do dono. Este documento descreve o que cada fase **faz** e o que deixa **de propósito para depois**.
 
 ## 1. Objetivo
 
@@ -25,12 +25,12 @@ A Fase A **não muda** modelo, prompts, verificação, ZDR, redação, planos, p
 
 ## 4. Precedência
 
-| Ambiente permite? | Painel | Resultado |
-|---|---|---|
-| não | ligado | **desligada** (e o pedido de ligar é recusado: `ambiente_bloqueia`) |
-| não | desligado | desligada |
-| sim | desligado | **desligada** |
-| sim | ligado | **ligada** |
+| Ambiente permite? | Painel    | Resultado                                                           |
+| ----------------- | --------- | ------------------------------------------------------------------- |
+| não               | ligado    | **desligada** (e o pedido de ligar é recusado: `ambiente_bloqueia`) |
+| não               | desligado | desligada                                                           |
+| sim               | desligado | **desligada**                                                       |
+| sim               | ligado    | **ligada**                                                          |
 
 "Ambiente permite": `ato` e `resumo` = `PROCESSOVIVO_IA_HABILITADA=true`; `peca` = isso **e** (`PROCESSOVIVO_IA_PECAS_HABILITADA=true` ou ao menos um id em `PROCESSOVIVO_IA_PECAS_WORKSPACES`) **e** a Pasta digital de pé.
 
@@ -48,12 +48,12 @@ O dia é o de **São Paulo** (-03:00 fixo), o mesmo do teto técnico e do calend
 
 ## 6. Dados (tabelas novas, aditivas, sem retrocarga)
 
-| Tabela | Conteúdo |
-|---|---|
-| `ia_config` | uma linha por função (`ato`, `resumo`, `peca`: `ligada`, `teto_dia_conta`) e a linha `global` (`teto_dia_global`, `alerta_custo_dia_usd`), com `atualizado_em`. **Linha ausente = padrão.** |
-| `ia_alteracoes` | **só acréscimo.** `em`, `autor` (id curto), `funcao` (`ato`/`resumo`/`peca`/`global`), `tipo` (`ligada`/`teto_dia_conta`/`teto_dia_global`/`alerta_custo`), `valor_anterior`, `valor_novo` (valores simples: "ligada", "desligada", "200", "sem teto", "3.00"). Gravada na **mesma transação** da mudança. |
-| `ia_alertas_custo` | `dia` (PK), `valor_usd`, `limite_usd`, `tentativas`, `enviado_em`. |
-| `ia_ocorrencias_dia` | contagem por `dia`, `funcao`, `motivo` (lista fechada). |
+| Tabela               | Conteúdo                                                                                                                                                                                                                                                                                                   |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ia_config`          | uma linha por função (`ato`, `resumo`, `peca`: `ligada`, `teto_dia_conta`) e a linha `global` (`teto_dia_global`, `alerta_custo_dia_usd`), com `atualizado_em`. **Linha ausente = padrão.**                                                                                                                |
+| `ia_alteracoes`      | **só acréscimo.** `em`, `autor` (id curto), `funcao` (`ato`/`resumo`/`peca`/`global`), `tipo` (`ligada`/`teto_dia_conta`/`teto_dia_global`/`alerta_custo`), `valor_anterior`, `valor_novo` (valores simples: "ligada", "desligada", "200", "sem teto", "3.00"). Gravada na **mesma transação** da mudança. |
+| `ia_alertas_custo`   | `dia` (PK), `valor_usd`, `limite_usd`, `tentativas`, `enviado_em`.                                                                                                                                                                                                                                         |
+| `ia_ocorrencias_dia` | contagem por `dia`, `funcao`, `motivo` (lista fechada).                                                                                                                                                                                                                                                    |
 
 As métricas de uso vêm das tabelas que já existiam — `analises_ia`, `resumos_ia`, `analises_pecas_ia` — lidas **sem o conteúdo do resultado** (só o campo `estado`). A tabela da peça apaga a linha em 30 dias; a série da peça é a das vigentes.
 
@@ -73,14 +73,14 @@ Ligar de novo restaura. **Desligar** exige a confirmação na tela **e** `confir
 
 ## 8. API (todas sob o Basic Auth do /admin; 501 sem credenciais configuradas)
 
-| Rota | O que faz |
-|---|---|
-| `GET /admin/api/ia?periodo=hoje\|7d\|30d` | painel completo (funções, métricas, contas, custo do dia, últimas 50 mudanças) |
-| `GET /admin/api/ia/alerta` | `{ usd, alertaUsd, acima }` — alimenta o aviso de qualquer aba |
-| `PUT /admin/api/ia/alerta` `{ valorUsd }` | limite do alerta (US$ 0,01–10.000) |
-| `PUT /admin/api/ia/funcoes/:funcao` `{ ligada, confirmado? }` | liga/desliga |
-| `PUT /admin/api/ia/funcoes/:funcao/teto` `{ teto: inteiro 1–100.000 \| null }` | teto da função |
-| `PUT /admin/api/ia/teto-global` `{ teto: inteiro 1–100.000 \| null }` | teto global do dia |
+| Rota                                                                           | O que faz                                                                      |
+| ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------ |
+| `GET /admin/api/ia?periodo=hoje\|7d\|30d`                                      | painel completo (funções, métricas, contas, custo do dia, últimas 50 mudanças) |
+| `GET /admin/api/ia/alerta`                                                     | `{ usd, alertaUsd, acima }` — alimenta o aviso de qualquer aba                 |
+| `PUT /admin/api/ia/alerta` `{ valorUsd }`                                      | limite do alerta (US$ 0,01–10.000)                                             |
+| `PUT /admin/api/ia/funcoes/:funcao` `{ ligada, confirmado? }`                  | liga/desliga                                                                   |
+| `PUT /admin/api/ia/funcoes/:funcao/teto` `{ teto: inteiro 1–100.000 \| null }` | teto da função                                                                 |
+| `PUT /admin/api/ia/teto-global` `{ teto: inteiro 1–100.000 \| null }`          | teto global do dia                                                             |
 
 Erros: `ConfiguracaoDeIaRecusadaError` — `funcao_desconhecida` e `valor_invalido` (400), `confirmacao_necessaria` e `ambiente_bloqueia` (409). A mensagem nunca repete o valor recebido.
 
@@ -112,7 +112,6 @@ Nada disso entra sem decisão do dono; a segurança continua fora do painel em t
 ## 14. Verificação
 
 Testes sem rede e sem tempo real: precedência e falha segura; as três funções desligadas (zero chamadas, zero consumo, frase, reativação); segurança do acesso; registro de mudanças; métricas e percentis; igualdade painel × relatório; alerta (uma vez por dia, virada do dia, falha e três tentativas); ausência de dado sensível nas respostas; e, no Chromium, a tela (teclado, confirmação, foco, axe nos dois temas, seis larguras).
-
 
 ---
 
@@ -150,17 +149,17 @@ Cada item: `id` (real, sem `~` nem `:`), `provedor`, `apelido`, `confirmacao`, `
 
 ### 15.5 As regras do veredito (constantes no código; a tela as mostra)
 
-| Classe | Regra | Efeito |
-|---|---|---|
-| Bloqueio duro | modelo sem ZDR confirmado | não publica, sem aprovação manual |
-| Bloqueio duro | violações (prazo calculado, valor, data ou nome inventado) acima das do modelo atual **na mesma rodada** | idem |
-| Bloqueio duro | citação verificada abaixo de **95%** em termos absolutos (94,9% bloqueia; 95% passa) | idem |
-| Bloqueio duro | falhas de formato acima das do atual em mais de **2,0 pontos percentuais** (2,0 passa) | idem |
-| Bloqueio duro | teste incompleto, interrompido ou com erro do provedor; métrica que não pôde ser medida | idem |
-| Queda tolerável | pontos obrigatórios com queda de até **3,0 pontos percentuais** | `aprovado_com_ressalva` |
-| Queda tolerável | latência p95 até **+30%** | idem |
-| Queda tolerável | custo médio por chamada maior (qualquer valor), com o impacto estimado por dia no volume dos últimos 30 dias | idem |
-| Tudo igual ou melhor | — | `aprovado` |
+| Classe               | Regra                                                                                                        | Efeito                            |
+| -------------------- | ------------------------------------------------------------------------------------------------------------ | --------------------------------- |
+| Bloqueio duro        | modelo sem ZDR confirmado                                                                                    | não publica, sem aprovação manual |
+| Bloqueio duro        | violações (prazo calculado, valor, data ou nome inventado) acima das do modelo atual **na mesma rodada**     | idem                              |
+| Bloqueio duro        | citação verificada abaixo de **95%** em termos absolutos (94,9% bloqueia; 95% passa)                         | idem                              |
+| Bloqueio duro        | falhas de formato acima das do atual em mais de **2,0 pontos percentuais** (2,0 passa)                       | idem                              |
+| Bloqueio duro        | teste incompleto, interrompido ou com erro do provedor; métrica que não pôde ser medida                      | idem                              |
+| Queda tolerável      | pontos obrigatórios com queda de até **3,0 pontos percentuais**                                              | `aprovado_com_ressalva`           |
+| Queda tolerável      | latência p95 até **+30%**                                                                                    | idem                              |
+| Queda tolerável      | custo médio por chamada maior (qualquer valor), com o impacto estimado por dia no volume dos últimos 30 dias | idem                              |
+| Tudo igual ou melhor | —                                                                                                            | `aprovado`                        |
 
 Decisões de leitura (registradas): (a) passar dos limites tolerados (queda de pontos > 3,0 pontos; latência p95 > +30%) **também bloqueia** — a "queda tolerável" é, por definição, a que está dentro do limite; (b) qualquer piora **dentro** do limite (inclusive citação menor que a do atual ainda ≥ 95%, e falhas de formato até +2,0 pontos) vira ressalva, para o "aprovado" significar de fato "igual ou melhor"; (c) custo não medido exige aprovação (não bloqueia). O veredito é **recalculado** das métricas guardadas na hora de publicar.
 
@@ -172,12 +171,12 @@ Decisões de leitura (registradas): (a) passar dos limites tolerados (queda de p
 
 ### 15.7 Dados (aditivos; sem remoção nem renomeação)
 
-| Onde | O quê |
-|---|---|
-| `ia_config` | colunas `modelo`, `modelo_anterior`, `modelo_desde` (nulas = vale o ambiente) |
-| `ia_alteracoes` | colunas `teste_id` e `aprovacao`; tipos novos `modelo_publicado`, `modelo_revertido`, `teste_modelo_iniciado` |
-| `ia_testes_modelo` | id, função, candidato, referência, estado (`na_fila` \| `executando` \| `concluido` \| `falhou` \| `cancelado`), instantes, chamadas previstas e feitas, estimativa, gasto, métricas dos dois modelos (JSON de números), veredito, bloqueios e ressalvas (códigos), motivo da falha |
-| `ia_ocorrencias_dia` | novo motivo `modelo_do_painel_invalido` (fora da lista de "falhas de verificação" da tela) |
+| Onde                 | O quê                                                                                                                                                                                                                                                                               |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ia_config`          | colunas `modelo`, `modelo_anterior`, `modelo_desde` (nulas = vale o ambiente)                                                                                                                                                                                                       |
+| `ia_alteracoes`      | colunas `teste_id` e `aprovacao`; tipos novos `modelo_publicado`, `modelo_revertido`, `teste_modelo_iniciado`                                                                                                                                                                       |
+| `ia_testes_modelo`   | id, função, candidato, referência, estado (`na_fila` \| `executando` \| `concluido` \| `falhou` \| `cancelado`), instantes, chamadas previstas e feitas, estimativa, gasto, métricas dos dois modelos (JSON de números), veredito, bloqueios e ressalvas (códigos), motivo da falha |
+| `ia_ocorrencias_dia` | novo motivo `modelo_do_painel_invalido` (fora da lista de "falhas de verificação" da tela)                                                                                                                                                                                          |
 
 ### 15.8 API (todas sob o Basic Auth do /admin)
 
@@ -195,4 +194,45 @@ Sem rede e sem tempo real: matriz do veredito nos limites exatos; lista permitid
 
 - **Lista inicial só com o modelo de produção, como `pendente`:** preço e ZDR de lista não foram confirmados (fonte inalcançável a partir do ambiente de desenvolvimento) e a regra do dono é não inventar. Por isso, **até a primeira PR que registre um modelo confirmado, o seletor não oferece candidato**.
 - O comparador manual de peças usa o prompt da Fase 0; o teste do painel usa o de produção (`peca-1.1.0`).
-- Fases C e D seguem **futuro, não implementado**.
+- Fase C implementada na v0.61.0 (seção 16); Fase D segue **futuro, não implementada**.
+
+---
+
+## 16. Fase C (v0.61.0): instruções de interpretação editáveis, experimento em caso real, publicar e reverter
+
+Histórico: **v1.1.0 (26/10/2026)** — foco em melhorar a interpretação (experimentar em caso real, lado a lado); testes sintéticos viram opcionais e sem bloqueio; removidos veredito obrigatório, janela de 24 h e verificador de instruções hostis. v1.0.0 — primeira versão, com trava de teste obrigatório (substituída).
+
+**O que muda para o operador:** na tela "IA", uma seção por função (`ato`, `resumo`, `peca`) para escrever as instruções de interpretação, ver o prompt montado, experimentar num caso real (publicada × rascunho, lado a lado), publicar e reverter. **O que não muda:** modelo em produção e lista da Fase B, parte fixa dos prompts, esquema de saída, verificação de citação, ZDR, redação, segredo de justiça, planos, preços, `exigir()`, política, termos, calendário, e-mails e o comportamento das Fases A e B.
+
+### 16.1 Fronteira fixo × editável
+
+- **Fixo (no código):** as REGRAS (dado × instrução, só JSON, citação literal, nunca calcular prazo nem converter dias em data, nada de mérito/tese/estratégia, marcadores entre colchetes, "indeterminado" é resposta válida, regras do ato mais recente e das providências do sistema no resumo, verbos neutros e ato do juízo na peça) e os CAMPOS (nomes, tipos, limites de tamanho, o que leva citação). Também fora de alcance da tela: redação, verificação, segredo de justiça, ZDR, modelo e plano.
+- **Editável:** o bloco de **interpretação** — foco, prioridade, tom, tamanho, exemplos de bom resultado, o que considerar relevante em cada tipo de ato ou peça. O **estilo padrão** que já está na parte fixa ("português simples", "seja direto e curto", ordem do mais recente ao mais antigo, "linguagem de advogado") pode ser sobreposto pelo bloco.
+- **Conflito:** com o estilo padrão, vale o bloco; com as REGRAS ou os CAMPOS, valem as REGRAS e os CAMPOS (o bloco diz isso e o lembrete final repete).
+- **Montagem** (`montarPrompt`): parte fixa → `INSTRUÇÕES DE INTERPRETAÇÃO DO ESCRITÓRIO …` + texto → `LEMBRETE FINAL`. Texto vazio = só a parte fixa, sem lembrete: prompt idêntico ao anterior (`+e0`). O formato da resposta que o transporte acrescenta vem depois, como sempre.
+
+### 16.2 Ciclo e regras
+
+1. **Rascunho:** um por função; salvar cria a edição seguinte (`e1`, `e2`…, nunca reaproveitada) ou atualiza o rascunho existente. Salvar não muda nada em produção.
+2. **Publicar:** só o rascunho salvo; uma confirmação; recusa apenas texto acima de **4.000 caracteres** e texto vazio. A edição anterior vira `substituida`. Vale na hora (o cache de 5 s é limpo).
+3. **Reverter:** uma confirmação; volta à edição anterior, ou ao padrão `+e0` se não houver; também registrado. Sem nada publicado, recusa.
+4. **Versão efetiva** gravada em cada resultado (`ato-1.2.0+e1`; sem sufixo para `+e0`); a chave de reaproveitamento da análise de peça inclui a versão.
+5. **Registro** (`ia_alteracoes`): `instrucoes_publicadas` e `instrucoes_revertidas`, com a edição antes e depois; o texto fica em `ia_instrucoes`.
+6. **Falha de leitura** = prompt padrão, sem erro ao usuário.
+
+### 16.3 Experimentar num caso real
+
+Caminho escolhido (o mais simples): **o dono escolhe numa lista os processos da própria conta** (a do e-mail do operador) e, conforme a função, **o ato** (lista de atos do processo, marcando os sem texto suficiente), **o processo inteiro** (resumo) ou **a peça** (só as que estão na guarda de 24 h da Pasta digital). Roda a instrução publicada e o rascunho (o texto da caixa, salvo ou não) pelo **mesmo caminho de produção** — redação, modelo com ZDR, verificação, segredo de justiça —, sem plano, teto de assinantes nem ocorrências, e **sem gravar nada**. Mostra as duas respostas completas, citações, descartes da verificação, tempo, custo, tokens e modelo. Só o operador; um por vez; no máximo 30 por hora.
+
+### 16.4 Conjunto de verificação (opcional, não bloqueia)
+
+Mesmo conjunto sintético da Fase B, duas vezes no modelo em uso (publicada × rascunho), com estimativa e confirmação, teto de US$ 1,00, um por vez e cancelamento. Os avisos de piora usam a mesma conta do veredito da Fase B, mas **só informam**.
+
+### 16.5 "Onde a IA erra"
+
+Polegares por edição (`+e0`, `+e1`…) e os polegares para baixo mais recentes, com motivo de lista fechada, modelo e 8 caracteres da conta; nunca o conteúdo.
+
+### 16.6 Divergências registradas
+
+- A versão sem instrução é gravada **sem sufixo** (não `+e0`): preserva o que já está gravado e a chave de reaproveitamento; a tela mostra `+e0`.
+- Fase D (canário) segue **futuro, não implementada**.

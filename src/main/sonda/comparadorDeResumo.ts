@@ -86,6 +86,7 @@ interface Preparado {
 export function prepararCasoDeResumo(
   caso: CasoDeResumo,
   versao: VersaoDoPromptDoResumo,
+  instrucao?: string,
 ): Preparado {
   const movs = movimentacoesDoCaso(caso);
   const pendentes = new Set(
@@ -106,7 +107,7 @@ export function prepararCasoDeResumo(
     selecao,
     { tribunal: 'TJGO', ...(caso.classe ? { classe: caso.classe } : {}) },
     {},
-    { versao },
+    { versao, ...(instrucao ? { instrucao } : {}) },
   );
   return { caso, versao, selecao, entrada };
 }
@@ -242,6 +243,8 @@ export interface OpcoesDoComparadorDeResumo {
   readonly dormir?: (ms: number) => Promise<void>;
   readonly progresso?: (linha: string) => void;
   readonly teto?: TransporteComTeto;
+  /** O bloco de instruções do operador (Fase C) a medir. Ausente = o prompt de sempre. */
+  readonly instrucao?: string;
 }
 
 export interface DetalheDoResumo {
@@ -300,7 +303,7 @@ export async function compararResumos(
   for (const c of op.casos) {
     for (const v of op.versoes) {
       const id = idDoCasoNaSonda(c, v);
-      preparados.set(id, prepararCasoDeResumo(c, v));
+      preparados.set(id, prepararCasoDeResumo(c, v, op.instrucao));
       casosDaSonda.push({
         id,
         origem: 'sintetico',

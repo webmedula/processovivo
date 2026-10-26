@@ -122,6 +122,8 @@ interface LinhaDoTeste {
   bloqueios: string;
   ressalvas: string;
   falha: string | null;
+  tipo: string | null;
+  instrucao_versao: number | null;
 }
 
 const ESTADOS: readonly EstadoDoTeste[] = [
@@ -171,6 +173,10 @@ function paraTeste(l: LinhaDoTeste): TesteDeModelo | undefined {
   const terminado = dataOuUndefined(l.terminado_em);
   return {
     id: l.id,
+    tipo: l.tipo === 'instrucoes' ? 'instrucoes' : 'modelo',
+    ...(l.instrucao_versao !== null && l.instrucao_versao !== undefined
+      ? { instrucaoVersao: Number(l.instrucao_versao) }
+      : {}),
     funcao: l.funcao as FuncaoDeIa,
     candidato: l.candidato,
     referencia: l.referencia,
@@ -201,8 +207,8 @@ export class RepositorioDeTestesDeModeloSqlite implements RepositorioDeTestesDeM
       .prepare(
         `INSERT INTO ia_testes_modelo
            (id, funcao, candidato, referencia, estado, autor, criado_em,
-            chamadas_previstas, chamadas_feitas, estimativa_usd, bloqueios, ressalvas)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, '[]', '[]')`,
+            chamadas_previstas, chamadas_feitas, estimativa_usd, bloqueios, ressalvas, tipo, instrucao_versao)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, '[]', '[]', ?, ?)`,
       )
       .run(
         t.id,
@@ -214,6 +220,8 @@ export class RepositorioDeTestesDeModeloSqlite implements RepositorioDeTestesDeM
         t.criadoEm.toISOString(),
         t.chamadasPrevistas,
         t.estimativaUsd,
+        t.tipo === 'instrucoes' ? 'instrucoes' : null,
+        t.instrucaoVersao ?? null,
       );
   }
 
@@ -255,7 +263,18 @@ export class RepositorioDeTestesDeModeloSqlite implements RepositorioDeTestesDeM
   ultimoDaFuncao(funcao: FuncaoDeIa): TesteDeModelo | undefined {
     const l = this.db
       .prepare(
-        'SELECT * FROM ia_testes_modelo WHERE funcao = ? ORDER BY criado_em DESC, rowid DESC LIMIT 1',
+        `SELECT * FROM ia_testes_modelo WHERE funcao = ? AND COALESCE(tipo, 'modelo') = 'modelo'
+          ORDER BY criado_em DESC, rowid DESC LIMIT 1`,
+      )
+      .get(funcao) as unknown as LinhaDoTeste | undefined;
+    return l ? paraTeste(l) : undefined;
+  }
+
+  ultimoDeInstrucoes(funcao: FuncaoDeIa): TesteDeModelo | undefined {
+    const l = this.db
+      .prepare(
+        `SELECT * FROM ia_testes_modelo WHERE funcao = ? AND tipo = 'instrucoes'
+          ORDER BY criado_em DESC, rowid DESC LIMIT 1`,
       )
       .get(funcao) as unknown as LinhaDoTeste | undefined;
     return l ? paraTeste(l) : undefined;

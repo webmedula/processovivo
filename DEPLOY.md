@@ -1413,3 +1413,22 @@ sobreviva ao deploy, suba um Redis pelo template do Easypanel e implemente a
 porta `Cache` em `infrastructure/cache/RedisCache.ts`: é uma classe nova e uma
 linha trocada no composition root. Veja "Como estender" no
 [CLAUDE.md](./CLAUDE.md).
+
+
+## Painel de IA, Fase C: instruções de interpretação (v0.61.0)
+
+Ajustar **como a IA interpreta** o ato, o processo e a peça — foco, prioridade, tom, tamanho, exemplos — pela tela do `/admin`, **sem deploy**. Sem instrução publicada, nada muda (`+e0`). **Nenhuma variável de ambiente nova.** A parte fixa dos prompts (formato da resposta, citação literal, não calcular prazo nem dar parecer, segredo de justiça, ZDR) continua no código e não é editável.
+
+**Pré-requisitos:** para **experimentar num caso real**, a IA ligada no servidor e **uma conta do Processo Vivo com o mesmo e-mail de `PROCESSOVIVO_ADMIN_EMAIL`** (ou, se vazia, de `PROCESSOVIVO_PAGAMENTO_AVISO_EMAIL`) acompanhando o processo que você quer usar; sem a conta, a tela diz o que falta. Para a peça, abra antes a peça na Pasta digital (a guarda dura 24 h). O **conjunto de verificação** precisa da IA ligada (como o teste de modelo).
+
+### Editar, experimentar, publicar e reverter
+
+1. **Abrir:** `https://SEU-DOMINIO/admin` → aba **IA** → seção **Instruções de interpretação** → escolha a função (aba). Aparece `Em uso: ato-1.2.0+e0` (ou `+eN`).
+2. **Escrever** a instrução (até **4.000 caracteres**; observação curta opcional). **Não cole texto de processos reais nem dados de pessoas:** a instrução vai ao modelo em toda análise. **Salvar rascunho** não muda nada em produção.
+3. **Visualizar prompt montado:** mostra a parte fixa, a sua instrução, o lembrete final, o formato e um exemplo fictício.
+4. **Experimentar num caso real:** escolha o processo (e o ato ou a peça) → **Experimentar**. As duas respostas aparecem lado a lado (publicada × rascunho), com as citações, o que a verificação descartou, tempo e custo. Nada é gravado; o texto do caso só existe na sua tela. **Experimentar em outro caso** não perde o rascunho.
+5. **Publicar:** **Publicar** → **Sim, publicar**. Vale na hora para todas as contas; a próxima análise já grava `+eN`. Só publica o rascunho **salvo**.
+6. **Reverter:** **Reverter** → **Sim, reverter**: volta à versão anterior (ou ao `+e0`). Uma instrução revertida continua no histórico; **Usar como rascunho** a traz de volta ao editor.
+7. **Opcional:** **Rodar conjunto de verificação** (estima o custo e pede confirmação; teto de US$ 1,00; leva alguns minutos) mostra métricas lado a lado e avisos de piora — **não bloqueia** a publicação. **Histórico de versões** compara quaisquer duas versões. **Onde a IA erra** lista os polegares para baixo por versão.
+8. **Sair com rascunho não salvo:** a tela pergunta antes de trocar de aba ou fechar a página.
+9. **Backup:** `ia_instrucoes` fica no mesmo banco (só instruções suas, nunca texto de ato ou peça).

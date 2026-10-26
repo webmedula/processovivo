@@ -3,6 +3,10 @@ import { FAVICON_DATA_URI, LOGO_FUNDO_ESCURO } from './marca.js';
 import { SCRIPT_TEMA } from './pagina.js';
 import { ESTILOS_IA_ADMIN, SCRIPT_IA_ADMIN } from './iaAdmin.js';
 import { ESTILOS_IA_ADMIN_MODELOS, SCRIPT_IA_ADMIN_MODELOS } from './iaAdminModelos.js';
+import {
+  ESTILOS_IA_ADMIN_INSTRUCOES,
+  SCRIPT_IA_ADMIN_INSTRUCOES,
+} from './iaAdminInstrucoes.js';
 import { SCRIPT_ADMIN } from './scriptAdmin.js';
 
 /**
@@ -38,7 +42,7 @@ export function paginaAdmin(versao: string): string {
 <title>Processo Vivo — administração</title>
 <link rel="icon" type="image/svg+xml" href="${FAVICON_DATA_URI}">
 <script>${SCRIPT_TEMA}</script>
-<style>${ESTILOS}${ESTILOS_ADMIN}${ESTILOS_IA_ADMIN}${ESTILOS_IA_ADMIN_MODELOS}</style>
+<style>${ESTILOS}${ESTILOS_ADMIN}${ESTILOS_IA_ADMIN}${ESTILOS_IA_ADMIN_MODELOS}${ESTILOS_IA_ADMIN_INSTRUCOES}</style>
 </head>
 <body>
 
@@ -67,6 +71,7 @@ export function paginaAdmin(versao: string): string {
 
 <script>${SCRIPT_IA_ADMIN}</script>
 <script>${SCRIPT_IA_ADMIN_MODELOS}</script>
+<script>${SCRIPT_IA_ADMIN_INSTRUCOES}</script>
 <script>${SCRIPT_ADMIN}</script>
 </body>
 </html>`;

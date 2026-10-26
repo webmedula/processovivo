@@ -9,6 +9,7 @@ import {
   AnaliseDePecaRecusadaError,
   ConfiguracaoDeIaRecusadaError,
   ModeloDeIaRecusadoError,
+  InstrucaoDeIaRecusadaError,
   PrazoNaoCalculavelError,
   DriveRecusadoError,
   AssinaturaDeWebhookInvalidaError,
@@ -70,10 +71,13 @@ export interface RespostaDeErro {
 /** A frase de cada motivo da falha do gateway (v0.45.1). Nossa, nunca do gateway. */
 const FRASE_DO_GATEWAY: Readonly<Record<MotivoDoGateway, string>> = {
   email_pagador: 'O Mercado Pago não aceitou o e-mail informado para o pagamento.',
-  credencial: 'O serviço de pagamento está com um problema de configuração do nosso lado.',
+  credencial:
+    'O serviço de pagamento está com um problema de configuração do nosso lado.',
   parametro_invalido: 'O Mercado Pago não aceitou os dados do pedido de pagamento.',
-  indisponivel: 'O serviço de pagamento está indisponível no momento. Tente novamente em instantes.',
-  desconhecido: 'O Mercado Pago recusou o pedido por um motivo que não foi possível identificar.',
+  indisponivel:
+    'O serviço de pagamento está indisponível no momento. Tente novamente em instantes.',
+  desconhecido:
+    'O Mercado Pago recusou o pedido por um motivo que não foi possível identificar.',
 };
 
 /**
@@ -203,7 +207,11 @@ export function mapearErro(erro: unknown): RespostaDeErro {
     };
     return {
       status: status[erro.motivo],
-      corpo: { erro: erro.codigo, mensagem: erro.message, detalhes: { motivo: erro.motivo } },
+      corpo: {
+        erro: erro.codigo,
+        mensagem: erro.message,
+        detalhes: { motivo: erro.motivo },
+      },
     };
   }
 
@@ -217,7 +225,11 @@ export function mapearErro(erro: unknown): RespostaDeErro {
     };
     return {
       status: status[erro.motivo],
-      corpo: { erro: erro.codigo, mensagem: erro.message, detalhes: { motivo: erro.motivo } },
+      corpo: {
+        erro: erro.codigo,
+        mensagem: erro.message,
+        detalhes: { motivo: erro.motivo },
+      },
     };
   }
 
@@ -244,7 +256,47 @@ export function mapearErro(erro: unknown): RespostaDeErro {
     };
     return {
       status: status[erro.motivo],
-      corpo: { erro: erro.codigo, mensagem: erro.message, detalhes: { motivo: erro.motivo } },
+      corpo: {
+        erro: erro.codigo,
+        mensagem: erro.message,
+        detalhes: { motivo: erro.motivo },
+      },
+    };
+  }
+
+  // Painel de IA do /admin, Fase C (v0.61.0): instruções, experimento e conjunto de verificação recusados.
+  if (erro instanceof InstrucaoDeIaRecusadaError) {
+    const status: Record<InstrucaoDeIaRecusadaError['motivo'], number> = {
+      funcao_desconhecida: 400,
+      observacao_invalida: 400,
+      versoes_invalidas: 400,
+      caso_invalido: 400,
+      versao_inexistente: 404,
+      caso_nao_encontrado: 404,
+      verificacao_nao_encontrada: 404,
+      caso_sigiloso: 403,
+      texto_vazio: 422,
+      texto_grande: 422,
+      caso_sem_texto: 422,
+      estimativa_acima_do_teto: 422,
+      limite_de_experimentos: 429,
+      experimento_indisponivel: 503,
+      verificacao_indisponivel: 503,
+      confirmacao_necessaria: 409,
+      rascunho_inexistente: 409,
+      rascunho_mudou: 409,
+      nada_para_reverter: 409,
+      conta_do_dono_ausente: 409,
+      experimento_em_andamento: 409,
+      verificacao_em_andamento: 409,
+    };
+    return {
+      status: status[erro.motivo],
+      corpo: {
+        erro: erro.codigo,
+        mensagem: erro.message,
+        detalhes: { motivo: erro.motivo },
+      },
     };
   }
 
@@ -264,7 +316,11 @@ export function mapearErro(erro: unknown): RespostaDeErro {
     };
     return {
       status: status[erro.motivo],
-      corpo: { erro: erro.codigo, mensagem: erro.message, detalhes: { motivo: erro.motivo } },
+      corpo: {
+        erro: erro.codigo,
+        mensagem: erro.message,
+        detalhes: { motivo: erro.motivo },
+      },
     };
   }
 
@@ -289,7 +345,11 @@ export function mapearErro(erro: unknown): RespostaDeErro {
     };
     return {
       status: status[erro.motivo],
-      corpo: { erro: erro.codigo, mensagem: erro.message, detalhes: { motivo: erro.motivo } },
+      corpo: {
+        erro: erro.codigo,
+        mensagem: erro.message,
+        detalhes: { motivo: erro.motivo },
+      },
     };
   }
   // v0.45.1: sempre JSON e sempre com um motivo de lista fechada. 422 = o gateway RECUSOU o pedido;
@@ -320,10 +380,18 @@ export function mapearErro(erro: unknown): RespostaDeErro {
   // Comprovantes de custo (v0.49.0): o corpo traz `motivo` para a tela escolher a frase. A mensagem é
   // do sistema (nunca do Google, nunca o nome do arquivo).
   if (erro instanceof ComprovanteInvalidoError) {
-    const status = { arquivo_vazio: 400, arquivo_grande: 413, tipo_nao_aceito: 415 } as const;
+    const status = {
+      arquivo_vazio: 400,
+      arquivo_grande: 413,
+      tipo_nao_aceito: 415,
+    } as const;
     return {
       status: status[erro.motivo],
-      corpo: { erro: erro.codigo, mensagem: erro.message, detalhes: { motivo: erro.motivo } },
+      corpo: {
+        erro: erro.codigo,
+        mensagem: erro.message,
+        detalhes: { motivo: erro.motivo },
+      },
     };
   }
   if (erro instanceof ComprovanteNaoEnviadoError) {
@@ -335,7 +403,11 @@ export function mapearErro(erro: unknown): RespostaDeErro {
     } as const;
     return {
       status: status[erro.motivo],
-      corpo: { erro: erro.codigo, mensagem: erro.message, detalhes: { motivo: erro.motivo } },
+      corpo: {
+        erro: erro.codigo,
+        mensagem: erro.message,
+        detalhes: { motivo: erro.motivo },
+      },
     };
   }
 
@@ -343,7 +415,11 @@ export function mapearErro(erro: unknown): RespostaDeErro {
   if (erro instanceof LimiteDeCustosError) {
     return {
       status: 422,
-      corpo: { erro: erro.codigo, mensagem: erro.message, detalhes: { limite: erro.limite } },
+      corpo: {
+        erro: erro.codigo,
+        mensagem: erro.message,
+        detalhes: { limite: erro.limite },
+      },
     };
   }
 

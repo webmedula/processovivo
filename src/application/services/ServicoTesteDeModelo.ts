@@ -184,7 +184,10 @@ export class ServicoTesteDeModelo {
 
   emAndamento(): TesteDeModelo | undefined {
     try {
-      return this.o.testes.emAndamento();
+      const t = this.o.testes.emAndamento();
+      // O conjunto de verificação das instruções (Fase C) divide a tabela e o "um por vez", mas é mostrado
+      // na tela dele; aqui só aparece o teste de MODELO.
+      return t?.tipo === 'instrucoes' ? undefined : t;
     } catch {
       return undefined;
     }

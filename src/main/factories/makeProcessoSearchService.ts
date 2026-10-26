@@ -44,6 +44,23 @@ import { ServicoControleDaIa } from '../../application/services/ServicoControleD
 import { ServicoPainelDeIa } from '../../application/services/ServicoPainelDeIa.js';
 import { ServicoModelosDeIa } from '../../application/services/ServicoModelosDeIa.js';
 import { ServicoTesteDeModelo } from '../../application/services/ServicoTesteDeModelo.js';
+import { ServicoInstrucoesDeIa } from '../../application/services/ServicoInstrucoesDeIa.js';
+import { ServicoExperimentoDeInstrucoes } from '../../application/services/ServicoExperimentoDeInstrucoes.js';
+import { ServicoVerificacaoDeInstrucoes } from '../../application/services/ServicoVerificacaoDeInstrucoes.js';
+import { ServicoErrosDeInstrucoes } from '../../application/services/ServicoErrosDeInstrucoes.js';
+import {
+  LeitorDeErrosDeIaSqlite,
+  RepositorioDeInstrucoesDeIaSqlite,
+} from '../../infrastructure/persistencia/sqlite/RepositorioDeInstrucoesDeIaSqlite.js';
+import { INSTRUCAO_DO_SISTEMA } from '../../application/politicas/entradaDoModelo.js';
+import { INSTRUCAO_DO_RESUMO } from '../../application/politicas/entradaDoResumo.js';
+import {
+  INSTRUCAO_DA_PECA,
+  INSTRUCAO_DE_FORMATO_DA_PECA,
+} from '../../application/politicas/entradaDaPeca.js';
+import { INSTRUCAO_DE_FORMATO_DO_RESUMO } from '../../infrastructure/adapters/modelo/esquemaDoResumo.js';
+import { INSTRUCAO_DE_FORMATO_EM_TEXTO } from '../../infrastructure/adapters/modelo/TransporteOpenRouter.js';
+import { normalizarEmail } from '../../domain/entities/Usuario.js';
 import { CATALOGO_DE_MODELOS } from '../../infrastructure/ia/modelos-permitidos.js';
 import { ModeloDaFuncao } from '../../infrastructure/adapters/modelo/ModeloDaFuncao.js';
 import { ExecutorDoTesteDeModeloComSonda } from '../sonda/executorDoTesteDeModelo.js';
@@ -217,6 +234,14 @@ export interface Aplicacao {
   readonly modelosDeIa: ServicoModelosDeIa;
   /** O teste obrigatório antes de publicar; sem chave do provedor, `disponivel` é falso. */
   readonly testeDeModelo: ServicoTesteDeModelo;
+  /** Instruções de interpretação editáveis (Fase C, v0.61.0): publicadas, rascunho, histórico. Existe sempre. */
+  readonly instrucoesDeIa: ServicoInstrucoesDeIa;
+  /** O experimento do operador sobre um caso real da conta dele (rascunho × publicada). */
+  readonly experimentoDeInstrucoes: ServicoExperimentoDeInstrucoes;
+  /** O conjunto de verificação opcional das instruções; sem chave do provedor, `disponivel` é falso. */
+  readonly verificacaoDeInstrucoes: ServicoVerificacaoDeInstrucoes;
+  /** "Onde a IA erra": os polegares por edição das instruções. */
+  readonly errosDeInstrucoes: ServicoErrosDeInstrucoes;
   readonly agendadorAlertaDeCustoDaIa: Agendador | undefined;
   /** Centro de custos do processo (v0.47.0). Sempre montado — só depende do banco. */
   readonly custos: ServicoCustos;
@@ -662,13 +687,34 @@ export function montarAplicacao(config: Config): Aplicacao {
     repositorio: new RepositorioDeModelosDeIaSqlite(db),
     testes: new RepositorioDeTestesDeModeloSqlite(db),
     catalogo: CATALOGO_DE_MODELOS,
-    doAmbiente: { ato: config.ia.modelo, resumo: config.ia.modelo, peca: config.ia.pecas.modelo },
+    doAmbiente: {
+      ato: config.ia.modelo,
+      resumo: config.ia.modelo,
+      peca: config.ia.pecas.modelo,
+    },
     leitor: leitorDeUsoDaIa,
     clock: clockDoSistema,
     logger,
     ocorrencias: ocorrenciasDaIa,
   });
-  const testeDeModelo = montarTesteDeModelo(config, db, logger, modelosDeIa);
+  // Instruções de interpretação (Fase C): o bloco editável de cada função. Falha segura: o prompt de sempre.
+  const instrucoesDeIa = new ServicoInstrucoesDeIa({
+    repositorio: new RepositorioDeInstrucoesDeIaSqlite(db),
+    textosFixos: {
+      // O formato do ato é o do transporte (padrão, quando a chamada não traz o dela).
+      ato: { fixa: INSTRUCAO_DO_SISTEMA, formato: INSTRUCAO_DE_FORMATO_EM_TEXTO },
+      resumo: { fixa: INSTRUCAO_DO_RESUMO, formato: INSTRUCAO_DE_FORMATO_DO_RESUMO },
+      peca: { fixa: INSTRUCAO_DA_PECA, formato: INSTRUCAO_DE_FORMATO_DA_PECA },
+    },
+    clock: clockDoSistema,
+    logger,
+  });
+  const { testeDeModelo, executorDoTeste } = montarTesteDeModelo(
+    config,
+    db,
+    logger,
+    modelosDeIa,
+  );
   const { analiseIa, resumoDoProcesso, analiseDePeca, repositorioDeAnalisesDePeca } =
     montarAnaliseIa(
       config,
@@ -680,7 +726,47 @@ export function montarAplicacao(config: Config): Aplicacao {
       controleDaIa,
       ocorrenciasDaIa,
       modelosDeIa,
+      instrucoesDeIa,
     );
+  const testesDeModelo = new RepositorioDeTestesDeModeloSqlite(db);
+  const verificacaoDeInstrucoes = new ServicoVerificacaoDeInstrucoes({
+    executor: executorDoTeste,
+    instrucoes: instrucoesDeIa,
+    modelos: modelosDeIa,
+    testes: testesDeModelo,
+    clock: clockDoSistema,
+    logger,
+    novoId: () => randomUUID(),
+  });
+  const errosDeInstrucoes = new ServicoErrosDeInstrucoes({
+    leitor: leitorDeUsoDaIa,
+    erros: new LeitorDeErrosDeIaSqlite(db),
+    instrucoes: instrucoesDeIa,
+    clock: clockDoSistema,
+  });
+  // O experimento só lê casos da conta do PRÓPRIO operador: a que tem o e-mail do operador. Sem e-mail ou sem
+  // conta com ele, o experimento responde "conta do dono ausente" e nenhum processo de assinante é tocado.
+  const experimentoDeInstrucoes = new ServicoExperimentoDeInstrucoes({
+    instrucoes: instrucoesDeIa,
+    fontes: {
+      ...(analiseIa ? { ato: analiseIa } : {}),
+      ...(resumoDoProcesso ? { resumo: resumoDoProcesso } : {}),
+      ...(analiseDePeca ? { peca: analiseDePeca } : {}),
+    },
+    repositorio,
+    ...(pasta ? { pasta } : {}),
+    contaDoDono: async () => {
+      const email = config.admin.email;
+      if (!email) return undefined;
+      try {
+        return (await usuarios.porEmail(normalizarEmail(email)))?.usuario.workspace;
+      } catch {
+        return undefined;
+      }
+    },
+    clock: clockDoSistema,
+    logger,
+  });
   // Alerta de custo: só com a IA ligada no ambiente e o /admin configurado. O e-mail só sai com SMTP de
   // verdade ("log não é entrega"); sem ele, ou sem e-mail do operador, vale o banner da tela.
   const alertaDeCusto =
@@ -714,7 +800,8 @@ export function montarAplicacao(config: Config): Aplicacao {
             const apagadas = await repositorioDeAnalisesDePeca.apagarVencidas(
               clockDoSistema.agora(),
             );
-            if (apagadas > 0) logger.info('análises de peça vencidas apagadas', { apagadas });
+            if (apagadas > 0)
+              logger.info('análises de peça vencidas apagadas', { apagadas });
           },
         })
       : undefined;
@@ -785,6 +872,10 @@ export function montarAplicacao(config: Config): Aplicacao {
     painelDeIa,
     modelosDeIa,
     testeDeModelo,
+    instrucoesDeIa,
+    experimentoDeInstrucoes,
+    verificacaoDeInstrucoes,
+    errosDeInstrucoes,
     agendadorAlertaDeCustoDaIa,
     custos,
     custosPorCliente,
@@ -887,15 +978,23 @@ function montarTesteDeModelo(
   db: ReturnType<typeof abrirBanco>,
   logger: Logger,
   modelos: ServicoModelosDeIa,
-): ServicoTesteDeModelo {
+): {
+  readonly testeDeModelo: ServicoTesteDeModelo;
+  /** O MESMO executor serve ao conjunto de verificação das instruções (Fase C). */
+  readonly executorDoTeste: ExecutorDoTesteDeModeloComSonda | undefined;
+} {
   const ia = config.ia;
   const executor =
     ia.habilitada && ia.chave !== ''
       ? new ExecutorDoTesteDeModeloComSonda({
           pastaDosConjuntos: resolve(process.cwd(), 'tests/fixtures'),
           buscarListaZdr: async () =>
-            (await buscarEndpointsZdr(new HttpClient({ timeoutMs: 20_000, tentativas: 2 }), ia.chave))
-              .endpoints,
+            (
+              await buscarEndpointsZdr(
+                new HttpClient({ timeoutMs: 20_000, tentativas: 2 }),
+                ia.chave,
+              )
+            ).endpoints,
           criarTransporte: () =>
             new TransporteOpenRouter({
               chave: ia.chave,
@@ -916,7 +1015,7 @@ function montarTesteDeModelo(
     novoId: () => randomUUID(),
   });
   servico.recuperarNoArranque();
-  return servico;
+  return { testeDeModelo: servico, executorDoTeste: executor };
 }
 
 /**
@@ -934,6 +1033,7 @@ function montarAnaliseIa(
   controleDaIa: ServicoControleDaIa,
   ocorrencias: RegistroDeOcorrenciasDeIa,
   modelosDeIa: ServicoModelosDeIa,
+  instrucoes: ServicoInstrucoesDeIa,
 ): {
   analiseIa: ServicoAnaliseDoAto | undefined;
   resumoDoProcesso: ServicoResumoDoProcesso | undefined;
@@ -1019,6 +1119,7 @@ function montarAnaliseIa(
     novoId: () => randomUUID(),
     controle: controleDaIa,
     ocorrencias,
+    instrucoes,
   });
   const resumoDoProcesso = new ServicoResumoDoProcesso({
     repositorio,
@@ -1045,6 +1146,7 @@ function montarAnaliseIa(
     novoId: () => randomUUID(),
     controle: controleDaIa,
     ocorrencias,
+    instrucoes,
     janelaDePendenciaDias: config.telas.pendenciaJanelaDias,
     // v0.54.0: só LÊ a listagem que a tela da Pasta já gravou (nunca consulta o tribunal).
     pasta: new RepositorioDaPastaSqlite(db),
@@ -1062,9 +1164,12 @@ function montarAnaliseIa(
       );
     } else {
       if (pecas.workspacesInvalidos > 0) {
-        logger.warn('PROCESSOVIVO_IA_PECAS_WORKSPACES tem itens que não são identificadores (ignorados)', {
-          ignorados: pecas.workspacesInvalidos,
-        });
+        logger.warn(
+          'PROCESSOVIVO_IA_PECAS_WORKSPACES tem itens que não são identificadores (ignorados)',
+          {
+            ignorados: pecas.workspacesInvalidos,
+          },
+        );
       }
       repositorioDeAnalisesDePeca = new RepositorioAnalisesDePecaSqlite(db);
       analiseDePeca = new ServicoAnaliseDePeca({
@@ -1095,6 +1200,7 @@ function montarAnaliseIa(
         novoId: () => randomUUID(),
         controle: controleDaIa,
         ocorrencias,
+        instrucoes,
       });
       logger.info('análise de peça por IA habilitada', {
         modelo: modelosDeIa.efetivo('peca').modelo,

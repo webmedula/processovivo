@@ -46,6 +46,14 @@ export type MotivoDeFalhaDoTeste =
 
 export interface TesteDeModelo {
   readonly id: string;
+  /**
+   * `modelo` (o teste obrigatório da Fase B; ausente = este) ou `instrucoes` (o conjunto de verificação
+   * OPCIONAL da Fase C, rascunho × publicada no mesmo modelo). Os dois dividem a tabela, o "um por vez" e a
+   * recuperação no arranque; só o primeiro serve para publicar modelo.
+   */
+  readonly tipo?: 'modelo' | 'instrucoes';
+  /** Fase C: a edição do rascunho que foi medido (0 = texto ainda não salvo ou vazio). */
+  readonly instrucaoVersao?: number;
   readonly funcao: FuncaoDeIa;
   readonly candidato: string;
   readonly referencia: string;
@@ -74,8 +82,10 @@ export interface RepositorioDeTestesDeModelo {
   criar(teste: TesteDeModelo): void;
   atualizar(id: string, mudanca: AtualizacaoDoTeste): void;
   buscar(id: string): TesteDeModelo | undefined;
-  /** O mais recente da função (qualquer estado). */
+  /** O teste de MODELO mais recente da função (qualquer estado). */
   ultimoDaFuncao(funcao: FuncaoDeIa): TesteDeModelo | undefined;
+  /** O conjunto de verificação de INSTRUÇÕES mais recente da função (Fase C). */
+  ultimoDeInstrucoes(funcao: FuncaoDeIa): TesteDeModelo | undefined;
   /** Algum teste `na_fila` ou `executando`? */
   emAndamento(): TesteDeModelo | undefined;
   /** No arranque: o que estava rodando não retoma sozinho; vira `falhou` (`reiniciado`). */

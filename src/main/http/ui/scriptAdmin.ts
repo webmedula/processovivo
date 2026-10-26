@@ -67,6 +67,9 @@ function erroBloco(e){
 
 /* ---------------- navegação ---------------- */
 function irPara(aba){
+  /* Instruções de interpretação (v0.61.0): sair da aba IA com rascunho não salvo pergunta antes e, saindo, esquece
+     tudo (inclusive o caso do experimento, que só vive na memória da página). */
+  if(estado.aba==='ia'&&aba!=='ia'&&window.__pvIaInstrucoes&&!window.__pvIaInstrucoes.sair())return;
   estado.aba=aba;
   $('nav-assinaturas').className=aba==='assinaturas'?'ativo':'';
   $('nav-chaves').className=aba==='chaves'?'ativo':'';

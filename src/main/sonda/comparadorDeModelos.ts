@@ -158,6 +158,8 @@ export interface OpcoesDoComparador {
   readonly progresso?: (linha: string) => void;
   /** O transporte JÁ embrulhado em `TransporteComTeto`, para saber se o teto foi atingido. */
   readonly teto?: TransporteComTeto;
+  /** O bloco de instruções do operador (Fase C) a medir. Ausente = o prompt de sempre. */
+  readonly instrucao?: string;
 }
 
 export interface DetalheDoCaso {
@@ -232,6 +234,7 @@ export async function compararModelos(
     modelos: op.modelos,
     variantes: ['sem-titulos'],
     transporte: op.transporte,
+    ...(op.instrucao ? { instrucao: op.instrucao } : {}),
     provedoresPermitidos: op.provedoresPermitidos,
     parConfirmadoZdr: op.parConfirmadoZdr,
     agora: op.agora,

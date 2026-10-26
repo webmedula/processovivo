@@ -3,6 +3,7 @@ import {
   PONTOS_DE_ATENCAO_DO_MODELO,
   TIPOS_DE_PECA,
 } from '../../domain/entities/AnaliseDePeca.js';
+import { montarSistema } from '../../domain/entities/InstrucoesDeIa.js';
 import { neutralizarMarcacao } from './entradaDoModelo.js';
 import { criarRedatorDePeca, type RedatorDePeca } from './redigirPecaParaIA.js';
 import type { PessoasParaRedigir } from './redigirParaIA.js';
@@ -93,9 +94,15 @@ export interface EntradaDaPeca {
   restaurar(texto: string): string;
 }
 
+export interface OpcoesDaEntradaDaPeca {
+  /** O bloco editável publicado no painel de IA (Fase C). Vazio ou ausente = o prompt de sempre. */
+  readonly instrucao?: string;
+}
+
 export function montarEntradaDaPeca(
   paginasBrutas: readonly string[],
   pessoas: PessoasParaRedigir = {},
+  opcoes: OpcoesDaEntradaDaPeca = {},
 ): EntradaDaPeca {
   const redator: RedatorDePeca = criarRedatorDePeca(pessoas);
   const paginas = paginasBrutas.map((p) => neutralizarPagina(redator.redigir(p).texto));
@@ -117,7 +124,7 @@ export function montarEntradaDaPeca(
   return {
     suficiente: recusa === undefined,
     ...(recusa ? { recusa } : {}),
-    sistema: INSTRUCAO_DA_PECA,
+    sistema: montarSistema('peca', INSTRUCAO_DA_PECA, opcoes.instrucao),
     usuario: ['<peca>', 'Texto:', textoEnviado, '</peca>'].join('\n'),
     textoEnviado,
     paginas: paginas.length,

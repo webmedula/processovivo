@@ -9,6 +9,14 @@ import type {
   ResumoDoProcesso,
 } from '../../domain/entities/ResumoDoProcesso.js';
 import { NumeroCNJ } from '../../domain/entities/NumeroCNJ.js';
+import {
+  versaoEfetiva,
+  type InstrucaoDoExperimento,
+} from '../../domain/entities/InstrucoesDeIa.js';
+import {
+  SEM_INSTRUCOES,
+  type InstrucoesDaFuncao,
+} from '../../domain/ports/InstrucoesDeIa.js';
 import type { Processo } from '../../domain/entities/Processo.js';
 import type { PontoDeAtencao } from '../../domain/entities/vocabularioDaAnalise.js';
 import type { Movimentacao } from '../../domain/entities/Movimentacao.js';
@@ -28,11 +36,15 @@ import type { Logger } from '../../domain/ports/Logger.js';
 import type { RepositorioDaPasta } from '../../domain/ports/RepositorioDaPasta.js';
 import type { RepositorioAcompanhamentos } from '../../domain/ports/RepositorioAcompanhamentos.js';
 import type { RepositorioResumos } from '../../domain/ports/RepositorioResumos.js';
-import type { ResumidorDeProcesso } from '../../domain/ports/ResumidorDeProcesso.js';
+import type {
+  ResumidorDeProcesso,
+  RespostaDoResumidor,
+} from '../../domain/ports/ResumidorDeProcesso.js';
 import {
   prepararEntradaDoResumo,
   VERSAO_PROMPT_DO_RESUMO,
   type AtoEnviado,
+  type EntradaDoResumo,
 } from '../politicas/entradaDoResumo.js';
 import {
   CONTROLE_SEM_PAINEL,
@@ -55,7 +67,11 @@ import {
   type MotivoDeNaoLido,
   type SelecaoDoResumo,
 } from '../politicas/selecionarAtosParaResumo.js';
-import { verificarResumo } from '../politicas/verificarResumo.js';
+import {
+  verificarResumo,
+  type DescartesDoResumo,
+  type ResultadoDaVerificacaoDoResumo,
+} from '../politicas/verificarResumo.js';
 
 /**
  * Resumo de UM processo por IA, a pedido de um clique (v0.40.0, Etapa 2 da "IA como
@@ -150,6 +166,38 @@ export interface ResumoParaATela {
 
 export type RespostaDoResumo = ResumoParaATela | { readonly estado: 'erro' };
 
+export type BracoDoExperimentoDoResumo =
+  | {
+      readonly rotulo: InstrucaoDoExperimento['rotulo'];
+      readonly versao: number;
+      readonly estado: 'erro';
+    }
+  | {
+      readonly rotulo: InstrucaoDoExperimento['rotulo'];
+      readonly versao: number;
+      readonly estado: 'ok';
+      readonly resumo: ResumoParaATela;
+      /** Por que não foi verificado; `null` se foi. */
+      readonly motivoDeNaoVerificacao: string | null;
+      readonly descartes: DescartesDoResumo;
+      readonly latenciaMs: number;
+      readonly custoUsd: number | null;
+      readonly tokensEntrada: number | null;
+      readonly tokensSaida: number | null;
+    };
+
+function medidasDe(
+  bruta: RespostaDoResumidor,
+  latenciaMs: number,
+): ResumoDoProcesso['medidas'] {
+  return {
+    latenciaMs,
+    ...(bruta.tokensEntrada !== undefined ? { tokensEntrada: bruta.tokensEntrada } : {}),
+    ...(bruta.tokensSaida !== undefined ? { tokensSaida: bruta.tokensSaida } : {}),
+    ...(bruta.custoUsd !== undefined ? { custoUsd: bruta.custoUsd } : {}),
+  };
+}
+
 export interface OpcoesServicoResumoDoProcesso {
   readonly repositorio: RepositorioAcompanhamentos;
   readonly resumos: RepositorioResumos;
@@ -171,6 +219,8 @@ export interface OpcoesServicoResumoDoProcesso {
    * nunca consulta o tribunal; serve para avisar que o tribunal lista ato mais novo que o retrato.
    */
   readonly pasta?: Pick<RepositorioDaPasta, 'obterListagem'>;
+  /** As instruções de interpretação publicadas no painel (Fase C, v0.61.0). Ausente = o prompt de sempre (+e0). */
+  readonly instrucoes?: InstrucoesDaFuncao;
 }
 
 export interface PedidoDeResumoDoProcesso {
@@ -207,7 +257,33 @@ export class ServicoResumoDoProcesso {
     // 1. Plano: sem ele, nada além da frase fixa. Antes de ler o retrato.
     await this.o.exigirPlanoIa(workspace);
 
-    // 2. O retrato é DA CONTA.
+    // 2 a 4. O retrato é DA CONTA; sigilo, providências do sistema e a seleção de atos (sem texto = para aqui).
+    const { processo, selecao } = await this.lerProcessoDaConta(workspace, numero);
+
+    // 5. Limite de uso (sem tabela). A vaga é liberada em qualquer desfecho.
+    const vaga = this.o.limite.reservar(workspace);
+    if ('negada' in vaga) {
+      throw new EntradaNaoAnalisavelError(
+        'limite_de_uso',
+        'Há muitos resumos em andamento ou o limite por hora foi atingido. Tente novamente em instantes.',
+      );
+    }
+    try {
+      return await this.chamarEGuardar(pedido, numero, processo, selecao);
+    } finally {
+      vaga.liberar();
+    }
+  }
+
+  /**
+   * Os passos 2 a 4 do resumo, comuns ao clique do assinante e ao experimento do operador: o retrato é da
+   * PRÓPRIA conta, e segredo de justiça e processo sem texto utilizável encerram aqui, ANTES de qualquer
+   * chamada ao modelo.
+   */
+  private async lerProcessoDaConta(
+    workspace: string,
+    numero: string,
+  ): Promise<{ readonly processo: Processo; readonly selecao: SelecaoDoResumo }> {
     const acompanhamento = await this.o.repositorio.buscar(workspace, numero);
     if (!acompanhamento) throw new AcompanhamentoNaoEncontradoError();
     const processo = acompanhamento.processo;
@@ -249,55 +325,56 @@ export class ServicoResumoDoProcesso {
         'Este processo não tem atos com texto suficiente para resumir. Leia os atos.',
       );
     }
-
-    // 5. Limite de uso (sem tabela). A vaga é liberada em qualquer desfecho.
-    const vaga = this.o.limite.reservar(workspace);
-    if ('negada' in vaga) {
-      throw new EntradaNaoAnalisavelError(
-        'limite_de_uso',
-        'Há muitos resumos em andamento ou o limite por hora foi atingido. Tente novamente em instantes.',
-      );
-    }
-    try {
-      return await this.chamarEGuardar(
-        pedido,
-        numero,
-        processo,
-        selecao,
-        pessoasDoProcesso(processo),
-      );
-    } finally {
-      vaga.liberar();
-    }
+    return { processo, selecao };
   }
 
-  private async chamarEGuardar(
-    pedido: PedidoDeResumoDoProcesso,
-    numero: string,
-    processo: Processo,
+  /**
+   * Prepara a entrada, chama o modelo e verifica a resposta item a item. É o MESMO caminho do clique do
+   * assinante e do experimento do operador (`contar` liga as ocorrências do painel). Falha do modelo vira
+   * `undefined`, nunca exceção.
+   */
+  private async chamar(
     selecao: SelecaoDoResumo,
-    pessoas: PessoasParaRedigir,
-  ): Promise<RespostaDoResumo> {
+    processo: Processo,
+    instrucao: string,
+    sinal: AbortSignal | undefined,
+    contar: boolean,
+  ): Promise<
+    | {
+        readonly entrada: EntradaDoResumo;
+        readonly bruta: RespostaDoResumidor;
+        readonly verificada: ResultadoDaVerificacaoDoResumo;
+        readonly resultado: ResultadoDoResumo;
+        readonly latenciaMs: number;
+      }
+    | undefined
+  > {
     const entrada = prepararEntradaDoResumo(
       selecao,
       {
         ...(processo.classe ? { classe: processo.classe } : {}),
         tribunal: processo.tribunal,
       },
-      pessoas,
+      pessoasDoProcesso(processo),
+      { instrucao },
     );
 
     const inicio = this.o.clock.monotonico();
-    let bruta;
+    let bruta: RespostaDoResumidor;
     try {
       bruta = await this.o.resumidor.resumir({
         sistema: entrada.sistema,
         usuario: entrada.usuario,
-        ...(pedido.sinal ? { sinal: pedido.sinal } : {}),
-        aoRepetir: () => this.ocorrencias.registrar('resumo', 'repeticao_automatica'),
+        ...(sinal ? { sinal } : {}),
+        ...(contar
+          ? {
+              aoRepetir: () =>
+                this.ocorrencias.registrar('resumo', 'repeticao_automatica'),
+            }
+          : {}),
       });
     } catch (erro) {
-      this.ocorrencias.registrar('resumo', motivoDaFalhaDaChamada(erro));
+      if (contar) this.ocorrencias.registrar('resumo', motivoDaFalhaDaChamada(erro));
       // Só a CLASSE do erro e o roteamento SANEADO vão ao log: a mensagem de um roteador pode
       // ecoar o pedido (que leva texto de ato), então ela nunca é copiada.
       const r = erro instanceof ProviderIndisponivelError ? erro.roteamento : undefined;
@@ -307,13 +384,12 @@ export class ServicoResumoDoProcesso {
         ...(r?.status !== undefined ? { statusHttp: r.status } : {}),
         ...(r?.passo !== undefined ? { passoDoRoteamento: r.passo } : {}),
       });
-      return { estado: 'erro' };
+      return undefined;
     }
     const latenciaMs = Math.max(0, Math.round(this.o.clock.monotonico() - inicio));
 
     // O que o SISTEMA sabe e o modelo não: a verificação usa para barrar "situação atual" sem ter
     // lido o ato mais recente e "sem pendências" havendo providência que a IA não leu.
-    const chavesPendentes = selecao.chavesPendentes;
     const verificada = verificarResumo(bruta.resposta, entrada.atos, {
       regras: '1.2.0',
       maisRecenteNaoLido: selecao.maisRecente !== undefined && !selecao.maisRecente.lido,
@@ -327,14 +403,16 @@ export class ServicoResumoDoProcesso {
           }
         : {}),
     });
-    registrarContagens(
-      this.ocorrencias,
-      'resumo',
-      contagensDoResumo(
-        verificada.descartes,
-        verificada.estado === 'nao_verificado' ? verificada.motivo : undefined,
-      ),
-    );
+    if (contar) {
+      registrarContagens(
+        this.ocorrencias,
+        'resumo',
+        contagensDoResumo(
+          verificada.descartes,
+          verificada.estado === 'nao_verificado' ? verificada.motivo : undefined,
+        ),
+      );
+    }
     const resultado: ResultadoDoResumo =
       verificada.estado === 'verificado'
         ? {
@@ -345,7 +423,15 @@ export class ServicoResumoDoProcesso {
             pontosDoAto: verificada.pontosDoAto,
           }
         : { estado: 'nao_verificado', motivo: verificada.motivo };
+    return { entrada, bruta, verificada, resultado, latenciaMs };
+  }
 
+  /** As contagens que a tela e o registro mostram, a partir da seleção e do que a verificação manteve. */
+  private contagensDe(
+    selecao: SelecaoDoResumo,
+    verificada: ResultadoDaVerificacaoDoResumo,
+  ): ContagensDoResumo {
+    const chavesPendentes = selecao.chavesPendentes;
     const citadas = new Set<string>(
       verificada.estado === 'verificado'
         ? [...verificada.situacao, ...verificada.pendencias].map((i) => i.chaveDoAto)
@@ -355,7 +441,7 @@ export class ServicoResumoDoProcesso {
       verificada.estado === 'verificado'
         ? verificada.situacao.length + verificada.pendencias.length
         : 0;
-    const contagens: ContagensDoResumo = {
+    return {
       atosNoProcesso: selecao.totalDeAtos,
       atosComTexto: selecao.comTexto,
       atosSoTitulo: selecao.soTitulo,
@@ -367,10 +453,30 @@ export class ServicoResumoDoProcesso {
       providenciasNaoLidas: selecao.providenciasNaoLidas.length,
       maisRecenteLido: selecao.maisRecente?.lido ?? false,
     };
+  }
+
+  private async chamarEGuardar(
+    pedido: PedidoDeResumoDoProcesso,
+    numero: string,
+    processo: Processo,
+    selecao: SelecaoDoResumo,
+  ): Promise<RespostaDoResumo> {
+    // A versão e o texto vêm juntos, de UMA leitura: o que se grava é a versão do texto que foi ao modelo.
+    const instrucao = (this.o.instrucoes ?? SEM_INSTRUCOES).efetiva('resumo');
+    const feita = await this.chamar(
+      selecao,
+      processo,
+      instrucao.texto,
+      pedido.sinal,
+      true,
+    );
+    if (!feita) return { estado: 'erro' };
+    const { entrada, bruta, verificada, resultado, latenciaMs } = feita;
+    const contagens = this.contagensDe(selecao, verificada);
 
     // Só CONTAGENS, por motivo: nada de texto de ato, título, número de processo, conta ou parte.
     this.log.info('resumo do processo montado', {
-      versaoPrompt: entrada.versaoPrompt,
+      versaoPrompt: versaoEfetiva(entrada.versaoPrompt, instrucao.versao),
       atosNoProcesso: selecao.totalDeAtos,
       comTexto: selecao.comTexto,
       soTitulo: selecao.soTitulo,
@@ -405,23 +511,76 @@ export class ServicoResumoDoProcesso {
       contagens,
       procedencia: {
         modelo: bruta.modelo,
-        versaoPrompt: VERSAO_PROMPT_DO_RESUMO,
+        versaoPrompt: versaoEfetiva(VERSAO_PROMPT_DO_RESUMO, instrucao.versao),
         provedor: bruta.provedor,
         criadaEm: this.o.clock.agora(),
       },
-      medidas: {
-        latenciaMs,
-        ...(bruta.tokensEntrada !== undefined
-          ? { tokensEntrada: bruta.tokensEntrada }
-          : {}),
-        ...(bruta.tokensSaida !== undefined ? { tokensSaida: bruta.tokensSaida } : {}),
-        ...(bruta.custoUsd !== undefined ? { custoUsd: bruta.custoUsd } : {}),
-      },
+      medidas: medidasDe(bruta, latenciaMs),
     };
     await this.o.resumos.salvar(resumo);
 
     const atualidade = await this.atualidadeDe(pedido.workspace, numero, selecao);
     return resumoParaATela(resumo, entrada.atos, (t) => entrada.restaurar(t), atualidade);
+  }
+
+  /**
+   * EXPERIMENTO do operador (Fase C, v0.61.0): o MESMO caminho de produção (seleção, redação, modelo com
+   * ZDR, verificação item a item, segredo de justiça) sobre UM processo da conta do operador, uma vez para
+   * cada instrução. **Não grava nada**, não consome o teto dos assinantes e não conta ocorrência.
+   */
+  async experimentar(pedido: {
+    readonly workspace: string;
+    readonly numero: string;
+    readonly instrucoes: readonly InstrucaoDoExperimento[];
+    readonly sinal?: AbortSignal;
+  }): Promise<readonly BracoDoExperimentoDoResumo[]> {
+    const numero = NumeroCNJ.criar(pedido.numero).digitos;
+    const { processo, selecao } = await this.lerProcessoDaConta(pedido.workspace, numero);
+    const atualidade = await this.atualidadeDe(pedido.workspace, numero, selecao);
+    return Promise.all(
+      pedido.instrucoes.map(async (i): Promise<BracoDoExperimentoDoResumo> => {
+        const feita = await this.chamar(selecao, processo, i.texto, pedido.sinal, false);
+        if (!feita) return { rotulo: i.rotulo, versao: i.versao, estado: 'erro' };
+        const { entrada, bruta, verificada, resultado, latenciaMs } = feita;
+        const resumo: ResumoDoProcesso = {
+          id: 'experimento',
+          workspace: pedido.workspace,
+          numero,
+          resultado,
+          atosEnviados: selecao.atos.map((a) => ({
+            chaveDoAto: a.chave,
+            data: a.ato.data,
+            comTexto: a.limiteDeCaracteres > 0,
+          })),
+          contagens: this.contagensDe(selecao, verificada),
+          procedencia: {
+            modelo: bruta.modelo,
+            versaoPrompt: versaoEfetiva(VERSAO_PROMPT_DO_RESUMO, i.versao),
+            provedor: bruta.provedor,
+            criadaEm: this.o.clock.agora(),
+          },
+          medidas: medidasDe(bruta, latenciaMs),
+        };
+        return {
+          rotulo: i.rotulo,
+          versao: i.versao,
+          estado: 'ok',
+          resumo: resumoParaATela(
+            resumo,
+            entrada.atos,
+            (t) => entrada.restaurar(t),
+            atualidade,
+          ),
+          motivoDeNaoVerificacao:
+            resultado.estado === 'nao_verificado' ? resultado.motivo : null,
+          descartes: verificada.descartes,
+          latenciaMs,
+          custoUsd: bruta.custoUsd ?? null,
+          tokensEntrada: bruta.tokensEntrada ?? null,
+          tokensSaida: bruta.tokensSaida ?? null,
+        };
+      }),
+    );
   }
 
   /** A faixa do sistema (v0.54.0): ato mais recente, providências sem leitura e o aviso da Pasta digital. */

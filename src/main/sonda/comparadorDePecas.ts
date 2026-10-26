@@ -56,9 +56,14 @@ const TIMEOUT_DA_PECA_EM_PRODUCAO_MS = 120_000;
  * A entrada que a PRODUÇÃO montaria (prompt `peca-1.1.0`, mesma redação, mesmo formato). A do comparador
  * manual é a da Fase 0; o teste obrigatório do painel de IA (v0.60.0) mede o modelo com a de produção.
  */
-function entradaDeProducao(c: CasoDePeca): ReturnType<typeof montarEntradaDePeca> {
+function entradaDeProducao(
+  c: CasoDePeca,
+  instrucao?: string,
+): ReturnType<typeof montarEntradaDePeca> {
   const m = pecaParaMontar(c);
-  const e = montarEntradaDaPeca(m.paginas, m.pessoas ?? {});
+  const e = montarEntradaDaPeca(m.paginas, m.pessoas ?? {}, {
+    ...(instrucao ? { instrucao } : {}),
+  });
   return {
     suficiente: e.suficiente,
     ...(e.recusa ? { recusa: e.recusa } : {}),
@@ -126,6 +131,8 @@ export interface OpcoesDoComparadorDePecas {
   readonly teto?: TransporteComTeto;
   /** Usa o prompt, o esquema e a verificação de PRODUÇÃO (teste de modelo do painel). Padrão: os da Fase 0. */
   readonly entradaDeProducao?: boolean;
+  /** O bloco de instruções do operador (Fase C) a medir; só vale com `entradaDeProducao`. */
+  readonly instrucao?: string;
 }
 
 export interface DetalheDaPeca {
@@ -193,7 +200,9 @@ export async function compararPecas(
     preparar: (caso) => {
       const c = porId.get(caso.id);
       if (!c) throw new Error('caso de peça desconhecido');
-      return producao ? entradaDeProducao(c) : montarEntradaDePeca(pecaParaMontar(c));
+      return producao
+        ? entradaDeProducao(c, op.instrucao)
+        : montarEntradaDePeca(pecaParaMontar(c));
     },
     lerResposta: ler,
     verificar: (resposta, texto) => {

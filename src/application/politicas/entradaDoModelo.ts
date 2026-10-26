@@ -3,6 +3,7 @@ import {
   PARECE_PEDIR,
   PONTOS_DE_ATENCAO,
 } from '../../domain/entities/vocabularioDaAnalise.js';
+import { montarSistema } from '../../domain/entities/InstrucoesDeIa.js';
 import {
   criarRedator,
   type PessoasParaRedigir,
@@ -45,6 +46,11 @@ export interface ContextoDoAto {
 export interface OpcoesDaEntrada {
   readonly pessoas?: PessoasParaRedigir;
   readonly maximoDeCaracteres?: number;
+  /**
+   * O bloco editável publicado no painel de IA (Fase C, v0.61.0). Vazio ou ausente = o prompt de sempre,
+   * byte a byte; com texto, vai depois da parte fixa e antes do lembrete final.
+   */
+  readonly instrucao?: string;
 }
 
 export interface EntradaPreparada {
@@ -194,7 +200,7 @@ export function prepararEntrada(
     suficiente,
     truncado: cortado.truncado,
     textoEnviado,
-    sistema: INSTRUCAO_DO_SISTEMA,
+    sistema: montarSistema('ato', INSTRUCAO_DO_SISTEMA, opcoes.instrucao),
     usuario,
     redacao,
   };

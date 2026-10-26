@@ -381,6 +381,10 @@ describe('o que fica gravado', () => {
       'bloqueios',
       'ressalvas',
       'falha',
+      // Fase C (v0.61.0): o conjunto de verificação das instruções reaproveita esta tabela. As duas
+      // colunas são rótulo fechado e número da edição — continua sem texto de fixture ou de resposta.
+      'tipo',
+      'instrucao_versao',
     ]);
     expect(linha).not.toMatch(/@/);
     const reg = db

@@ -2,10 +2,29 @@
 
 Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/).
 Versionamento semântico: enquanto estiver em `0.x`, mudanças incompatíveis
-entram como *minor*.
+entram como _minor_.
 
 **Como descobrir qual versão você tem:** `node -p "require('./package.json').version"`
 na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
+
+---
+
+## [0.61.0] — 2026-10-26
+
+**Painel de IA, Fase C: o dono edita pela tela do `/admin` as instruções de interpretação de cada função de IA, experimenta num caso real comparando a resposta atual com a nova lado a lado, publica sem deploy e reverte em um clique.** Funções: análise de ato, resumo do processo e análise de peça. **Texto vazio = o prompt de antes, byte a byte (`+e0`): o deploy não muda nenhuma resposta da IA.** Modelo em produção, lista da Fase B, parte fixa dos prompts, esquema de saída, verificação de citação, ZDR, redação, segredo de justiça, planos, preços, `exigir()`, política, termos, calendário e e-mails **não mudaram**. Sem dependência nova; migração só aditiva (sem remoção nem renomeação).
+
+- **Fronteira fixo × editável.** A parte fixa (REGRAS e CAMPOS: formato JSON, limites, citação literal, nunca calcular prazo nem dar parecer, dado × instrução, marcadores) continua no código. O bloco editável diz só COMO interpretar e O QUE destacar (foco, prioridade, tom, tamanho, exemplos). Onde conflitar com o _estilo_ padrão, vale o bloco; com as REGRAS ou os CAMPOS, valem as REGRAS e os CAMPOS. **Montagem pelo código, sempre na mesma ordem: parte fixa → bloco editável → lembrete final.** A segurança não depende de o modelo obedecer: citação, redação, segredo de justiça e ZDR rodam no código com ou sem bloco.
+- **Versão efetiva gravada em cada resultado:** `ato-1.2.0+e1`, `resumo-1.2.0+e3`… Sem instrução publicada a versão é a de sempre, **sem sufixo** (a tela a mostra como `+e0`); assim o deploy não muda nada do que já se grava nem o reaproveitamento da análise de peça. O reaproveitamento (e portanto o "cache") **inclui a versão das instruções**: publicar não serve resposta velha, e reverter volta a servir a que já existia. A versão e o texto vêm de **uma leitura só**.
+- **Falha segura:** leitura que falha (banco, linha torta, tabela ausente) = prompt padrão `+e0`, sem erro para o usuário, com um aviso por minuto sem texto. Publicar e reverter limpam o cache de 5 s: a próxima análise de qualquer conta já usa a versão nova.
+- **Limites (as únicas recusas automáticas):** texto até **4.000 caracteres** (`texto_grande`, 422) e texto vazio ao publicar (`texto_vazio`, 422); observação até 200. Publicar exige uma confirmação; o dono é o único editor. Sem teste obrigatório, sem janela de 24 h, sem verificador de instruções hostis.
+- **Experimentar num caso real** (`ServicoExperimentoDeInstrucoes`): roda a instrução publicada e o rascunho (a da caixa, mesmo sem salvar) sobre **o mesmo ato, processo ou peça da conta do próprio operador** (a que tem o e-mail `PROCESSOVIVO_ADMIN_EMAIL`; sem conta, o experimento explica o que falta e nenhum processo de assinante é tocado). Cada serviço de IA roda o **mesmo caminho de produção** (redação, modelo com ZDR, verificação, segredo de justiça) por um método `experimentar`; o resultado volta só na resposta da rota — **nada é gravado** (nem o texto do caso, nem as respostas), não consome o teto dos assinantes e não conta ocorrência. Um por vez e no máximo 30 por hora. Mostra as duas respostas completas, citações, o que a verificação descartou, tempo, custo, tokens e modelo.
+- **Conjunto de verificação opcional** (`ServicoVerificacaoDeInstrucoes`): reaproveita os comparadores, o executor e a tabela `ia_testes_modelo` da Fase B (duas rodadas do mesmo conjunto sintético no modelo em uso: publicada × rascunho; estimativa e confirmação, teto de US$ 1,00, um por vez, cancelar, `reiniciado`). A conta é a de `julgarTeste`, mas aqui só vira **avisos de piora, que não bloqueiam**. A Fase B não enxerga esses testes (nem para publicar modelo).
+- **"Onde a IA erra":** polegares por edição das instruções (`+e0`, `+e1`…) e os mais recentes para baixo, com o motivo de lista fechada, o modelo e 8 caracteres da conta — nunca o conteúdo da análise.
+- **Rotas** (só o operador do `/admin`; entram em `ROTAS_ADMIN`): `GET /admin/api/ia/instrucoes`, `PUT …/instrucoes/:funcao/rascunho`, `POST …/previa`, `GET …/versoes/:versao`, `GET …/diff?de=&para=`, `POST …/publicar`, `POST …/reverter`, `GET …/erros`, `POST …/experimentar`, `POST …/verificacao/estimativa`, `POST …/verificacao`, `GET …/ia/experimento/processos[/:numero/atos|pecas]`, `GET …/ia/verificacoes/:id`, `POST …/ia/verificacoes/:id/cancelar`. Novo erro de domínio `InstrucaoDeIaRecusadaError` (frases nossas, nunca repetem o texto recebido).
+- **Tela** (`ui/iaAdminInstrucoes.ts`, seção na tela "IA", abas por função): editor com contador e observação, "Salvar rascunho", "Visualizar prompt montado" (fixa, bloco, lembrete, formato e exemplo fictício), experimento lado a lado, publicar e reverter com confirmação, conjunto de verificação, histórico com comparação (diff) e "Usar como rascunho", e "Onde a IA erra". **Aviso ao sair com rascunho não salvo** (trocar de aba do `/admin` e `beforeunload`). Teclado, foco, `aria-live`, temas claro e escuro (axe), seis larguras sem rolagem horizontal.
+- **Dados (aditivos):** tabela `ia_instrucoes` (função, versão, texto, autor, criado em, estado `rascunho|publicada|substituida`, observação, publicado em/por); colunas `instrucoes_versao`, `instrucoes_anterior` em `ia_config`; `tipo`, `instrucao_versao` em `ia_testes_modelo`; novos tipos de registro `instrucoes_publicadas` e `instrucoes_revertidas` em `ia_alteracoes` (edição antes → depois; o texto fica só em `ia_instrucoes`).
+- **Variáveis de ambiente:** nenhuma nova. O experimento usa `PROCESSOVIVO_ADMIN_EMAIL` (já existente) para achar a conta do dono; a verificação precisa da IA ligada, como o teste de modelo.
+- **Testes reescritos:** o teste que fixava as colunas de `ia_testes_modelo` ganhou `tipo` e `instrucao_versao` (a Fase C reaproveita a tabela); o ESLint de scripts do `/admin` passou a incluir o novo módulo. Nenhum outro teste assumia o prompt sem a parte editável: com texto vazio o prompt é idêntico (há teste de igualdade por função).
 
 ---
 
@@ -13,16 +32,16 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 **Painel de IA, Fase B: escolher o modelo de cada função de IA pela tela do `/admin`, com teste obrigatório antes de publicar e reversão em um clique.** As três funções (análise de ato, resumo do processo e análise de peça) têm, cada uma, o seu modelo; trocar uma não mexe nas outras. **O modelo em produção não mudou**, e nenhum prompt, verificação de citação, ZDR, redação, regra de segredo de justiça, plano, preço, política, termo, `exigir()`, calendário ou e-mail mudou. Sem dependência nova; migração só aditiva.
 
-- **Lista permitida no código** (`src/infrastructure/ia/modelos-permitidos.ts`, validada por Zod no arranque): `id` real, provedor, apelido, ZDR com data e fonte, preço de entrada e saída por milhão de tokens, janela de contexto, funções permitidas e `status`. Só item *confirmado* e *ativo* vira candidato; o modelo de produção entra como *pendente* (vale como modelo atual, nunca como troca) porque o preço de lista e a confirmação formal de ZDR dele ainda não estão registrados — nenhum número foi inventado. Incluir um modelo é mudança de código e exige rever a Política de Privacidade antes; a tela diz isso.
+- **Lista permitida no código** (`src/infrastructure/ia/modelos-permitidos.ts`, validada por Zod no arranque): `id` real, provedor, apelido, ZDR com data e fonte, preço de entrada e saída por milhão de tokens, janela de contexto, funções permitidas e `status`. Só item _confirmado_ e _ativo_ vira candidato; o modelo de produção entra como _pendente_ (vale como modelo atual, nunca como troca) porque o preço de lista e a confirmação formal de ZDR dele ainda não estão registrados — nenhum número foi inventado. Incluir um modelo é mudança de código e exige rever a Política de Privacidade antes; a tela diz isso.
 - **Modelo por função** (`ServicoModelosDeIa`): painel (se válido e na lista) → ambiente → padrão do código; cai no ambiente sem erro, conta a ocorrência `modelo_do_painel_invalido` e avisa na tela se o modelo do painel saiu da lista ou foi descontinuado. O modelo é escolhido **a cada chamada** (`ModeloDaFuncao`) e toda chamada passa pela mesma peça de ZDR de sempre; o resultado grava o modelo servido. A análise de peça passou a olhar o modelo de agora ao decidir se reaproveita um resultado.
 - **Teste obrigatório** (`ServicoTesteDeModelo`, job em segundo plano com estado em `ia_testes_modelo` e consulta por polling): roda o conjunto sintético da função no candidato e no modelo atual, na mesma rodada, **reaproveitando os comparadores existentes** (o novo `ExecutorDoTesteDeModeloComSonda` só normaliza as métricas). Estimativa de chamadas e custo e confirmação antes de enviar; **teto de gasto de US$ 1,00 por rodada**; um teste por vez; cancelar; reinício do servidor marca o teste como falho; só números e ids são gravados (nunca texto de fixture ou resposta do modelo). O teste da análise de peça mede com o prompt, o esquema e a verificação de produção (o comparador manual ganhou a opção aditiva `entradaDeProducao`).
-- **Veredito** (`julgarTeste`, constantes no código, mostradas na tela). *Bloqueios duros, sem aprovação manual:* sem ZDR; violações acima das do modelo atual na mesma rodada; citação verificada abaixo de 95%; falhas de formato acima do atual em mais de 2,0 pontos percentuais; teste incompleto ou com erro do provedor. *Queda tolerável, com aprovação:* pontos obrigatórios até −3,0 pontos, latência p95 até +30%, custo médio maior (com o impacto estimado por dia nos últimos 30 dias). Passar desses limites também bloqueia.
+- **Veredito** (`julgarTeste`, constantes no código, mostradas na tela). _Bloqueios duros, sem aprovação manual:_ sem ZDR; violações acima das do modelo atual na mesma rodada; citação verificada abaixo de 95%; falhas de formato acima do atual em mais de 2,0 pontos percentuais; teste incompleto ou com erro do provedor. _Queda tolerável, com aprovação:_ pontos obrigatórios até −3,0 pontos, latência p95 até +30%, custo médio maior (com o impacto estimado por dia nos últimos 30 dias). Passar desses limites também bloqueia.
 - **Publicar e reverter.** Publicar só com teste concluído do mesmo par função + candidato, de no máximo 24 h, cuja referência ainda é o modelo em uso; o veredito é recalculado das métricas. Aprovado: um clique + confirmação. Com ressalva: palavra `PUBLICAR` digitada + motivo de lista fechada + observação curta sem dado pessoal. Bloqueado: nunca. Reverter volta ao modelo anterior, sem novo teste. Tudo é registrado em `ia_alteracoes` (novos tipos `modelo_publicado`, `modelo_revertido`, `teste_modelo_iniciado`, com o id do teste e a aprovação), na mesma transação da mudança.
 - **Rotas** (só o operador do `/admin`; entram em `ROTAS_ADMIN`): `GET /admin/api/ia/modelos`, `POST …/modelos/:funcao/estimativa`, `…/testes`, `…/publicar`, `…/reverter`, `GET …/modelos/testes/:id` e `POST …/modelos/testes/:id/cancelar`. Id fora da lista, descontinuado, pendente ou de outra função: 400 sem repetir o valor. Novo erro de domínio `ModeloDeIaRecusadoError`.
 - **Tela** (`ui/iaAdminModelos.ts`, na tela "IA"): modelo em uso e de onde vem, seletor com preço, janela e ZDR, estimativa, progresso, tabela atual × novo com a diferença, bloqueios e ressalvas em português, publicar, reverter, "Regras desta decisão" e, nos cartões da Fase A, a quebra de uso e custo **por modelo** no período. Teclado, foco, `aria-live`, temas claro e escuro, seis larguras sem rolagem horizontal.
 - **Dados (aditivos; sem remoção nem renomeação):** colunas `modelo`, `modelo_anterior`, `modelo_desde` em `ia_config`; `teste_id` e `aprovacao` em `ia_alteracoes`; tabela `ia_testes_modelo`. Banco da versão anterior só ganha colunas; a versão anterior do app continua lendo o banco novo.
 - **Variáveis de ambiente:** nenhuma nova nem alterada. O teste de modelo precisa da IA ligada no ambiente (`PROCESSOVIVO_IA_HABILITADA` e `OPENROUTER_API_KEY`); sem elas a tela informa que o teste não está disponível, e publicar/reverter seguem funcionando.
-- **Testes reescritos:** nenhum teste existente assumia o modelo vindo só do ambiente e precisou mudar de significado; só o *helper* de tipos do `ServicoAnaliseDePeca` aceita agora `modelo` como função (ganhou um teste novo). O teste do `/admin` da Fase A ganhou o novo módulo na checagem do ESLint de scripts embutidos.
+- **Testes reescritos:** nenhum teste existente assumia o modelo vindo só do ambiente e precisou mudar de significado; só o _helper_ de tipos do `ServicoAnaliseDePeca` aceita agora `modelo` como função (ganhou um teste novo). O teste do `/admin` da Fase A ganhou o novo módulo na checagem do ESLint de scripts embutidos.
 
 ---
 
@@ -718,8 +737,8 @@ bancária nem comprovante.
   retrocarga única e marca em `estado`, como o calendário. O operador pode tirá-lo de um plano no `/admin` sem
   mexer em código. Conta de chave de API passa pelo `exigir()` como nos demais recursos (sem assinatura, passa).
 - **API** (cookie ou chave, `exigir`, isolamento por workspace, limite de taxa por rota): `GET|POST
-  /v1/processos/:numero/custos`, `GET …/custos/totais`, `PATCH|DELETE /v1/custos/:id`, `PUT|DELETE
-  /v1/custos/:id/ressarcimento`, `GET|POST /v1/custos/categorias`, `PATCH /v1/custos/categorias/:id` (arquivar) e
+/v1/processos/:numero/custos`, `GET …/custos/totais`, `PATCH|DELETE /v1/custos/:id`, `PUT|DELETE
+/v1/custos/:id/ressarcimento`, `GET|POST /v1/custos/categorias`, `PATCH /v1/custos/categorias/:id` (arquivar) e
   `GET …/custos/prestacao.pdf`. Totais calculados no servidor, em inteiros: gasto, reembolsável, ressarcido, saldo a
   cobrar (= reembolsável − ressarcido) e subtotais por categoria. Lançamento de outra conta é 404, igual a "não existe".
 - **Prestação de contas em PDF** (pdf-lib, que o projeto já usa — nenhuma dependência nova): A4, cabeçalho da tabela
@@ -930,23 +949,23 @@ a fórmula do webhook vem do código do SDK oficial (`mercadopago/sdk-nodejs`), 
 documentação passado pelo dono. Tudo o que depende disso está num arquivo só,
 `infrastructure/adapters/pagamento/mercadoPago.constantes.ts` (e no corpo de `criarAssinatura`).
 
-| Item a confirmar no teste | O que assumi | Onde mudar |
-|---|---|---|
-| `POST /preapproval` com `status: "pending"` devolve `init_point`, e o comprador consegue pagar só com cartão | sim | `esquemaDaCriacao` e `STATUS_AO_CRIAR` |
-| `end_date` | omitido (assinatura sem fim) | corpo de `criarAssinatura` |
-| `payer_email` precisa ser o e-mail da conta do Mercado Pago do comprador | a tela avisa que pode ser diferente do e-mail do Processo Vivo | `AVISO_DA_CONTA_DO_GATEWAY` em `ui/pagamento.ts` |
-| `notification_url` existe no `POST /preapproval` (e vale para assinaturas) | sim; o painel de Webhooks é a segunda via | corpo de `criarAssinatura`; DEPLOY.md |
-| `X-Idempotency-Key` é aceito na criação da assinatura | sim (a chave é a referência) | cabeçalho em `chamar` |
-| Cancelar e pausar: `PUT /preapproval/{id}` com `cancelled` / `paused` | `cancelled` para cancelar; `paused` lido | `STATUS_PARA_CANCELAR`, `ESTADO_DA_ASSINATURA` |
-| Nomes dos tópicos do aviso | `subscription_preapproval`, `subscription_authorized_payment`, `payment` | `TOPICO_DO_AVISO` |
-| `GET /authorized_payments/{id}` traz `preapproval_id`, `status`, `payment { id, status }` e `external_reference` | sim | `esquemaDaCobranca`, `CAMINHOS.cobrancas` |
-| Busca das parcelas: `GET /authorized_payments/search?preapproval_id=` com `results[]` | sim | `CAMINHOS.buscaDeCobrancas`, `esquemaDaBuscaDeCobrancas` |
-| Status de pagamento → resultado; estorno parcial = `approved` com `transaction_amount_refunded` > 0 | tabela em `RESULTADO_DO_PAGAMENTO` | `mercadoPago.constantes.ts` |
-| `GET /v1/payments/{id}` traz `metadata.preapproval_id` e/ou `external_reference` da assinatura | sim (um dos dois liga o pagamento à conta) | `esquemaDoPagamento` |
-| Prefixo do token de teste | `TEST-` (o ambiente sai dele) | `PREFIXO_DO_TOKEN_DE_TESTE` |
-| `data.id` no manifesto sem converter para minúsculas; `x-request-id` presente | como no SDK | `validacaoDeWebhook.ts` |
-| Ciclo anual como `frequency: 12` + `months` | sim (não vendável ainda) | `MESES_POR_CICLO`, `TIPO_DE_FREQUENCIA` |
-| Link dos Termos | **não há página de Termos no sistema**; o link sai de `PROCESSOVIVO_TERMOS_URL` (sem a variável, o texto sai sem link) | `urlDosTermos` |
+| Item a confirmar no teste                                                                                        | O que assumi                                                                                                           | Onde mudar                                               |
+| ---------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| `POST /preapproval` com `status: "pending"` devolve `init_point`, e o comprador consegue pagar só com cartão     | sim                                                                                                                    | `esquemaDaCriacao` e `STATUS_AO_CRIAR`                   |
+| `end_date`                                                                                                       | omitido (assinatura sem fim)                                                                                           | corpo de `criarAssinatura`                               |
+| `payer_email` precisa ser o e-mail da conta do Mercado Pago do comprador                                         | a tela avisa que pode ser diferente do e-mail do Processo Vivo                                                         | `AVISO_DA_CONTA_DO_GATEWAY` em `ui/pagamento.ts`         |
+| `notification_url` existe no `POST /preapproval` (e vale para assinaturas)                                       | sim; o painel de Webhooks é a segunda via                                                                              | corpo de `criarAssinatura`; DEPLOY.md                    |
+| `X-Idempotency-Key` é aceito na criação da assinatura                                                            | sim (a chave é a referência)                                                                                           | cabeçalho em `chamar`                                    |
+| Cancelar e pausar: `PUT /preapproval/{id}` com `cancelled` / `paused`                                            | `cancelled` para cancelar; `paused` lido                                                                               | `STATUS_PARA_CANCELAR`, `ESTADO_DA_ASSINATURA`           |
+| Nomes dos tópicos do aviso                                                                                       | `subscription_preapproval`, `subscription_authorized_payment`, `payment`                                               | `TOPICO_DO_AVISO`                                        |
+| `GET /authorized_payments/{id}` traz `preapproval_id`, `status`, `payment { id, status }` e `external_reference` | sim                                                                                                                    | `esquemaDaCobranca`, `CAMINHOS.cobrancas`                |
+| Busca das parcelas: `GET /authorized_payments/search?preapproval_id=` com `results[]`                            | sim                                                                                                                    | `CAMINHOS.buscaDeCobrancas`, `esquemaDaBuscaDeCobrancas` |
+| Status de pagamento → resultado; estorno parcial = `approved` com `transaction_amount_refunded` > 0              | tabela em `RESULTADO_DO_PAGAMENTO`                                                                                     | `mercadoPago.constantes.ts`                              |
+| `GET /v1/payments/{id}` traz `metadata.preapproval_id` e/ou `external_reference` da assinatura                   | sim (um dos dois liga o pagamento à conta)                                                                             | `esquemaDoPagamento`                                     |
+| Prefixo do token de teste                                                                                        | `TEST-` (o ambiente sai dele)                                                                                          | `PREFIXO_DO_TOKEN_DE_TESTE`                              |
+| `data.id` no manifesto sem converter para minúsculas; `x-request-id` presente                                    | como no SDK                                                                                                            | `validacaoDeWebhook.ts`                                  |
+| Ciclo anual como `frequency: 12` + `months`                                                                      | sim (não vendável ainda)                                                                                               | `MESES_POR_CICLO`, `TIPO_DE_FREQUENCIA`                  |
+| Link dos Termos                                                                                                  | **não há página de Termos no sistema**; o link sai de `PROCESSOVIVO_TERMOS_URL` (sem a variável, o texto sai sem link) | `urlDosTermos`                                           |
 
 ### Testes
 
@@ -1777,7 +1796,7 @@ ou detecção de novidades.
   classe inteira (o texto no DOM também, para leitor de tela).
 - **Classe normalizada SÓ na exibição** (`domain/entities/nomeDaClasse.ts`, função pura):
   `PROCEDIMENTO COMUM CíVEL` (DJEN), `PROCEDIMENTO COMUM CÍVEL` e `Procedimento Comum
-  Cível` (DataJud) passam a ter o mesmo texto. Preposições (de, da, do, e…) em minúscula,
+Cível` (DataJud) passam a ter o mesmo texto. Preposições (de, da, do, e…) em minúscula,
   siglas conhecidas (INSS, FGTS…) preservadas, sigla desconhecida em texto bem escrito
   não é rebaixada. O valor guardado e a API não mudam; o texto cru vai no `title` quando
   difere. Sem classe, "—". Usada em Atualizações e em Meus processos (e nos resultados da
@@ -1967,7 +1986,7 @@ de ~280 peças: a lista começava na metade de baixo da janela.
 
 - **A lista sobe e ocupa a altura da janela.** A Pasta passa a ter `100dvh` e a
   página por baixo deixa de ter altura além da janela (`documentElement.scrollHeight
-  <= clientHeight`): rolam só a lista e o visualizador, cada um por dentro. Onde a
+<= clientHeight`): rolam só a lista e o visualizador, cada um por dentro. Onde a
   primeira linha começava (1366×768 / 1920×1080, medido com 40 peças sintéticas
   a mais): **553 → 277 px** e **534 → 277 px**; linhas inteiras visíveis:
   **2 → 5** e **5 → 10** (a massa de teste tem descrições de 2 linhas; com linhas
@@ -2046,7 +2065,7 @@ Página inicial — dois ajustes pedidos pelo dono depois de usar o sistema.
   nome do arquivo era comprido e sem espaço. Causa: item de grade não encolhe
   abaixo do conteúdo (`min-width: auto`). Correção: `minmax(0, …)` nas colunas de
   `.duas-colunas` e de `.app`, `min-width: 0` nos filhos e `overflow-wrap:
-  anywhere` no nome do arquivo, na linha de metadados e no título da atualização.
+anywhere` no nome do arquivo, na linha de metadados e no título da atualização.
   O nome continua inteiro na tela, quebrado em linhas (sem truncar).
 
 ### Testes
@@ -2991,7 +3010,7 @@ dentro de um único XML, sem consulta nova.
   MNI, cada um já com os seus documentos e um botão de baixar por documento.
   `domain/entities/linhaDoTempo.ts`.
 - **Filtro "Apenas andamentos principais".** Decide pelo POSITIVO — some só o
-  que foi *identificado* como cartório (juntada, expedição, conclusão,
+  que foi _identificado_ como cartório (juntada, expedição, conclusão,
   remessa). Nasce desligado, diz quantas linhas escondeu, e nunca esconde ato
   que exige providência nem ato que entrega documento.
 - **Destaque da decisão.** Sentença, decisão, acórdão, despacho e homologação
@@ -3092,8 +3111,8 @@ lugar certo e mostrou que o conteúdo dele não servia.
 - **O botão de acompanhar em lote dizia "Acompanhar todos" e acompanhava os
   FILTRADOS.** Com um filtro ativo a tela mostrava três números — o total no
   título, "mostrando X de Y" no aviso e o botão — e só o botão não se
-  explicava. Agora o rótulo conta: *"Acompanhar 7 selecionados"*, *"Acompanhar
-  os 12 filtrados"*, *"Acompanhar os 130"*.
+  explicava. Agora o rótulo conta: _"Acompanhar 7 selecionados"_, _"Acompanhar
+  os 12 filtrados"_, _"Acompanhar os 130"_.
 
 ### Adicionado
 
@@ -3683,8 +3702,8 @@ dentro de um despacho, trazendo processo em que o cliente é apenas citado.
 
 **As partes já vinham na resposta e eram jogadas fora.**
 
-Uma busca por OAB devolveu 130 processos. A pergunta do dono foi imediata: *"em
-quais deles esse advogado representa o Condomínio Sunsquare?"* — e a resposta
+Uma busca por OAB devolveu 130 processos. A pergunta do dono foi imediata: _"em
+quais deles esse advogado representa o Condomínio Sunsquare?"_ — e a resposta
 já estava na tela, invisível. O DJEN manda os destinatários de cada intimação,
 o mapper os consolida em `partes`, a rota devolve tudo, e a lista desenhava
 apenas número, tribunal, classe e último andamento.
@@ -3747,8 +3766,8 @@ consultada pode não trazer o nome. O resultado do filtro é piso, não teto.
 **Um filtro esquecido, e a carteira parecia ter um processo em vez de três.**
 
 A v0.14.1 tratou metade do problema — a tela inicial não dizia quantos
-processos existem. Mas o relato seguinte foi decisivo: *"eu saí e entrei e
-apareceram os processos"*. Sair e entrar recarrega a página, e recarregar a
+processos existem. Mas o relato seguinte foi decisivo: _"eu saí e entrei e
+apareceram os processos"_. Sair e entrar recarrega a página, e recarregar a
 página apaga as variáveis globais onde os filtros da tela de processos moram.
 
 Ou seja: havia um filtro ativo. Ele sobrevivia a trocar de aba, a abrir
@@ -3982,10 +4001,10 @@ sem a lista.
   tribunal devolve só o cabeçalho — com sucesso. Medido no mesmo processo, mesma
   credencial, mesmo `incluirDocumentos=true`:
 
-  | `movimentos` | resposta | `<documento>` |
-  |---|---|---|
-  | `false` | 4.122 bytes | 0 |
-  | `true` | 279.653 bytes | 278 |
+  | `movimentos` | resposta      | `<documento>` |
+  | ------------ | ------------- | ------------- |
+  | `false`      | 4.122 bytes   | 0             |
+  | `true`       | 279.653 bytes | 278           |
 
   Há teste travando a linha no envelope, porque é o tipo de mudança que se
   desfaz sem querer e volta a falhar em silêncio.
@@ -4381,7 +4400,7 @@ A saída foi outra fonte oficial.
   só o dia, então duas decisões publicadas no mesmo dia no mesmo processo
   viravam uma só e a segunda nunca era avisada.
 - **Acompanhar em lote** na tela: o resultado da busca por OAB ganhou o botão
-  *Acompanhar todos*. Digitar a própria inscrição uma vez e sair com a carteira
+  _Acompanhar todos_. Digitar a própria inscrição uma vez e sair com a carteira
   inteira sob vigilância é o fluxo que fecha o produto.
 - `tests/fixtures/djen-comunica-real.json` — captura real, com as armadilhas
   anotadas no cabeçalho.
