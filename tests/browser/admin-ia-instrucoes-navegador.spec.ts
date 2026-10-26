@@ -622,13 +622,16 @@ describe.skipIf(sem)(
       await textoContem(page.locator('#ia-i-versao'), 'Em uso: ato-1.2.0+e1');
       // texto antigo da história volta para o editor, marcado como não salvo
       await page.locator('#ia-i-hist-bt').click();
-      await page.locator('[data-ia-i-usar="1"]').click();
-      expect(await page.locator('#ia-i-texto').inputValue()).toBe(
-        INSTRUCAO_UM + ' mais um pouco',
-      );
       await page.locator('#ia-i-texto').fill('Outro texto.');
-      await page.locator('[data-ia-i-usar="1"]').click();
       await textoContem(page.locator('#ia-i-sujo'), 'Alterações não salvas');
+      await page.locator('[data-ia-i-usar="1"]').click();
+      // a resposta é assíncrona: o editor volta ao texto de +e1 (igual ao salvo, então "Tudo salvo")
+      await esperar(async () =>
+        expect(await page.locator('#ia-i-texto').inputValue()).toBe(
+          INSTRUCAO_UM + ' mais um pouco',
+        ),
+      );
+      await textoContem(page.locator('#ia-i-sujo'), 'Tudo salvo');
       await page.locator('[data-ia-i-ver-texto="1"]').click();
       expect(await page.locator('#ia-i-vt').innerText()).toContain('mais um pouco');
     });
