@@ -604,9 +604,13 @@ describe.skipIf(sem)(
     it('publicar fica desabilitado enquanto há alteração não salva, com a razão; e reaparece o "usar como rascunho" do histórico', async () => {
       await abrir();
       await escreverESalvar(INSTRUCAO_UM);
-      expect(await page.locator('#ia-i-publicar').isDisabled()).toBe(false);
+      await esperar(async () =>
+        expect(await page.locator('#ia-i-publicar').isDisabled()).toBe(false),
+      );
       await page.locator('#ia-i-texto').fill(INSTRUCAO_UM + ' mais um pouco');
-      expect(await page.locator('#ia-i-publicar').isDisabled()).toBe(true);
+      await esperar(async () =>
+        expect(await page.locator('#ia-i-publicar').isDisabled()).toBe(true),
+      );
       await textoContem(
         page.locator('#ia-i-pub-ajuda'),
         'Salve o rascunho para poder publicar.',
@@ -940,6 +944,8 @@ describe.skipIf(sem)(
         expect(tudo).toBe(true);
         // nada fica cortado: o botão de publicar e o de reverter cabem na janela
         for (const id of ['ia-i-publicar', 'ia-i-reverter', 'ia-i-salvar']) {
+          // a tela se refaz depois de publicar (recarrega o registro da Fase A): espera voltar
+          await page.locator(`#${id}`).waitFor({ state: 'visible' });
           const r = await page.locator(`#${id}`).boundingBox();
           expect(r, id).not.toBeNull();
           expect((r?.x ?? 0) + (r?.width ?? 0), id).toBeLessThanOrEqual(largura + 1);
