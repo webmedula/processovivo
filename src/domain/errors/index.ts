@@ -1341,3 +1341,43 @@ export class ModeloDeIaRecusadoError extends DomainError {
     super(mensagem);
   }
 }
+
+/**
+ * O painel de IA do /admin (Fase C, v0.61.0) recusou salvar, publicar ou reverter instruções, experimentar
+ * num caso real ou rodar o conjunto de verificação. Nada foi gravado nem enviado ao provedor. A mensagem é
+ * nossa e nunca repete o que foi recebido (nem o texto da instrução, nem o caso escolhido).
+ */
+export type MotivoDeInstrucaoDeIaRecusada =
+  | 'funcao_desconhecida'
+  | 'texto_vazio'
+  | 'texto_grande'
+  | 'observacao_invalida'
+  | 'confirmacao_necessaria'
+  | 'rascunho_inexistente'
+  | 'rascunho_mudou'
+  | 'nada_para_reverter'
+  | 'versao_inexistente'
+  | 'versoes_invalidas'
+  | 'experimento_indisponivel'
+  | 'conta_do_dono_ausente'
+  | 'caso_invalido'
+  | 'caso_nao_encontrado'
+  | 'caso_sigiloso'
+  | 'caso_sem_texto'
+  | 'experimento_em_andamento'
+  | 'limite_de_experimentos'
+  | 'verificacao_indisponivel'
+  | 'verificacao_em_andamento'
+  | 'verificacao_nao_encontrada'
+  | 'estimativa_acima_do_teto';
+
+export class InstrucaoDeIaRecusadaError extends DomainError {
+  readonly codigo = 'INSTRUCAO_DE_IA_RECUSADA';
+
+  constructor(
+    readonly motivo: MotivoDeInstrucaoDeIaRecusada,
+    mensagem: string,
+  ) {
+    super(mensagem);
+  }
+}

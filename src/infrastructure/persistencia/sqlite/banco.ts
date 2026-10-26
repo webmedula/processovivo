@@ -295,6 +295,24 @@ const ESQUEMA = [
      contagem INTEGER NOT NULL,
      PRIMARY KEY (dia, funcao, motivo)
    )`,
+  // Fase C do painel de IA (v0.61.0): as instruções de interpretação editáveis. Cada linha é uma versão do bloco de
+  // UMA função (`e1`, `e2`…, nunca reaproveitada); `rascunho` (no máximo um por função), `publicada` ou `substituida`.
+  // O texto é do operador (instruções de estilo), nunca texto de ato ou de peça. A versão em produção mora em
+  // `ia_config.instrucoes_versao` (NULL ou 0 = vazio = o prompt de sempre), então não há retrocarga.
+  `CREATE TABLE IF NOT EXISTS ia_instrucoes (
+     funcao        TEXT NOT NULL,
+     versao        INTEGER NOT NULL,
+     texto         TEXT NOT NULL,
+     autor         TEXT NOT NULL,
+     criado_em     TEXT NOT NULL,
+     estado        TEXT NOT NULL,
+     observacao    TEXT NOT NULL DEFAULT '',
+     publicado_em  TEXT,
+     publicado_por TEXT,
+     PRIMARY KEY (funcao, versao)
+   )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_ia_instrucoes_rascunho
+     ON ia_instrucoes (funcao) WHERE estado = 'rascunho'`,
 
   `CREATE TABLE IF NOT EXISTS estado (
      chave TEXT PRIMARY KEY,
@@ -985,6 +1003,12 @@ const COLUNAS_ACRESCENTADAS: ReadonlyArray<{
   { tabela: 'ia_config', coluna: 'modelo_desde', tipo: 'TEXT' },
   { tabela: 'ia_alteracoes', coluna: 'teste_id', tipo: 'TEXT' },
   { tabela: 'ia_alteracoes', coluna: 'aprovacao', tipo: 'TEXT' },
+  // Fase C (v0.61.0): a versão das instruções em produção (NULL/0 = vazio) e a anterior (para reverter); o teste de
+  // conjunto de verificação de instruções reaproveita `ia_testes_modelo` (NULL = teste de modelo, como sempre).
+  { tabela: 'ia_config', coluna: 'instrucoes_versao', tipo: 'INTEGER' },
+  { tabela: 'ia_config', coluna: 'instrucoes_anterior', tipo: 'INTEGER' },
+  { tabela: 'ia_testes_modelo', coluna: 'tipo', tipo: 'TEXT' },
+  { tabela: 'ia_testes_modelo', coluna: 'instrucao_versao', tipo: 'INTEGER' },
   /*
    * `total_atos_recebidos` (v0.34.0) NÃO tem retrocarga: o "N" só existe na
    * resposta do MNI, e consultar o tribunal sem a pessoa pedir é o que a regra

@@ -186,6 +186,9 @@ export class ServicoModelosDeIa {
     teste: TesteDeModelo | undefined,
   ): SituacaoDaPublicacao {
     if (!teste) return { pode: false, motivo: 'teste_nao_encontrado' };
+    // O conjunto de verificação das instruções (Fase C) nunca serve para publicar modelo.
+    if (teste.tipo === 'instrucoes')
+      return { pode: false, motivo: 'teste_nao_encontrado' };
     if (teste.funcao !== funcao) return { pode: false, motivo: 'teste_de_outro_modelo' };
     if (teste.estado !== 'concluido')
       return { pode: false, motivo: 'teste_nao_concluido' };

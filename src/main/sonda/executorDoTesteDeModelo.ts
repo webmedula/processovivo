@@ -201,15 +201,112 @@ export class ExecutorDoTesteDeModeloComSonda implements ExecutorDoTesteDeModelo 
     }
 
     const json = this.conjunto(p.funcao);
-    const modelos = [p.referencia, p.candidato];
+    const comum = this.comum(lista, p);
+    const r = await this.comparar(
+      p.funcao,
+      json,
+      comum,
+      [p.referencia, p.candidato],
+      p.precos,
+    );
+    return {
+      tipo: 'ok',
+      candidato: r.dele(p.candidato),
+      referencia: r.dele(p.referencia),
+      gastoUsd: r.gastoUsd,
+      tetoAtingido: r.tetoAtingido,
+    };
+  }
+
+  // --- conjunto de verificação das INSTRUÇÕES (Fase C, v0.61.0) ------------------------------------------------
+
+  /** Sem rede: as chamadas e o custo de rodar o conjunto sintético duas vezes (publicada e rascunho) no mesmo modelo. */
+  estimarInstrucoes(
+    funcao: FuncaoDeIa,
+    modelo: string,
+    precos: ReadonlyMap<string, PrecoPorTokenDoModelo>,
+  ): EstimativaDoTeste {
+    return this.estimar(funcao, [modelo, modelo], precos);
+  }
+
+  /**
+   * Roda o MESMO conjunto sintético, no MESMO modelo, duas vezes: com a instrução publicada (referência) e
+   * com o rascunho (candidato). Reaproveita os comparadores, que passam por `executarSonda` (ZDR por chamada,
+   * `provider.only`, par modelo + provedor conferido) e dividem o MESMO teto de gasto da rodada.
+   */
+  async executarInstrucoes(p: {
+    readonly funcao: FuncaoDeIa;
+    readonly modelo: string;
+    readonly publicada: string;
+    readonly rascunho: string;
+    readonly tetoUsd: number;
+    readonly precos: ReadonlyMap<string, PrecoPorTokenDoModelo>;
+    readonly sinal: AbortSignal;
+    readonly aoChamar: () => void;
+  }): Promise<ResultadoDaExecucaoDoTeste> {
+    let lista: readonly EndpointZdr[];
+    try {
+      lista = await this.o.buscarListaZdr();
+    } catch {
+      return { tipo: 'zdr_indisponivel' };
+    }
+    if (!modeloTemZdr(lista, p.modelo)) return { tipo: 'sem_zdr' };
+
+    const json = this.conjunto(p.funcao);
+    const comum = this.comum(lista, {
+      candidato: p.modelo,
+      referencia: p.modelo,
+      tetoUsd: p.tetoUsd,
+      precos: p.precos,
+      sinal: p.sinal,
+      aoChamar: p.aoChamar,
+    });
+    const publicada = await this.comparar(
+      p.funcao,
+      json,
+      comum,
+      [p.modelo],
+      p.precos,
+      p.publicada,
+    );
+    const rascunho = await this.comparar(
+      p.funcao,
+      json,
+      comum,
+      [p.modelo],
+      p.precos,
+      p.rascunho,
+    );
+    return {
+      tipo: 'ok',
+      candidato: rascunho.dele(p.modelo),
+      referencia: publicada.dele(p.modelo),
+      // O transporte é o mesmo nas duas rodadas: o gasto da segunda já inclui o da primeira.
+      gastoUsd: rascunho.gastoUsd,
+      tetoAtingido: publicada.tetoAtingido || rascunho.tetoAtingido,
+    };
+  }
+
+  // --- internos ------------------------------------------------------------------------------------------------------
+
+  /** O transporte com contagem, cancelamento e teto, e as funções de ZDR, comuns a toda rodada. */
+  private comum(
+    lista: readonly EndpointZdr[],
+    p: {
+      readonly candidato: string;
+      readonly referencia: string;
+      readonly tetoUsd: number;
+      readonly precos: ReadonlyMap<string, PrecoPorTokenDoModelo>;
+      readonly sinal: AbortSignal;
+      readonly aoChamar: () => void;
+    },
+  ): Comum {
     const transporte = new TransporteComTeto(
       new TransporteDoTeste(this.o.criarTransporte(), p.sinal, p.aoChamar),
       p.tetoUsd,
       p.precos,
     );
-    const comum = {
-      modeloDeReferencia: p.referencia,
-      modelos,
+    return {
       transporte,
       teto: transporte,
       provedoresPermitidos: (m: string) => provedoresPermitidos(lista, m),
@@ -219,54 +316,71 @@ export class ExecutorDoTesteDeModeloComSonda implements ExecutorDoTesteDeModelo 
       agora: this.o.agora,
       ...(this.o.dormir ? { dormir: this.o.dormir } : {}),
     };
+  }
 
+  /**
+   * Roda o comparador da função (a lógica de comparação NÃO é copiada) e devolve as métricas normalizadas
+   * de cada modelo. `instrucao` ausente = o prompt de sempre.
+   */
+  private async comparar(
+    funcao: FuncaoDeIa,
+    json: string,
+    comum: Comum,
+    modelos: readonly string[],
+    precos: ReadonlyMap<string, PrecoPorTokenDoModelo>,
+    instrucao?: string,
+  ): Promise<{
+    dele: (modelo: string) => MetricasDoModelo;
+    gastoUsd: number;
+    tetoAtingido: boolean;
+  }> {
+    const opcoes = {
+      ...comum,
+      modeloDeReferencia: modelos[0] as string,
+      modelos,
+      ...(instrucao ? { instrucao } : {}),
+    };
     const daLinha = (
       registros: readonly RegistroDaChamada[],
       modelo: string,
       f: DaFuncao,
-    ): MetricasDoModelo => normalizar(modelo, registros, p.precos, f);
+    ): MetricasDoModelo => normalizar(modelo, registros, precos, f);
 
-    if (p.funcao === 'ato') {
-      const r = await compararModelos({ ...comum, casos: lerCasosDeAvaliacao(json) });
-      const dele = (m: string): MetricasDoModelo => {
-        const l = r.linhas.find((x) => x.modelo === m);
-        return daLinha(r.registros, m, {
-          citacaoVerificada: l?.citacaoVerificada ?? null,
-          pontosCobertos: l?.pontosCobertos ?? 0,
-          pontosTotais: l?.pontosTotais ?? 0,
-          violacoes: l?.totalViolacoes ?? 0,
-          interrompido: l?.interrompido ?? true,
-        });
-      };
+    if (funcao === 'ato') {
+      const r = await compararModelos({ ...opcoes, casos: lerCasosDeAvaliacao(json) });
       return {
-        tipo: 'ok',
-        candidato: dele(p.candidato),
-        referencia: dele(p.referencia),
+        dele: (m) => {
+          const l = r.linhas.find((x) => x.modelo === m);
+          return daLinha(r.registros, m, {
+            citacaoVerificada: l?.citacaoVerificada ?? null,
+            pontosCobertos: l?.pontosCobertos ?? 0,
+            pontosTotais: l?.pontosTotais ?? 0,
+            violacoes: l?.totalViolacoes ?? 0,
+            interrompido: l?.interrompido ?? true,
+          });
+        },
         gastoUsd: r.gastoUsd,
         tetoAtingido: r.tetoAtingido,
       };
     }
 
-    if (p.funcao === 'peca') {
+    if (funcao === 'peca') {
       const r = await compararPecas({
-        ...comum,
+        ...opcoes,
         casos: lerCasosDePecas(json),
         entradaDeProducao: true,
       });
-      const dele = (m: string): MetricasDoModelo => {
-        const l = r.linhas.find((x) => x.modelo === m);
-        return daLinha(r.registros, m, {
-          citacaoVerificada: l?.citacaoVerificada ?? null,
-          pontosCobertos: l?.pontosAchados ?? 0,
-          pontosTotais: l?.pontosTotais ?? 0,
-          violacoes: l?.totalViolacoes ?? 0,
-          interrompido: l?.interrompido ?? true,
-        });
-      };
       return {
-        tipo: 'ok',
-        candidato: dele(p.candidato),
-        referencia: dele(p.referencia),
+        dele: (m) => {
+          const l = r.linhas.find((x) => x.modelo === m);
+          return daLinha(r.registros, m, {
+            citacaoVerificada: l?.citacaoVerificada ?? null,
+            pontosCobertos: l?.pontosAchados ?? 0,
+            pontosTotais: l?.pontosTotais ?? 0,
+            violacoes: l?.totalViolacoes ?? 0,
+            interrompido: l?.interrompido ?? true,
+          });
+        },
         gastoUsd: r.gastoUsd,
         tetoAtingido: r.tetoAtingido,
       };
@@ -275,33 +389,35 @@ export class ExecutorDoTesteDeModeloComSonda implements ExecutorDoTesteDeModelo 
     // Resumo: a versão do prompt de PRODUÇÃO. Não há "citação" por si só: a taxa é a dos itens que
     // passaram na verificação (situação + pendências mantidas ÷ mantidas + descartadas).
     const r = await compararResumos({
-      ...comum,
+      ...opcoes,
       casos: lerCasosDeResumo(json),
       versoes: [VERSAO_PROMPT_DO_RESUMO],
     });
-    const dele = (m: string): MetricasDoModelo => {
-      const l = r.linhas.find((x) => x.modelo === m);
-      const detalhes = r.detalhes.filter((x) => x.modelo === m);
-      const mantidos = detalhes.reduce(
-        (a, x) => a + x.situacao.length + x.pendencias.length,
-        0,
-      );
-      const descartados = l?.descartes ?? 0;
-      return daLinha(r.registros, m, {
-        citacaoVerificada:
-          mantidos + descartados > 0 ? mantidos / (mantidos + descartados) : null,
-        pontosCobertos: l?.pontosCobertos ?? 0,
-        pontosTotais: l?.pontosTotais ?? 0,
-        violacoes: l?.violacoes ?? 0,
-        interrompido: l?.interrompido ?? true,
-      });
-    };
     return {
-      tipo: 'ok',
-      candidato: dele(p.candidato),
-      referencia: dele(p.referencia),
+      dele: (m) => {
+        const l = r.linhas.find((x) => x.modelo === m);
+        const detalhes = r.detalhes.filter((x) => x.modelo === m);
+        const mantidos = detalhes.reduce(
+          (a, x) => a + x.situacao.length + x.pendencias.length,
+          0,
+        );
+        const descartados = l?.descartes ?? 0;
+        return daLinha(r.registros, m, {
+          citacaoVerificada:
+            mantidos + descartados > 0 ? mantidos / (mantidos + descartados) : null,
+          pontosCobertos: l?.pontosCobertos ?? 0,
+          pontosTotais: l?.pontosTotais ?? 0,
+          violacoes: l?.violacoes ?? 0,
+          interrompido: l?.interrompido ?? true,
+        });
+      },
       gastoUsd: r.gastoUsd,
       tetoAtingido: r.tetoAtingido,
     };
   }
 }
+
+type Comum = Omit<
+  Parameters<typeof compararModelos>[0],
+  'casos' | 'modelos' | 'modeloDeReferencia' | 'instrucao'
+>;

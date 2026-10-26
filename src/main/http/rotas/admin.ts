@@ -12,6 +12,11 @@ import type { ServicoControleDaIa } from '../../../application/services/ServicoC
 import type { ServicoModelosDeIa } from '../../../application/services/ServicoModelosDeIa.js';
 import type { ServicoTesteDeModelo } from '../../../application/services/ServicoTesteDeModelo.js';
 import { modelosParaJson, testeParaJson } from './modelosDeIaJson.js';
+import { ROTAS_ADMIN_INSTRUCOES, rotasDeInstrucoesDeIa } from './adminInstrucoesDeIa.js';
+import type { ServicoErrosDeInstrucoes } from '../../../application/services/ServicoErrosDeInstrucoes.js';
+import type { ServicoExperimentoDeInstrucoes } from '../../../application/services/ServicoExperimentoDeInstrucoes.js';
+import type { ServicoInstrucoesDeIa } from '../../../application/services/ServicoInstrucoesDeIa.js';
+import type { ServicoVerificacaoDeInstrucoes } from '../../../application/services/ServicoVerificacaoDeInstrucoes.js';
 import {
   PERIODOS_DO_PAINEL,
   type PainelDeIa,
@@ -32,7 +37,8 @@ export const ROTA_ADMIN_ASSINATURA_POR_EMAIL = '/admin/api/assinaturas/:email';
 export const ROTA_ADMIN_ASSINATURA_LIBERAR = '/admin/api/assinaturas/:email/liberar';
 export const ROTA_ADMIN_ASSINATURA_CANCELAR = '/admin/api/assinaturas/:email/cancelar';
 /** Por workspace (conta de chave de API não tem e-mail): ver `LocalizadorDeWorkspace`. */
-export const ROTA_ADMIN_ASSINATURA_POR_WORKSPACE = '/admin/api/workspaces/:workspace/assinatura';
+export const ROTA_ADMIN_ASSINATURA_POR_WORKSPACE =
+  '/admin/api/workspaces/:workspace/assinatura';
 export const ROTA_ADMIN_ASSINATURA_LIBERAR_POR_WORKSPACE =
   '/admin/api/workspaces/:workspace/assinatura/liberar';
 export const ROTA_ADMIN_ASSINATURAS_AVISAR = '/admin/api/assinaturas/avisar';
@@ -52,7 +58,8 @@ export const ROTA_ADMIN_IA_FUNCAO_TETO = '/admin/api/ia/funcoes/:funcao/teto';
 export const ROTA_ADMIN_IA_TETO_GLOBAL = '/admin/api/ia/teto-global';
 /** Modelo por função e teste obrigatório (Fase B, v0.60.0). */
 export const ROTA_ADMIN_IA_MODELOS = '/admin/api/ia/modelos';
-export const ROTA_ADMIN_IA_MODELOS_ESTIMATIVA = '/admin/api/ia/modelos/:funcao/estimativa';
+export const ROTA_ADMIN_IA_MODELOS_ESTIMATIVA =
+  '/admin/api/ia/modelos/:funcao/estimativa';
 export const ROTA_ADMIN_IA_MODELOS_TESTES = '/admin/api/ia/modelos/:funcao/testes';
 export const ROTA_ADMIN_IA_MODELOS_PUBLICAR = '/admin/api/ia/modelos/:funcao/publicar';
 export const ROTA_ADMIN_IA_MODELOS_REVERTER = '/admin/api/ia/modelos/:funcao/reverter';
@@ -88,6 +95,7 @@ export const ROTAS_ADMIN: readonly string[] = [
   ROTA_ADMIN_IA_MODELOS_REVERTER,
   ROTA_ADMIN_IA_MODELOS_TESTE,
   ROTA_ADMIN_IA_MODELOS_CANCELAR,
+  ...ROTAS_ADMIN_INSTRUCOES,
 ];
 
 const corpoLiberar = z.object({
@@ -135,14 +143,23 @@ const corpoAlterarPlano = z.object({
   ciclo: z.string().optional(),
 });
 
-const consultaDoPainelDeIa = z.object({ periodo: z.enum(PERIODOS_DO_PAINEL).default('hoje') });
-const corpoFuncaoDeIa = z.object({ ligada: z.boolean(), confirmado: z.boolean().optional() }).strict();
+const consultaDoPainelDeIa = z.object({
+  periodo: z.enum(PERIODOS_DO_PAINEL).default('hoje'),
+});
+const corpoFuncaoDeIa = z
+  .object({ ligada: z.boolean(), confirmado: z.boolean().optional() })
+  .strict();
 const corpoTetoDeIa = z.object({ teto: z.number().int().nullable() }).strict();
 const corpoAlertaDeIa = z.object({ valorUsd: z.number() }).strict();
 
-const corpoDoCandidato = z.object({ candidato: z.string().trim().min(1).max(120) }).strict();
+const corpoDoCandidato = z
+  .object({ candidato: z.string().trim().min(1).max(120) })
+  .strict();
 const corpoDoTeste = z
-  .object({ candidato: z.string().trim().min(1).max(120), confirmado: z.boolean().optional() })
+  .object({
+    candidato: z.string().trim().min(1).max(120),
+    confirmado: z.boolean().optional(),
+  })
   .strict();
 const corpoDaPublicacao = z
   .object({
@@ -155,7 +172,9 @@ const corpoDaPublicacao = z
   .strict();
 const corpoDaReversao = z.object({ confirmado: z.boolean().optional() }).strict();
 
-const corpoReconciliar = z.object({ workspace: z.string().trim().min(1).max(40).optional() });
+const corpoReconciliar = z.object({
+  workspace: z.string().trim().min(1).max(40).optional(),
+});
 
 const corpoRegras = z.object({
   diasDeTeste: z.number().int(),
@@ -189,6 +208,13 @@ export interface OpcoesRotasAdmin {
     /** Fase B (v0.60.0): modelo por função, publicar, reverter e o teste obrigatório. */
     readonly modelos: ServicoModelosDeIa;
     readonly testes: ServicoTesteDeModelo;
+    /** Fase C (v0.61.0): instruções editáveis, experimento, conjunto de verificação e "onde a IA erra". */
+    readonly instrucoes?: {
+      readonly servico: ServicoInstrucoesDeIa;
+      readonly experimento: ServicoExperimentoDeInstrucoes;
+      readonly verificacao: ServicoVerificacaoDeInstrucoes;
+      readonly erros: ServicoErrosDeInstrucoes;
+    };
   };
 }
 
@@ -285,7 +311,10 @@ export function rotasDeAdmin(opcoes: OpcoesRotasAdmin): FastifyPluginAsync {
       const nomes = new Map(catalogo.map((p) => [p.codigo, p.nome]));
       const agora = new Date();
       // Cobrança recorrente: a mais recente de cada workspace (as listadas em ordem de criação).
-      const cobrancas = new Map<string, Awaited<ReturnType<ServicoPagamentos['cobrancaDe']>>>();
+      const cobrancas = new Map<
+        string,
+        Awaited<ReturnType<ServicoPagamentos['cobrancaDe']>>
+      >();
       for (const c of (await opcoes.pagamentos?.todasAsCobrancas()) ?? []) {
         cobrancas.set(c.workspace, c);
       }
@@ -413,7 +442,11 @@ export function rotasDeAdmin(opcoes: OpcoesRotasAdmin): FastifyPluginAsync {
             mensagem: 'Esta conta não tinha assinatura para cancelar.',
           };
         }
-        return { email: req.params.email, workspace: ws, status: cancelada.statusEm(new Date()) };
+        return {
+          email: req.params.email,
+          workspace: ws,
+          status: cancelada.statusEm(new Date()),
+        };
       },
     );
 
@@ -559,7 +592,10 @@ export function rotasDeAdmin(opcoes: OpcoesRotasAdmin): FastifyPluginAsync {
     const autor = identificarOperador(opcoes.credenciais.usuario);
     const semPainel = (resposta: FastifyReply): { erro: string; mensagem: string } => {
       void resposta.code(404);
-      return { erro: 'IA_DESLIGADA', mensagem: 'O painel de IA não está disponível neste servidor.' };
+      return {
+        erro: 'IA_DESLIGADA',
+        mensagem: 'O painel de IA não está disponível neste servidor.',
+      };
     };
 
     servidor.get<{ Querystring: unknown }>(ROTA_ADMIN_IA, async (req, resposta) => {
@@ -593,7 +629,12 @@ export function rotasDeAdmin(opcoes: OpcoesRotasAdmin): FastifyPluginAsync {
         if (!ia) return semPainel(resposta);
         const c = corpoFuncaoDeIa.parse(req.body);
         // Desligar exige `confirmado: true` NO PEDIDO: a confirmação da tela não é só enfeite.
-        ia.controle.ligarOuDesligar(autor, req.params.funcao, c.ligada, c.confirmado === true);
+        ia.controle.ligarOuDesligar(
+          autor,
+          req.params.funcao,
+          c.ligada,
+          c.confirmado === true,
+        );
         return { estados: ia.controle.estados() };
       },
     );
@@ -616,7 +657,6 @@ export function rotasDeAdmin(opcoes: OpcoesRotasAdmin): FastifyPluginAsync {
       ia.controle.definirTetoGlobal(autor, c.teto);
       return { tetoGlobal: ia.controle.config().tetoGlobal };
     });
-
 
     // --- Modelo por função (Fase B, v0.60.0) -------------------------------------------------------
     // Só o operador do /admin (o hook de Basic Auth vale para todo o plugin); nenhuma rota pública chama
@@ -644,26 +684,37 @@ export function rotasDeAdmin(opcoes: OpcoesRotasAdmin): FastifyPluginAsync {
         const ia = opcoes.ia;
         if (!ia) return semPainel(resposta);
         const c = corpoDoTeste.parse(req.body);
-        const t = ia.testes.iniciar(autor, req.params.funcao, c.candidato, c.confirmado === true);
+        const t = ia.testes.iniciar(
+          autor,
+          req.params.funcao,
+          c.candidato,
+          c.confirmado === true,
+        );
         void resposta.code(202);
         return testeParaJson(t, ia.modelos.catalogo, ia.modelos.volumeRecente(t.funcao));
       },
     );
 
-    servidor.get<{ Params: { id: string } }>(ROTA_ADMIN_IA_MODELOS_TESTE, async (req, resposta) => {
-      const ia = opcoes.ia;
-      if (!ia) return semPainel(resposta);
-      resposta.header('cache-control', 'no-store');
-      const t = ia.testes.consultar(req.params.id);
-      return testeParaJson(t, ia.modelos.catalogo, ia.modelos.volumeRecente(t.funcao));
-    });
+    servidor.get<{ Params: { id: string } }>(
+      ROTA_ADMIN_IA_MODELOS_TESTE,
+      async (req, resposta) => {
+        const ia = opcoes.ia;
+        if (!ia) return semPainel(resposta);
+        resposta.header('cache-control', 'no-store');
+        const t = ia.testes.consultar(req.params.id);
+        return testeParaJson(t, ia.modelos.catalogo, ia.modelos.volumeRecente(t.funcao));
+      },
+    );
 
-    servidor.post<{ Params: { id: string } }>(ROTA_ADMIN_IA_MODELOS_CANCELAR, async (req, resposta) => {
-      const ia = opcoes.ia;
-      if (!ia) return semPainel(resposta);
-      const t = ia.testes.cancelar(req.params.id);
-      return testeParaJson(t, ia.modelos.catalogo, ia.modelos.volumeRecente(t.funcao));
-    });
+    servidor.post<{ Params: { id: string } }>(
+      ROTA_ADMIN_IA_MODELOS_CANCELAR,
+      async (req, resposta) => {
+        const ia = opcoes.ia;
+        if (!ia) return semPainel(resposta);
+        const t = ia.testes.cancelar(req.params.id);
+        return testeParaJson(t, ia.modelos.catalogo, ia.modelos.volumeRecente(t.funcao));
+      },
+    );
 
     servidor.post<{ Params: { funcao: string }; Body: unknown }>(
       ROTA_ADMIN_IA_MODELOS_PUBLICAR,
@@ -693,21 +744,42 @@ export function rotasDeAdmin(opcoes: OpcoesRotasAdmin): FastifyPluginAsync {
       },
     );
 
+    // --- Instruções de interpretação (Fase C, v0.61.0) -------------------------------------------------------
+    const instrucoesDaFase = opcoes.ia?.instrucoes;
+    rotasDeInstrucoesDeIa(
+      servidor,
+      instrucoesDaFase
+        ? {
+            autor,
+            instrucoes: instrucoesDaFase.servico,
+            experimento: instrucoesDaFase.experimento,
+            verificacao: instrucoesDaFase.verificacao,
+            erros: instrucoesDaFase.erros,
+          }
+        : undefined,
+      semPainel,
+    );
+
     /** Consulta o gateway e corrige divergências (aviso perdido). Sem corpo = todas as contas. */
-    servidor.post<{ Body: unknown }>(ROTA_ADMIN_PAGAMENTO_RECONCILIAR, async (req, resposta) => {
-      const p = opcoes.pagamentos;
-      if (!p) {
-        void resposta.code(404);
-        return {
-          erro: 'PAGAMENTO_DESLIGADO',
-          mensagem: 'A cobrança recorrente não está habilitada neste servidor.',
-        };
-      }
-      const d = corpoReconciliar.parse(req.body ?? {});
-      const workspace =
-        d.workspace !== undefined ? await opcoes.localizador.confirmar(d.workspace) : undefined;
-      return p.reconciliar(workspace !== undefined ? { workspace } : {});
-    });
+    servidor.post<{ Body: unknown }>(
+      ROTA_ADMIN_PAGAMENTO_RECONCILIAR,
+      async (req, resposta) => {
+        const p = opcoes.pagamentos;
+        if (!p) {
+          void resposta.code(404);
+          return {
+            erro: 'PAGAMENTO_DESLIGADO',
+            mensagem: 'A cobrança recorrente não está habilitada neste servidor.',
+          };
+        }
+        const d = corpoReconciliar.parse(req.body ?? {});
+        const workspace =
+          d.workspace !== undefined
+            ? await opcoes.localizador.confirmar(d.workspace)
+            : undefined;
+        return p.reconciliar(workspace !== undefined ? { workspace } : {});
+      },
+    );
   };
 }
 
@@ -740,7 +812,8 @@ function pagamentoParaAdmin(
   };
 }
 
-const numeroOuNulo = (v: number | undefined): number | null => (v === undefined ? null : v);
+const numeroOuNulo = (v: number | undefined): number | null =>
+  v === undefined ? null : v;
 
 /** O painel como JSON: datas em ISO, `undefined` vira `null` (forma estável para a tela). */
 function painelParaJson(p: PainelDeIa): Record<string, unknown> {

@@ -7,6 +7,7 @@ import type {
   ResultadoDaAnalise,
 } from '../../domain/entities/AnaliseDoAto.js';
 import { NumeroCNJ } from '../../domain/entities/NumeroCNJ.js';
+import type { Movimentacao } from '../../domain/entities/Movimentacao.js';
 import type { Processo } from '../../domain/entities/Processo.js';
 import type {
   AcaoPossivel,
@@ -20,7 +21,10 @@ import {
   ProviderIndisponivelError,
   EntradaNaoAnalisavelError,
 } from '../../domain/errors/index.js';
-import type { AnalisadorDeAto } from '../../domain/ports/AnalisadorDeAto.js';
+import type {
+  AnalisadorDeAto,
+  RespostaDoAnalisador,
+} from '../../domain/ports/AnalisadorDeAto.js';
 import type { Clock } from '../../domain/ports/Clock.js';
 import type { Logger } from '../../domain/ports/Logger.js';
 import type { RepositorioAcompanhamentos } from '../../domain/ports/RepositorioAcompanhamentos.js';
@@ -30,7 +34,16 @@ import {
   VERSAO_PROMPT,
   temTextoSuficiente,
   type AtoParaAnalisar,
+  type EntradaPreparada,
 } from '../politicas/entradaDoModelo.js';
+import {
+  versaoEfetiva,
+  type InstrucaoDoExperimento,
+} from '../../domain/entities/InstrucoesDeIa.js';
+import {
+  SEM_INSTRUCOES,
+  type InstrucoesDaFuncao,
+} from '../../domain/ports/InstrucoesDeIa.js';
 import {
   CONTROLE_SEM_PAINEL,
   type ControleDaIa,
@@ -46,7 +59,12 @@ import {
   registrarContagens,
 } from '../politicas/ocorrenciasDeIa.js';
 import type { PessoasParaRedigir } from '../politicas/redigirParaIA.js';
-import { verificarAnalise } from '../politicas/verificarAnalise.js';
+import {
+  verificarAnalise,
+  type ContagemDeCitacoes,
+  type DescartesDaVerificacao,
+  type ResultadoDaVerificacao,
+} from '../politicas/verificarAnalise.js';
 import type { ServicoAssinaturas } from './ServicoAssinaturas.js';
 
 /**
@@ -91,6 +109,39 @@ export interface AnaliseParaATela {
 
 export type RespostaDoServico = AnaliseParaATela | { readonly estado: 'erro' };
 
+export type BracoDoExperimentoDoAto =
+  | {
+      readonly rotulo: InstrucaoDoExperimento['rotulo'];
+      readonly versao: number;
+      readonly estado: 'erro';
+    }
+  | {
+      readonly rotulo: InstrucaoDoExperimento['rotulo'];
+      readonly versao: number;
+      readonly estado: 'ok';
+      readonly analise: AnaliseParaATela;
+      /** Por que não foi verificada (`sem_citacao_valida`, `expressao_proibida`…); `null` se foi. */
+      readonly motivoDeNaoVerificacao: string | null;
+      readonly descartes: DescartesDaVerificacao;
+      readonly citacoes: ContagemDeCitacoes;
+      readonly latenciaMs: number;
+      readonly custoUsd: number | null;
+      readonly tokensEntrada: number | null;
+      readonly tokensSaida: number | null;
+    };
+
+function medidasDe(
+  bruta: RespostaDoAnalisador,
+  latenciaMs: number,
+): AnaliseDoAto['medidas'] {
+  return {
+    latenciaMs,
+    ...(bruta.tokensEntrada !== undefined ? { tokensEntrada: bruta.tokensEntrada } : {}),
+    ...(bruta.tokensSaida !== undefined ? { tokensSaida: bruta.tokensSaida } : {}),
+    ...(bruta.custoUsd !== undefined ? { custoUsd: bruta.custoUsd } : {}),
+  };
+}
+
 export interface OpcoesServicoAnaliseDoAto {
   readonly repositorio: RepositorioAcompanhamentos;
   readonly analises: RepositorioAnalises;
@@ -104,6 +155,8 @@ export interface OpcoesServicoAnaliseDoAto {
   readonly controle?: ControleDaIa;
   /** Contagem de falhas e repetições, por motivo (v0.58.0). Ausente = não conta. */
   readonly ocorrencias?: RegistroDeOcorrenciasDeIa;
+  /** As instruções de interpretação publicadas no painel (Fase C, v0.61.0). Ausente = o prompt de sempre (+e0). */
+  readonly instrucoes?: InstrucoesDaFuncao;
 }
 
 export interface PedidoDeAnaliseDoAto {
@@ -156,12 +209,60 @@ export class ServicoAnaliseDoAto {
     // 1. Plano: sem ele, nada além da frase fixa. Antes de ler o retrato.
     await this.exigirPlano(workspace);
 
-    // 2. O ato vem do retrato DA CONTA, nunca do cliente.
+    // 2 a 4. O ato vem do retrato DA CONTA, nunca do cliente; sigilo, teor indisponível e texto curto param aqui.
+    const { processo, paraAnalisar, ato } = await this.lerAtoDaConta(
+      workspace,
+      numero,
+      pedido.chaveDoAto,
+    );
+
+    // 5. Limite de uso (sem tabela). A vaga é liberada em qualquer desfecho.
+    const vaga = this.o.limite.reservar(workspace);
+    if ('negada' in vaga) {
+      // O teto do dia é outra frase: "em instantes" não resolve, e insistir não adianta.
+      if (vaga.negada === 'dia') {
+        throw new EntradaNaoAnalisavelError(
+          'limite_diario',
+          'Muitas análises hoje. Tente de novo amanhã ou fale com a gente.',
+        );
+      }
+      throw new EntradaNaoAnalisavelError(
+        'limite_de_uso',
+        'Há muitas análises em andamento. Tente novamente em instantes.',
+      );
+    }
+    try {
+      return await this.chamarEGuardar(
+        pedido,
+        numero,
+        processo,
+        paraAnalisar,
+        atoDoDiario(ato),
+      );
+    } finally {
+      vaga.liberar();
+    }
+  }
+
+  /**
+   * Os passos 2 a 4 da análise, comuns ao clique do assinante e ao experimento do operador: o ato é
+   * resolvido no retrato da PRÓPRIA conta, e segredo de justiça, teor indisponível e texto curto
+   * encerram aqui, ANTES de qualquer chamada ao modelo.
+   */
+  private async lerAtoDaConta(
+    workspace: string,
+    numero: string,
+    chaveDoAto: string,
+  ): Promise<{
+    readonly processo: Processo;
+    readonly ato: Movimentacao;
+    readonly paraAnalisar: AtoParaAnalisar;
+  }> {
     const acompanhamento = await this.o.repositorio.buscar(workspace, numero);
     if (!acompanhamento) throw new AcompanhamentoNaoEncontradoError();
     const processo = acompanhamento.processo;
     const ato = processo?.movimentacoes.find(
-      (m) => chaveDaMovimentacao(m) === pedido.chaveDoAto,
+      (m) => chaveDaMovimentacao(m) === chaveDoAto,
     );
     if (!processo || !ato) {
       throw new EntradaNaoAnalisavelError(
@@ -198,62 +299,52 @@ export class ServicoAnaliseDoAto {
         'Este ato não traz texto suficiente para analisar. Leia o ato.',
       );
     }
-
-    // 5. Limite de uso (sem tabela). A vaga é liberada em qualquer desfecho.
-    const vaga = this.o.limite.reservar(workspace);
-    if ('negada' in vaga) {
-      // O teto do dia é outra frase: "em instantes" não resolve, e insistir não adianta.
-      if (vaga.negada === 'dia') {
-        throw new EntradaNaoAnalisavelError(
-          'limite_diario',
-          'Muitas análises hoje. Tente de novo amanhã ou fale com a gente.',
-        );
-      }
-      throw new EntradaNaoAnalisavelError(
-        'limite_de_uso',
-        'Há muitas análises em andamento. Tente novamente em instantes.',
-      );
-    }
-    try {
-      return await this.chamarEGuardar(
-        pedido,
-        numero,
-        processo,
-        paraAnalisar,
-        atoDoDiario(ato),
-      );
-    } finally {
-      vaga.liberar();
-    }
+    return { processo, ato, paraAnalisar };
   }
 
-  private async chamarEGuardar(
-    pedido: PedidoDeAnaliseDoAto,
-    numero: string,
-    processo: Processo,
+  /**
+   * Prepara a entrada, chama o modelo e verifica a resposta. É o MESMO caminho do clique do assinante e do
+   * experimento do operador (`contar` liga as ocorrências do painel: o experimento não as conta, para não
+   * sujar os números da produção). Falha do modelo vira `undefined`, nunca exceção.
+   */
+  private async chamar(
     ato: AtoParaAnalisar,
-    doDiario: boolean,
-  ): Promise<RespostaDoServico> {
+    processo: Processo,
+    instrucao: string,
+    sinal: AbortSignal | undefined,
+    contar: boolean,
+  ): Promise<
+    | {
+        readonly entrada: EntradaPreparada;
+        readonly bruta: RespostaDoAnalisador;
+        readonly verificada: ResultadoDaVerificacao;
+        readonly resultado: ResultadoDaAnalise;
+        readonly latenciaMs: number;
+      }
+    | undefined
+  > {
     const entrada = prepararEntrada(
       ato,
       {
         ...(processo.classe ? { classe: processo.classe } : {}),
         tribunal: processo.tribunal,
       },
-      { pessoas: pessoasDoProcesso(processo) },
+      { pessoas: pessoasDoProcesso(processo), instrucao },
     );
 
     const inicio = this.o.clock.monotonico();
-    let bruta;
+    let bruta: RespostaDoAnalisador;
     try {
       bruta = await this.o.analisador.analisar({
         sistema: entrada.sistema,
         usuario: entrada.usuario,
-        ...(pedido.sinal ? { sinal: pedido.sinal } : {}),
-        aoRepetir: () => this.ocorrencias.registrar('ato', 'repeticao_automatica'),
+        ...(sinal ? { sinal } : {}),
+        ...(contar
+          ? { aoRepetir: () => this.ocorrencias.registrar('ato', 'repeticao_automatica') }
+          : {}),
       });
     } catch (erro) {
-      this.ocorrencias.registrar('ato', motivoDaFalhaDaChamada(erro));
+      if (contar) this.ocorrencias.registrar('ato', motivoDaFalhaDaChamada(erro));
       // Só a CLASSE do erro e o roteamento SANEADO vão ao log: a mensagem de um roteador pode
       // ecoar o pedido (que leva texto de ato), então ela nunca é copiada.
       const r = erro instanceof ProviderIndisponivelError ? erro.roteamento : undefined;
@@ -264,7 +355,7 @@ export class ServicoAnaliseDoAto {
         ...(r?.passo !== undefined ? { passoDoRoteamento: r.passo } : {}),
         ...(r?.funil !== undefined ? { funilDoRoteamento: funilEmTexto(r.funil) } : {}),
       });
-      return { estado: 'erro' };
+      return undefined;
     }
     const latenciaMs = Math.max(0, Math.round(this.o.clock.monotonico() - inicio));
 
@@ -283,9 +374,24 @@ export class ServicoAnaliseDoAto {
             ...(verificada.prazo !== undefined ? { prazo: verificada.prazo } : {}),
           }
         : { estado: 'nao_verificada', motivo: verificada.motivo };
-    if (verificada.estado !== 'verificada') {
+    if (contar && verificada.estado !== 'verificada') {
       registrarContagens(this.ocorrencias, 'ato', contagensDoAto(verificada.motivo));
     }
+    return { entrada, bruta, verificada, resultado, latenciaMs };
+  }
+
+  private async chamarEGuardar(
+    pedido: PedidoDeAnaliseDoAto,
+    numero: string,
+    processo: Processo,
+    ato: AtoParaAnalisar,
+    doDiario: boolean,
+  ): Promise<RespostaDoServico> {
+    // A versão e o texto vêm juntos, de UMA leitura: o que se grava é a versão do texto que foi ao modelo.
+    const instrucao = (this.o.instrucoes ?? SEM_INSTRUCOES).efetiva('ato');
+    const feita = await this.chamar(ato, processo, instrucao.texto, pedido.sinal, true);
+    if (!feita) return { estado: 'erro' };
+    const { entrada, bruta, resultado, latenciaMs } = feita;
 
     const analise: AnaliseDoAto = {
       id: this.o.novoId(),
@@ -295,22 +401,78 @@ export class ServicoAnaliseDoAto {
       resultado,
       procedencia: {
         modelo: bruta.modelo,
-        versaoPrompt: VERSAO_PROMPT,
+        versaoPrompt: versaoEfetiva(VERSAO_PROMPT, instrucao.versao),
         provedor: bruta.provedor,
         criadaEm: this.o.clock.agora(),
       },
-      medidas: {
-        latenciaMs,
-        ...(bruta.tokensEntrada !== undefined
-          ? { tokensEntrada: bruta.tokensEntrada }
-          : {}),
-        ...(bruta.tokensSaida !== undefined ? { tokensSaida: bruta.tokensSaida } : {}),
-        ...(bruta.custoUsd !== undefined ? { custoUsd: bruta.custoUsd } : {}),
-      },
+      medidas: medidasDe(bruta, latenciaMs),
     };
     await this.o.analises.salvar(analise);
 
     return paraATela(analise, (t) => entrada.redacao.restaurar(t), doDiario);
+  }
+
+  /**
+   * EXPERIMENTO do operador (Fase C, v0.61.0): roda o MESMO caminho de produção (redação, modelo com ZDR,
+   * verificação, segredo de justiça) sobre UM ato da conta do operador, uma vez para cada instrução, e
+   * devolve as respostas completas. **Não grava nada** — nem a análise, nem o texto do caso, nem consome o
+   * teto dos assinantes; só o operador chama (a rota é do /admin). Nada de plano: a conta é a do dono.
+   */
+  async experimentar(pedido: {
+    readonly workspace: string;
+    readonly numero: string;
+    readonly chaveDoAto: string;
+    readonly instrucoes: readonly InstrucaoDoExperimento[];
+    readonly sinal?: AbortSignal;
+  }): Promise<readonly BracoDoExperimentoDoAto[]> {
+    const numero = NumeroCNJ.criar(pedido.numero).digitos;
+    const { processo, paraAnalisar, ato } = await this.lerAtoDaConta(
+      pedido.workspace,
+      numero,
+      pedido.chaveDoAto,
+    );
+    const doDiario = atoDoDiario(ato);
+    return Promise.all(
+      pedido.instrucoes.map(async (i): Promise<BracoDoExperimentoDoAto> => {
+        const feita = await this.chamar(
+          paraAnalisar,
+          processo,
+          i.texto,
+          pedido.sinal,
+          false,
+        );
+        if (!feita) return { rotulo: i.rotulo, versao: i.versao, estado: 'erro' };
+        const { entrada, bruta, verificada, resultado, latenciaMs } = feita;
+        const analise: AnaliseDoAto = {
+          id: 'experimento',
+          workspace: pedido.workspace,
+          numero,
+          chaveDoAto: pedido.chaveDoAto,
+          resultado,
+          procedencia: {
+            modelo: bruta.modelo,
+            versaoPrompt: versaoEfetiva(VERSAO_PROMPT, i.versao),
+            provedor: bruta.provedor,
+            criadaEm: this.o.clock.agora(),
+          },
+          medidas: medidasDe(bruta, latenciaMs),
+        };
+        return {
+          rotulo: i.rotulo,
+          versao: i.versao,
+          estado: 'ok',
+          analise: paraATela(analise, (t) => entrada.redacao.restaurar(t), doDiario),
+          motivoDeNaoVerificacao:
+            resultado.estado === 'nao_verificada' ? resultado.motivo : null,
+          descartes: verificada.descartes,
+          citacoes: verificada.citacoes,
+          latenciaMs,
+          custoUsd: bruta.custoUsd ?? null,
+          tokensEntrada: bruta.tokensEntrada ?? null,
+          tokensSaida: bruta.tokensSaida ?? null,
+        };
+      }),
+    );
   }
 
   /** Só o dono da conta avalia; pode corrigir a avaliação anterior. 404 igual para "não existe" e "é de outra". */

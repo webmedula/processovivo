@@ -441,6 +441,8 @@ function reiniciar(){
 }
 
 window.__pvIaModelos={montar:montar,reiniciar:reiniciar};
+/* Os formatadores de número, custo, tempo e data são os mesmos da seção de instruções (v0.61.0). */
+window.__pvIaFormato={n:n,usd:usd,pct:pct,seg:seg,dth:dth,valor:valor,diferenca:diferenca};
 })();
 `;
 

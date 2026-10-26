@@ -24,6 +24,23 @@ import { RepositorioDeCustosSqlite } from '../../src/infrastructure/persistencia
 import { comDeteccaoDoCalendario } from '../../src/application/services/ingestaoDoCalendario.js';
 import { RepositorioDeEventosSqlite } from '../../src/infrastructure/persistencia/sqlite/RepositorioDeEventosSqlite.js';
 import type { ConfiguracaoLeitor } from '../../src/application/services/ServicoLeitor.js';
+import { ServicoInstrucoesDeIa } from '../../src/application/services/ServicoInstrucoesDeIa.js';
+import { ServicoExperimentoDeInstrucoes } from '../../src/application/services/ServicoExperimentoDeInstrucoes.js';
+import { ServicoVerificacaoDeInstrucoes } from '../../src/application/services/ServicoVerificacaoDeInstrucoes.js';
+import { ServicoErrosDeInstrucoes } from '../../src/application/services/ServicoErrosDeInstrucoes.js';
+import {
+  LeitorDeErrosDeIaSqlite,
+  RepositorioDeInstrucoesDeIaSqlite,
+} from '../../src/infrastructure/persistencia/sqlite/RepositorioDeInstrucoesDeIaSqlite.js';
+import type { ExecutorDaVerificacaoDeInstrucoes } from '../../src/domain/ports/InstrucoesDeIa.js';
+import { INSTRUCAO_DO_SISTEMA } from '../../src/application/politicas/entradaDoModelo.js';
+import { INSTRUCAO_DO_RESUMO } from '../../src/application/politicas/entradaDoResumo.js';
+import {
+  INSTRUCAO_DA_PECA,
+  INSTRUCAO_DE_FORMATO_DA_PECA,
+} from '../../src/application/politicas/entradaDaPeca.js';
+import { INSTRUCAO_DE_FORMATO_DO_RESUMO } from '../../src/infrastructure/adapters/modelo/esquemaDoResumo.js';
+import { INSTRUCAO_DE_FORMATO_EM_TEXTO } from '../../src/infrastructure/adapters/modelo/TransporteOpenRouter.js';
 import { randomBytes, randomUUID } from 'node:crypto';
 import type { Clock } from '../../src/domain/ports/Clock.js';
 import { ArmazemEmDisco } from '../../src/infrastructure/arquivos/ArmazemEmDisco.js';
@@ -66,7 +83,10 @@ import {
   RegistroDeOcorrenciasDeIaSqlite,
   RepositorioDeConfigDeIaSqlite,
 } from '../../src/infrastructure/persistencia/sqlite/RepositoriosDoPainelDeIaSqlite.js';
-import { LimiteDeAnalises, TetoDiario } from '../../src/application/politicas/limiteDeAnalises.js';
+import {
+  LimiteDeAnalises,
+  TetoDiario,
+} from '../../src/application/politicas/limiteDeAnalises.js';
 import type { AnalisadorDeAto } from '../../src/domain/ports/AnalisadorDeAto.js';
 import { RepositorioAnalisesSqlite } from '../../src/infrastructure/persistencia/sqlite/RepositorioAnalisesSqlite.js';
 import type { Aplicacao } from '../../src/main/factories/makeProcessoSearchService.js';
@@ -243,6 +263,18 @@ export interface OpcoesAplicacaoDeTeste {
     readonly tetoUsd?: number;
     readonly novoId?: () => string;
     readonly clock?: Clock;
+  };
+  /**
+   * Instruções de interpretação editáveis (Fase C, v0.61.0). Sempre montadas (o painel as lê mesmo sem IA); a
+   * verificação só é "disponível" com um `executor` dublê e o experimento só acha casos se `contaDoDono`
+   * devolver o workspace da "conta do operador" do teste — nenhum teste toca a rede.
+   */
+  readonly instrucoesDeIa?: {
+    readonly executor?: ExecutorDaVerificacaoDeInstrucoes;
+    readonly contaDoDono?: () => Promise<string | undefined>;
+    readonly maximoDeExperimentosPorHora?: number;
+    readonly tetoUsd?: number;
+    readonly novoId?: () => string;
   };
   readonly analiseDePeca?: {
     readonly analisador: AnalisadorDePeca;
@@ -473,7 +505,11 @@ export function aplicacaoDeTeste(
     agora: () => (opcoes.agora ? opcoes.agora() : new Date()),
     monotonico: () => 0,
   };
-  const ocorrenciasDaIa = new RegistroDeOcorrenciasDeIaSqlite(db, relogioDoPainel, loggerSilencioso);
+  const ocorrenciasDaIa = new RegistroDeOcorrenciasDeIaSqlite(
+    db,
+    relogioDoPainel,
+    loggerSilencioso,
+  );
   const controleDaIa = new ServicoControleDaIa({
     repositorio: new RepositorioDeConfigDeIaSqlite(db),
     ambiente: {
@@ -521,7 +557,9 @@ export function aplicacaoDeTeste(
     clock: relogioDosModelos,
     logger: loggerSilencioso,
     novoId: opcoes.modelosDeIa?.novoId ?? (() => randomUUID()),
-    ...(opcoes.modelosDeIa?.tetoUsd !== undefined ? { tetoUsd: opcoes.modelosDeIa.tetoUsd } : {}),
+    ...(opcoes.modelosDeIa?.tetoUsd !== undefined
+      ? { tetoUsd: opcoes.modelosDeIa.tetoUsd }
+      : {}),
   });
   testeDeModelo.recuperarNoArranque();
   // Como em produção (v0.52.0): a análise de ato, o resumo e a peça gastam do MESMO teto por conta.
@@ -530,6 +568,18 @@ export function aplicacaoDeTeste(
     opcoes.analiseIa?.clock ?? relogioDoPainel,
     controleDaIa,
   );
+  // Sem cache nos testes: a publicação vale na chamada seguinte.
+  const instrucoesDeIa = new ServicoInstrucoesDeIa({
+    repositorio: new RepositorioDeInstrucoesDeIaSqlite(db),
+    textosFixos: {
+      ato: { fixa: INSTRUCAO_DO_SISTEMA, formato: INSTRUCAO_DE_FORMATO_EM_TEXTO },
+      resumo: { fixa: INSTRUCAO_DO_RESUMO, formato: INSTRUCAO_DE_FORMATO_DO_RESUMO },
+      peca: { fixa: INSTRUCAO_DA_PECA, formato: INSTRUCAO_DE_FORMATO_DA_PECA },
+    },
+    clock: relogioDoPainel,
+    logger: loggerSilencioso,
+    validadeDoCacheMs: 0,
+  });
   const analiseIa = opcoes.analiseIa
     ? new ServicoAnaliseDoAto({
         repositorio: repositorioCru,
@@ -554,6 +604,7 @@ export function aplicacaoDeTeste(
         novoId: () => randomUUID(),
         controle: controleDaIa,
         ocorrencias: ocorrenciasDaIa,
+        instrucoes: instrucoesDeIa,
       })
     : undefined;
   const clockDoResumo: Clock = opcoes.resumoIa?.clock ?? {
@@ -585,6 +636,7 @@ export function aplicacaoDeTeste(
         novoId: () => randomUUID(),
         controle: controleDaIa,
         ocorrencias: ocorrenciasDaIa,
+        instrucoes: instrucoesDeIa,
         janelaDePendenciaDias: 10,
       })
     : undefined;
@@ -617,8 +669,43 @@ export function aplicacaoDeTeste(
           novoId: () => randomUUID(),
           controle: controleDaIa,
           ocorrencias: ocorrenciasDaIa,
+          instrucoes: instrucoesDeIa,
         })
       : undefined;
+  const verificacaoDeInstrucoes = new ServicoVerificacaoDeInstrucoes({
+    executor: opcoes.instrucoesDeIa?.executor,
+    instrucoes: instrucoesDeIa,
+    modelos: modelosDeIa,
+    testes: new RepositorioDeTestesDeModeloSqlite(db),
+    clock: relogioDosModelos,
+    logger: loggerSilencioso,
+    novoId: opcoes.instrucoesDeIa?.novoId ?? (() => randomUUID()),
+    ...(opcoes.instrucoesDeIa?.tetoUsd !== undefined
+      ? { tetoUsd: opcoes.instrucoesDeIa.tetoUsd }
+      : {}),
+  });
+  const errosDeInstrucoes = new ServicoErrosDeInstrucoes({
+    leitor: leitorDeUsoDaIa,
+    erros: new LeitorDeErrosDeIaSqlite(db),
+    instrucoes: instrucoesDeIa,
+    clock: relogioDoPainel,
+  });
+  const experimentoDeInstrucoes = new ServicoExperimentoDeInstrucoes({
+    instrucoes: instrucoesDeIa,
+    fontes: {
+      ...(analiseIa ? { ato: analiseIa } : {}),
+      ...(resumoDoProcesso ? { resumo: resumoDoProcesso } : {}),
+      ...(analiseDePeca ? { peca: analiseDePeca } : {}),
+    },
+    repositorio: repositorioCru,
+    ...(pasta ? { pasta } : {}),
+    contaDoDono: opcoes.instrucoesDeIa?.contaDoDono ?? (async () => undefined),
+    clock: relogioDoPainel,
+    logger: loggerSilencioso,
+    ...(opcoes.instrucoesDeIa?.maximoDeExperimentosPorHora !== undefined
+      ? { maximoPorHora: opcoes.instrucoesDeIa.maximoDeExperimentosPorHora }
+      : {}),
+  });
   const analisesRepo = new RepositorioAnalisesSqlite(db);
   const avisoDoPrazo = analiseIa
     ? new ServicoAvisoDoPrazo({
@@ -737,6 +824,10 @@ export function aplicacaoDeTeste(
     painelDeIa,
     modelosDeIa,
     testeDeModelo,
+    instrucoesDeIa,
+    experimentoDeInstrucoes,
+    verificacaoDeInstrucoes,
+    errosDeInstrucoes,
     agendadorAlertaDeCustoDaIa: undefined,
     custos,
     custosPorCliente,

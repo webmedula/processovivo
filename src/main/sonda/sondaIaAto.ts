@@ -142,6 +142,8 @@ export interface OpcoesDaExecucao {
   ) => boolean;
   /** Outra tarefa (peças). Ausente = análise do ato. */
   readonly tarefa?: TarefaDaSonda;
+  /** O bloco de instruções do operador (Fase C) a medir na análise do ato. Ausente = o prompt de sempre. */
+  readonly instrucao?: string;
   readonly agora: () => number;
   readonly pausaMs?: number;
   readonly dormir?: (ms: number) => Promise<void>;
@@ -239,7 +241,10 @@ export async function executarSonda(op: OpcoesDaExecucao): Promise<ResultadoDaEx
                   ? { titulosAnteriores: caso.anteriores }
                   : {}),
               },
-              { pessoas: caso.pessoas },
+              {
+                pessoas: caso.pessoas,
+                ...(op.instrucao ? { instrucao: op.instrucao } : {}),
+              },
             );
         if (!entrada.suficiente) {
           registros.push({ ...base, estado: 'sem_texto' });

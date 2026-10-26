@@ -30,7 +30,7 @@ var ROTULO_DA_FALHA={citacao_invalida:'citação inválida',numero_invalido:'nú
   formato_fora_do_esquema:'formato fora do esquema',tempo_esgotado:'tempo esgotado'};
 var ROTULO_DO_TIPO={ligada:'Liga/desliga',teto_dia_conta:'Teto por conta e dia',teto_dia_global:'Teto global do dia',
   alerta_custo:'Alerta de custo',modelo_publicado:'Modelo publicado',modelo_revertido:'Modelo revertido',
-  teste_modelo_iniciado:'Teste de modelo iniciado'};
+  teste_modelo_iniciado:'Teste de modelo iniciado',instrucoes_publicadas:'Instruções publicadas',instrucoes_revertidas:'Instruções revertidas'};
 var ROTULO_DA_FUNCAO={ato:'Análise de ato',resumo:'Resumo do processo',peca:'Análise de peça',global:'Geral'};
 
 var FRASE={
@@ -254,6 +254,8 @@ function desenhar(){
   h+='<section aria-labelledby="ia-fun-t" class="ia-secao"><h2 id="ia-fun-t" class="ia-h2">Funções</h2><div class="ia-grade">';
   for(var j=0;j<d.funcoes.length;j++)h+=cartaoDaFuncao(d.funcoes[j]);
   h+='</div><div data-ia-modelos-nota="1"></div></section>';
+  /* Instruções de interpretação (Fase C, v0.61.0): o módulo iaAdminInstrucoes desenha aqui dentro. */
+  h+='<section class="ia-secao" data-ia-instrucoes="1" aria-labelledby="ia-ins-t"></section>';
   h+=secaoDeLimites(d)+secaoDeContas(d)+secaoDeHistorico(d);
   h+='<div id="ia-live" class="ia-so-leitor" role="status" aria-live="polite"></div>';
   return h;
@@ -266,6 +268,8 @@ function pintar(){
   ligar();
   /* A parte "Modelo" de cada cartão (Fase B) é de outro módulo; ele redesenha só o espaço dele. */
   if(S.dados&&window.__pvIaModelos)window.__pvIaModelos.montar(S.raiz);
+  /* Instruções de interpretação (Fase C): outro módulo, numa seção própria abaixo dos cartões. */
+  if(S.dados&&window.__pvIaInstrucoes)window.__pvIaInstrucoes.montar(S.raiz);
   /* Foco só volta ao controle que a PESSOA acabou de usar; nunca é roubado em recarga. */
   if(S.foco){
     var el=$(S.foco)||S.raiz.querySelector('[data-foco="'+S.foco+'"]');

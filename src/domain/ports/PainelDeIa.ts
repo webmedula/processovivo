@@ -17,7 +17,10 @@ export type TipoDeAlteracao =
   // Fase B (v0.60.0): modelo por função.
   | 'modelo_publicado'
   | 'modelo_revertido'
-  | 'teste_modelo_iniciado';
+  | 'teste_modelo_iniciado'
+  // Fase C (v0.61.0): instruções de interpretação (valor = a edição, `e0`, `e1`…; o texto fica em `ia_instrucoes`).
+  | 'instrucoes_publicadas'
+  | 'instrucoes_revertidas';
 
 export interface AlteracaoDeConfigDeIa {
   readonly id?: number;

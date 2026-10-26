@@ -2,6 +2,7 @@ import {
   LIMITES_DO_RESUMO,
   LIMITES_DO_RESUMO_1_2_0,
 } from '../../domain/entities/vocabularioDoResumo.js';
+import { montarSistema } from '../../domain/entities/InstrucoesDeIa.js';
 import { PONTOS_DE_ATENCAO } from '../../domain/entities/vocabularioDaAnalise.js';
 import { dataParaTexto, neutralizarMarcacao, truncarTexto } from './entradaDoModelo.js';
 import { criarRedator, type PessoasParaRedigir } from './redigirParaIA.js';
@@ -130,6 +131,8 @@ export interface EntradaDoResumo {
 export interface OpcoesDaEntradaDoResumo {
   /** O comparador monta as duas versões; produção usa sempre a atual. */
   readonly versao?: VersaoDoPromptDoResumo;
+  /** O bloco editável publicado no painel de IA (Fase C). Vazio ou ausente = o prompt de sempre. */
+  readonly instrucao?: string;
 }
 
 export function prepararEntradaDoResumo(
@@ -244,12 +247,15 @@ export function prepararEntradaDoResumo(
   ].join('\n');
 
   return {
-    sistema:
+    sistema: montarSistema(
+      'resumo',
       versao === 'resumo-1.2.0'
         ? INSTRUCAO_DO_RESUMO
         : versao === 'resumo-1.1.0'
           ? INSTRUCAO_DO_RESUMO_1_1_0
           : INSTRUCAO_DO_RESUMO_1_0_0,
+      opcoes.instrucao,
+    ),
     usuario,
     atos,
     restaurar: (t) => redator.restaurar(t),

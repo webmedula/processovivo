@@ -11,7 +11,12 @@ import {
   type PontoDeAtencaoDoSistema,
   type ResultadoDaAnaliseDePeca,
 } from '../../domain/entities/AnaliseDePeca.js';
+import {
+  versaoEfetiva,
+  type InstrucaoDoExperimento,
+} from '../../domain/entities/InstrucoesDeIa.js';
 import { NumeroCNJ } from '../../domain/entities/NumeroCNJ.js';
+import type { Processo } from '../../domain/entities/Processo.js';
 import type { Parte } from '../../domain/entities/Parte.js';
 import {
   AcompanhamentoNaoEncontradoError,
@@ -25,7 +30,14 @@ import {
   ProviderIndisponivelError,
   SegredoDeJusticaNaoGuardadoError,
 } from '../../domain/errors/index.js';
-import type { AnalisadorDePeca } from '../../domain/ports/AnalisadorDePeca.js';
+import type {
+  AnalisadorDePeca,
+  RespostaDoAnalisadorDePeca,
+} from '../../domain/ports/AnalisadorDePeca.js';
+import {
+  SEM_INSTRUCOES,
+  type InstrucoesDaFuncao,
+} from '../../domain/ports/InstrucoesDeIa.js';
 import type { Clock } from '../../domain/ports/Clock.js';
 import type {
   ExtratorDeTextoDePdf,
@@ -65,6 +77,9 @@ import type { PessoasParaRedigir } from '../politicas/redigirParaIA.js';
 import {
   verificarAnaliseDePeca,
   VERSAO_DAS_REGRAS_DA_PECA,
+  type ContagemDeCitacoesDePeca,
+  type DescartesDaPeca,
+  type ResultadoDaVerificacaoDePeca,
 } from '../politicas/verificarAnaliseDePeca.js';
 import type { PecaParaAnalise } from './ServicoPasta.js';
 import type { ServicoAssinaturas } from './ServicoAssinaturas.js';
@@ -123,6 +138,8 @@ export interface OpcoesServicoAnaliseDePeca {
   readonly controle?: ControleDaIa;
   /** Contagem de falhas e repetições, por motivo (v0.58.0). Ausente = não conta. */
   readonly ocorrencias?: RegistroDeOcorrenciasDeIa;
+  /** As instruções de interpretação publicadas no painel (Fase C, v0.61.0). Ausente = o prompt de sempre (+e0). */
+  readonly instrucoes?: InstrucoesDaFuncao;
 }
 
 export interface PedidoDeAnaliseDePeca {
@@ -161,6 +178,27 @@ export interface AnaliseDePecaParaATela {
 
 export type RespostaDaAnaliseDePeca =
   AnaliseDePecaParaATela | { readonly estado: 'erro' };
+
+export type BracoDoExperimentoDaPeca =
+  | {
+      readonly rotulo: InstrucaoDoExperimento['rotulo'];
+      readonly versao: number;
+      readonly estado: 'erro';
+    }
+  | {
+      readonly rotulo: InstrucaoDoExperimento['rotulo'];
+      readonly versao: number;
+      readonly estado: 'ok';
+      readonly analise: AnaliseDePecaParaATela;
+      /** Por que não foi verificada; `null` se foi. */
+      readonly motivoDeNaoVerificacao: string | null;
+      readonly descartes: DescartesDaPeca;
+      readonly citacoes: ContagemDeCitacoesDePeca;
+      readonly latenciaMs: number;
+      readonly custoUsd: number | null;
+      readonly tokensEntrada: number | null;
+      readonly tokensSaida: number | null;
+    };
 
 const TAMANHO_MAXIMO_DO_PDF_BYTES = 20 * 1024 * 1024;
 const UM_DIA_MS = 86_400_000;
@@ -238,8 +276,76 @@ export class ServicoAnaliseDePeca {
       throw recusa('sem_plano');
     }
 
-    // 2. O retrato é DA CONTA: dele saem os nomes das partes (redação) e o segredo de justiça.
-    const numero = NumeroCNJ.criar(pedido.numero).digitos;
+    // 2 a 4. O retrato, a peça da guarda, os bytes em memória e o texto por página (nada disto é gravado).
+    const { numero, processo, alvo, hashDosBytes, texto } = await this.lerPecaDaConta(
+      workspace,
+      pedido.numero,
+      pecaId,
+    );
+    // A versão e o texto das instruções vêm juntos, de UMA leitura: o que se grava é a versão do texto que
+    // foi ao modelo, e ela entra na chave do reaproveitamento (publicar instrução nova não serve resposta velha).
+    const instrucao = (this.o.instrucoes ?? SEM_INSTRUCOES).efetiva('peca');
+    const versaoDoPrompt = versaoEfetiva(VERSAO_PROMPT_DA_PECA, instrucao.versao);
+    const entrada = this.entradaDaPeca(texto, processo, instrucao.texto);
+
+    // 5. A mesma peça, o mesmo prompt e o mesmo modelo: volta do banco, sem modelo e sem peso no teto.
+    const processoChave = chaveDoProcesso(workspace, numero);
+    const agora = this.o.clock.agora();
+    const guardada = await this.o.analises.buscarReaproveitavel(
+      workspace,
+      {
+        processoChave,
+        pecaId,
+        hashDosBytes,
+        versaoPrompt: versaoDoPrompt,
+        modeloPedido: this.modeloPedido(),
+      },
+      agora,
+    );
+    if (guardada) {
+      this.log.info('análise de peça reaproveitada', {
+        versaoPrompt: versaoDoPrompt,
+        paginas: entrada.paginas,
+      });
+      return this.paraATela(guardada, entrada, modo, true, conversaoParaATela(alvo));
+    }
+
+    // 6. Freio por hora e teto diário (peso 5). A vaga é liberada em qualquer desfecho.
+    const vaga = this.o.limite.reservar(workspace, PESO_DA_PECA_NO_TETO);
+    if ('negada' in vaga) {
+      throw recusa(vaga.negada === 'dia' ? 'limite_diario' : 'limite_de_uso');
+    }
+    try {
+      return await this.chamarEGuardar(pedido, {
+        processoChave,
+        hashDosBytes,
+        entrada,
+        modo,
+        conversao: conversaoParaATela(alvo),
+        versaoDoPrompt,
+      });
+    } finally {
+      vaga.liberar();
+    }
+  }
+
+  /**
+   * Os passos 2 a 4 da análise, comuns ao clique do assinante e ao experimento do operador: o retrato é da
+   * PRÓPRIA conta (dele saem os nomes da redação e o segredo de justiça), a peça vem da guarda e só existe em
+   * memória, e todas as recusas por conteúdo (sem texto, páginas, caracteres) acontecem ANTES do modelo.
+   */
+  private async lerPecaDaConta(
+    workspace: string,
+    numeroBruto: string,
+    pecaId: string,
+  ): Promise<{
+    readonly numero: string;
+    readonly processo: Processo;
+    readonly alvo: PecaParaAnalise;
+    readonly hashDosBytes: string;
+    readonly texto: TextoExtraido;
+  }> {
+    const numero = NumeroCNJ.criar(numeroBruto).digitos;
     const acompanhamento = await this.o.repositorio.buscar(workspace, numero);
     if (!acompanhamento) throw new AcompanhamentoNaoEncontradoError();
     const processo = acompanhamento.processo;
@@ -278,51 +384,24 @@ export class ServicoAnaliseDePeca {
     if (texto.contagens.truncadoPorPaginas) throw recusa('acima_de_40_paginas');
     if (texto.contagens.excedeLimiteDeCaracteres)
       throw recusa('acima_de_80_mil_caracteres');
-    const entrada = montarEntradaDaPeca(texto.paginas, pessoasDoProcesso(processo));
+    return { numero, processo, alvo, hashDosBytes, texto };
+  }
+
+  /** Monta a entrada com o bloco de instruções dado e aplica as recusas que dependem do texto montado. */
+  private entradaDaPeca(
+    texto: TextoExtraido,
+    processo: Processo,
+    instrucao: string,
+  ): EntradaDaPeca {
+    const entrada = montarEntradaDaPeca(texto.paginas, pessoasDoProcesso(processo), {
+      instrucao,
+    });
     if (entrada.recusa === 'texto_insuficiente') throw recusa('sem_texto');
     if (entrada.recusa === 'acima_de_40_paginas') throw recusa('acima_de_40_paginas');
     if (entrada.recusa === 'acima_de_80_mil_caracteres') {
       throw recusa('acima_de_80_mil_caracteres');
     }
-
-    // 5. A mesma peça, o mesmo prompt e o mesmo modelo: volta do banco, sem modelo e sem peso no teto.
-    const processoChave = chaveDoProcesso(workspace, numero);
-    const agora = this.o.clock.agora();
-    const guardada = await this.o.analises.buscarReaproveitavel(
-      workspace,
-      {
-        processoChave,
-        pecaId,
-        hashDosBytes,
-        versaoPrompt: VERSAO_PROMPT_DA_PECA,
-        modeloPedido: this.modeloPedido(),
-      },
-      agora,
-    );
-    if (guardada) {
-      this.log.info('análise de peça reaproveitada', {
-        versaoPrompt: VERSAO_PROMPT_DA_PECA,
-        paginas: entrada.paginas,
-      });
-      return this.paraATela(guardada, entrada, modo, true, conversaoParaATela(alvo));
-    }
-
-    // 6. Freio por hora e teto diário (peso 5). A vaga é liberada em qualquer desfecho.
-    const vaga = this.o.limite.reservar(workspace, PESO_DA_PECA_NO_TETO);
-    if ('negada' in vaga) {
-      throw recusa(vaga.negada === 'dia' ? 'limite_diario' : 'limite_de_uso');
-    }
-    try {
-      return await this.chamarEGuardar(pedido, {
-        processoChave,
-        hashDosBytes,
-        entrada,
-        modo,
-        conversao: conversaoParaATela(alvo),
-      });
-    } finally {
-      vaga.liberar();
-    }
+    return entrada;
   }
 
   private modeloPedido(): string {
@@ -346,27 +425,40 @@ export class ServicoAnaliseDePeca {
     }
   }
 
-  private async chamarEGuardar(
-    pedido: PedidoDeAnaliseDePeca,
-    c: {
-      readonly processoChave: string;
-      readonly hashDosBytes: string;
-      readonly entrada: EntradaDaPeca;
-      readonly modo: ModoDaAnaliseDePeca;
-      readonly conversao: 'html' | 'imagem' | null;
-    },
-  ): Promise<RespostaDaAnaliseDePeca> {
+  /**
+   * Chama o modelo com a entrada pronta e verifica a resposta (citação na PÁGINA indicada, números, mérito,
+   * pedidos…). É o MESMO caminho do clique do assinante e do experimento do operador (`contar` liga as
+   * ocorrências do painel). Falha do modelo vira `undefined`, nunca exceção.
+   */
+  private async chamar(
+    entrada: EntradaDaPeca,
+    sinal: AbortSignal | undefined,
+    contar: boolean,
+  ): Promise<
+    | {
+        readonly bruta: RespostaDoAnalisadorDePeca;
+        readonly v: ResultadoDaVerificacaoDePeca;
+        readonly resultado: ResultadoDaAnaliseDePeca;
+        readonly descartes: number;
+        readonly latenciaMs: number;
+      }
+    | undefined
+  > {
     const inicio = this.o.clock.monotonico();
-    let bruta;
+    let bruta: RespostaDoAnalisadorDePeca;
     try {
       bruta = await this.o.analisador.analisar({
-        sistema: c.entrada.sistema,
-        usuario: c.entrada.usuario,
-        ...(pedido.sinal ? { sinal: pedido.sinal } : {}),
-        aoRepetir: () => this.ocorrencias.registrar('peca', 'repeticao_automatica'),
+        sistema: entrada.sistema,
+        usuario: entrada.usuario,
+        ...(sinal ? { sinal } : {}),
+        ...(contar
+          ? {
+              aoRepetir: () => this.ocorrencias.registrar('peca', 'repeticao_automatica'),
+            }
+          : {}),
       });
     } catch (erro) {
-      this.ocorrencias.registrar('peca', motivoDaFalhaDaChamada(erro));
+      if (contar) this.ocorrencias.registrar('peca', motivoDaFalhaDaChamada(erro));
       // Só a CLASSE do erro e o roteamento SANEADO vão ao log: a mensagem de um roteador pode ecoar o
       // pedido, que leva texto de peça.
       const r = erro instanceof ProviderIndisponivelError ? erro.roteamento : undefined;
@@ -376,11 +468,11 @@ export class ServicoAnaliseDePeca {
         ...(r?.status !== undefined ? { statusHttp: r.status } : {}),
         ...(r?.passo !== undefined ? { passoDoRoteamento: r.passo } : {}),
       });
-      return { estado: 'erro' };
+      return undefined;
     }
     const latenciaMs = Math.max(0, Math.round(this.o.clock.monotonico() - inicio));
 
-    const v = verificarAnaliseDePeca(bruta.resposta, c.entrada.textoEnviado);
+    const v = verificarAnaliseDePeca(bruta.resposta, entrada.textoEnviado);
     const resultado: ResultadoDaAnaliseDePeca =
       v.estado === 'verificada'
         ? {
@@ -398,11 +490,114 @@ export class ServicoAnaliseDePeca {
         : { estado: 'nao_verificada', motivo: v.motivo };
     const descartes =
       v.descartes.citacao + v.descartes.numero + v.descartes.forma + v.descartes.pagina;
-    registrarContagens(
-      this.ocorrencias,
-      'peca',
-      contagensDaPeca(v.descartes, v.estado === 'nao_verificada' ? v.motivo : undefined),
+    if (contar) {
+      registrarContagens(
+        this.ocorrencias,
+        'peca',
+        contagensDaPeca(
+          v.descartes,
+          v.estado === 'nao_verificada' ? v.motivo : undefined,
+        ),
+      );
+    }
+    return { bruta, v, resultado, descartes, latenciaMs };
+  }
+
+  /**
+   * EXPERIMENTO do operador (Fase C, v0.61.0): o MESMO caminho de produção (guarda da peça, extração do
+   * texto, redação, modelo com ZDR, verificação por página, segredo de justiça) sobre UMA peça da conta do
+   * operador, uma vez para cada instrução. **Não grava nada** (nem a análise, nem o texto), não consome o
+   * teto dos assinantes, não conta ocorrência e não reaproveita resultado guardado.
+   */
+  async experimentar(pedido: {
+    readonly workspace: string;
+    readonly numero: string;
+    readonly pecaId: string;
+    readonly instrucoes: readonly InstrucaoDoExperimento[];
+    readonly sinal?: AbortSignal;
+  }): Promise<readonly BracoDoExperimentoDaPeca[]> {
+    const { numero, processo, alvo, hashDosBytes, texto } = await this.lerPecaDaConta(
+      pedido.workspace,
+      pedido.numero,
+      pedido.pecaId,
     );
+    const conversao = conversaoParaATela(alvo);
+    const processoChave = chaveDoProcesso(pedido.workspace, numero);
+    // As recusas por conteúdo valem para qualquer instrução: conferidas antes de gastar uma chamada.
+    this.entradaDaPeca(texto, processo, '');
+    return Promise.all(
+      pedido.instrucoes.map(async (i): Promise<BracoDoExperimentoDaPeca> => {
+        const entrada = this.entradaDaPeca(texto, processo, i.texto);
+        const feita = await this.chamar(entrada, pedido.sinal, false);
+        if (!feita) return { rotulo: i.rotulo, versao: i.versao, estado: 'erro' };
+        const { bruta, v, resultado, descartes, latenciaMs } = feita;
+        const criadaEm = this.o.clock.agora();
+        const analise: AnaliseDePeca = {
+          id: 'experimento',
+          workspace: pedido.workspace,
+          processoChave,
+          pecaId: pedido.pecaId,
+          hashDosBytes,
+          resultado,
+          contagens: {
+            paginas: entrada.paginas,
+            caracteres: entrada.caracteres,
+            itensDescartados: descartes,
+            peso: PESO_DA_PECA_NO_TETO,
+          },
+          procedencia: {
+            modelo: bruta.modelo,
+            versaoPrompt: versaoEfetiva(VERSAO_PROMPT_DA_PECA, i.versao),
+            provedor: bruta.provedor,
+            criadaEm,
+          },
+          modeloPedido: this.modeloPedido(),
+          medidas: {
+            latenciaMs,
+            ...(bruta.tokensEntrada !== undefined
+              ? { tokensEntrada: bruta.tokensEntrada }
+              : {}),
+            ...(bruta.tokensSaida !== undefined
+              ? { tokensSaida: bruta.tokensSaida }
+              : {}),
+            ...(bruta.custoUsd !== undefined ? { custoUsd: bruta.custoUsd } : {}),
+          },
+          criadaEm,
+          expiraEm: criadaEm,
+        };
+        return {
+          rotulo: i.rotulo,
+          versao: i.versao,
+          estado: 'ok',
+          analise: this.paraATela(analise, entrada, 'avaliacao', false, conversao),
+          motivoDeNaoVerificacao:
+            resultado.estado === 'nao_verificada' ? resultado.motivo : null,
+          descartes: v.descartes,
+          citacoes: v.citacoes,
+          latenciaMs,
+          custoUsd: bruta.custoUsd ?? null,
+          tokensEntrada: bruta.tokensEntrada ?? null,
+          tokensSaida: bruta.tokensSaida ?? null,
+        };
+      }),
+    );
+  }
+
+  private async chamarEGuardar(
+    pedido: PedidoDeAnaliseDePeca,
+    c: {
+      readonly processoChave: string;
+      readonly hashDosBytes: string;
+      readonly entrada: EntradaDaPeca;
+      readonly modo: ModoDaAnaliseDePeca;
+      readonly conversao: 'html' | 'imagem' | null;
+      /** A versão do prompt com a edição das instruções (`peca-1.1.0+e2`), a que vai gravada. */
+      readonly versaoDoPrompt: string;
+    },
+  ): Promise<RespostaDaAnaliseDePeca> {
+    const feita = await this.chamar(c.entrada, pedido.sinal, true);
+    if (!feita) return { estado: 'erro' };
+    const { bruta, v, resultado, descartes, latenciaMs } = feita;
 
     const criadaEm = this.o.clock.agora();
     const analise: AnaliseDePeca = {
@@ -420,7 +615,7 @@ export class ServicoAnaliseDePeca {
       },
       procedencia: {
         modelo: bruta.modelo,
-        versaoPrompt: VERSAO_PROMPT_DA_PECA,
+        versaoPrompt: c.versaoDoPrompt,
         provedor: bruta.provedor,
         criadaEm,
       },
@@ -440,7 +635,7 @@ export class ServicoAnaliseDePeca {
 
     // Só contagens: nada de texto de peça, trecho, título, parte, número de processo ou conta.
     this.log.info('análise de peça concluída', {
-      versaoPrompt: VERSAO_PROMPT_DA_PECA,
+      versaoPrompt: c.versaoDoPrompt,
       regras: VERSAO_DAS_REGRAS_DA_PECA,
       estado: resultado.estado,
       paginas: c.entrada.paginas,

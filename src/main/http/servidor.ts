@@ -213,6 +213,12 @@ export function construirServidor(app: Aplicacao, config: Config): FastifyInstan
         painel: app.painelDeIa,
         modelos: app.modelosDeIa,
         testes: app.testeDeModelo,
+        instrucoes: {
+          servico: app.instrucoesDeIa,
+          experimento: app.experimentoDeInstrucoes,
+          verificacao: app.verificacaoDeInstrucoes,
+          erros: app.errosDeInstrucoes,
+        },
       },
       usuarios: app.usuarios,
       chavesApi: app.chavesApi,
