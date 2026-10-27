@@ -144,7 +144,7 @@ function estadoDaVersao(fd){
   else{
     var atual=null;
     for(var i=0;i<fd.historico.length;i++)if(fd.historico[i].versao===fd.publicada.versao)atual=fd.historico[i];
-    h+=' · publicada'+(atual&&atual.publicadoEm?' em '+esc(dth(atual.publicadoEm)):'')+(atual&&atual.publicadoPor?' por <span class="ia-mono">'+esc(atual.publicadoPor)+'</span>':'');
+    h+=' · publicada'+(atual&&atual.publicadoEm?' em '+esc(dth(atual.publicadoEm)):'')+(atual&&atual.publicadoPor?' · Por <span class="ia-mono">'+esc(atual.publicadoPorNome||atual.publicadoPor)+'</span>':'');
   }
   h+='</p>';
   if(fd.leituraFalhou)h+='<p class="ia-i-aviso" role="note">'+esc(FRASE.leituraFalhou)+'</p>';
@@ -422,7 +422,7 @@ function painelDoHistorico(fd,u){
     for(var i=0;i<fd.historico.length;i++){
       var v=fd.historico[i];
       h+='<li data-versao="'+v.versao+'"><span class="ia-mono">'+esc(v.rotulo)+'</span> · '+esc(ROTULO_ESTADO_VERSAO[v.estado]||v.estado)+
-        ' · '+esc(dth(v.publicadoEm||v.criadoEm))+(v.publicadoPor?' · por <span class="ia-mono">'+esc(v.publicadoPor)+'</span>':'')+' · '+n(v.caracteres)+' caracteres'+
+        ' · '+esc(dth(v.publicadoEm||v.criadoEm))+(v.publicadoPor||v.autor?' · Por <span class="ia-mono">'+esc(v.publicadoPorNome||v.por||v.autor)+'</span>':'')+' · '+n(v.caracteres)+' caracteres'+
         (v.observacao?' · <em>'+esc(v.observacao)+'</em>':'')+
         ' <button type="button" class="bt2 ia-i-peq" data-ia-i-ver-texto="'+v.versao+'">Ver o texto</button>'+
         ' <button type="button" class="bt2 ia-i-peq" data-ia-i-usar="'+v.versao+'">Usar como rascunho</button></li>';

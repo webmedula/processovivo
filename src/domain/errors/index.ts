@@ -1381,3 +1381,25 @@ export class InstrucaoDeIaRecusadaError extends DomainError {
     super(mensagem);
   }
 }
+
+/**
+ * A tela "Administradores" do /admin (v0.62.0) recusou o pedido do dono. Nada foi gravado. A mensagem é nossa e
+ * nunca repete o que foi recebido.
+ *
+ * - `usuario_desconhecido`: o usuário não está declarado em `PROCESSOVIVO_ADMIN_RESTRITOS`;
+ * - `aba_desconhecida`: a aba não está na lista do código (nem a tela "Administradores" é liberável);
+ * - `confirmacao_necessaria`: salvar exige `confirmado: true` no pedido, além da confirmação na tela.
+ */
+export type MotivoDeAdministradoresRecusado =
+  'usuario_desconhecido' | 'aba_desconhecida' | 'confirmacao_necessaria';
+
+export class AdministradoresRecusadoError extends DomainError {
+  readonly codigo = 'ADMINISTRADORES_RECUSADO';
+
+  constructor(
+    readonly motivo: MotivoDeAdministradoresRecusado,
+    mensagem: string,
+  ) {
+    super(mensagem);
+  }
+}

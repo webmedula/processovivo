@@ -11,12 +11,13 @@
  * mesma razão documentada em `tests/http/console-script.spec.ts`: nem `tsc`
  * nem `eslint` enxergam JavaScript escondido dentro de um `String.raw`.
  */
-export const SCRIPT_ADMIN = String.raw`
+import { ABAS_DO_ADMIN, type AbaDoAdmin } from '../../../domain/entities/AbasDoAdmin.js';
+
+const ABERTURA = String.raw`
 (function(){
 var $=function(i){return document.getElementById(i)};
 
-var estado={aba:'assinaturas',assinaturas:null,chaves:null,chaveEmitida:null,
-  catalogo:null,editando:null,avisoPlanos:null,pagamento:{habilitado:false}};
+var estado={aba:''};
 
 /* ---------------- utilidades (mesmas convenções de ui/script.ts) ---------------- */
 function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){
@@ -26,24 +27,6 @@ function dt(iso){if(!iso)return'—';var d=new Date(iso);return isNaN(d)?'—':
 function dth(iso){if(!iso)return'—';var d=new Date(iso);return isNaN(d)?'—':
   d.toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo',day:'2-digit',
     month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})}
-
-/* Dinheiro em CENTAVOS do servidor para a tela, e de volta. null é "sem preço". */
-function fmtPreco(c){
-  if(c==null)return 'sem preço';
-  return (c/100).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
-}
-function paraCentavos(txt){
-  var t=String(txt||'').replace(/R\$/g,'').replace(/\s/g,'');
-  if(t==='')return null;
-  /* "1.234,56" e "49,90" são o jeito brasileiro; "49.90" também vale. */
-  if(t.indexOf(',')>=0)t=t.replace(/\./g,'').replace(',','.');
-  if(!/^\d+(\.\d{1,2})?$/.test(t))return NaN;
-  return Math.round(Number(t)*100);
-}
-function precoParaCampo(c){
-  if(c==null)return '';
-  return (c/100).toFixed(2).replace('.',',');
-}
 
 function api(caminho,opcoes){
   opcoes=opcoes||{};
@@ -65,40 +48,57 @@ function erroBloco(e){
     '<div style="font-weight:700;color:var(--erro)">'+esc(msg)+'</div></div>';
 }
 
-/* ---------------- navegação ---------------- */
-function irPara(aba){
-  /* Instruções de interpretação (v0.61.0): sair da aba IA com rascunho não salvo pergunta antes e, saindo, esquece
-     tudo (inclusive o caso do experimento, que só vive na memória da página). */
-  if(estado.aba==='ia'&&aba!=='ia'&&window.__pvIaInstrucoes&&!window.__pvIaInstrucoes.sair())return;
-  estado.aba=aba;
-  $('nav-assinaturas').className=aba==='assinaturas'?'ativo':'';
-  $('nav-chaves').className=aba==='chaves'?'ativo':'';
-  $('nav-planos').className=aba==='planos'?'ativo':'';
-  $('nav-ia').className=aba==='ia'?'ativo':'';
-  render();
+`;
+
+const PLANOS_COMUM = String.raw`/* Dinheiro em CENTAVOS do servidor para a tela, e de volta. null é "sem preço". */
+function fmtPreco(c){
+  if(c==null)return 'sem preço';
+  return (c/100).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+}
+function paraCentavos(txt){
+  var t=String(txt||'').replace(/R\$/g,'').replace(/\s/g,'');
+  if(t==='')return null;
+  /* "1.234,56" e "49,90" são o jeito brasileiro; "49.90" também vale. */
+  if(t.indexOf(',')>=0)t=t.replace(/\./g,'').replace(',','.');
+  if(!/^\d+(\.\d{1,2})?$/.test(t))return NaN;
+  return Math.round(Number(t)*100);
+}
+function precoParaCampo(c){
+  if(c==null)return '';
+  return (c/100).toFixed(2).replace('.',',');
 }
 
-function render(){
-  var c=$('conteudo');
-  c.innerHTML='<div class="vazio"><span class="gira"></span>carregando…</div>';
-  if(estado.aba==='chaves'){renderChaves()}
-  else if(estado.aba==='planos'){renderPlanos()}
-  else if(estado.aba==='ia'){window.__pvIaAdmin.render(c)}
-  else{renderAssinaturas()}
+
+/* Todos os planos, à venda ou não: liberar plano pausado é como se mantém um
+   cliente antigo no plano dele. O rótulo diz qual é qual. */
+function opcoesDePlano(selecionado){
+  var planos=(estado.catalogo&&estado.catalogo.planos)||[];
+  return planos.map(function(p){
+    return '<option value="'+esc(p.codigo)+'"'+(p.codigo===selecionado?' selected':'')+'>'+
+      esc(p.nome)+(p.disponivelParaContratacao?'':' (pausado)')+
+      ' · '+esc(fmtPreco(p.precoMensalCentavos))+'</option>';
+  }).join('');
 }
 
+
+/* Ganchos da cobrança: sem a cobrança (ou sem a aba que a mostra) não carregam nem desenham nada. */
+var carregarPagamento=function(){return Promise.resolve()};
+var bannerDoAmbiente=function(){return ''};
+`;
+
+const COBRANCA = String.raw`estado.pagamento={habilitado:false};
 /* O ambiente da cobrança recorrente. Em modo de TESTE o aviso é impossível de não ver: nenhum pagamento
    é real, e em produção isso quase sempre é engano. Sem a cobrança habilitada, nada aparece. */
-function carregarPagamento(){
+carregarPagamento=function(){
   return api('/admin/api/pagamento').then(function(r){estado.pagamento=r}).catch(function(){estado.pagamento={habilitado:false}});
-}
+};
 var ROTULO_DA_FALHA_DO_GATEWAY={
   email_pagador:'o Mercado Pago recusou o e-mail do pagador',
   credencial:'o Mercado Pago recusou a credencial (token)',
   parametro_invalido:'o Mercado Pago recusou algum campo do pedido (veja o log)',
   indisponivel:'o Mercado Pago está fora do ar, lento ou limitando',
   desconhecido:'recusa sem motivo identificável (veja o log: "gateway de pagamento recusou o pedido")'};
-function bannerDoAmbiente(){
+bannerDoAmbiente=function(){
   var p=estado.pagamento;
   if(!p||!p.habilitado)return '';
   var h='';
@@ -113,28 +113,20 @@ function bannerDoAmbiente(){
       (f.codigo?' · código '+esc(f.codigo):'')+' · '+esc(ROTULO_DA_FALHA_DO_GATEWAY[f.motivo]||f.motivo)+'</div>';
   }
   return h;
-}
+};
 var ROTULO_DO_ESTADO_DO_GATEWAY={pendente:'aguardando pagamento',autorizada:'renovação automática ativa',
   pausada:'pausada',cancelada:'renovação encerrada'};
 
+`;
+
+const ASSINATURAS = String.raw`estado.assinaturas=null;estado.catalogo=null;
 /* ---------------- assinaturas ---------------- */
 function renderAssinaturas(){
-  Promise.all([api('/admin/api/assinaturas'),api('/admin/api/planos'),carregarPagamento()]).then(function(rs){
+  Promise.all([api('/admin/api/assinaturas'),api('/admin/api/assinaturas/planos'),carregarPagamento()]).then(function(rs){
     estado.assinaturas=rs[0].assinaturas||[];
     estado.catalogo=rs[1];
     desenharAssinaturas();
   }).catch(function(e){$('conteudo').innerHTML=erroBloco(e)});
-}
-
-/* Todos os planos, à venda ou não: liberar plano pausado é como se mantém um
-   cliente antigo no plano dele. O rótulo diz qual é qual. */
-function opcoesDePlano(selecionado){
-  var planos=(estado.catalogo&&estado.catalogo.planos)||[];
-  return planos.map(function(p){
-    return '<option value="'+esc(p.codigo)+'"'+(p.codigo===selecionado?' selected':'')+'>'+
-      esc(p.nome)+(p.disponivelParaContratacao?'':' (pausado)')+
-      ' · '+esc(fmtPreco(p.precoMensalCentavos))+'</option>';
-  }).join('');
 }
 
 /* Origem e cobrança no gateway: só metadado (estado, id, último pagamento) — nunca dado do pagador. */
@@ -258,6 +250,11 @@ function desenharAssinaturas(){
   });
 }
 
+
+TELAS.assinaturas=renderAssinaturas;
+`;
+
+const PLANOS = String.raw`estado.catalogo=null;estado.editando=null;estado.avisoPlanos=null;
 /* ---------------- planos ---------------- */
 function renderPlanos(){
   Promise.all([api('/admin/api/planos'),carregarPagamento()]).then(function(rs){
@@ -470,6 +467,11 @@ function salvarRegras(){
   }).catch(function(e){bt.disabled=false;$('rg-resultado').innerHTML=erroBloco(e)});
 }
 
+
+TELAS.planos=renderPlanos;
+`;
+
+const CHAVES = String.raw`estado.chaves=null;estado.chaveEmitida=null;
 /* ---------------- chaves de API ---------------- */
 function renderChaves(){
   api('/admin/api/chaves').then(function(r){
@@ -564,19 +566,83 @@ function desenharChaves(){
   }
 }
 
-/* ---------------- arranque ---------------- */
-$('nav-assinaturas').addEventListener('click',function(){irPara('assinaturas')});
-$('nav-chaves').addEventListener('click',function(){irPara('chaves')});
-$('nav-planos').addEventListener('click',function(){irPara('planos')});
-$('nav-ia').addEventListener('click',function(){irPara('ia')});
-/* O painel de IA (v0.58.0) mora em ui/iaAdmin.ts. O e-mail do alerta de custo leva a /admin#ia. */
-window.__pvIrParaIa=function(){irPara('ia')};
-if(location.hash==='#ia')estado.aba='ia';
-if(estado.aba==='ia'){
-  $('nav-assinaturas').className='';
-  $('nav-ia').className='ativo';
+
+TELAS.chaves=renderChaves;
+`;
+
+const NAVEGACAO = String.raw`
+/* ---------------- navegação ---------------- */
+var TELAS={};
+function marcarMenu(aba){
+  var itens=document.querySelectorAll('button[data-aba]');
+  for(var i=0;i<itens.length;i++){itens[i].className=itens[i].getAttribute('data-aba')===aba?'ativo':''}
 }
-window.__pvIaAdmin.banner($('aviso-ia'));
+function irPara(aba){
+  /* Instruções de interpretação (v0.61.0): sair da aba IA com rascunho não salvo pergunta antes e, saindo, esquece
+     tudo (inclusive o caso do experimento, que só vive na memória da página). */
+  if(estado.aba==='ia'&&aba!=='ia'&&window.__pvIaInstrucoes&&!window.__pvIaInstrucoes.sair())return;
+  if(!TELAS[aba])return;
+  estado.aba=aba;
+  marcarMenu(aba);
+  render();
+}
+
+function render(){
+  var c=$('conteudo');
+  c.innerHTML='<div class="vazio"><span class="gira"></span>carregando…</div>';
+  var f=TELAS[estado.aba];
+  if(f)f(c);
+}
+`;
+
+const TELA_IA = String.raw`
+/* O painel de IA (v0.58.0) mora em ui/iaAdmin.ts. O e-mail do alerta de custo leva a /admin#ia. */
+TELAS.ia=function(c){window.__pvIaAdmin.render(c)};
+window.__pvIrParaIa=function(){irPara('ia')};
+`;
+
+const TELA_ADMINISTRADORES = String.raw`
+/* A tela de permissões (v0.62.0) mora em ui/administradores.ts. */
+TELAS.administradores=function(c){window.__pvAdministradores.render(c)};
+`;
+
+const ARRANQUE = String.raw`
+/* ---------------- arranque ---------------- */
+var botoesDoMenu=document.querySelectorAll('button[data-aba]');
+for(var b=0;b<botoesDoMenu.length;b++){
+  (function(bt){bt.addEventListener('click',function(){irPara(bt.getAttribute('data-aba'))})})(botoesDoMenu[b]);
+}
+var primeira=document.querySelector('[data-aba]');
+estado.aba=(location.hash==='#ia'&&TELAS.ia)?'ia':(primeira?primeira.getAttribute('data-aba'):'');
+marcarMenu(estado.aba);
+if(TELAS.ia)window.__pvIaAdmin.banner($('aviso-ia'));
 render();
 })();
 `;
+
+/**
+ * O script do /admin para UM usuário: só o código das abas que ele pode usar (v0.62.0). O restrito recebe um script em que
+ * as outras abas NÃO EXISTEM — nem o texto, nem as rotas, nem o nome —, o que, junto com a negação no servidor, sustenta
+ * "para ele, o /admin é como se só existissem as abas liberadas".
+ */
+export function scriptAdminPara(
+  abas: readonly AbaDoAdmin[],
+  administradores: boolean,
+): string {
+  const tem = (a: AbaDoAdmin): boolean => abas.includes(a);
+  return [
+    ABERTURA,
+    tem('assinaturas') || tem('planos') ? PLANOS_COMUM : '',
+    tem('assinaturas') ? COBRANCA : '',
+    NAVEGACAO,
+    tem('assinaturas') ? ASSINATURAS : '',
+    tem('planos') ? PLANOS : '',
+    tem('chaves') ? CHAVES : '',
+    tem('ia') ? TELA_IA : '',
+    administradores ? TELA_ADMINISTRADORES : '',
+    ARRANQUE,
+  ].join('');
+}
+
+/** O script completo (dono): todas as abas. */
+export const SCRIPT_ADMIN = scriptAdminPara(ABAS_DO_ADMIN, true);

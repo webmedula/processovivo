@@ -314,6 +314,29 @@ const ESQUEMA = [
   `CREATE UNIQUE INDEX IF NOT EXISTS idx_ia_instrucoes_rascunho
      ON ia_instrucoes (funcao) WHERE estado = 'rascunho'`,
 
+  // Administradores restritos do /admin (v0.62.0). A credencial (usuário e senha) mora SÓ em variável de ambiente; aqui
+  // ficam o nome do usuário, a aba liberada e quem liberou. A lista de abas existentes é do código, não deste banco.
+  // `admin_permissoes_historico` é SOMENTE DE ACRÉSCIMO. Tudo aditivo: nenhuma tabela existente foi tocada.
+  `CREATE TABLE IF NOT EXISTS admin_permissoes (
+     usuario      TEXT NOT NULL,
+     aba          TEXT NOT NULL,
+     liberado_por TEXT NOT NULL,
+     liberado_em  TEXT NOT NULL,
+     PRIMARY KEY (usuario, aba)
+   )`,
+  `CREATE TABLE IF NOT EXISTS admin_permissoes_historico (
+     id      INTEGER PRIMARY KEY AUTOINCREMENT,
+     em      TEXT NOT NULL,
+     por     TEXT NOT NULL,
+     usuario TEXT NOT NULL,
+     aba     TEXT NOT NULL,
+     acao    TEXT NOT NULL
+   )`,
+  `CREATE TABLE IF NOT EXISTS admin_acessos (
+     usuario       TEXT PRIMARY KEY,
+     ultimo_acesso TEXT NOT NULL
+   )`,
+
   `CREATE TABLE IF NOT EXISTS estado (
      chave TEXT PRIMARY KEY,
      valor TEXT NOT NULL

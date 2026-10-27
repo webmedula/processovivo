@@ -61,6 +61,7 @@ import type { Notificador } from '../../src/domain/ports/Notificador.js';
 import { Agendador } from '../../src/infrastructure/agenda/Agendador.js';
 import type { Logger } from '../../src/domain/ports/Logger.js';
 import { loggerSilencioso } from '../../src/infrastructure/logging/ConsoleLogger.js';
+import { clockDoSistema } from '../../src/domain/ports/Clock.js';
 import { abrirBanco } from '../../src/infrastructure/persistencia/sqlite/banco.js';
 import { RepositorioAcompanhamentosSqlite } from '../../src/infrastructure/persistencia/sqlite/RepositorioAcompanhamentosSqlite.js';
 import { RepositorioNotificacaoSqlite } from '../../src/infrastructure/persistencia/sqlite/RepositorioNotificacaoSqlite.js';
@@ -68,6 +69,9 @@ import { RepositorioVigilanciasSqlite } from '../../src/infrastructure/persisten
 import { ServicoAvisoDoPrazo } from '../../src/application/services/ServicoAvisoDoPrazo.js';
 import { ServicoAnaliseDoAto } from '../../src/application/services/ServicoAnaliseDoAto.js';
 import { ServicoControleDaIa } from '../../src/application/services/ServicoControleDaIa.js';
+import { ServicoAdministradores } from '../../src/application/services/ServicoAdministradores.js';
+import { RepositorioDePermissoesDoAdminSqlite } from '../../src/infrastructure/persistencia/sqlite/RepositorioDePermissoesDoAdminSqlite.js';
+import type { RepositorioDePermissoesDoAdmin } from '../../src/domain/ports/RepositorioDePermissoesDoAdmin.js';
 import { ServicoModelosDeIa } from '../../src/application/services/ServicoModelosDeIa.js';
 import { ServicoTesteDeModelo } from '../../src/application/services/ServicoTesteDeModelo.js';
 import type { CatalogoDeModelos } from '../../src/domain/entities/ModelosDeIa.js';
@@ -312,7 +316,14 @@ export interface OpcoesAplicacaoDeTeste {
     readonly gerarId?: () => string;
   };
   /** Liga a área administrativa. Ausente por padrão — mesma regra de `comAssinaturas`. */
-  readonly admin?: { readonly usuario: string; readonly senha: string };
+  readonly admin?: {
+    readonly usuario: string;
+    readonly senha: string;
+    /** Administradores restritos (v0.62.0). */
+    readonly restritos?: readonly { readonly usuario: string; readonly senha: string }[];
+  };
+  /** Troca o repositório de permissões do /admin (v0.62.0) — para simular banco indisponível. */
+  readonly permissoesDoAdmin?: RepositorioDePermissoesDoAdmin;
 }
 
 /**
@@ -847,6 +858,13 @@ export function aplicacaoDeTeste(
       ...(opcoes.agora ? { agora: opcoes.agora } : {}),
     }),
     adminCredenciais: opcoes.admin,
+    administradores: new ServicoAdministradores({
+      restritos: (opcoes.admin?.restritos ?? []).map((r) => r.usuario),
+      repositorio:
+        opcoes.permissoesDoAdmin ?? new RepositorioDePermissoesDoAdminSqlite(db),
+      clock: clockDoSistema,
+      logger: loggerSilencioso,
+    }),
     contas: new ServicoContas({
       repositorio: usuarios,
       ...(opcoes.comAssinaturas

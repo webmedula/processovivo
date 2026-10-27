@@ -55,7 +55,11 @@ export function construirServidor(app: Aplicacao, config: Config): FastifyInstan
   // Antes de qualquer coisa: configuração de autenticação inválida derruba a
   // montagem, não vira um serviço aberto por acidente.
   validarChavesDeApi(config.http.chavesDeApi, config.http.autenticacaoDesativada);
-  validarConfiguracaoAdmin(config.admin.usuario, config.admin.senha);
+  validarConfiguracaoAdmin(
+    config.admin.usuario,
+    config.admin.senha,
+    config.admin.restritos,
+  );
 
   const servidor = Fastify({
     // O log sai pelo nosso `Logger` (uma linha JSON por evento) para que
@@ -202,7 +206,17 @@ export function construirServidor(app: Aplicacao, config: Config): FastifyInstan
   void servidor.register(rotasDeVigilancia(app.vigilancia, app.preferenciasNotificacao));
   void servidor.register(
     rotasDeAdmin({
-      ...(app.adminCredenciais ? { credenciais: app.adminCredenciais } : {}),
+      ...(app.adminCredenciais
+        ? {
+            credenciais: {
+              usuario: app.adminCredenciais.usuario,
+              senha: app.adminCredenciais.senha,
+            },
+            restritos: app.adminCredenciais.restritos ?? [],
+          }
+        : {}),
+      administradores: app.administradores,
+      logger: app.logger.child({ camada: 'admin' }),
       assinaturas: app.assinaturas,
       planos: app.planos,
       repositorioAssinaturas: app.repositorioAssinaturas,

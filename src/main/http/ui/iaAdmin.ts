@@ -232,13 +232,14 @@ function descreverAlteracao(a){
 function secaoDeHistorico(d){
   var h='<section aria-labelledby="ia-his-t" class="ia-secao"><h2 id="ia-his-t" class="ia-h2">Últimas 50 mudanças</h2>';
   if(!d.alteracoes.length)return h+'<p class="ia-suave">Nenhuma mudança feita pelo painel ainda.</p></section>';
-  h+='<ul class="ia-lista ia-historico">';
+  h+='<div class="tab-rolo" role="region" aria-label="Últimas mudanças" tabindex="0"><table class="tab ia-historico"><thead><tr>'+
+    '<th scope="col">Quando</th><th scope="col">Função</th><th scope="col">Mudança</th><th scope="col">Por</th></tr></thead><tbody>';
   for(var i=0;i<d.alteracoes.length;i++){
     var a=d.alteracoes[i];
-    h+='<li><span class="ia-quando">'+esc(dth(a.em))+'</span> · '+esc(ROTULO_DA_FUNCAO[a.funcao]||a.funcao)+' · '+
-      descreverAlteracao(a)+' · operador <span class="ia-mono">'+esc(a.autor)+'</span></li>';
+    h+='<tr><td class="ia-quando">'+esc(dth(a.em))+'</td><td>'+esc(ROTULO_DA_FUNCAO[a.funcao]||a.funcao)+'</td><td>'+
+      descreverAlteracao(a)+'</td><td><span class="ia-mono">'+esc(a.por||a.autor)+'</span></td></tr>';
   }
-  return h+'</ul></section>';
+  return h+'</tbody></table></div></section>';
 }
 
 function desenhar(){

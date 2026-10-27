@@ -157,7 +157,13 @@ import {
   DURACAO_SESSAO_MS,
   tokensDeSessao,
 } from '../../infrastructure/seguranca/sessao.js';
-import { adminHabilitado } from '../http/adminAuth.js';
+import {
+  adminHabilitado,
+  lerRestritosDoAdmin,
+  type CredencialDoAdmin,
+} from '../http/adminAuth.js';
+import { ServicoAdministradores } from '../../application/services/ServicoAdministradores.js';
+import { RepositorioDePermissoesDoAdminSqlite } from '../../infrastructure/persistencia/sqlite/RepositorioDePermissoesDoAdminSqlite.js';
 
 export interface Aplicacao {
   readonly buscarProcessoPorNumero: BuscarProcessoPorNumero;
@@ -284,7 +290,15 @@ export interface Aplicacao {
    * instrução) mas não abre para ninguém.
    */
   readonly adminCredenciais:
-    { readonly usuario: string; readonly senha: string } | undefined;
+    | {
+        readonly usuario: string;
+        readonly senha: string;
+        /** Administradores restritos (v0.62.0), já lidos e validados. */
+        readonly restritos?: readonly CredencialDoAdmin[];
+      }
+    | undefined;
+  /** Permissões por aba dos administradores restritos do /admin (v0.62.0). */
+  readonly administradores: ServicoAdministradores;
   readonly preferenciasNotificacao: RepositorioNotificacao;
   /**
    * O canal de saída cru, exposto para DIAGNÓSTICO.
@@ -446,9 +460,22 @@ export function montarAplicacao(config: Config): Aplicacao {
     repositorio: repositorioChavesApi,
     chaves: chavesDeApi,
   });
+  const restritosDoAdmin = adminHabilitado(config.admin.usuario, config.admin.senha)
+    ? lerRestritosDoAdmin(config.admin.restritos, config.admin.usuario)
+    : [];
   const adminCredenciais = adminHabilitado(config.admin.usuario, config.admin.senha)
-    ? { usuario: config.admin.usuario, senha: config.admin.senha }
+    ? {
+        usuario: config.admin.usuario,
+        senha: config.admin.senha,
+        restritos: restritosDoAdmin,
+      }
     : undefined;
+  const administradores = new ServicoAdministradores({
+    restritos: restritosDoAdmin.map((r) => r.usuario),
+    repositorio: new RepositorioDePermissoesDoAdminSqlite(db),
+    clock: clockDoSistema,
+    logger: logger.child({ camada: 'admin' }),
+  });
 
   const contas = new ServicoContas({
     repositorio: usuarios,
@@ -892,6 +919,7 @@ export function montarAplicacao(config: Config): Aplicacao {
     repositorioChavesApi,
     chavesApi,
     adminCredenciais,
+    administradores,
     preferenciasNotificacao,
     notificador,
     agendador,

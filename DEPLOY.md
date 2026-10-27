@@ -1432,3 +1432,38 @@ Ajustar **como a IA interpreta** o ato, o processo e a peça — foco, prioridad
 7. **Opcional:** **Rodar conjunto de verificação** (estima o custo e pede confirmação; teto de US$ 1,00; leva alguns minutos) mostra métricas lado a lado e avisos de piora — **não bloqueia** a publicação. **Histórico de versões** compara quaisquer duas versões. **Onde a IA erra** lista os polegares para baixo por versão.
 8. **Sair com rascunho não salvo:** a tela pergunta antes de trocar de aba ou fechar a página.
 9. **Backup:** `ia_instrucoes` fica no mesmo banco (só instruções suas, nunca texto de ato ou peça).
+
+
+## Administradores restritos do /admin (v0.62.0)
+
+Outras pessoas entram no `/admin` com **usuário e senha próprios**, e **você (o dono)** escolhe, pela tela, quais abas cada uma pode usar. O seu acesso (`PROCESSOVIVO_ADMIN_USUARIO` / `PROCESSOVIVO_ADMIN_SENHA`) **não muda** e vê tudo, sempre.
+
+**Variável nova:** `PROCESSOVIVO_ADMIN_RESTRITOS` — pares `usuario:senha`, separados por vírgula. Vazia (o padrão) = só o dono. Usuário: letras minúsculas, números, `-` e `_` (2 a 32). Senha: **24 caracteres ou mais, sem espaço e sem vírgula**. O servidor **não sobe** se houver usuário repetido (nem igual ao seu), senha curta ou fora do formato; a mensagem nunca mostra a senha.
+
+### Acrescentar um administrador
+
+1. **Gerar a senha** (no seu computador, no Terminal; gera 32 letras e números):
+   ```bash
+   openssl rand -hex 16
+   ```
+2. **Easypanel** → o serviço do Processo Vivo → **Ambiente**: acrescente `PROCESSOVIVO_ADMIN_RESTRITOS` com o par. Para o primeiro: `ana:A_SENHA_QUE_VOCE_GEROU`. Para o segundo, acrescente depois de uma vírgula, sem espaço: `ana:SENHA1,beto:SENHA2`.
+3. **Salvar** e **Implantar (Deploy)** o serviço. Confira com `curl https://SEU-DOMINIO/health` (a `versao` é `0.62.0`).
+4. **Liberar as abas:** `https://SEU-DOMINIO/admin` (entre com o SEU usuário) → aba **Administradores** → marque as abas da pessoa → **Salvar** → **Confirmar**. Vale já, sem deploy. Quem acabou de ser acrescentado **começa sem nenhuma aba** e vê "Nenhuma área liberada para o seu acesso".
+5. Mande o usuário e a senha à pessoa por um canal seguro (nunca por e-mail comum nem no grupo). Ela abre `https://SEU-DOMINIO/admin`.
+
+### Tirar o acesso de alguém
+
+- **Na hora:** aba **Administradores** → desmarque todas as abas da pessoa → **Salvar**. Na requisição seguinte dela, tudo é negado (efeito imediato; a senha continua existindo na variável).
+- **De vez:** apague o par da variável `PROCESSOVIVO_ADMIN_RESTRITOS` no Easypanel e faça o **redeploy**. A pessoa não entra mais, mesmo que o banco ainda guarde as permissões dela (a tela as mostra como "sem credencial").
+
+### O que cada aba libera (por aba inteira, sem permissão mais fina)
+
+**Assinaturas** (inclui a cobrança: faixa de teste, reconciliação), **Planos**, **Chaves de API**, **IA** (ver números, ligar e desligar, trocar modelo, editar e publicar instruções). A aba **Administradores** é só sua. Quem tem **IA** vê o alerta de custo da IA; o **e-mail** do alerta e os demais e-mails do `/admin` continuam indo só para o seu endereço (`PROCESSOVIVO_ADMIN_EMAIL`).
+
+### Atenção
+
+- A pessoa com a aba **Chaves de API** emite e revoga chaves; com **Assinaturas**, libera e cancela planos; com **IA**, também **experimenta instruções sobre os processos da SUA conta** (a do e-mail `PROCESSOVIVO_ADMIN_EMAIL`). Libere só o que confia.
+- O navegador guarda a senha enquanto a janela estiver aberta. Para entrar com outro usuário, feche a janela ou use uma janela anônima.
+- Depois de **10 senhas erradas** num mesmo endereço, o `/admin` recusa o endereço por alguns minutos (mesmo com a senha certa).
+- Backup: `admin_permissoes`, `admin_permissoes_historico` e `admin_acessos` ficam no mesmo banco. **Senhas nunca vão ao banco.**
+- No log do contêiner: `acesso administrativo` (usuário e instante), `acesso administrativo recusado` (instante e IP, sem usuário nem senha) e `acesso administrativo negado por aba` (usuário, aba e instante).
