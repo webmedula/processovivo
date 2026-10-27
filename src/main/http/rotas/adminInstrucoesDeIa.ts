@@ -1,4 +1,4 @@
-import type { FastifyInstance, FastifyReply } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { LIMITE_DA_INSTRUCAO } from '../../../domain/entities/InstrucoesDeIa.js';
 import type { ServicoErrosDeInstrucoes } from '../../../application/services/ServicoErrosDeInstrucoes.js';
@@ -99,7 +99,8 @@ const consultaDoDiff = z.object({
 });
 
 export interface OpcoesRotasInstrucoes {
-  readonly autor: string;
+  /** Quem fez a ação NESTA requisição (dono ou restrito): vai para as tabelas de auditoria. */
+  readonly autorDe: (req: FastifyRequest) => string;
   readonly instrucoes: ServicoInstrucoesDeIa;
   readonly experimento: ServicoExperimentoDeInstrucoes;
   readonly verificacao: ServicoVerificacaoDeInstrucoes;
@@ -132,7 +133,7 @@ export function rotasDeInstrucoesDeIa(
       if (!o) return semPainel(resposta);
       const c = corpoDoRascunho.parse(req.body);
       o.instrucoes.salvarRascunho(
-        o.autor,
+        o.autorDe(req),
         req.params.funcao,
         c.texto,
         c.observacao ?? '',
@@ -179,7 +180,7 @@ export function rotasDeInstrucoesDeIa(
     async (req, resposta) => {
       if (!o) return semPainel(resposta);
       const c = corpoDaPublicacao.parse(req.body);
-      o.instrucoes.publicar(o.autor, req.params.funcao, {
+      o.instrucoes.publicar(o.autorDe(req), req.params.funcao, {
         versao: c.versao,
         confirmado: c.confirmado === true,
       });
@@ -193,7 +194,7 @@ export function rotasDeInstrucoesDeIa(
     async (req, resposta) => {
       if (!o) return semPainel(resposta);
       const c = corpoDaReversao.parse(req.body);
-      o.instrucoes.reverter(o.autor, req.params.funcao, c.confirmado === true);
+      o.instrucoes.reverter(o.autorDe(req), req.params.funcao, c.confirmado === true);
       semCache(resposta);
       return instrucoesParaJson(o.instrucoes, o.experimento, o.verificacao);
     },
@@ -294,7 +295,7 @@ export function rotasDeInstrucoesDeIa(
       if (!o) return semPainel(resposta);
       const c = corpoDaVerificacao.parse(req.body ?? {});
       const t = o.verificacao.iniciar(
-        o.autor,
+        o.autorDe(req),
         req.params.funcao,
         c.texto,
         c.confirmado === true,

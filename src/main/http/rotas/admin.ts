@@ -22,7 +22,16 @@ import {
   type PainelDeIa,
   type ServicoPainelDeIa,
 } from '../../../application/services/ServicoPainelDeIa.js';
-import { identificarOperador } from '../operadorDoAdmin.js';
+import { rotuloDoAutor } from '../operadorDoAdmin.js';
+import type { CredencialDoAdmin } from '../adminAuth.js';
+import type { ServicoAdministradores } from '../../../application/services/ServicoAdministradores.js';
+import {
+  ABAS_DO_ADMIN,
+  ABA_ADMINISTRADORES,
+  ROTULO_DA_ABA,
+  type AbaDoAdmin,
+} from '../../../domain/entities/AbasDoAdmin.js';
+import type { Logger } from '../../../domain/ports/Logger.js';
 import { RECURSOS } from '../../../domain/entities/Plano.js';
 import type { CicloDoPlano, RecursoDoPlano } from '../../../domain/entities/Plano.js';
 import type { RepositorioAssinaturas } from '../../../domain/ports/RepositorioAssinaturas.js';
@@ -66,37 +75,80 @@ export const ROTA_ADMIN_IA_MODELOS_REVERTER = '/admin/api/ia/modelos/:funcao/rev
 export const ROTA_ADMIN_IA_MODELOS_TESTE = '/admin/api/ia/modelos/testes/:id';
 export const ROTA_ADMIN_IA_MODELOS_CANCELAR = '/admin/api/ia/modelos/testes/:id/cancelar';
 
-/** Toda rota administrativa, na ordem em que faz sentido ler — para `rotasPublicas`. */
-export const ROTAS_ADMIN: readonly string[] = [
-  ROTA_ADMIN,
-  ROTA_ADMIN_ASSINATURAS,
-  ROTA_ADMIN_ASSINATURA_POR_EMAIL,
-  ROTA_ADMIN_ASSINATURA_LIBERAR,
-  ROTA_ADMIN_ASSINATURA_CANCELAR,
-  ROTA_ADMIN_ASSINATURA_POR_WORKSPACE,
-  ROTA_ADMIN_ASSINATURA_LIBERAR_POR_WORKSPACE,
-  ROTA_ADMIN_ASSINATURAS_AVISAR,
-  ROTA_ADMIN_CHAVES,
-  ROTA_ADMIN_CHAVE_REVOGAR,
-  ROTA_ADMIN_PLANOS,
-  ROTA_ADMIN_PLANO,
-  ROTA_ADMIN_REGRAS,
-  ROTA_ADMIN_PAGAMENTO,
-  ROTA_ADMIN_PAGAMENTO_RECONCILIAR,
-  ROTA_ADMIN_IA,
-  ROTA_ADMIN_IA_ALERTA,
-  ROTA_ADMIN_IA_FUNCAO,
-  ROTA_ADMIN_IA_FUNCAO_TETO,
-  ROTA_ADMIN_IA_TETO_GLOBAL,
-  ROTA_ADMIN_IA_MODELOS,
-  ROTA_ADMIN_IA_MODELOS_ESTIMATIVA,
-  ROTA_ADMIN_IA_MODELOS_TESTES,
-  ROTA_ADMIN_IA_MODELOS_PUBLICAR,
-  ROTA_ADMIN_IA_MODELOS_REVERTER,
-  ROTA_ADMIN_IA_MODELOS_TESTE,
-  ROTA_ADMIN_IA_MODELOS_CANCELAR,
-  ...ROTAS_ADMIN_INSTRUCOES,
+/**
+ * Catálogo de planos que a aba Assinaturas usa para escolher o plano a liberar (v0.62.0). Antes essa aba lia
+ * `GET /admin/api/planos`, que é da aba Planos e traz as contagens de assinantes por plano; com as abas separadas por
+ * usuário, cada aba tem de bastar-se com as suas rotas.
+ */
+export const ROTA_ADMIN_ASSINATURAS_PLANOS = '/admin/api/assinaturas/planos';
+/** A tela "Administradores" (v0.62.0): só o dono. */
+export const ROTA_ADMIN_ADMINISTRADORES = '/admin/api/administradores';
+export const ROTA_ADMIN_ADMINISTRADOR_ABAS = '/admin/api/administradores/:usuario/abas';
+/**
+ * Pega-tudo de tudo o que é do `/admin` e não é rota conhecida. Para o dono vira o 404 de sempre; para o restrito é o
+ * MESMO 403 de uma aba não liberada — aba que não existe e aba que existe e está fechada são indistinguíveis.
+ */
+export const ROTA_ADMIN_CURINGA = '/admin/*';
+
+/**
+ * A quem cada rota do /admin pertence (v0.62.0) — a ÚNICA fonte da regra "quem pode chamar o quê":
+ *
+ * - uma aba (`AbaDoAdmin`): o dono sempre pode; o restrito só se o dono liberou ESSA aba;
+ * - `'administradores'`: só o dono (a aba de permissões nunca é liberável);
+ * - `'qualquer'`: a casca da página, aberta a qualquer usuário autenticado — ela mesma só desenha o que o usuário pode;
+ * - `'inexistente'`: o pega-tudo; só o dono chega, e recebe 404.
+ *
+ * Toda rota nova do /admin PRECISA entrar aqui: a montagem recusa (e o servidor não sobe) rota sem aba declarada.
+ * Uma rota, exatamente uma aba. Esconder do menu não protege nada; quem protege é o hook de `rotasDeAdmin`.
+ */
+export type DestinoDaRotaDoAdmin =
+  AbaDoAdmin | typeof ABA_ADMINISTRADORES | 'qualquer' | 'inexistente';
+
+export const ROTAS_DO_ADMIN: ReadonlyArray<{
+  readonly rota: string;
+  readonly destino: DestinoDaRotaDoAdmin;
+}> = [
+  { rota: ROTA_ADMIN, destino: 'qualquer' },
+  { rota: ROTA_ADMIN_ASSINATURAS, destino: 'assinaturas' },
+  { rota: ROTA_ADMIN_ASSINATURAS_PLANOS, destino: 'assinaturas' },
+  { rota: ROTA_ADMIN_ASSINATURA_POR_EMAIL, destino: 'assinaturas' },
+  { rota: ROTA_ADMIN_ASSINATURA_LIBERAR, destino: 'assinaturas' },
+  { rota: ROTA_ADMIN_ASSINATURA_CANCELAR, destino: 'assinaturas' },
+  { rota: ROTA_ADMIN_ASSINATURA_POR_WORKSPACE, destino: 'assinaturas' },
+  { rota: ROTA_ADMIN_ASSINATURA_LIBERAR_POR_WORKSPACE, destino: 'assinaturas' },
+  { rota: ROTA_ADMIN_ASSINATURAS_AVISAR, destino: 'assinaturas' },
+  // A cobrança (ambiente, faixa de TESTE, reconciliação) é mostrada dentro da aba Assinaturas.
+  { rota: ROTA_ADMIN_PAGAMENTO, destino: 'assinaturas' },
+  { rota: ROTA_ADMIN_PAGAMENTO_RECONCILIAR, destino: 'assinaturas' },
+  { rota: ROTA_ADMIN_PLANOS, destino: 'planos' },
+  { rota: ROTA_ADMIN_PLANO, destino: 'planos' },
+  { rota: ROTA_ADMIN_REGRAS, destino: 'planos' },
+  { rota: ROTA_ADMIN_CHAVES, destino: 'chaves' },
+  { rota: ROTA_ADMIN_CHAVE_REVOGAR, destino: 'chaves' },
+  { rota: ROTA_ADMIN_IA, destino: 'ia' },
+  { rota: ROTA_ADMIN_IA_ALERTA, destino: 'ia' },
+  { rota: ROTA_ADMIN_IA_FUNCAO, destino: 'ia' },
+  { rota: ROTA_ADMIN_IA_FUNCAO_TETO, destino: 'ia' },
+  { rota: ROTA_ADMIN_IA_TETO_GLOBAL, destino: 'ia' },
+  { rota: ROTA_ADMIN_IA_MODELOS, destino: 'ia' },
+  { rota: ROTA_ADMIN_IA_MODELOS_ESTIMATIVA, destino: 'ia' },
+  { rota: ROTA_ADMIN_IA_MODELOS_TESTES, destino: 'ia' },
+  { rota: ROTA_ADMIN_IA_MODELOS_PUBLICAR, destino: 'ia' },
+  { rota: ROTA_ADMIN_IA_MODELOS_REVERTER, destino: 'ia' },
+  { rota: ROTA_ADMIN_IA_MODELOS_TESTE, destino: 'ia' },
+  { rota: ROTA_ADMIN_IA_MODELOS_CANCELAR, destino: 'ia' },
+  ...ROTAS_ADMIN_INSTRUCOES.map((rota) => ({ rota, destino: 'ia' as const })),
+  { rota: ROTA_ADMIN_ADMINISTRADORES, destino: ABA_ADMINISTRADORES },
+  { rota: ROTA_ADMIN_ADMINISTRADOR_ABAS, destino: ABA_ADMINISTRADORES },
+  { rota: ROTA_ADMIN_CURINGA, destino: 'inexistente' },
 ];
+
+const DESTINO_POR_ROTA: ReadonlyMap<string, DestinoDaRotaDoAdmin> = new Map(
+  ROTAS_DO_ADMIN.map((r) => [r.rota, r.destino]),
+);
+
+/** Toda rota administrativa — para `rotasPublicas` do plugin de autenticação do assinante. */
+export const ROTAS_ADMIN: readonly string[] = ROTAS_DO_ADMIN.map((r) => r.rota);
 
 const corpoLiberar = z.object({
   // Só a forma aqui. Se o plano EXISTE é pergunta ao catálogo, que agora é
@@ -172,6 +224,13 @@ const corpoDaPublicacao = z
   .strict();
 const corpoDaReversao = z.object({ confirmado: z.boolean().optional() }).strict();
 
+const corpoDasAbas = z
+  .object({
+    abas: z.array(z.string().max(40)).max(20),
+    confirmado: z.boolean().optional(),
+  })
+  .strict();
+
 const corpoReconciliar = z.object({
   workspace: z.string().trim().min(1).max(40).optional(),
 });
@@ -190,6 +249,11 @@ function comoRecursos(lista: readonly string[]): RecursoDoPlano[] {
 export interface OpcoesRotasAdmin {
   /** `undefined` quando `PROCESSOVIVO_ADMIN_USUARIO`/`_SENHA` não estão configuradas. */
   readonly credenciais?: { readonly usuario: string; readonly senha: string };
+  /** Administradores restritos (v0.62.0), de `PROCESSOVIVO_ADMIN_RESTRITOS`. Sem o dono configurado não valem. */
+  readonly restritos?: readonly CredencialDoAdmin[];
+  /** Permissões por aba dos restritos (v0.62.0). */
+  readonly administradores: ServicoAdministradores;
+  readonly logger: Logger;
   readonly assinaturas: ServicoAssinaturas;
   readonly planos: ServicoPlanos;
   readonly repositorioAssinaturas: RepositorioAssinaturas;
@@ -278,10 +342,57 @@ export function rotasDeAdmin(opcoes: OpcoesRotasAdmin): FastifyPluginAsync {
       servidor.put(ROTA_ADMIN_IA_FUNCAO, desligada);
       servidor.put(ROTA_ADMIN_IA_FUNCAO_TETO, desligada);
       servidor.put(ROTA_ADMIN_IA_TETO_GLOBAL, desligada);
+      servidor.get(ROTA_ADMIN_ASSINATURAS_PLANOS, desligada);
+      servidor.get(ROTA_ADMIN_ADMINISTRADORES, desligada);
+      servidor.put(ROTA_ADMIN_ADMINISTRADOR_ABAS, desligada);
       return;
     }
 
-    autenticacaoAdmin(servidor, opcoes.credenciais);
+    // Toda rota registrada daqui para baixo TEM de constar em `ROTAS_DO_ADMIN` (com a aba a que pertence): rota nova
+    // sem aba declarada derruba a montagem em vez de ficar acessível sem dono.
+    servidor.addHook('onRoute', (rota) => {
+      if (!DESTINO_POR_ROTA.has(rota.url)) {
+        throw new Error(
+          `A rota ${rota.url} do /admin não declara a que aba pertence (ROTAS_DO_ADMIN).`,
+        );
+      }
+    });
+
+    autenticacaoAdmin(servidor, {
+      dono: opcoes.credenciais,
+      ...(opcoes.restritos ? { restritos: opcoes.restritos } : {}),
+      logger: opcoes.logger,
+    });
+
+    // Autorização por aba, no SERVIDOR e em toda requisição (sem cache): o efeito de liberar ou tirar uma aba vale na
+    // requisição seguinte. Falha ao ler as permissões = o restrito não acessa nada; o dono não depende do banco.
+    servidor.addHook('onRequest', async (requisicao, resposta) => {
+      const identidade = requisicao.adminIdentidade;
+      if (!identidade) return; // a autenticação já respondeu 401
+      if (identidade.papel === 'dono') return;
+
+      const rota = requisicao.routeOptions.url ?? '';
+      const destino = DESTINO_POR_ROTA.get(rota) ?? 'inexistente';
+      if (destino === 'qualquer') return;
+
+      if (destino !== 'inexistente' && destino !== ABA_ADMINISTRADORES) {
+        const liberadas = opcoes.administradores.abasDo(identidade.usuario);
+        if (liberadas.ok && liberadas.abas.includes(destino)) return;
+      }
+
+      opcoes.logger.warn('acesso administrativo negado por aba', {
+        usuario: identidade.usuario,
+        aba: destino === 'inexistente' ? 'desconhecida' : destino,
+        em: new Date().toISOString(),
+      });
+      return resposta.code(403).send({
+        erro: 'ACESSO_NEGADO',
+        mensagem: 'Este acesso não está liberado para o seu usuário.',
+      });
+    });
+
+    /** Quem está agindo nesta requisição, para as tabelas de auditoria. */
+    const autorDe = (req: FastifyRequest): string => req.adminIdentidade?.autor ?? '';
 
     /** E-mail cadastrado -> workspace. O operador conhece o e-mail, não o workspace. */
     async function workspaceDe(email: string): Promise<string | undefined> {
@@ -296,11 +407,86 @@ export function rotasDeAdmin(opcoes: OpcoesRotasAdmin): FastifyPluginAsync {
       };
     }
 
-    servidor.get(ROTA_ADMIN, async (_req, resposta) => {
+    servidor.get(ROTA_ADMIN, async (req, resposta) => {
       resposta.header('content-type', 'text/html; charset=utf-8');
       resposta.header('cache-control', 'no-store');
       resposta.header('x-robots-tag', 'noindex');
-      return paginaAdmin(VERSAO);
+      const identidade = req.adminIdentidade;
+      if (!identidade) return '';
+      // Login certo: usuário e instante (a senha nunca). Só na abertura da página, não a cada chamada da API.
+      opcoes.logger.info('acesso administrativo', {
+        usuario: identidade.usuario,
+        em: new Date().toISOString(),
+      });
+      if (identidade.papel === 'dono') {
+        return paginaAdmin(VERSAO, {
+          usuario: identidade.usuario,
+          papel: 'dono',
+          abas: [...ABAS_DO_ADMIN],
+          administradores: true,
+        });
+      }
+      opcoes.administradores.registrarAcesso(identidade.usuario);
+      const liberadas = opcoes.administradores.abasDo(identidade.usuario);
+      return paginaAdmin(VERSAO, {
+        usuario: identidade.usuario,
+        papel: 'restrito',
+        abas: liberadas.ok ? [...liberadas.abas] : [],
+        administradores: false,
+        ...(liberadas.ok ? {} : { semPermissoes: true }),
+      });
+    });
+
+    servidor.get(ROTA_ADMIN_ADMINISTRADORES, async (req, resposta) => {
+      resposta.header('cache-control', 'no-store');
+      return administradoresParaJson(
+        opcoes.administradores,
+        req.adminIdentidade?.usuario ?? '',
+      );
+    });
+
+    servidor.put<{ Params: { usuario: string }; Body: unknown }>(
+      ROTA_ADMIN_ADMINISTRADOR_ABAS,
+      async (req, resposta) => {
+        const c = corpoDasAbas.parse(req.body);
+        opcoes.administradores.definir(
+          autorDe(req),
+          req.params.usuario,
+          c.abas,
+          c.confirmado === true,
+        );
+        resposta.header('cache-control', 'no-store');
+        return administradoresParaJson(
+          opcoes.administradores,
+          req.adminIdentidade?.usuario ?? '',
+        );
+      },
+    );
+
+    // Só o dono chega aqui (o hook devolve 403 ao restrito, igual a uma aba fechada).
+    servidor.all(ROTA_ADMIN_CURINGA, async (_req, resposta) => {
+      void resposta.code(404);
+      return {
+        erro: 'ROTA_NAO_ENCONTRADA',
+        mensagem: 'Nenhuma rota para este endereço.',
+      };
+    });
+
+    // Catálogo mínimo para a aba Assinaturas (ver ROTA_ADMIN_ASSINATURAS_PLANOS): sem contagens, sem recursos.
+    servidor.get(ROTA_ADMIN_ASSINATURAS_PLANOS, async () => {
+      const [planos, regras] = await Promise.all([
+        opcoes.planos.listar(),
+        opcoes.planos.regras(),
+      ]);
+      return {
+        planos: planos.map((p) => ({
+          codigo: p.codigo,
+          nome: p.nome,
+          disponivelParaContratacao: p.disponivelParaContratacao,
+          precoMensalCentavos: p.precoMensalCentavos,
+        })),
+        regras: { planoDoTeste: regras.planoDoTeste },
+      };
     });
 
     servidor.get(ROTA_ADMIN_ASSINATURAS, async () => {
@@ -589,7 +775,6 @@ export function rotasDeAdmin(opcoes: OpcoesRotasAdmin): FastifyPluginAsync {
     // Só o operador do /admin chega aqui (o hook de Basic Auth vale para todas as rotas deste plugin).
     // Nenhuma resposta leva texto de ato ou de peça, nome, número de processo, e-mail ou chave: só números,
     // rótulos de lista fechada e ids CURTOS de conta. O autor das mudanças é um hash curto do usuário.
-    const autor = identificarOperador(opcoes.credenciais.usuario);
     const semPainel = (resposta: FastifyReply): { erro: string; mensagem: string } => {
       void resposta.code(404);
       return {
@@ -618,7 +803,7 @@ export function rotasDeAdmin(opcoes: OpcoesRotasAdmin): FastifyPluginAsync {
       const ia = opcoes.ia;
       if (!ia) return semPainel(resposta);
       const c = corpoAlertaDeIa.parse(req.body);
-      ia.controle.definirAlertaDeCusto(autor, c.valorUsd);
+      ia.controle.definirAlertaDeCusto(autorDe(req), c.valorUsd);
       return ia.painel.custoDoDia();
     });
 
@@ -630,7 +815,7 @@ export function rotasDeAdmin(opcoes: OpcoesRotasAdmin): FastifyPluginAsync {
         const c = corpoFuncaoDeIa.parse(req.body);
         // Desligar exige `confirmado: true` NO PEDIDO: a confirmação da tela não é só enfeite.
         ia.controle.ligarOuDesligar(
-          autor,
+          autorDe(req),
           req.params.funcao,
           c.ligada,
           c.confirmado === true,
@@ -645,7 +830,7 @@ export function rotasDeAdmin(opcoes: OpcoesRotasAdmin): FastifyPluginAsync {
         const ia = opcoes.ia;
         if (!ia) return semPainel(resposta);
         const c = corpoTetoDeIa.parse(req.body);
-        ia.controle.definirTetoDaFuncao(autor, req.params.funcao, c.teto);
+        ia.controle.definirTetoDaFuncao(autorDe(req), req.params.funcao, c.teto);
         return { estados: ia.controle.estados() };
       },
     );
@@ -654,7 +839,7 @@ export function rotasDeAdmin(opcoes: OpcoesRotasAdmin): FastifyPluginAsync {
       const ia = opcoes.ia;
       if (!ia) return semPainel(resposta);
       const c = corpoTetoDeIa.parse(req.body);
-      ia.controle.definirTetoGlobal(autor, c.teto);
+      ia.controle.definirTetoGlobal(autorDe(req), c.teto);
       return { tetoGlobal: ia.controle.config().tetoGlobal };
     });
 
@@ -685,7 +870,7 @@ export function rotasDeAdmin(opcoes: OpcoesRotasAdmin): FastifyPluginAsync {
         if (!ia) return semPainel(resposta);
         const c = corpoDoTeste.parse(req.body);
         const t = ia.testes.iniciar(
-          autor,
+          autorDe(req),
           req.params.funcao,
           c.candidato,
           c.confirmado === true,
@@ -722,7 +907,7 @@ export function rotasDeAdmin(opcoes: OpcoesRotasAdmin): FastifyPluginAsync {
         const ia = opcoes.ia;
         if (!ia) return semPainel(resposta);
         const c = corpoDaPublicacao.parse(req.body);
-        ia.modelos.publicar(autor, req.params.funcao, {
+        ia.modelos.publicar(autorDe(req), req.params.funcao, {
           testeId: c.testeId,
           confirmado: c.confirmado === true,
           ...(c.palavra !== undefined ? { palavra: c.palavra } : {}),
@@ -739,7 +924,7 @@ export function rotasDeAdmin(opcoes: OpcoesRotasAdmin): FastifyPluginAsync {
         const ia = opcoes.ia;
         if (!ia) return semPainel(resposta);
         const c = corpoDaReversao.parse(req.body);
-        ia.modelos.reverter(autor, req.params.funcao, c.confirmado === true);
+        ia.modelos.reverter(autorDe(req), req.params.funcao, c.confirmado === true);
         return modelosParaJson(ia.modelos, ia.testes);
       },
     );
@@ -750,7 +935,7 @@ export function rotasDeAdmin(opcoes: OpcoesRotasAdmin): FastifyPluginAsync {
       servidor,
       instrucoesDaFase
         ? {
-            autor,
+            autorDe,
             instrucoes: instrucoesDaFase.servico,
             experimento: instrucoesDaFase.experimento,
             verificacao: instrucoesDaFase.verificacao,
@@ -871,12 +1056,42 @@ function painelParaJson(p: PainelDeIa): Record<string, unknown> {
       id: a.id ?? null,
       em: a.em.toISOString(),
       autor: a.autor,
+      por: rotuloDoAutor(a.autor),
       funcao: a.funcao,
       tipo: a.tipo,
       anterior: a.anterior,
       novo: a.novo,
       testeId: a.testeId ?? null,
       aprovacao: a.aprovacao ?? null,
+    })),
+  };
+}
+
+/**
+ * A tela "Administradores" como JSON (só o dono a pede). Datas em ISO; "por" já como nome (nunca o hash curto do dono).
+ * Nenhuma senha: as credenciais só existem em variável de ambiente e nunca passam por aqui.
+ */
+function administradoresParaJson(
+  servico: ServicoAdministradores,
+  donoUsuario: string,
+): Record<string, unknown> {
+  const v = servico.visao();
+  return {
+    dono: { usuario: donoUsuario },
+    abasDisponiveis: v.abasDisponiveis,
+    restritos: v.restritos.map((r) => ({
+      usuario: r.usuario,
+      abas: r.abas,
+      ultimoAcesso: r.ultimoAcesso?.toISOString() ?? null,
+    })),
+    semCredencial: v.semCredencial,
+    historico: v.historico.map((m) => ({
+      em: m.em.toISOString(),
+      por: rotuloDoAutor(m.por),
+      usuario: m.usuario,
+      aba: m.aba,
+      rotuloDaAba: ROTULO_DA_ABA[m.aba as AbaDoAdmin] ?? m.aba,
+      acao: m.acao,
     })),
   };
 }

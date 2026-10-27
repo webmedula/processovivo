@@ -4,7 +4,8 @@ import { describe, expect, it } from 'vitest';
 import { SCRIPT_IA_ADMIN } from '../../src/main/http/ui/iaAdmin.js';
 import { SCRIPT_IA_ADMIN_INSTRUCOES } from '../../src/main/http/ui/iaAdminInstrucoes.js';
 import { SCRIPT_IA_ADMIN_MODELOS } from '../../src/main/http/ui/iaAdminModelos.js';
-import { SCRIPT_ADMIN } from '../../src/main/http/ui/scriptAdmin.js';
+import { SCRIPT_ADMINISTRADORES } from '../../src/main/http/ui/administradores.js';
+import { SCRIPT_ADMIN, scriptAdminPara } from '../../src/main/http/ui/scriptAdmin.js';
 
 /*
  * A área administrativa é JavaScript dentro de uma string, pelo mesmo motivo
@@ -18,6 +19,13 @@ describe.each([
   ['da tela de IA (v0.58.0)', SCRIPT_IA_ADMIN],
   ['dos modelos da tela de IA (v0.60.0)', SCRIPT_IA_ADMIN_MODELOS],
   ['das instruções da tela de IA (v0.61.0)', SCRIPT_IA_ADMIN_INSTRUCOES],
+  ['da tela Administradores (v0.62.0)', SCRIPT_ADMINISTRADORES],
+  // O restrito recebe um script montado só com as abas dele: cada combinação tem de ser JavaScript válido.
+  ['montado só com a aba Assinaturas', scriptAdminPara(['assinaturas'], false)],
+  ['montado só com a aba Planos', scriptAdminPara(['planos'], false)],
+  ['montado só com a aba Chaves de API', scriptAdminPara(['chaves'], false)],
+  ['montado só com a aba IA', scriptAdminPara(['ia'], false)],
+  ['montado para o restrito sem abas', scriptAdminPara([], false)],
 ])('área administrativa — o JavaScript %s', (_nome, SCRIPT) => {
   const linter = new Linter();
 

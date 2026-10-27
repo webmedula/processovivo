@@ -1,3 +1,4 @@
+import { rotuloDoAutor } from '../operadorDoAdmin.js';
 import {
   FUNCOES_DE_IA,
   ROTULO_DA_FUNCAO,
@@ -51,6 +52,8 @@ function versaoParaJson(v: InstrucaoGravada): Record<string, unknown> {
     publicadoEm: iso(v.publicadoEm),
     publicadoPor: v.publicadoPor ?? null,
     autor: v.autor,
+    por: rotuloDoAutor(v.autor),
+    publicadoPorNome: v.publicadoPor ? rotuloDoAutor(v.publicadoPor) : null,
   };
 }
 

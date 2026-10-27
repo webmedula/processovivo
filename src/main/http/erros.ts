@@ -8,6 +8,7 @@ import {
   EntradaNaoAnalisavelError,
   AnaliseDePecaRecusadaError,
   ConfiguracaoDeIaRecusadaError,
+  AdministradoresRecusadoError,
   ModeloDeIaRecusadoError,
   InstrucaoDeIaRecusadaError,
   PrazoNaoCalculavelError,
@@ -222,6 +223,23 @@ export function mapearErro(erro: unknown): RespostaDeErro {
       valor_invalido: 400,
       confirmacao_necessaria: 409,
       ambiente_bloqueia: 409,
+    };
+    return {
+      status: status[erro.motivo],
+      corpo: {
+        erro: erro.codigo,
+        mensagem: erro.message,
+        detalhes: { motivo: erro.motivo },
+      },
+    };
+  }
+
+  // Tela "Administradores" do /admin (v0.62.0): pedido do dono recusado, nada gravado.
+  if (erro instanceof AdministradoresRecusadoError) {
+    const status: Record<AdministradoresRecusadoError['motivo'], number> = {
+      usuario_desconhecido: 404,
+      aba_desconhecida: 400,
+      confirmacao_necessaria: 409,
     };
     return {
       status: status[erro.motivo],

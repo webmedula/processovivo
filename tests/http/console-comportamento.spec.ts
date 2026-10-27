@@ -54,7 +54,15 @@ describe('console — escolha de tema', () => {
   });
 
   it('o tema escolhido é aplicado no <head>, antes de a página ser pintada', () => {
-    for (const html of [paginaConsole('0.0.0'), paginaAdmin('0.0.0')]) {
+    for (const html of [
+      paginaConsole('0.0.0'),
+      paginaAdmin('0.0.0', {
+        usuario: 'joao',
+        papel: 'dono',
+        abas: ['assinaturas', 'planos', 'chaves', 'ia'],
+        administradores: true,
+      }),
+    ]) {
       const cabeca = html.slice(0, html.indexOf('</head>'));
       expect(cabeca).toContain("localStorage.getItem('processovivo.tema')");
       // Antes do CSS: aplicado depois, a tela piscaria do tema do sistema para o escolhido.

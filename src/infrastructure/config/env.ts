@@ -235,13 +235,17 @@ const schema = z.object({
   CORS_ORIGINS: z.string().default(''),
 
   // --- Área administrativa -------------------------------------------------
-  // Um operador só, credencial própria, TOTALMENTE separada da tabela
+  // O DONO (estas duas variáveis) e, desde a v0.62.0, os restritos (abaixo); credenciais próprias, TOTALMENTE separadas da tabela
   // `usuarios` — ver o aviso em `CLAUDE.md` sobre inventar "administrador"
   // como campo booleano numa API de cadastro aberto. As duas vazias desliga a
   // área inteira (comportamento padrão, e o de hoje); definir só uma é erro de
   // configuração — ver `validarConfiguracaoAdmin`.
   PROCESSOVIVO_ADMIN_USUARIO: z.string().default(''),
   PROCESSOVIVO_ADMIN_SENHA: z.string().default(''),
+  // Administradores RESTRITOS (v0.62.0): `usuario:senha,usuario2:senha2`. O dono (as duas variáveis acima) continua
+  // sendo o acesso de sempre; estes só veem as abas que o dono liberar na tela "Administradores". Lida e validada
+  // por `lerRestritosDoAdmin` (main/http/adminAuth.ts) no arranque; aqui só o texto cru, que NUNCA vai a log.
+  PROCESSOVIVO_ADMIN_RESTRITOS: z.string().default(''),
   // E-mail do operador para o ALERTA DE CUSTO da IA (v0.58.0). Opcional: vazio = só o banner no /admin.
   // Nunca vai a log. Sem ele, cai no `PROCESSOVIVO_PAGAMENTO_AVISO_EMAIL` (o mesmo operador).
   PROCESSOVIVO_ADMIN_EMAIL: z.string().default(''),
@@ -502,6 +506,8 @@ export interface Config {
     /** Vazio quando a área administrativa está desligada (as duas variáveis vazias). */
     readonly usuario: string;
     readonly senha: string;
+    /** `usuario:senha,…` dos administradores restritos (v0.62.0), CRU: quem valida é `lerRestritosDoAdmin`. */
+    readonly restritos: string;
     /** E-mail do operador (alerta de custo da IA). Vazio = sem e-mail. Nunca vai a log. */
     readonly email: string;
   };
@@ -762,6 +768,7 @@ export function carregarConfig(fonte: NodeJS.ProcessEnv = process.env): Config {
     admin: {
       usuario: env.PROCESSOVIVO_ADMIN_USUARIO.trim(),
       senha: env.PROCESSOVIVO_ADMIN_SENHA,
+      restritos: env.PROCESSOVIVO_ADMIN_RESTRITOS,
       email: (
         env.PROCESSOVIVO_ADMIN_EMAIL.trim() ||
         env.PROCESSOVIVO_PAGAMENTO_AVISO_EMAIL.trim()
