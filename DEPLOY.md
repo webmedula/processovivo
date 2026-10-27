@@ -1467,3 +1467,22 @@ Outras pessoas entram no `/admin` com **usuário e senha próprios**, e **você 
 - Depois de **10 senhas erradas** num mesmo endereço, o `/admin` recusa o endereço por alguns minutos (mesmo com a senha certa).
 - Backup: `admin_permissoes`, `admin_permissoes_historico` e `admin_acessos` ficam no mesmo banco. **Senhas nunca vão ao banco.**
 - No log do contêiner: `acesso administrativo` (usuário e instante), `acesso administrativo recusado` (instante e IP, sem usuário nem senha) e `acesso administrativo negado por aba` (usuário, aba e instante).
+
+## Registros de acesso do Marco Civil (v0.63.0)
+
+Nada para configurar. A partir desta versão o sistema guarda, na tabela `registros_de_acesso` do banco, o
+**instante, o IP, a porta de origem (quando visível) e a conta** de cada uso da aplicação, e apaga sozinho, uma
+vez por dia, o que passou de 6 meses (184 dias). É a guarda do art. 15 do Marco Civil da Internet que a Política de
+Privacidade descreve. Os registros entram no backup como o resto do banco e **não** saem quando uma conta é excluída.
+
+**A porta de origem fica vazia atrás do proxy do Easypanel.** O servidor só enxerga a porta do proxy, que não
+identifica o cliente. Para gravá-la seria preciso que o proxy repassasse a porta do cliente num cabeçalho, o que
+hoje não está configurado.
+
+**Para atender uma requisição judicial**, com o serviço no ar, no terminal do contêiner (troque o IP e as datas):
+
+```bash
+node --input-type=module -e "import {DatabaseSync} from 'node:sqlite'; const db=new DatabaseSync(process.env.PROCESSOVIVO_DB_PATH,{readOnly:true}); console.table(db.prepare('SELECT instante, ip, porta, workspace FROM registros_de_acesso WHERE ip = ? AND instante BETWEEN ? AND ? ORDER BY instante').all('203.0.113.9','2026-10-01','2026-10-31T23:59:59'))"
+```
+
+O comando só lê o banco (`readOnly`). Os horários estão em UTC (3 horas à frente de Brasília).
