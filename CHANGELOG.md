@@ -9,7 +9,7 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
-## [0.63.0] — 2026-10-28
+## [0.64.0] — 2026-10-28
 
 **E-mail de atualizações em lista curta: uma linha por processo, só número, tipo do ato e data.** Mudou apenas o CONTEÚDO e a apresentação do e-mail. Detecção de novidades, `/v1/novidades`, gatilho e frequência de envio (um e-mail por conta a cada varredura, depois dela), "pede providência", "cumprido", tela Atualizações, calendário, planos, preferências e os outros e-mails não mudaram.
 
@@ -24,6 +24,31 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 - **Testes reescritos:** `agrupa várias novidades num e-mail só` (o assunto agora conta processos), `o corpo traz o trecho do teor` (virou `NÃO traz o trecho`) e `o e-mail nunca afirma que o prazo está conferido` (virou `nunca anuncia nem afirma prazo`); a espiã de e-mail dos testes passou a guardar o HTML.
 
 ---
+
+## [0.63.0] — 2026-10-27
+
+**Registros de acesso do Marco Civil: o sistema passa a guardar, por 6 meses, o instante, o IP, a porta de origem
+(quando visível) e a conta de cada uso da aplicação.** A Política de Privacidade já prometia essa guarda (art. 15 da
+Lei nº 12.965/2014), e o log do contêiner não gravava IP nem conta. Nenhuma tela, rota, plano ou regra mudou.
+
+### Adicionado
+- **Tabela `registros_de_acesso`** (`instante`, `ip`, `porta` nulável, `workspace` nulável) com índices por instante e
+  por IP. Migração aditiva, sem remoção nem renomeação, sem retrocarga (não há registro antigo a recuperar).
+- **Gravação no hook `onResponse`** do servidor, depois de a resposta sair: toda requisição, autenticada ou não (o 401
+  também é uso), menos `/health`, `/ready`, as fontes e o PDF.js do console. Só os quatro campos: nada de rota,
+  cabeçalho, corpo, número de processo ou texto. Falha de gravação nunca derruba a resposta e vai ao log no máximo uma
+  vez por minuto, sem IP nem conta.
+- **Porta só quando é a do cliente:** atrás do proxy do Easypanel o soquete é do proxy, e a porta dele não identifica
+  ninguém; nesse caso a coluna fica vazia em vez de gravar um dado errado. O IP é o do cliente (`trustProxy` de um
+  salto, como antes).
+- **Limpeza diária** (`Agendador`, 24 h, primeira em 5 min): apaga o que passou de 184 dias
+  (`GUARDA_DOS_REGISTROS_DE_ACESSO_DIAS`, o maior intervalo de seis meses de calendário, para nunca apagar antes do
+  prazo).
+- **Porta `RegistroDeAcessos`** (`domain/ports`) com `listar` por período, IP e conta, para atender requisição judicial.
+
+### Não mudou
+- O log de acesso do contêiner (`requisição atendida`) continua sem IP.
+- A exclusão de conta NÃO apaga estes registros: a guarda é obrigação legal.
 
 ## [0.62.0] — 2026-10-27
 

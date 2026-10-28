@@ -272,13 +272,13 @@ describe('notificação', () => {
 
     expect(r.enviados).toBe(1);
     expect(espiao.enviadas).toHaveLength(1);
-    // Reescrito na v0.63.0: o assunto conta PROCESSOS (uma linha cada), e as três
+    // Reescrito na v0.64.0: o assunto conta PROCESSOS (uma linha cada), e as três
     // novidades do teste são do mesmo processo — antes contava as três novidades.
     expect(espiao.enviadas[0]?.assunto).toBe('Processo Vivo: 1 atualização nos seus processos');
   });
 
   it('o corpo NÃO traz o trecho do teor: só número, tipo e data', async () => {
-    // Reescrito na v0.63.0 (decisão do dono): antes o teste exigia o trecho do
+    // Reescrito na v0.64.0 (decisão do dono): antes o teste exigia o trecho do
     // teor no e-mail; agora o e-mail é uma lista curta e o teor fica no app.
     await prefs.salvar(WS, 'joao@exemplo.com', true);
     await comNovidades(1);
@@ -347,7 +347,7 @@ describe('notificação', () => {
   });
 
   it('o e-mail nunca anuncia nem afirma prazo', async () => {
-    // Reescrito na v0.63.0: o aviso "a conferência do prazo continua sendo sua"
+    // Reescrito na v0.64.0: o aviso "a conferência do prazo continua sendo sua"
     // saiu junto com o parágrafo explicativo; a garantia que importa é que a
     // palavra "prazo" não apareça, nem para afirmar nem para negar.
     await prefs.salvar(WS, 'joao@exemplo.com', true);

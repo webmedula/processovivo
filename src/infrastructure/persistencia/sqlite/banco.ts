@@ -835,6 +835,20 @@ const ESQUEMA = [
 
   `CREATE INDEX IF NOT EXISTS idx_sessoes_usuario ON sessoes(usuario_id)`,
   `CREATE INDEX IF NOT EXISTS idx_sessoes_expira ON sessoes(expira_em)`,
+
+  // Registros de acesso do Marco Civil (art. 15; v0.63.0): instante, IP, porta (só quando o servidor
+  // vê a do cliente) e a conta. Nada de rota, corpo ou texto. Guardados 6 meses e apagados pelo
+  // agendador; NÃO saem na exclusão da conta, porque a guarda é obrigação legal. Tabela nova e aditiva.
+  `CREATE TABLE IF NOT EXISTS registros_de_acesso (
+     instante  TEXT NOT NULL,
+     ip        TEXT NOT NULL,
+     porta     INTEGER,
+     workspace TEXT
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_registros_de_acesso_instante
+     ON registros_de_acesso (instante)`,
+  `CREATE INDEX IF NOT EXISTS idx_registros_de_acesso_ip
+     ON registros_de_acesso (ip, instante)`,
 ];
 
 /**

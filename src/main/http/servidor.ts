@@ -1,7 +1,7 @@
 import cors from '@fastify/cors';
 import rateLimit from '@fastify/rate-limit';
 import Fastify from 'fastify';
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { Config } from '../../infrastructure/config/env.js';
 import { VERSAO } from '../../infrastructure/config/versao.js';
 import type { Aplicacao } from '../factories/makeProcessoSearchService.js';
@@ -302,6 +302,7 @@ export function construirServidor(app: Aplicacao, config: Config): FastifyInstan
 
   servidor.addHook('onResponse', async (requisicao, resposta) => {
     if (requisicao.url === ROTA_HEALTH) return;
+    registrarAcesso(app, requisicao);
     log.info('requisição atendida', {
       metodo: requisicao.method,
       rota: rotaParaLog(requisicao.url, requisicao.routeOptions.url),
@@ -312,6 +313,39 @@ export function construirServidor(app: Aplicacao, config: Config): FastifyInstan
   });
 
   return servidor;
+}
+
+/**
+ * Registro de acesso do Marco Civil (art. 15, v0.63.0): instante, IP, porta e conta, e mais nada.
+ *
+ * Fica de fora o que não é USO da aplicação por alguém: as verificações de saúde do Easypanel e os
+ * arquivos estáticos do console (fontes e PDF.js, dezenas por página aberta, sem dado nenhum).
+ *
+ * A porta só entra quando o IP da requisição é o do próprio soquete, isto é, sem proxy no meio. Atrás
+ * do proxy do Easypanel o soquete é do proxy, e a porta dele não identifica o cliente: gravá-la seria
+ * gravar um dado errado com cara de certo.
+ */
+function registrarAcesso(app: Aplicacao, requisicao: FastifyRequest): void {
+  const url = requisicao.url;
+  if (
+    url === ROTA_READY ||
+    url.startsWith(PREFIXO_FONTES) ||
+    url.startsWith(PREFIXO_PDFJS) ||
+    !requisicao.ip
+  ) {
+    return;
+  }
+  const soquete = requisicao.socket;
+  const porta =
+    soquete.remoteAddress === requisicao.ip && typeof soquete.remotePort === 'number'
+      ? soquete.remotePort
+      : undefined;
+  app.registroDeAcessos.registrar({
+    instante: new Date(),
+    ip: requisicao.ip,
+    ...(porta === undefined ? {} : { porta }),
+    ...(requisicao.workspace ? { workspace: requisicao.workspace } : {}),
+  });
 }
 
 /**
@@ -379,6 +413,7 @@ export async function iniciar(app: Aplicacao, config: Config): Promise<FastifyIn
   app.agendadorCalendario?.iniciar();
   app.agendadorResumoDoCalendario?.iniciar();
   app.agendadorAlertaDeCustoDaIa?.iniciar();
+  app.agendadorLimpezaRegistroDeAcessos?.iniciar();
 
   app.logger.info('Processo Vivo no ar', {
     versao: VERSAO,

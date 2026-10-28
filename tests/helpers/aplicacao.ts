@@ -121,6 +121,8 @@ import type { LiberacaoDaAnaliseDePeca } from '../../src/application/politicas/l
 import { ServicoResumoDoProcesso } from '../../src/application/services/ServicoResumoDoProcesso.js';
 import type { ResumidorDeProcesso } from '../../src/domain/ports/ResumidorDeProcesso.js';
 import { RepositorioResumosSqlite } from '../../src/infrastructure/persistencia/sqlite/RepositorioResumosSqlite.js';
+import { RegistroDeAcessosSqlite } from '../../src/infrastructure/persistencia/sqlite/RegistroDeAcessosSqlite.js';
+import type { RegistroDeAcessos } from '../../src/domain/ports/RegistroDeAcessos.js';
 
 /**
  * Hash de senha BARATO, só para teste.
@@ -327,6 +329,8 @@ export interface OpcoesAplicacaoDeTeste {
     /** Administradores restritos (v0.62.0). */
     readonly restritos?: readonly { readonly usuario: string; readonly senha: string }[];
   };
+  /** Troca o registro de acessos (v0.63.0) — para espiar ou simular falha. */
+  readonly registroDeAcessos?: RegistroDeAcessos;
   /** Troca o repositório de permissões do /admin (v0.62.0) — para simular banco indisponível. */
   readonly permissoesDoAdmin?: RepositorioDePermissoesDoAdmin;
 }
@@ -845,6 +849,9 @@ export function aplicacaoDeTeste(
     verificacaoDeInstrucoes,
     errosDeInstrucoes,
     agendadorAlertaDeCustoDaIa: undefined,
+    registroDeAcessos:
+      opcoes.registroDeAcessos ?? new RegistroDeAcessosSqlite(db, loggerSilencioso),
+    agendadorLimpezaRegistroDeAcessos: undefined,
     custos,
     custosPorCliente,
     usuarios,

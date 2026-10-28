@@ -1,7 +1,7 @@
 import { descricaoDoAto } from '../../domain/entities/descricaoDoAto.js';
 
 /**
- * Montagem PURA do e-mail de atualizações (v0.63.0): lista curta, uma linha por
+ * Montagem PURA do e-mail de atualizações (v0.64.0): lista curta, uma linha por
  * processo, só número, tipo do ato e data.
  *
  * O que NÃO entra, de propósito: nome de parte, classe, tribunal, trecho do

@@ -116,6 +116,11 @@ import { ListarPecasDoProcesso } from '../../domain/usecases/ListarPecasDoProces
 import { MniAdapter } from '../../infrastructure/adapters/mni/MniAdapter.js';
 import { RepositorioDaPastaSqlite } from '../../infrastructure/persistencia/sqlite/RepositorioDaPastaSqlite.js';
 import { RepositorioPecasBaixadasSqlite } from '../../infrastructure/persistencia/sqlite/RepositorioPecasBaixadasSqlite.js';
+import { RegistroDeAcessosSqlite } from '../../infrastructure/persistencia/sqlite/RegistroDeAcessosSqlite.js';
+import {
+  GUARDA_DOS_REGISTROS_DE_ACESSO_DIAS,
+  type RegistroDeAcessos,
+} from '../../domain/ports/RegistroDeAcessos.js';
 import { RepositorioCredenciaisSqlite } from '../../infrastructure/persistencia/sqlite/RepositorioCredenciaisSqlite.js';
 import { Cofre } from '../../infrastructure/seguranca/cofre.js';
 import {
@@ -249,6 +254,12 @@ export interface Aplicacao {
   /** "Onde a IA erra": os polegares por edição das instruções. */
   readonly errosDeInstrucoes: ServicoErrosDeInstrucoes;
   readonly agendadorAlertaDeCustoDaIa: Agendador | undefined;
+  /**
+   * Registros de acesso do Marco Civil (art. 15, v0.63.0): o hook HTTP grava, o agendador apaga o que
+   * passou de 6 meses. Sempre montado — é obrigação legal, não recurso.
+   */
+  readonly registroDeAcessos: RegistroDeAcessos;
+  readonly agendadorLimpezaRegistroDeAcessos: Agendador | undefined;
   /** Centro de custos do processo (v0.47.0). Sempre montado — só depende do banco. */
   readonly custos: ServicoCustos;
   /** Custos por cliente, PDF consolidado e CSV (v0.49.0). */
@@ -833,6 +844,23 @@ export function montarAplicacao(config: Config): Aplicacao {
         })
       : undefined;
 
+  const registroDeAcessos = new RegistroDeAcessosSqlite(db, logger);
+  // Uma vez por dia basta: o prazo é de meses, e um dia a mais de guarda não muda nada.
+  const agendadorLimpezaRegistroDeAcessos = new Agendador({
+    intervaloHoras: 24,
+    atrasoInicialMs: 300_000,
+    logger,
+    tarefa: async () => {
+      const limite = new Date(
+        clockDoSistema.agora().getTime() -
+          GUARDA_DOS_REGISTROS_DE_ACESSO_DIAS * 86_400_000,
+      );
+      const apagados = await registroDeAcessos.apagarAnterioresA(limite);
+      if (apagados > 0)
+        logger.info('registros de acesso vencidos apagados', { apagados });
+    },
+  });
+
   const repositorioDeCustos = new RepositorioDeCustosSqlite(db);
   const custos = new ServicoCustos({
     repositorio: repositorioDeCustos,
@@ -904,6 +932,8 @@ export function montarAplicacao(config: Config): Aplicacao {
     verificacaoDeInstrucoes,
     errosDeInstrucoes,
     agendadorAlertaDeCustoDaIa,
+    registroDeAcessos,
+    agendadorLimpezaRegistroDeAcessos,
     custos,
     custosPorCliente,
     contas,
@@ -935,6 +965,7 @@ export function montarAplicacao(config: Config): Aplicacao {
       agendadorCalendario.parar();
       agendadorResumoDoCalendario?.parar();
       agendadorAlertaDeCustoDaIa?.parar();
+      agendadorLimpezaRegistroDeAcessos.parar();
       db.close();
     },
   };
