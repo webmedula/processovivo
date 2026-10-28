@@ -9,6 +9,22 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.64.0] — 2026-10-28
+
+**E-mail de atualizações em lista curta: uma linha por processo, só número, tipo do ato e data.** Mudou apenas o CONTEÚDO e a apresentação do e-mail. Detecção de novidades, `/v1/novidades`, gatilho e frequência de envio (um e-mail por conta a cada varredura, depois dela), "pede providência", "cumprido", tela Atualizações, calendário, planos, preferências e os outros e-mails não mudaram.
+
+- **Assunto:** "Processo Vivo: 1 atualização nos seus processos" / "Processo Vivo: N atualizações nos seus processos". **N conta PROCESSOS** (uma linha cada); antes contava as novidades, e um processo com três atos novos aparecia como "3 atualização(ões) em 1 processo(s)".
+- **Corpo:** "Houve novidade nestes processos:", até **10** processos (ordem de detecção, a de sempre), cada um com o número CNJ (link para o processo no app), o tipo do ato com a etiqueta Intimação/Citação quando o DJEN a informa, e a data do ato (`dd/mm/aaaa`); depois "e mais N processos", o botão "Ver atualizações" (aba Atualizações), o link em texto logo abaixo e um rodapé de uma linha com o motivo do aviso e o link para as preferências (Vigilância › Aviso por e-mail). Processo com vários atos novos mostra o mais recente.
+- **Saiu do e-mail:** nome de parte, trecho do ato, "Abrir:" solto e o parágrafo "Este resumo cobre… A conferência do prazo continua sendo sua". Classe, tribunal, "detectado há", resumo de IA e selos nunca estiveram no e-mail e há teste que impede a entrada.
+- **Segredo de justiça:** a linha diz "Processo sigiloso · nova movimentação · data", sem número, sem tipo do ato e sem link que revele o número (antes o e-mail trazia número, título e trecho também dos sigilosos). Sem retrato para conferir, o número não sai (falha fechada).
+- **HTML + texto puro** (antes só texto): uma coluna de até 600 px, fonte >= 14 px, botão de 46 px de altura, modo escuro por `prefers-color-scheme`, contraste >= 4,5:1 (testado), sem imagem, sem fonte externa. Cores do console; **sem logo**, porque nenhum e-mail do sistema tinha logo ou HTML até aqui.
+- **Peça pura nova:** `application/politicas/emailDeAtualizacoes.ts`. `ServicoNotificacao` só escolhe as linhas e lê o retrato dos processos que aparecem.
+- **Tamanho (1 / 5 / 30 processos com novidade):** antes 11 / 27 / 127 linhas de texto (589 / 1.792 / 9.371 bytes, sem teto de itens além das 100 novidades da consulta); depois 11 / 15 / 21 linhas (351 / 574 / 870 bytes de texto) e HTML de 2,7 / 4,4 / 6,6 KB.
+- **Sem migração, sem dependência nova, sem variável nova.**
+- **Testes reescritos:** `agrupa várias novidades num e-mail só` (o assunto agora conta processos), `o corpo traz o trecho do teor` (virou `NÃO traz o trecho`) e `o e-mail nunca afirma que o prazo está conferido` (virou `nunca anuncia nem afirma prazo`); a espiã de e-mail dos testes passou a guardar o HTML.
+
+---
+
 ## [0.63.0] — 2026-10-27
 
 **Registros de acesso do Marco Civil: o sistema passa a guardar, por 6 meses, o instante, o IP, a porta de origem

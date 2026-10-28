@@ -272,15 +272,20 @@ describe('notificação', () => {
 
     expect(r.enviados).toBe(1);
     expect(espiao.enviadas).toHaveLength(1);
-    expect(espiao.enviadas[0]?.assunto).toContain('3 atualização');
+    // Reescrito na v0.64.0: o assunto conta PROCESSOS (uma linha cada), e as três
+    // novidades do teste são do mesmo processo — antes contava as três novidades.
+    expect(espiao.enviadas[0]?.assunto).toBe('Processo Vivo: 1 atualização nos seus processos');
   });
 
-  it('o corpo traz o trecho do teor, para dispensar abrir o sistema', async () => {
+  it('o corpo NÃO traz o trecho do teor: só número, tipo e data', async () => {
+    // Reescrito na v0.64.0 (decisão do dono): antes o teste exigia o trecho do
+    // teor no e-mail; agora o e-mail é uma lista curta e o teor fica no app.
     await prefs.salvar(WS, 'joao@exemplo.com', true);
     await comNovidades(1);
     await servico.despachar();
 
-    expect(espiao.enviadas[0]?.texto).toContain('prazo de 15 dias');
+    expect(espiao.enviadas[0]?.texto).not.toContain('prazo de 15 dias');
+    expect(espiao.enviadas[0]?.html).not.toContain('prazo de 15 dias');
   });
 
   it('não repete o que já foi enviado', async () => {
@@ -341,12 +346,16 @@ describe('notificação', () => {
     expect(espiao.enviadas.map((e) => e.para)).toEqual(['joao@exemplo.com']);
   });
 
-  it('o e-mail nunca afirma que o prazo está conferido', async () => {
+  it('o e-mail nunca anuncia nem afirma prazo', async () => {
+    // Reescrito na v0.64.0: o aviso "a conferência do prazo continua sendo sua"
+    // saiu junto com o parágrafo explicativo; a garantia que importa é que a
+    // palavra "prazo" não apareça, nem para afirmar nem para negar.
     await prefs.salvar(WS, 'joao@exemplo.com', true);
     await comNovidades(1);
     await servico.despachar();
 
-    expect(espiao.enviadas[0]?.texto).toContain('conferência do prazo continua sendo sua');
+    expect(espiao.enviadas[0]?.texto.toLowerCase()).not.toContain('prazo');
+    expect(espiao.enviadas[0]?.html?.toLowerCase()).not.toContain('prazo');
   });
 });
 

@@ -1486,3 +1486,6 @@ node --input-type=module -e "import {DatabaseSync} from 'node:sqlite'; const db=
 ```
 
 O comando só lê o banco (`readOnly`). Os horários estão em UTC (3 horas à frente de Brasília).
+## E-mail de atualizações em lista curta (v0.64.0)
+
+Nada a configurar: sem variável nova, sem migração. O e-mail continua saindo uma vez por varredura (`SYNC_INTERVALO_HORAS`), e agora é uma lista de até 10 processos com número, tipo do ato e data, mais o botão "Ver atualizações". Os links usam `PROCESSOVIVO_URL_BASE` (sem ela o e-mail sai sem links). Para ver o e-mail sem enviar nada: deixe `SMTP_HOST` vazio (modo log) ou rode `npx vitest run tests/application/email-de-atualizacoes.spec.ts`. Confira com `curl https://SEU-DOMINIO/health` (a `versao` é `0.64.0`).
