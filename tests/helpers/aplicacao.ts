@@ -162,9 +162,14 @@ export const CONFIG_LEITOR_DE_TESTE: ConfiguracaoLeitor = {
 export class NotificadorEspiao implements Notificador {
   readonly nome = 'espiao';
   readonly habilitado = true;
-  readonly enviadas: Array<{ para: string; assunto: string; texto: string }> = [];
+  readonly enviadas: Array<{ para: string; assunto: string; texto: string; html?: string }> = [];
 
-  async enviar(m: { para: string; assunto: string; texto: string }): Promise<boolean> {
+  async enviar(m: {
+    para: string;
+    assunto: string;
+    texto: string;
+    html?: string;
+  }): Promise<boolean> {
     this.enviadas.push(m);
     return true;
   }

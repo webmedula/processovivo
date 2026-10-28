@@ -1467,3 +1467,7 @@ Outras pessoas entram no `/admin` com **usuário e senha próprios**, e **você 
 - Depois de **10 senhas erradas** num mesmo endereço, o `/admin` recusa o endereço por alguns minutos (mesmo com a senha certa).
 - Backup: `admin_permissoes`, `admin_permissoes_historico` e `admin_acessos` ficam no mesmo banco. **Senhas nunca vão ao banco.**
 - No log do contêiner: `acesso administrativo` (usuário e instante), `acesso administrativo recusado` (instante e IP, sem usuário nem senha) e `acesso administrativo negado por aba` (usuário, aba e instante).
+
+## E-mail de atualizações em lista curta (v0.63.0)
+
+Nada a configurar: sem variável nova, sem migração. O e-mail continua saindo uma vez por varredura (`SYNC_INTERVALO_HORAS`), e agora é uma lista de até 10 processos com número, tipo do ato e data, mais o botão "Ver atualizações". Os links usam `PROCESSOVIVO_URL_BASE` (sem ela o e-mail sai sem links). Para ver o e-mail sem enviar nada: deixe `SMTP_HOST` vazio (modo log) ou rode `npx vitest run tests/application/email-de-atualizacoes.spec.ts`. Confira com `curl https://SEU-DOMINIO/health` (a `versao` é `0.63.0`).

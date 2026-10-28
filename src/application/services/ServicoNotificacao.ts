@@ -1,4 +1,11 @@
 import type { Novidade } from '../../domain/entities/Acompanhamento.js';
+import {
+  LIMITE_DE_PROCESSOS_NO_EMAIL,
+  montarAvisoDeAtualizacoes,
+} from '../politicas/emailDeAtualizacoes.js';
+import type { LinhaDoAviso } from '../politicas/emailDeAtualizacoes.js';
+import { NumeroCNJ } from '../../domain/entities/NumeroCNJ.js';
+import { tipoDaComunicacao } from '../../domain/entities/tipoDaComunicacao.js';
 import type { Logger } from '../../domain/ports/Logger.js';
 import type { Mensagem, Notificador } from '../../domain/ports/Notificador.js';
 import type { RepositorioAcompanhamentos } from '../../domain/ports/RepositorioAcompanhamentos.js';
@@ -108,7 +115,7 @@ export class ServicoNotificacao {
       });
       if (novidades.length === 0) continue;
 
-      if (await this.notificador.enviar(this.montarResumo(email, novidades, agora))) {
+      if (await this.notificador.enviar(await this.montarResumo(pref.workspace, email, novidades))) {
         await this.prefs.registrarEnvio(pref.workspace, agora);
         enviados++;
         this.log.info('resumo enviado', {
@@ -126,50 +133,58 @@ export class ServicoNotificacao {
     return agora.getTime() - ultimo.getTime() > this.horasEntreAlertas * HORA_MS;
   }
 
-  private montarResumo(
+  /**
+   * Uma linha por processo (a atualização mais recente dele), as dez primeiras
+   * da ordem de detecção. O retrato só é lido para o que aparece: sigilo e
+   * etiqueta Intimação/Citação saem dele, e processo que cai em "e mais N" não
+   * precisa de nenhum dos dois.
+   */
+  private async montarResumo(
+    workspace: string,
     para: string,
     novidades: readonly Novidade[],
-    agora: Date,
-  ): Mensagem {
-    const porProcesso = new Map<string, Novidade[]>();
+  ): Promise<Mensagem> {
+    const porProcesso = new Map<string, Novidade>();
     for (const n of novidades) {
-      const lista = porProcesso.get(n.numero);
-      if (lista) lista.push(n);
-      else porProcesso.set(n.numero, [n]);
+      const atual = porProcesso.get(n.numero);
+      if (!atual || n.data.getTime() > atual.data.getTime()) porProcesso.set(n.numero, n);
     }
 
-    const total = novidades.length;
-    const processos = porProcesso.size;
-    const assunto =
-      processos === 1
-        ? `Processo Vivo: ${total} atualização(ões) em ${[...porProcesso.keys()][0]}`
-        : `Processo Vivo: ${total} atualização(ões) em ${processos} processos`;
-
-    const linhas: string[] = [
-      `${total} atualização(ões) em ${processos} processo(s).`,
-      '',
-    ];
-
-    for (const [numero, itens] of porProcesso) {
-      linhas.push(`── ${numero}`);
-      for (const n of itens) {
-        linhas.push(`   ${formatarData(n.data)}  ${n.titulo}`);
-        // O trecho do teor é o que dispensa abrir o sistema para saber se é
-        // urgente. Cortado porque uma decisão tem 20 mil caracteres e o e-mail
-        // é o resumo, não o processo.
-        if (n.conteudo) linhas.push(`   ${recortar(n.conteudo, 240)}`);
-      }
-      linhas.push('');
+    const linhas: LinhaDoAviso[] = [];
+    for (const [numero, n] of [...porProcesso].slice(0, LIMITE_DE_PROCESSOS_NO_EMAIL)) {
+      linhas.push(await this.linhaDoAviso(workspace, numero, n));
     }
 
-    if (this.urlBase) linhas.push(`Abrir: ${this.urlBase}`);
-    linhas.push('');
-    linhas.push(
-      'Este resumo cobre o que o Processo Vivo detectou nas fontes públicas até ' +
-        `${formatarDataHora(agora)}. A conferência do prazo continua sendo sua.`,
+    const aviso = montarAvisoDeAtualizacoes({
+      linhas,
+      totalDeProcessos: porProcesso.size,
+      ...(this.urlBase ? { urlBase: this.urlBase } : {}),
+    });
+    return { para, assunto: aviso.assunto, texto: aviso.texto, html: aviso.html };
+  }
+
+  private async linhaDoAviso(
+    workspace: string,
+    numero: string,
+    n: Novidade,
+  ): Promise<LinhaDoAviso> {
+    const acompanhamento = await this.acomp.buscar(workspace, numero);
+    const processo = acompanhamento?.processo;
+    // Sem retrato não há como saber se é sigiloso: falha FECHADA, o número não sai.
+    const sigiloso = processo === undefined || processo.segredoJustica;
+    const mov = processo?.movimentacoes.find(
+      (m) => m.data.getTime() === n.data.getTime() && m.titulo === n.titulo,
     );
-
-    return { para, assunto, texto: linhas.join('\n') };
+    const tipo = tipoDaComunicacao(mov?.tipoComunicacao);
+    return {
+      numero,
+      numeroFormatado: formatarNumero(numero),
+      sigiloso,
+      tipo: n.titulo,
+      ...(!sigiloso && tipo === 'intimacao' ? { etiqueta: 'Intimação' as const } : {}),
+      ...(!sigiloso && tipo === 'citacao' ? { etiqueta: 'Citação' as const } : {}),
+      data: n.data,
+    };
   }
 
   private montarAlerta(para: string, ultimaOk: Date, agora: Date): Mensagem {
@@ -193,13 +208,12 @@ export class ServicoNotificacao {
   }
 }
 
-function recortar(texto: string, limite: number): string {
-  const limpo = texto.replace(/\s+/g, ' ').trim();
-  return limpo.length <= limite ? limpo : `${limpo.slice(0, limite - 1)}…`;
-}
-
-function formatarData(d: Date): string {
-  return d.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+function formatarNumero(numero: string): string {
+  try {
+    return NumeroCNJ.criar(numero).formatado;
+  } catch {
+    return numero;
+  }
 }
 
 function formatarDataHora(d: Date): string {
