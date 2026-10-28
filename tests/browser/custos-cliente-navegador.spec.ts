@@ -16,6 +16,7 @@ import {
 import { CODIGO_DO_GOOGLE } from '../helpers/transporteDoDrive.js';
 import { CHAVE, CHROMIUM, iniciar } from './ambiente.js';
 import type { Ambiente } from './ambiente.js';
+import { esperarConsolePronto } from './console.js';
 
 /*
  * v0.49.0 NUM NAVEGADOR: a tela "Custos" por cliente (menu, filtros aviso de "Sem cliente", PDF e
@@ -88,11 +89,7 @@ describe.skipIf(sem)(
         throw e;
       });
       await page.goto(`${amb.url}/`);
-      await page.waitForFunction(
-        () =>
-          typeof (window as unknown as { __pv?: { abrir?: unknown } }).__pv?.abrir ===
-          'function',
-      );
+      await esperarConsolePronto(page);
     }
 
     const novo = (
@@ -278,6 +275,10 @@ describe.skipIf(sem)(
         .getByRole('button', { name: /Abrir o painel de custos do processo/ })
         .click();
       await page.waitForSelector('#cust-painel');
+      // O painel nasce com "Carregando…" e a lista chega depois: ler na hora é corrida.
+      await page.waitForFunction(
+        () => !document.querySelector('#cust-lista')?.textContent?.includes('Carregando'),
+      );
       expect(await page.locator('#cust-lista').innerText()).toContain('Guia do Azul');
       // Voltar à tela de Custos mostra a lista de novo.
       await page.locator('#nav-custos').click();
@@ -668,7 +669,8 @@ describe.skipIf(sem)(
         // v0.49.1: o motivo mora na dica (aria-describedby), não mais em `title`.
         expect(
           await botao.evaluate(
-            (el) => document.getElementById(el.getAttribute('aria-describedby')!)?.textContent,
+            (el) =>
+              document.getElementById(el.getAttribute('aria-describedby')!)?.textContent,
           ),
         ).toContain('5 comprovantes');
       });

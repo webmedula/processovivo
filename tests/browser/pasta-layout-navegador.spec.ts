@@ -6,6 +6,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { PROCESSO_TJGO } from '../helpers/leitor.js';
 import { CHAVE, CHROMIUM, iniciar } from './ambiente.js';
 import type { Ambiente } from './ambiente.js';
+import { esperarConsolePronto } from './console.js';
 
 /*
  * Layout da Pasta digital (v0.35.3): a lista sobe e ocupa a altura da janela;
@@ -75,9 +76,7 @@ describe.skipIf(sem)(
       page = await ctx.newPage();
       page.setDefaultTimeout(15_000);
       await page.goto(amb.url + '/');
-      await page.waitForFunction(
-        () => typeof (window as unknown as Console_).__pv?.abrir === 'function',
-      );
+      await esperarConsolePronto(page);
       await page.evaluate(
         (n) => (window as unknown as Console_).__pv!.abrir(n),
         PROCESSO_TJGO,

@@ -7,6 +7,7 @@ import { PROCESSO_TJGO, PROCESSO_TJGO_DIGITOS } from '../helpers/leitor.js';
 import { numeroValido } from '../helpers/atualizacoesSinteticas.js';
 import { CHAVE, CHROMIUM, iniciar } from './ambiente.js';
 import type { Ambiente } from './ambiente.js';
+import { esperarConsolePronto } from './console.js';
 
 /*
  * O histórico de PEÇAS BAIXADAS dentro da Pasta digital (v0.37.0), no navegador:
@@ -90,11 +91,7 @@ describe.skipIf(sem)(
       page = await ctx.newPage();
       page.setDefaultTimeout(15_000);
       await page.goto(amb.url + '/');
-      await page.waitForFunction(
-        () =>
-          typeof (window as unknown as { __pv?: { abrir: unknown } }).__pv?.abrir ===
-          'function',
-      );
+      await esperarConsolePronto(page);
       await page.evaluate(
         (n) => (window as unknown as { __pv: { abrir(n: string): void } }).__pv.abrir(n),
         PROCESSO_TJGO,

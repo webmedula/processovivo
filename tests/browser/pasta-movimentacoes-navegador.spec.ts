@@ -6,6 +6,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { PROCESSO_TJGO } from '../helpers/leitor.js';
 import { CHAVE, CHROMIUM, TEXTO_LONGO, iniciar } from './ambiente.js';
 import type { Ambiente } from './ambiente.js';
+import { esperarConsolePronto } from './console.js';
 
 /*
  * A Pasta com TODAS as movimentações (v0.36.0), num Chromium de verdade. Dados
@@ -77,9 +78,7 @@ describe.skipIf(sem)(
           pedidosDePeca.push(r.url());
       });
       await page.goto(amb.url + '/');
-      await page.waitForFunction(
-        () => typeof (window as unknown as Console_).__pv?.abrir === 'function',
-      );
+      await esperarConsolePronto(page);
       await page.evaluate(
         (n) => (window as unknown as Console_).__pv!.abrir(n),
         PROCESSO_TJGO,
@@ -293,9 +292,7 @@ describe.skipIf(sem)(
         await rota.fulfill({ response: r, json: j });
       });
       await page.goto(amb.url + '/');
-      await page.waitForFunction(
-        () => typeof (window as unknown as Console_).__pv?.abrir === 'function',
-      );
+      await esperarConsolePronto(page);
       await page.evaluate(
         (n) => (window as unknown as Console_).__pv!.abrir(n),
         PROCESSO_TJGO,
@@ -342,9 +339,7 @@ describe.skipIf(sem)(
         await rota.fulfill({ response: r, json: j });
       });
       await page.goto(amb.url + '/');
-      await page.waitForFunction(
-        () => typeof (window as unknown as Console_).__pv?.abrir === 'function',
-      );
+      await esperarConsolePronto(page);
       await page.evaluate(
         (n) => (window as unknown as Console_).__pv!.abrir(n),
         PROCESSO_TJGO,

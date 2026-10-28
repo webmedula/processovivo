@@ -109,6 +109,21 @@ describe.skipIf(sem)('Navegação por hash — no navegador', { timeout: 90_000 
     await page.click('#pasta-abrir');
     await page.waitForSelector('#pasta .linha');
   }
+  /**
+   * Vai a um endereço que termina no aviso "Não encontramos esta página" e espera o aviso DESTE
+   * endereço. Entre dois endereços só muda o `#`: a página não recarrega, o aviso anterior continua
+   * na tela enquanto o novo endereço se resolve (pergunta à carteira), e um clique nele seria
+   * desfeito pelo aviso novo chegando depois. O aviso antigo é marcado antes de navegar.
+   */
+  async function irAoAviso(endereco: string): Promise<void> {
+    await page
+      .evaluate(() =>
+        document.getElementById('nav-aviso-lista')?.setAttribute('data-anterior', ''),
+      )
+      .catch(() => undefined);
+    await page.goto(endereco);
+    await page.waitForSelector('#nav-aviso-lista:not([data-anterior])');
+  }
   /** Toda URL que o teste viu: nenhuma pode ter o número do processo (nem formatado, nem só os dígitos). */
   async function semNumeroNaUrl(): Promise<void> {
     const url = page.url();
@@ -303,13 +318,7 @@ describe.skipIf(sem)('Navegação por hash — no navegador', { timeout: 90_000 
       `#/processo/${tok}/pasta`,
       `#/processo/${tok}/pasta/peca/p01`,
     ]) {
-      await page.goto(`${amb.url}/${rota}`);
-      await page.waitForSelector('#nav-processos');
-      await page.waitForFunction(() =>
-        /Não encontramos esta página/.test(
-          document.getElementById('conteudo')?.textContent ?? '',
-        ),
-      );
+      await irAoAviso(`${amb.url}/${rota}`);
       const corpo =
         (await page.locator('body').innerText()) +
         (await page.locator('#conteudo').innerHTML());
@@ -319,8 +328,7 @@ describe.skipIf(sem)('Navegação por hash — no navegador', { timeout: 90_000 
       expect(await page.locator('#conteudo .capa').count()).toBe(0);
     }
     // Endereço inventado também cai no aviso, e o aviso leva de volta à lista.
-    await page.goto(`${amb.url}/#/processo/naoexiste1234`);
-    await page.waitForSelector('#nav-aviso-lista');
+    await irAoAviso(`${amb.url}/#/processo/naoexiste1234`);
     await page.click('#nav-aviso-lista');
     await page.waitForSelector('text=Meus processos');
     await page.goto(`${amb.url}/#/qualquer-coisa`);

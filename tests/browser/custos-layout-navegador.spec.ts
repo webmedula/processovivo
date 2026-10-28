@@ -13,6 +13,7 @@ import { aplicacaoDeTeste } from '../helpers/aplicacao.js';
 import { ProviderFalso } from '../helpers/fabricas.js';
 import { numeroValido } from '../helpers/atualizacoesSinteticas.js';
 import type { FastifyInstance } from 'fastify';
+import { esperarConsolePronto } from './console.js';
 
 /*
  * v0.49.1 NUM NAVEGADOR: só a APRESENTAÇÃO do painel de Custos — colunas da tabela, ações em ícones com dica
@@ -101,9 +102,7 @@ describe.skipIf(sem)('Painel de Custos, apresentação', { timeout: 120_000 }, (
       throw e;
     });
     await page.goto(url + '/');
-    await page.waitForFunction(
-      () => typeof (window as unknown as ConsolePv).__pv?.abrir === 'function',
-    );
+    await esperarConsolePronto(page);
     await page.evaluate((n) => (window as unknown as ConsolePv).__pv!.abrir(n), numero);
     await page.waitForSelector('#cust-abrir');
     await page.locator('#cust-abrir').click();
