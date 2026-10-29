@@ -725,6 +725,43 @@ describe.skipIf(sem)('Analisar com IA, no navegador', { timeout: 120_000 }, () =
     });
   }
 
+  // Regressão: abaixo de 1024 px as células viram blocos e herdavam o height:48px da tabela —
+  // o painel (curto ou longo) era desenhado POR CIMA do cartão seguinte em vez de empurrá-lo.
+  for (const largura of [390, 768, 1023]) {
+    for (const caso of ['recusa', 'resultado'] as const) {
+      it(`em ${largura} px o painel (${caso}) empurra o cartão seguinte, sem sobrepor`, async () => {
+        await abrir({ largura });
+        if (caso === 'recusa') {
+          responder = (rota) =>
+            json(rota, 422, {
+              erro: 'ENTRADA_NAO_ANALISAVEL',
+              mensagem: 'x',
+              detalhes: { motivo: 'texto_insuficiente' },
+            });
+        }
+        await botao(NA).click();
+        await painel(NA)
+          .getByText('Apoio à leitura, não substitui a leitura do ato', { exact: false })
+          .waitFor();
+        const m = await page.evaluate(
+          (n) => {
+            const p = document.getElementById('pvia-' + n)!;
+            const td = p.closest('td')!;
+            const prox = p.closest('tr')!.nextElementSibling as HTMLElement;
+            return {
+              painel: p.getBoundingClientRect().bottom,
+              celula: td.getBoundingClientRect().bottom,
+              proximo: prox.getBoundingClientRect().top,
+            };
+          },
+          NA.replace(/\D/g, ''),
+        );
+        expect(m.painel).toBeLessThanOrEqual(m.celula + 0.5);
+        expect(m.painel).toBeLessThanOrEqual(m.proximo + 0.5);
+      });
+    }
+  }
+
   for (const escuro of [false, true]) {
     it(`axe sem violações (tema ${escuro ? 'escuro' : 'claro'}): botão, analisando, resultado, recusa`, async () => {
       await abrir({ escuro });

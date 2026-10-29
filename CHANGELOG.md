@@ -9,6 +9,16 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.65.1] — 2026-10-29
+
+**Celular: o painel "Análise por IA" da tela Atualizações não fica mais por cima do processo seguinte.** Só CSS; nenhuma regra, rota, texto ou dado mudou.
+
+- **A causa:** abaixo de 1024 px as células da tabela viram blocos, e a linha do painel herdava o `height: 48px` das células (`.nvt-tabela td`). Como bloco, a altura fixa valia de verdade: o painel transbordava e era desenhado sobre o cartão seguinte (o caso relatado foi a recusa "Este ato não traz texto suficiente para analisar"). A v0.49.4 já tinha posto `height: auto` nas células dos cartões, mas não na linha do painel.
+- **Correção:** `height: auto` na célula do painel no empilhado (`ESTILOS_ANALISE_IA`).
+- **Teste de navegador** (`analise-ia-navegador.spec.ts`): em 390, 768 e 1023 px, com a recusa e com o resultado, o painel termina dentro da própria célula e antes do cartão seguinte. Falhava sem a correção.
+
+---
+
 ## [0.65.0] — 2026-10-29
 
 **Claude Sonnet 5.5 entra na lista permitida de modelos de IA, como candidato nas três funções.** Só a lista mudou: o modelo em produção continua o DeepSeek V4 Flash, e nada troca sozinho. A troca é do dono, pela aba IA do `/admin`, com o teste obrigatório, o veredito e a reversão da Fase B.
