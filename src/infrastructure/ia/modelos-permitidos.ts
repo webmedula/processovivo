@@ -38,6 +38,25 @@ const ITENS_BRUTOS: readonly unknown[] = [
     funcoesPermitidas: [...FUNCOES_DE_IA],
     status: 'ativo',
   },
+  {
+    // Candidato (v0.65.0, escolha do dono: o Claude "intermediário"). ZDR lido no Console de produção com
+    // `node scripts/sonda-ia-ato.mjs --listar-modelos-zdr=claude` em 29/10/2026 (13 modelos Claude com
+    // endpoint ZDR, este entre eles). Preço e janela lidos no mesmo dia em
+    // `GET https://openrouter.ai/api/v1/models/anthropic/claude-sonnet-5.5/endpoints` (público): US$ 0,000002
+    // por token de entrada e US$ 0,00001 de saída nos endpoints globais, 1.000.000 de tokens de contexto.
+    // Quais provedores servem com ZDR quem decide é a lista oficial, a cada chamada (falha fechada).
+    id: 'anthropic/claude-sonnet-5.5',
+    provedor: 'Anthropic (via OpenRouter)',
+    apelido: 'Claude Sonnet 5.5',
+    confirmacao: 'confirmada',
+    zdrConfirmadoEm: '2026-10-29',
+    zdrFonte: 'OpenRouter /endpoints/zdr via sonda-ia-ato --listar-modelos-zdr',
+    precoEntradaPorMTokens: 2,
+    precoSaidaPorMTokens: 10,
+    janelaContexto: 1_000_000,
+    funcoesPermitidas: [...FUNCOES_DE_IA],
+    status: 'ativo',
+  },
 ];
 
 const dia = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);

@@ -158,6 +158,8 @@ describe('RepositorioAssinaturasSqlite', () => {
       regras: new RepositorioRegrasDeAssinaturaSqlite(db),
       usuarios: {} as RepositorioUsuarios,
       logger: loggerSilencioso,
+      // relógio fixo: com o relógio real a assinatura de T0 vence e o erro vira "inativa"
+      agora: () => dias(1),
     });
     await expect(servico.exigir('ws1', 'consulta')).rejects.toThrow(
       PlanoDesconhecidoError,
