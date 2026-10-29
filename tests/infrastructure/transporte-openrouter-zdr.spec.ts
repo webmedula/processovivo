@@ -761,6 +761,23 @@ describe('TransporteOpenRouter — no fio (SDK real, HTTP dublado)', () => {
       expect((w.corpos[0]?.['provider'] as { zdr?: boolean }).zdr).toBe(true);
     });
 
+    it('o raciocínio do modelo vence o global, só para aquele modelo (o Claude recusa enabled: false)', async () => {
+      const w = fio([() => json(corpoOk), () => json(corpoOk)]);
+      const t = new TransporteOpenRouter({
+        chave: CHAVE,
+        fetch: w.f,
+        ajustes: {
+          raciocinio: 'desligado',
+          raciocinioPorModelo: { 'anthropic/claude-sonnet-5.5': 'padrao' },
+        },
+      });
+      await t.gerar({ ...PEDIDO, modelo: 'anthropic/claude-sonnet-5.5' });
+      await t.gerar(PEDIDO);
+      expect(w.corpos[0]?.['reasoning']).toBeUndefined();
+      expect(w.corpos[1]?.['reasoning']).toEqual({ enabled: false });
+      expect((w.corpos[0]?.['provider'] as { zdr?: boolean }).zdr).toBe(true);
+    });
+
     it('max_tokens vai no corpo; sem o ajuste, não vai', async () => {
       const com = fio([() => json(corpoOk)]);
       await new TransporteOpenRouter({

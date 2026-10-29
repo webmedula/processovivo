@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   CATALOGO_DE_MODELOS,
   MODELOS_PERMITIDOS,
+  RACIOCINIO_POR_MODELO,
   validarCatalogo,
 } from '../../src/infrastructure/ia/modelos-permitidos.js';
 import { podeSerCandidato } from '../../src/domain/entities/ModelosDeIa.js';
@@ -44,6 +45,13 @@ describe('a lista permitida de verdade', () => {
         expect(podeSerCandidato(i, f) && !temTudo, `${i.id} em ${f}`).toBe(false);
       }
     }
+  });
+
+  it('o raciocínio por modelo só fala de modelos da lista, e o Claude não recebe o "desligado" global', () => {
+    for (const id of Object.keys(RACIOCINIO_POR_MODELO)) {
+      expect(CATALOGO_DE_MODELOS.buscar(id), id).toBeDefined();
+    }
+    expect(RACIOCINIO_POR_MODELO['anthropic/claude-sonnet-5.5']).toBe('padrao');
   });
 
   it('nenhum id é apelido (~) nem variante (:), e nenhum se repete', () => {

@@ -61,7 +61,10 @@ import {
 import { INSTRUCAO_DE_FORMATO_DO_RESUMO } from '../../infrastructure/adapters/modelo/esquemaDoResumo.js';
 import { INSTRUCAO_DE_FORMATO_EM_TEXTO } from '../../infrastructure/adapters/modelo/TransporteOpenRouter.js';
 import { normalizarEmail } from '../../domain/entities/Usuario.js';
-import { CATALOGO_DE_MODELOS } from '../../infrastructure/ia/modelos-permitidos.js';
+import {
+  CATALOGO_DE_MODELOS,
+  RACIOCINIO_POR_MODELO,
+} from '../../infrastructure/ia/modelos-permitidos.js';
 import { ModeloDaFuncao } from '../../infrastructure/adapters/modelo/ModeloDaFuncao.js';
 import { ExecutorDoTesteDeModeloComSonda } from '../sonda/executorDoTesteDeModelo.js';
 import {
@@ -1058,7 +1061,11 @@ function montarTesteDeModelo(
             new TransporteOpenRouter({
               chave: ia.chave,
               timeoutMs: ia.timeoutMs,
-              ajustes: { raciocinio: ia.raciocinio, maxTokens: ia.maxTokens },
+              ajustes: {
+                raciocinio: ia.raciocinio,
+                maxTokens: ia.maxTokens,
+                raciocinioPorModelo: RACIOCINIO_POR_MODELO,
+              },
             }),
           agora: () => Date.now(),
         })
@@ -1119,7 +1126,11 @@ function montarAnaliseIa(
   const transporteOpenRouter = new TransporteOpenRouter({
     chave: ia.chave,
     timeoutMs: ia.timeoutMs,
-    ajustes: { raciocinio: ia.raciocinio, maxTokens: ia.maxTokens },
+    ajustes: {
+      raciocinio: ia.raciocinio,
+      maxTokens: ia.maxTokens,
+      raciocinioPorModelo: RACIOCINIO_POR_MODELO,
+    },
   });
   // UMA peça comum (e portanto UMA lista ZDR de 24 h) por modelo, dividida entre as três funções. O modelo
   // de cada função é escolhido a cada chamada (`ModeloDaFuncao`); TODA chamada passa por `ModeloComZdr`

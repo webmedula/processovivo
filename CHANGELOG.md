@@ -9,7 +9,7 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
-## [0.65.1] — 2026-10-29
+## [0.65.2] — 2026-10-29
 
 **Celular: o painel "Análise por IA" da tela Atualizações não fica mais por cima do processo seguinte.** Só CSS; nenhuma regra, rota, texto ou dado mudou.
 
@@ -18,6 +18,21 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 - **Teste de navegador** (`analise-ia-navegador.spec.ts`): em 390, 768 e 1023 px, com a recusa e com o resultado, o painel termina dentro da própria célula e antes do cartão seguinte. Falhava sem a correção.
 
 ---
+
+## [0.65.1] — 2026-10-29
+
+### Corrigido
+
+- **O teste obrigatório do Claude Sonnet 5.5 no painel de IA saía "Bloqueado" com todas as chamadas do
+  candidato em erro.** O painel (e a produção) mandam o raciocínio global `PROCESSOVIVO_IA_RACIOCINIO`
+  (padrão `desligado`, medido no DeepSeek), e o Claude recusa `reasoning: { enabled: false }` e
+  `{ effort: "none" }` com HTTP 400. Medido no Console de produção com
+  `node scripts/sonda-ia-ato.mjs --medir-latencia=anthropic/claude-sonnet-5.5`: `padrao`, `minimo` e
+  `baixo` respondem (~2–3 s, zero tokens de raciocínio); `desligado` e `nenhum` dão 400.
+- Novo `RACIOCINIO_POR_MODELO` em `infrastructure/ia/modelos-permitidos.ts` (o Claude usa `padrao`, sem
+  enviar `reasoning`) e o ajuste `raciocinioPorModelo` do `TransporteOpenRouter`, que vence o global só
+  para aquele modelo. O DeepSeek continua com o `desligado` de sempre. ZDR, `provider.only`,
+  `data_collection: deny` e a conferência do par modelo + provedor não mudaram.
 
 ## [0.65.0] — 2026-10-29
 
