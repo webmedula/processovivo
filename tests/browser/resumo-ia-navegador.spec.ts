@@ -6,6 +6,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { CHAVE, CHROMIUM, iniciar } from './ambiente.js';
 import type { Ambiente } from './ambiente.js';
 import { PROCESSO_TJGO } from '../helpers/leitor.js';
+import { esperarConsolePronto } from './console.js';
 
 /*
  * "Resumir este processo com IA" NUM NAVEGADOR (v0.40.1). O servidor e o console são os
@@ -261,9 +262,7 @@ describe.skipIf(sem)(
       });
       const facetas = page.waitForResponse('**/v1/facetas');
       await page.goto(amb.url + '/');
-      await page.waitForFunction(
-        () => typeof (window as unknown as Console_).__pv?.abrir === 'function',
-      );
+      await esperarConsolePronto(page);
       // A tela inicial termina de carregar ANTES de abrir o processo: abrir no meio da carga
       // deixa a resposta tardia dela pintar por cima (corrida que só aparece com a máquina ocupada).
       await facetas;

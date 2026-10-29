@@ -12,6 +12,7 @@ import { aplicacaoDeTeste } from '../helpers/aplicacao.js';
 import { ProviderFalso } from '../helpers/fabricas.js';
 import { numeroValido } from '../helpers/atualizacoesSinteticas.js';
 import type { FastifyInstance } from 'fastify';
+import { esperarConsolePronto } from './console.js';
 
 /*
  * v0.41.1 NUM NAVEGADOR: a tela de detalhe do processo sem os blocos "Pede providência"
@@ -144,9 +145,7 @@ describe.skipIf(sem)(
     async function abrirDetalhe(largura = 1280, escuro = false): Promise<void> {
       await novaPagina(largura, escuro);
       await page.goto(url + '/');
-      await page.waitForFunction(
-        () => typeof (window as unknown as ConsolePv).__pv?.abrir === 'function',
-      );
+      await esperarConsolePronto(page);
       await page.evaluate((n) => (window as unknown as ConsolePv).__pv!.abrir(n), NUMERO);
       await page.waitForSelector('#pecas-resumo .cartao h3');
       await page.waitForSelector(

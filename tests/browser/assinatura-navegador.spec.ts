@@ -13,6 +13,7 @@ import {
 } from '../helpers/pagamentos.js';
 import type { CenarioDePagamento } from '../helpers/pagamentos.js';
 import { construirServidor } from '../../src/main/http/servidor.js';
+import { esperarConsolePronto } from './console.js';
 
 /*
  * A tela "Assinatura online" (v0.44.0) NUM NAVEGADOR: o servidor e o console são os reais, o gateway é o
@@ -107,6 +108,8 @@ describe.skipIf(sem)('Assinatura online, no navegador', { timeout: 90_000 }, () 
     dialogos.length = 0;
     if (opcoes.relogio) await page.clock.install();
     await page.goto(url + (opcoes.caminho ?? '/'));
+    // Com o relógio falso, `requestAnimationFrame` não anda sozinho: a espera não terminaria.
+    if (!opcoes.relogio) await esperarConsolePronto(page);
     await page.locator('#nav-conta').click();
   }
 

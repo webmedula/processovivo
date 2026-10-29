@@ -14,6 +14,7 @@ import {
 } from '../../src/domain/errors/index.js';
 import { workspaceDaChave } from '../../src/main/http/chaves.js';
 import { CODIGO_DO_GOOGLE } from '../helpers/transporteDoDrive.js';
+import { esperarConsolePronto } from './console.js';
 
 /*
  * O envio ao Google Drive NUM NAVEGADOR (v0.42.0): o cartão em "Meus acessos" em cada estado, o
@@ -100,11 +101,7 @@ describe.skipIf(sem)('Google Drive — no navegador', { timeout: 90_000 }, () =>
       throw e;
     });
     await page.goto(`${amb.url}/`);
-    await page.waitForFunction(
-      () =>
-        typeof (window as unknown as { __pv?: { abrir?: unknown } }).__pv?.abrir ===
-        'function',
-    );
+    await esperarConsolePronto(page);
     if (opcoes.aoProcesso) {
       await page.evaluate(
         (n) => (window as unknown as { __pv: { abrir(n: string): void } }).__pv.abrir(n),

@@ -16,6 +16,7 @@ import { aplicacaoDeTeste } from '../helpers/aplicacao.js';
 import { ProviderFalso } from '../helpers/fabricas.js';
 import { numeroValido } from '../helpers/atualizacoesSinteticas.js';
 import type { FastifyInstance } from 'fastify';
+import { esperarConsolePronto } from './console.js';
 
 /*
  * v0.47.0/v0.48.0 NUM NAVEGADOR: o centro de custos na tela do processo (recebimentos, quem pagou, depósitos,
@@ -122,9 +123,7 @@ describe.skipIf(sem)('Centro de custos, no navegador', { timeout: 120_000 }, () 
       throw e;
     });
     await page.goto(url + '/');
-    await page.waitForFunction(
-      () => typeof (window as unknown as ConsolePv).__pv?.abrir === 'function',
-    );
+    await esperarConsolePronto(page);
     await page.evaluate((n) => (window as unknown as ConsolePv).__pv!.abrir(n), numero);
     await page.waitForSelector('#cust-abrir');
   }
@@ -175,7 +174,10 @@ describe.skipIf(sem)('Centro de custos, no navegador', { timeout: 120_000 }, () 
    * a linha da tabela é que identifica de qual se fala. Antes os testes achavam o botão por "Editar: <descrição>".
    */
   const acao = (nome: string, texto: string): Locator =>
-    page.locator('#cust-lista tbody tr').filter({ hasText: texto }).getByRole('button', { name: nome });
+    page
+      .locator('#cust-lista tbody tr')
+      .filter({ hasText: texto })
+      .getByRole('button', { name: nome });
 
   const totais = async (): Promise<Record<string, string>> =>
     page.evaluate(() => {
@@ -932,10 +934,7 @@ describe.skipIf(sem)('Centro de custos, no navegador', { timeout: 120_000 }, () 
     expect(await page.locator('#cust-lista td.cust-desc').first().innerText()).toContain(
       perigo,
     );
-    await page
-      .getByRole('button', { name: 'Cancelar lançamento' })
-      .first()
-      .click();
+    await page.getByRole('button', { name: 'Cancelar lançamento' }).first().click();
     await page.locator('.cust-motivo').fill(perigo);
     await page.getByRole('button', { name: 'Confirmar cancelamento' }).click();
     await page.waitForFunction(() =>
@@ -943,10 +942,7 @@ describe.skipIf(sem)('Centro de custos, no navegador', { timeout: 120_000 }, () 
     );
     await page.locator('#cust-f-mostrar-canc').check();
     await page.waitForSelector('#cust-lista .cust-cancelado');
-    await page
-      .getByRole('button', { name: 'Histórico do lançamento' })
-      .first()
-      .click();
+    await page.getByRole('button', { name: 'Histórico do lançamento' }).first().click();
     await page.waitForSelector('.cust-hist-lista');
     expect(await page.locator('#cust-raiz img, #cust-raiz b').count()).toBe(0);
     expect(

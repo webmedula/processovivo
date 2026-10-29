@@ -6,6 +6,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { CHAVE, CHROMIUM, iniciar } from './ambiente.js';
 import type { Ambiente } from './ambiente.js';
 import { PROCESSO_TJGO } from '../helpers/leitor.js';
+import { esperarConsolePronto } from './console.js';
 
 /*
  * "Analisar peça com IA" NUM NAVEGADOR (v0.55.0; polegares e Pasta digital na v0.56.0). Servidor, console, linha do tempo e Pasta digital são
@@ -157,9 +158,7 @@ describe.skipIf(sem)('Analisar peça com IA, no navegador', { timeout: 180_000 }
     });
     const facetas = page.waitForResponse('**/v1/facetas');
     await page.goto(amb.url + '/');
-    await page.waitForFunction(
-      () => typeof (window as unknown as Console_).__pv?.abrir === 'function',
-    );
+    await esperarConsolePronto(page);
     await facetas;
     await page.waitForFunction(() => {
       const c = document.getElementById('conteudo');

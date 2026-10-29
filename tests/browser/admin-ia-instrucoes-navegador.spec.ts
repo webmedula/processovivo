@@ -947,11 +947,13 @@ describe.skipIf(sem)(
         expect(tudo).toBe(true);
         // nada fica cortado: o botão de publicar e o de reverter cabem na janela
         for (const id of ['ia-i-publicar', 'ia-i-reverter', 'ia-i-salvar']) {
-          // a tela se refaz depois de publicar (recarrega o registro da Fase A): espera voltar
-          await page.locator(`#${id}`).waitFor({ state: 'visible' });
-          const r = await page.locator(`#${id}`).boundingBox();
-          expect(r, id).not.toBeNull();
-          expect((r?.x ?? 0) + (r?.width ?? 0), id).toBeLessThanOrEqual(largura + 1);
+          // a tela se refaz depois de publicar (recarrega o registro da Fase A), e pode se refazer
+          // entre a espera e a medida (o botão medido some e volta): mede de novo até achar
+          await esperar(async () => {
+            const r = await page.locator(`#${id}`).boundingBox();
+            expect(r, id).not.toBeNull();
+            expect((r?.x ?? 0) + (r?.width ?? 0), id).toBeLessThanOrEqual(largura + 1);
+          });
         }
       });
     }

@@ -6,6 +6,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { PROCESSO_TJGO, PROCESSO_TJGO_DIGITOS } from '../helpers/leitor.js';
 import { CHAVE, CHROMIUM, TEXTO_LONGO, iniciar } from './ambiente.js';
 import type { Ambiente } from './ambiente.js';
+import { esperarConsolePronto } from './console.js';
 
 /*
  * A Pasta digital NUM NAVEGADOR de verdade (Chromium headless), contra o
@@ -60,9 +61,7 @@ describe.skipIf(sem)('Pasta digital — no navegador', { timeout: 60_000 }, () =
     page = await ctx.newPage();
     page.setDefaultTimeout(15_000);
     await page.goto(amb.url + '/');
-    await page.waitForFunction(
-      () => typeof (window as unknown as Console_).__pv?.abrir === 'function',
-    );
+    await esperarConsolePronto(page);
     await page.evaluate(
       (n) => (window as unknown as Console_).__pv!.abrir(n),
       PROCESSO_TJGO,
