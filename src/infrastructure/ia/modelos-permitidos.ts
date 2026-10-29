@@ -6,6 +6,7 @@ import {
   type ItemDoCatalogo,
 } from '../../domain/entities/ModelosDeIa.js';
 import { ehApelidoOuVariante } from '../adapters/modelo/endpointsZdr.js';
+import type { NivelDeRaciocinio } from '../adapters/modelo/TransporteOpenRouter.js';
 
 /**
  * A LISTA PERMITIDA de modelos de IA (v0.60.0, Fase B do painel). Mora no CÓDIGO — nunca no banco nem na
@@ -122,6 +123,18 @@ export const MODELOS_PERMITIDOS: readonly ItemDoCatalogo[] = Object.freeze(
 );
 
 export const CATALOGO_DE_MODELOS: CatalogoDeModelos = criarCatalogo(MODELOS_PERMITIDOS);
+
+/**
+ * O raciocínio de cada modelo que NÃO aceita o ajuste global `PROCESSOVIVO_IA_RACIOCINIO` (padrão
+ * `desligado`, medido no DeepSeek). Medido no Console de produção em 29/10/2026 com
+ * `node scripts/sonda-ia-ato.mjs --medir-latencia=anthropic/claude-sonnet-5.5`: `desligado` e `nenhum`
+ * = HTTP 400; `padrao` responde em ~2 s com zero tokens de raciocínio. Ao incluir um modelo novo na
+ * lista, rode a mesma medida e anote aqui se ele recusar o ajuste global.
+ */
+export const RACIOCINIO_POR_MODELO: Readonly<Record<string, NivelDeRaciocinio>> =
+  Object.freeze({
+    'anthropic/claude-sonnet-5.5': 'padrao',
+  });
 
 export const AVISO_DE_NOVO_MODELO =
   'Para incluir um modelo novo na lista é preciso uma alteração de código e revisão da Política de Privacidade.';

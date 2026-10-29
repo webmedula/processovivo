@@ -137,6 +137,12 @@ export function corpoDoRaciocinio(
 export interface AjustesDeDesempenho {
   readonly raciocinio?: NivelDeRaciocinio;
   readonly maxTokens?: number;
+  /**
+   * O nível de raciocínio de um modelo específico, que vence `raciocinio` (v0.65.1). Existe porque o
+   * ajuste global foi medido no DeepSeek, e o Claude recusa `enabled: false` e `effort: none` com 400:
+   * o teste do painel saía "bloqueado" com todas as chamadas do candidato em erro.
+   */
+  readonly raciocinioPorModelo?: Readonly<Record<string, NivelDeRaciocinio>>;
 }
 
 /** Como a saída é pedida: esquema JSON estrito (`json_schema`) ou instrução no texto, validada por nós. */
@@ -519,7 +525,11 @@ export class TransporteOpenRouter implements TransporteDeModelo {
     degrau: Degrau,
     only: readonly string[] = pedido.provedoresPermitidos,
   ): ChamadaAoSdk {
-    const raciocinio = corpoDoRaciocinio(this.ajustes.raciocinio ?? 'padrao');
+    const raciocinio = corpoDoRaciocinio(
+      this.ajustes.raciocinioPorModelo?.[pedido.modelo] ??
+        this.ajustes.raciocinio ??
+        'padrao',
+    );
     return {
       modelo: pedido.modelo,
       // No modo "texto" o formato vai por instrução; o resto do sistema não muda.

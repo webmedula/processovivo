@@ -9,6 +9,21 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.65.1] — 2026-10-29
+
+### Corrigido
+
+- **O teste obrigatório do Claude Sonnet 5.5 no painel de IA saía "Bloqueado" com todas as chamadas do
+  candidato em erro.** O painel (e a produção) mandam o raciocínio global `PROCESSOVIVO_IA_RACIOCINIO`
+  (padrão `desligado`, medido no DeepSeek), e o Claude recusa `reasoning: { enabled: false }` e
+  `{ effort: "none" }` com HTTP 400. Medido no Console de produção com
+  `node scripts/sonda-ia-ato.mjs --medir-latencia=anthropic/claude-sonnet-5.5`: `padrao`, `minimo` e
+  `baixo` respondem (~2–3 s, zero tokens de raciocínio); `desligado` e `nenhum` dão 400.
+- Novo `RACIOCINIO_POR_MODELO` em `infrastructure/ia/modelos-permitidos.ts` (o Claude usa `padrao`, sem
+  enviar `reasoning`) e o ajuste `raciocinioPorModelo` do `TransporteOpenRouter`, que vence o global só
+  para aquele modelo. O DeepSeek continua com o `desligado` de sempre. ZDR, `provider.only`,
+  `data_collection: deny` e a conferência do par modelo + provedor não mudaram.
+
 ## [0.65.0] — 2026-10-29
 
 **Claude Sonnet 5.5 entra na lista permitida de modelos de IA, como candidato nas três funções.** Só a lista mudou: o modelo em produção continua o DeepSeek V4 Flash, e nada troca sozinho. A troca é do dono, pela aba IA do `/admin`, com o teste obrigatório, o veredito e a reversão da Fase B.
