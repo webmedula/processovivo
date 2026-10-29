@@ -472,7 +472,8 @@ export const ESTILOS_ANALISE_IA = `
 .pvia button:focus-visible,.pvia-btn:focus-visible{outline:2px solid var(--acento);outline-offset:2px}
 @media (max-width:1023px){
   .nvt-tabela tr.pvia-linha{display:block;margin:-4px 0 10px}
-  .nvt-tabela tr.pvia-linha td{display:block;padding:0}
+  /* height:auto — o 48px das células da tabela, num bloco, deixava o painel transbordar sobre o cartão seguinte */
+  .nvt-tabela tr.pvia-linha td{display:block;padding:0;height:auto}
   .nvt-tabela tr.pvia-linha td::before{content:none}
   .pvia .nov-btn{min-height:44px}
   .pvia-btn-t{display:inline}
