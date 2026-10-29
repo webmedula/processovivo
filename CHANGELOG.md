@@ -9,6 +9,19 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.65.0] — 2026-10-29
+
+**Claude Sonnet 5.5 entra na lista permitida de modelos de IA, como candidato nas três funções.** Só a lista mudou: o modelo em produção continua o DeepSeek V4 Flash, e nada troca sozinho. A troca é do dono, pela aba IA do `/admin`, com o teste obrigatório, o veredito e a reversão da Fase B.
+
+- **Item novo** em `src/infrastructure/ia/modelos-permitidos.ts`: `anthropic/claude-sonnet-5.5`, `confirmada`, ativo, funções ato, resumo e peça.
+- **ZDR** lido no Console de produção em 29/10/2026 com `node scripts/sonda-ia-ato.mjs --listar-modelos-zdr=claude` (13 modelos Claude com endpoint ZDR, este entre eles). A cada chamada a lista oficial continua decidindo os provedores, falhando fechado.
+- **Preço e janela** lidos no mesmo dia em `GET /models/anthropic/claude-sonnet-5.5/endpoints` do OpenRouter (público): US$ 2,00 por milhão de tokens de entrada, US$ 10,00 de saída (endpoints globais; os regionais custam 10% a mais), 1.000.000 de tokens de contexto.
+- **Antes de publicar pela tela:** a Política de Privacidade precisa citar o novo destinatário (Anthropic e os provedores de nuvem que a servem com ZDR), como manda a regra da Fase B.
+- **Teste corrigido** (`assinaturas-sqlite.spec.ts`, "plano desconhecido no banco…"): usava o relógio real e passou a falhar quando a assinatura de 22/09/2026 venceu; agora injeta `agora`.
+- Sem migração, sem dependência nova, sem variável nova.
+
+---
+
 ## [0.64.0] — 2026-10-28
 
 **E-mail de atualizações em lista curta: uma linha por processo, só número, tipo do ato e data.** Mudou apenas o CONTEÚDO e a apresentação do e-mail. Detecção de novidades, `/v1/novidades`, gatilho e frequência de envio (um e-mail por conta a cada varredura, depois dela), "pede providência", "cumprido", tela Atualizações, calendário, planos, preferências e os outros e-mails não mudaram.
