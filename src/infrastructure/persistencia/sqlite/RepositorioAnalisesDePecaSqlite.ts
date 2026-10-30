@@ -112,6 +112,34 @@ export class RepositorioAnalisesDePecaSqlite implements RepositorioAnalisesDePec
     return l ? paraAnalise(l) : undefined;
   }
 
+  async pecasComAnaliseVigente(
+    workspace: string,
+    chave: {
+      readonly processoChave: string;
+      readonly versaoPrompt: string;
+      readonly modeloPedido: string;
+    },
+    pecaIds: readonly string[],
+    agora: Date,
+  ): Promise<ReadonlySet<string>> {
+    if (pecaIds.length === 0) return new Set();
+    const linhas = this.db
+      .prepare(
+        `SELECT DISTINCT peca_id FROM analises_pecas_ia
+          WHERE workspace = ? AND processo_chave = ? AND versao_prompt = ? AND modelo_pedido = ?
+            AND expira_em > ? AND resultado LIKE '{"estado":"verificada"%'`,
+      )
+      .all(
+        workspace,
+        chave.processoChave,
+        chave.versaoPrompt,
+        chave.modeloPedido,
+        agora.toISOString(),
+      ) as unknown as Array<{ peca_id: string }>;
+    const pedidas = new Set(pecaIds);
+    return new Set(linhas.map((l) => l.peca_id).filter((id) => pedidas.has(id)));
+  }
+
   async avaliar(
     workspace: string,
     id: string,

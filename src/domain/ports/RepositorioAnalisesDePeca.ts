@@ -28,6 +28,20 @@ export interface RepositorioAnalisesDePeca {
     },
     agora: Date,
   ): Promise<AnaliseDePeca | undefined>;
+  /**
+   * Das `pecaIds`, as que têm análise VIGENTE e verificada da mesma conta, processo, prompt e modelo
+   * (v0.66.0, estimativa da análise do processo; não confere os bytes).
+   */
+  pecasComAnaliseVigente(
+    workspace: string,
+    chave: {
+      readonly processoChave: string;
+      readonly versaoPrompt: string;
+      readonly modeloPedido: string;
+    },
+    pecaIds: readonly string[],
+    agora: Date,
+  ): Promise<ReadonlySet<string>>;
   /** @returns se a análise existe PARA ESTA conta. */
   avaliar(
     workspace: string,

@@ -288,6 +288,14 @@ const schema = z.object({
   PROCESSOVIVO_IA_PECAS_TIMEOUT_MS: inteiroPositivo(120_000),
   // Por quantos dias o resultado (com citações curtas) fica guardado. Nunca o texto da peça.
   PROCESSOVIVO_IA_PECAS_RESULTADO_DIAS: inteiroPositivo(30),
+  // Análise do PROCESSO pelas peças (v0.66.0). Na versão 1 só as contas desta lista (16 ou 32 hex, separados
+  // por vírgula) usam, e elas também precisam da análise de peça liberada e do recurso `analiseIa`. Não há
+  // chave geral: abrir a todos espera a Política de Privacidade v1.6. Vazia = recurso desligado.
+  PROCESSOVIVO_IA_PROCESSO_WORKSPACES: z.string().default(''),
+  // Freio próprio, por análise do processo (cada uma lê até 20 peças), por conta e por hora, em memória.
+  PROCESSOVIVO_IA_PROCESSO_MAX_POR_HORA: inteiroPositivo(2),
+  PROCESSOVIVO_IA_PROCESSO_MAX_TOKENS: inteiroPositivo(3000),
+  PROCESSOVIVO_IA_PROCESSO_TIMEOUT_MS: inteiroPositivo(120_000),
   // Exigida SÓ com a IA habilitada. Nunca vai para log, resposta ou mensagem de erro.
   OPENROUTER_API_KEY: z.string().default(''),
 
@@ -461,6 +469,14 @@ export interface Config {
       readonly maxTokens: number;
       readonly timeoutMs: number;
       readonly resultadoDias: number;
+    };
+    /** Análise do processo pelas peças (v0.66.0): só contas da lista; usa o modelo e o prazo das peças. */
+    readonly processo: {
+      readonly workspaces: readonly string[];
+      readonly workspacesInvalidos: number;
+      readonly maxPorHora: number;
+      readonly maxTokens: number;
+      readonly timeoutMs: number;
     };
     /**
      * A variável da antiga exceção de teste fechado (removida na v0.50.0) ainda está no ambiente.
@@ -721,6 +737,12 @@ export function carregarConfig(fonte: NodeJS.ProcessEnv = process.env): Config {
         maxTokens: env.PROCESSOVIVO_IA_PECAS_MAX_TOKENS,
         timeoutMs: env.PROCESSOVIVO_IA_PECAS_TIMEOUT_MS,
         resultadoDias: env.PROCESSOVIVO_IA_PECAS_RESULTADO_DIAS,
+      },
+      processo: {
+        ...lerListaDeWorkspaces(env.PROCESSOVIVO_IA_PROCESSO_WORKSPACES),
+        maxPorHora: env.PROCESSOVIVO_IA_PROCESSO_MAX_POR_HORA,
+        maxTokens: env.PROCESSOVIVO_IA_PROCESSO_MAX_TOKENS,
+        timeoutMs: env.PROCESSOVIVO_IA_PROCESSO_TIMEOUT_MS,
       },
       variavelDeTesteFechadoPresente:
         (fonte['PROCESSOVIVO_IA_WORKSPACES_LIBERADOS'] ?? '').trim() !== '',

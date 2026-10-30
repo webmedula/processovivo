@@ -9,6 +9,29 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.66.0] — 2026-10-29
+
+**"Analisar processo com IA": a IA lê as peças escolhidas na Pasta digital e cruza o que elas dizem.** Decisões do dono de 29/10/2026; especificação `docs/ia-analise-do-processo-especificacao-v1.0.0.md`. **Nasce desligada e só para uma lista de contas** até a Política de Privacidade v1.6. Nenhuma troca de modelo, provedor, ZDR, redação, plano, preço, análise do ato, resumo ou calendário.
+
+### Adicionado
+
+- **Duas etapas.** (1) Cada peça marcada (de 2 a 20) passa pela análise de peça de produção — mesmas travas, redação, verificação, guarda de 30 dias e reaproveitamento —, uma por vez; peça fora da guarda de 24 h é pedida à fila da Pasta, sem retry. (2) A **síntese** cruza só os resultados JÁ verificados, com marcadores e um identificador por item (`P2.pedido1`); o texto das peças nunca vai a ela. Prompt `processo-1.0.0`, esquema fechado, mesmo modelo e mesma `ModeloComZdr` da análise de peça.
+- **Verificação da síntese item a item** (`verificarSintese`, regras 1.0.0): referência tem de existir; pedido só de pedido, defesa só de alegação/preliminar da parte ré, decisão só de peça do juízo, ponto controvertido com peças de lados diferentes; número só se estiver nos itens apontados; expressão proibida e juízo de procedência na voz do modelo ("o pedido é procedente") saem. Sem objeto verificado = "não verificada". O trecho e a página mostrados são copiados pelo sistema do resultado da peça: o modelo não escreve citação.
+- **Resultado em sete blocos:** quadro do caso (objeto, classe, partes), pedidos × defesa × decisões, linha do tempo das teses, pontos controvertidos, o que o juízo determinou (com "Prazo escrito no ato", literal), documentos e valores, o que ficou de fora (com o motivo de cada peça).
+- **Rotas:** `GET /v1/analises-do-processo/disponibilidade`, `POST /v1/processos/:numero/analise-do-processo/estimativa` (não grava nada), `POST /v1/processos/:numero/analise-do-processo` (202, job em memória, um por conta), `GET`/`DELETE /v1/analises-do-processo/:id`, `POST /v1/sinteses-do-processo/:id/avaliacao`. Erro novo `AnaliseDoProcessoRecusadaError` (`detalhes.motivo`).
+- **Tela** (`ui/analiseProcessoIA.ts`, `window.__pvProcessoIA`; `script.ts` não cresceu): botão "Analisar processo com IA (N)" na barra da Pasta, diálogo com o atalho **"Marcar peças principais"** (não marca laudo), a estimativa (peças já analisadas, a buscar no tribunal, sob sigilo, peso no limite do dia) e a confirmação; progresso com Cancelar; resultado com polegar. Frases fixas na tela.
+- **Teto:** a síntese pesa 5 no teto diário e cada peça nova 5 (peça reaproveitada não pesa); dentro da análise do processo as peças não gastam o freio por hora da peça — o freio é `PROCESSOVIVO_IA_PROCESSO_MAX_POR_HORA` (2).
+- **Dados:** tabela `sinteses_processo_ia` (aditiva), resultado com marcadores por 30 dias, limpo pelo `Agendador`; reaproveitada para a mesma seleção, prompt e modelo. Nunca texto de peça.
+- **Variáveis:** `PROCESSOVIVO_IA_PROCESSO_WORKSPACES` (vazia = desligada), `_MAX_POR_HORA` (2), `_MAX_TOKENS` (3000), `_TIMEOUT_MS` (120000).
+- **Comparador** `node scripts/ia-comparar-modelos.mjs --tarefa=processo`: 8 processos inventados (`tests/fixtures/ia-processo`), mesma entrada e verificação da produção, ZDR e teto de gasto; só estima sem `--executar`.
+
+### Limites conhecidos
+
+- A síntese **segue a função "peça" do painel de IA** (interruptor e modelo); não tem função, teto nem instruções editáveis próprios. O teste obrigatório da Fase B mede a peça, não a síntese.
+- Só TJGO; só peça com texto pesquisável (sem OCR). O link na capa do processo e a Fase 2 (PDF de outros tribunais) ficam para depois.
+
+---
+
 ## [0.65.2] — 2026-10-29
 
 **Celular: o painel "Análise por IA" da tela Atualizações não fica mais por cima do processo seguinte.** Só CSS; nenhuma regra, rota, texto ou dado mudou.
