@@ -12,6 +12,7 @@ import { ESTILOS_ANALISE_IA, SCRIPT_ANALISE_IA } from './analiseIA.js';
 import { ESTILOS_POLEGARES, SCRIPT_POLEGARES } from './polegares.js';
 import { ESTILOS_RESUMO_IA, SCRIPT_RESUMO_IA } from './resumoIA.js';
 import { ESTILOS_ANALISE_PECA_IA, SCRIPT_ANALISE_PECA_IA } from './analisePecaIA.js';
+import { ESTILOS_ANALISE_PROCESSO_IA, SCRIPT_ANALISE_PROCESSO_IA } from './analiseProcessoIA.js';
 import { ESTILOS_DRIVE, SCRIPT_DRIVE } from './drive.js';
 import { ESTILOS_CUSTOS, SCRIPT_CUSTOS } from './custos.js';
 import { ESTILOS_CUSTOS_CLIENTE, SCRIPT_CUSTOS_CLIENTE } from './custosPorCliente.js';
@@ -87,7 +88,7 @@ export function paginaConsole(versao: string): string {
 <link rel="icon" type="image/svg+xml" href="${FAVICON_DATA_URI}">
 <meta name="theme-color" content="#0b192c">
 <script>${SCRIPT_TEMA}</script>
-<style>${ESTILOS}${ESTILOS_PASTA}${ESTILOS_CALENDARIO}${ESTILOS_ATUALIZACOES}${ESTILOS_PROVIDENCIA}${ESTILOS_POLEGARES}${ESTILOS_ANALISE_IA}${ESTILOS_RESUMO_IA}${ESTILOS_ANALISE_PECA_IA}${ESTILOS_DRIVE}${ESTILOS_CUSTOS}${ESTILOS_CUSTOS_CLIENTE}${ESTILOS_PAGAMENTO}${ESTILOS_VERIFICACAO}</style>
+<style>${ESTILOS}${ESTILOS_PASTA}${ESTILOS_CALENDARIO}${ESTILOS_ATUALIZACOES}${ESTILOS_PROVIDENCIA}${ESTILOS_POLEGARES}${ESTILOS_ANALISE_IA}${ESTILOS_RESUMO_IA}${ESTILOS_ANALISE_PECA_IA}${ESTILOS_ANALISE_PROCESSO_IA}${ESTILOS_DRIVE}${ESTILOS_CUSTOS}${ESTILOS_CUSTOS_CLIENTE}${ESTILOS_PAGAMENTO}${ESTILOS_VERIFICACAO}</style>
 </head>
 <body>
 
@@ -135,6 +136,7 @@ export function paginaConsole(versao: string): string {
 <script>${SCRIPT_ANALISE_IA}</script>
 <script>${SCRIPT_RESUMO_IA}</script>
 <script>${SCRIPT_ANALISE_PECA_IA}</script>
+<script>${SCRIPT_ANALISE_PROCESSO_IA}</script>
 <script>${SCRIPT_DRIVE}</script>
 <script>${SCRIPT_CUSTOS}</script>
 <script>${SCRIPT_CUSTOS_CLIENTE}</script>

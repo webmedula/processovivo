@@ -53,6 +53,17 @@ describe('configuração da análise de peça', () => {
   });
 });
 
+describe('configuração da análise do processo', () => {
+  it('nasce desligada e sem lista; a chave geral liga sem precisar da lista', () => {
+    expect(carregarConfig(BASE).ia.processo.habilitada).toBe(false);
+    expect(carregarConfig(BASE).ia.processo.workspaces).toEqual([]);
+    expect(
+      carregarConfig({ ...BASE, PROCESSOVIVO_IA_PROCESSO_HABILITADA: 'true' }).ia.processo
+        .habilitada,
+    ).toBe(true);
+  });
+});
+
 describe('política de liberação', () => {
   it('sem as duas chaves: ninguém; só a lista: modo avaliação; chave geral: modo geral para todos', () => {
     expect(

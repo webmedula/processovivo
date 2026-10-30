@@ -7,6 +7,7 @@ import {
   AtoDaProvidenciaInvalidoError,
   EntradaNaoAnalisavelError,
   AnaliseDePecaRecusadaError,
+  AnaliseDoProcessoRecusadaError,
   ConfiguracaoDeIaRecusadaError,
   AdministradoresRecusadoError,
   ModeloDeIaRecusadoError,
@@ -204,6 +205,28 @@ export function mapearErro(erro: unknown): RespostaDeErro {
       pdf_invalido: 422,
       pdf_protegido: 422,
       arquivo_grande: 422,
+      desligada: 503,
+    };
+    return {
+      status: status[erro.motivo],
+      corpo: {
+        erro: erro.codigo,
+        mensagem: erro.message,
+        detalhes: { motivo: erro.motivo },
+      },
+    };
+  }
+
+  // Análise do processo pelas peças (v0.66.0): nada foi enviado ao modelo.
+  if (erro instanceof AnaliseDoProcessoRecusadaError) {
+    const status: Record<AnaliseDoProcessoRecusadaError['motivo'], number> = {
+      indisponivel: 404,
+      nao_encontrada: 404,
+      sem_plano: 403,
+      processo_sigiloso: 403,
+      selecao_invalida: 400,
+      tribunal_nao_suportado: 422,
+      limite_de_uso: 429,
       desligada: 503,
     };
     return {

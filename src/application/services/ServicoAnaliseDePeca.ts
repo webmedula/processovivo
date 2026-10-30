@@ -147,6 +147,11 @@ export interface PedidoDeAnaliseDePeca {
   readonly numero: string;
   readonly pecaId: string;
   readonly sinal?: AbortSignal;
+  /**
+   * A peça é lida DENTRO de uma análise do processo (v0.66.0): não conta no freio por hora da peça (a
+   * análise do processo tem o próprio). Teto diário, peso 5 e todas as recusas continuam iguais.
+   */
+  readonly dentroDaAnaliseDoProcesso?: boolean;
 }
 
 /** O que a tela recebe: o resultado já com os nomes do retrato no lugar dos marcadores. */
@@ -311,7 +316,9 @@ export class ServicoAnaliseDePeca {
     }
 
     // 6. Freio por hora e teto diário (peso 5). A vaga é liberada em qualquer desfecho.
-    const vaga = this.o.limite.reservar(workspace, PESO_DA_PECA_NO_TETO);
+    const vaga = this.o.limite.reservar(workspace, PESO_DA_PECA_NO_TETO, {
+      foraDoFreioPorHora: pedido.dentroDaAnaliseDoProcesso === true,
+    });
     if ('negada' in vaga) {
       throw recusa(vaga.negada === 'dia' ? 'limite_diario' : 'limite_de_uso');
     }
@@ -649,6 +656,37 @@ export class ServicoAnaliseDePeca {
       latenciaMs,
     });
     return this.paraATela(analise, c.entrada, c.modo, false, c.conversao);
+  }
+
+  /**
+   * O resultado GUARDADO de uma análise desta conta, ainda com os marcadores (v0.66.0): é o que a síntese do
+   * processo manda ao modelo — nunca a versão com os nomes restaurados.
+   */
+  async comMarcadores(workspace: string, id: string): Promise<AnaliseDePeca | undefined> {
+    return this.o.analises.buscar(workspace, id);
+  }
+
+  /**
+   * Quais destas peças já têm análise VIGENTE com o prompt e o modelo de agora (v0.66.0, só para a
+   * estimativa da análise do processo). É um "provavelmente": o reaproveitamento de verdade ainda confere os
+   * bytes da peça.
+   */
+  async jaAnalisadas(
+    workspace: string,
+    numero: string,
+    pecaIds: readonly string[],
+  ): Promise<ReadonlySet<string>> {
+    const instrucao = (this.o.instrucoes ?? SEM_INSTRUCOES).efetiva('peca');
+    return this.o.analises.pecasComAnaliseVigente(
+      workspace,
+      {
+        processoChave: chaveDoProcesso(workspace, NumeroCNJ.criar(numero).digitos),
+        versaoPrompt: versaoEfetiva(VERSAO_PROMPT_DA_PECA, instrucao.versao),
+        modeloPedido: this.modeloPedido(),
+      },
+      pecaIds,
+      this.o.clock.agora(),
+    );
   }
 
   /** Só o dono da conta avalia; pode corrigir. 404 igual para "não existe" e "é de outra". */
