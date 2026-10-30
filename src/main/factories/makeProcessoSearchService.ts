@@ -773,17 +773,17 @@ export function montarAplicacao(config: Config): Aplicacao {
     analiseDoProcesso,
     repositorioDeSinteses,
   } = montarAnaliseIa(
-      config,
-      db,
-      logger,
-      repositorio,
-      assinaturas,
-      pasta,
-      controleDaIa,
-      ocorrenciasDaIa,
-      modelosDeIa,
-      instrucoesDeIa,
-    );
+    config,
+    db,
+    logger,
+    repositorio,
+    assinaturas,
+    pasta,
+    controleDaIa,
+    ocorrenciasDaIa,
+    modelosDeIa,
+    instrucoesDeIa,
+  );
   const testesDeModelo = new RepositorioDeTestesDeModeloSqlite(db);
   const verificacaoDeInstrucoes = new ServicoVerificacaoDeInstrucoes({
     executor: executorDoTeste,
@@ -863,7 +863,9 @@ export function montarAplicacao(config: Config): Aplicacao {
               ? await repositorioDeSinteses.apagarVencidas(clockDoSistema.agora())
               : 0;
             if (sinteses > 0)
-              logger.info('sínteses do processo vencidas apagadas', { apagadas: sinteses });
+              logger.info('sínteses do processo vencidas apagadas', {
+                apagadas: sinteses,
+              });
           },
         })
       : undefined;
@@ -1308,8 +1310,8 @@ function montarAnaliseIa(
   }
 
   // --- Análise do PROCESSO pelas peças (v0.66.0) --------------------------------------------------------
-  // Só sobre a análise de peça (é ela que lê cada peça) e só para as contas da lista: abrir a todos espera a
-  // Política de Privacidade v1.6. Interruptor, teto e modelo são os da função `peca` do painel.
+  // Só sobre a análise de peça (é ela que lê cada peça), para todas as contas (chave geral, que exige a
+  // Política de Privacidade v1.6 publicada) ou só as da lista. Interruptor, teto e modelo são os da função `peca`.
   let analiseDoProcesso: ServicoAnaliseDoProcesso | undefined;
   let repositorioDeSinteses: RepositorioSintesesDoProcessoSqlite | undefined;
   const proc = ia.processo;
@@ -1319,7 +1321,7 @@ function montarAnaliseIa(
       { ignorados: proc.workspacesInvalidos },
     );
   }
-  if (proc.workspaces.length > 0) {
+  if (proc.habilitada || proc.workspaces.length > 0) {
     if (!analiseDePeca || !pasta) {
       logger.warn(
         'análise do processo por IA configurada, mas a análise de peça não está ligada: nada foi ligado',
@@ -1344,6 +1346,7 @@ function montarAnaliseIa(
           clock: clockDoSistema,
         }),
         teto: tetoDoDia,
+        habilitada: proc.habilitada,
         workspaces: proc.workspaces,
         tribunais: ['TJGO'],
         modelo: () => modelosDeIa.efetivo('peca').modelo,
@@ -1353,6 +1356,7 @@ function montarAnaliseIa(
         novoId: () => randomUUID(),
       });
       logger.info('análise do processo por IA habilitada', {
+        paraTodas: proc.habilitada,
         contasDaLista: proc.workspaces.length,
       });
     }

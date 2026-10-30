@@ -11,7 +11,7 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ## [0.66.0] — 2026-10-29
 
-**"Analisar processo com IA": a IA lê as peças escolhidas na Pasta digital e cruza o que elas dizem.** Decisões do dono de 29/10/2026; especificação `docs/ia-analise-do-processo-especificacao-v1.0.0.md`. **Nasce desligada e só para uma lista de contas** até a Política de Privacidade v1.6. Nenhuma troca de modelo, provedor, ZDR, redação, plano, preço, análise do ato, resumo ou calendário.
+**"Analisar processo com IA": a IA lê as peças escolhidas na Pasta digital e cruza o que elas dizem.** Decisões do dono de 29/10/2026; especificação `docs/ia-analise-do-processo-especificacao-v1.0.0.md`. **Nasce desligada.** Liga para todo o plano IA com `PROCESSOVIVO_IA_PROCESSO_HABILITADA=true` (decisão do dono de 30/10/2026: só com a Política de Privacidade v1.6 publicada) ou só para uma lista de contas. Nenhuma troca de modelo, provedor, ZDR, redação, plano, preço, análise do ato, resumo ou calendário.
 
 ### Adicionado
 
@@ -22,7 +22,7 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 - **Tela** (`ui/analiseProcessoIA.ts`, `window.__pvProcessoIA`; `script.ts` não cresceu): botão "Analisar processo com IA (N)" na barra da Pasta, diálogo com o atalho **"Marcar peças principais"** (não marca laudo), a estimativa (peças já analisadas, a buscar no tribunal, sob sigilo, peso no limite do dia) e a confirmação; progresso com Cancelar; resultado com polegar. Frases fixas na tela.
 - **Teto:** a síntese pesa 5 no teto diário e cada peça nova 5 (peça reaproveitada não pesa); dentro da análise do processo as peças não gastam o freio por hora da peça — o freio é `PROCESSOVIVO_IA_PROCESSO_MAX_POR_HORA` (2).
 - **Dados:** tabela `sinteses_processo_ia` (aditiva), resultado com marcadores por 30 dias, limpo pelo `Agendador`; reaproveitada para a mesma seleção, prompt e modelo. Nunca texto de peça.
-- **Variáveis:** `PROCESSOVIVO_IA_PROCESSO_WORKSPACES` (vazia = desligada), `_MAX_POR_HORA` (2), `_MAX_TOKENS` (3000), `_TIMEOUT_MS` (120000).
+- **Variáveis:** `PROCESSOVIVO_IA_PROCESSO_HABILITADA` (padrão `false`; `true` = toda conta com a análise de peça liberada e o plano IA), `PROCESSOVIVO_IA_PROCESSO_WORKSPACES` (lista, vale com a geral desligada; as duas vazias = desligada), `_MAX_POR_HORA` (2), `_MAX_TOKENS` (3000), `_TIMEOUT_MS` (120000).
 - **Comparador** `node scripts/ia-comparar-modelos.mjs --tarefa=processo`: 8 processos inventados (`tests/fixtures/ia-processo`), mesma entrada e verificação da produção, ZDR e teto de gasto; só estima sem `--executar`.
 
 ### Limites conhecidos

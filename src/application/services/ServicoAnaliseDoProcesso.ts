@@ -96,7 +96,9 @@ export interface FonteDaAnaliseDoProcesso {
     workspace: string,
     numero: string,
     pecaId: string,
-  ): Promise<'nao_baixada' | 'na_fila' | 'baixando' | 'disponivel' | 'nao_obtida' | 'sigilo'>;
+  ): Promise<
+    'nao_baixada' | 'na_fila' | 'baixando' | 'disponivel' | 'nao_obtida' | 'sigilo'
+  >;
 }
 
 export interface OpcoesServicoAnaliseDoProcesso {
@@ -113,7 +115,9 @@ export interface OpcoesServicoAnaliseDoProcesso {
   readonly limite: LimiteDeAnalises;
   /** O MESMO teto diário das outras funções de IA: a síntese pesa 5, na conta da função `peca`. */
   readonly teto: Pick<TetoDiario, 'cabe' | 'registrar'>;
-  /** `PROCESSOVIVO_IA_PROCESSO_WORKSPACES`: as únicas contas liberadas na versão 1. */
+  /** `PROCESSOVIVO_IA_PROCESSO_HABILITADA`: toda conta com a análise de peça liberada (e o plano IA). */
+  readonly habilitada?: boolean;
+  /** `PROCESSOVIVO_IA_PROCESSO_WORKSPACES`: as contas liberadas quando a chave geral está desligada. */
   readonly workspaces: readonly string[];
   readonly tribunais: readonly string[];
   /** O modelo da análise de peça (a síntese usa o mesmo na versão 1), para o reaproveitamento. */
@@ -126,12 +130,7 @@ export interface OpcoesServicoAnaliseDoProcesso {
 }
 
 export type EstadoDaPecaNaAnalise =
-  | 'aguardando'
-  | 'baixando'
-  | 'lendo'
-  | 'lida'
-  | 'reaproveitada'
-  | 'fora';
+  'aguardando' | 'baixando' | 'lendo' | 'lida' | 'reaproveitada' | 'fora';
 
 /** Por que uma peça ficou de fora. A tela tem uma frase FIXA para cada um. */
 export type MotivoDaPecaFora =
@@ -175,7 +174,10 @@ export interface ResultadoDaAnaliseDoProcessoParaATela {
   } | null;
   readonly semSintese: 'poucas_pecas' | 'limite_diario' | 'erro' | null;
   readonly classe: string | null;
-  readonly partes: { readonly autores: readonly string[]; readonly reus: readonly string[] };
+  readonly partes: {
+    readonly autores: readonly string[];
+    readonly reus: readonly string[];
+  };
   readonly determinacoes: readonly {
     readonly quem: string;
     readonly texto: string;
@@ -290,10 +292,11 @@ export class ServicoAnaliseDoProcesso {
       o.esperar ?? ((ms) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   }
 
-  /** A conta está liberada (lista da versão 1 + análise de peça liberada e ligada)? */
+  /** A conta está liberada (chave geral ou lista + análise de peça liberada e ligada)? O plano vem depois. */
   liberado(workspace: string): boolean {
     const id = workspace.trim().toLowerCase();
-    return this.o.workspaces.includes(id) && this.o.pecas.modoDa(workspace) !== undefined;
+    const pelaChave = this.o.habilitada === true || this.o.workspaces.includes(id);
+    return pelaChave && this.o.pecas.modoDa(workspace) !== undefined;
   }
 
   async estimar(
@@ -416,7 +419,9 @@ export class ServicoAnaliseDoProcesso {
   ): Promise<{
     readonly numero: string;
     readonly processo: Processo;
-    readonly listagem: NonNullable<Awaited<ReturnType<FonteDaAnaliseDoProcesso['listar']>>>;
+    readonly listagem: NonNullable<
+      Awaited<ReturnType<FonteDaAnaliseDoProcesso['listar']>>
+    >;
   }> {
     if (!this.o.pecas.disponivel()) throw recusa('desligada');
     if (!this.liberado(workspace)) throw recusa('indisponivel');
@@ -472,10 +477,7 @@ export class ServicoAnaliseDoProcesso {
         if (erro instanceof PecaFora) {
           p.estado = 'fora';
           p.motivo = erro.motivo;
-          if (
-            erro.motivo === 'credencial' ||
-            erro.motivo === 'bloqueio_do_tribunal'
-          ) {
+          if (erro.motivo === 'credencial' || erro.motivo === 'bloqueio_do_tribunal') {
             semTribunal = erro.motivo;
           }
           continue;
@@ -511,7 +513,11 @@ export class ServicoAnaliseDoProcesso {
     }
     if (this.cancelado(job)) {
       for (const r of job.pecas) {
-        if (r.estado === 'aguardando' || r.estado === 'baixando' || r.estado === 'lendo') {
+        if (
+          r.estado === 'aguardando' ||
+          r.estado === 'baixando' ||
+          r.estado === 'lendo'
+        ) {
           r.estado = 'fora';
           r.motivo = 'cancelada';
         }
@@ -553,14 +559,18 @@ export class ServicoAnaliseDoProcesso {
         sinal: job.cancelamento.signal,
         dentroDaAnaliseDoProcesso: true,
       });
-      if (r.estado === 'erro') throw new PecaFora(this.cancelado(job) ? 'cancelada' : 'erro');
+      if (r.estado === 'erro')
+        throw new PecaFora(this.cancelado(job) ? 'cancelada' : 'erro');
       if (r.estado === 'nao_verificada') throw new PecaFora('nao_verificada');
       return r;
     };
     try {
       return await analisar();
     } catch (erro) {
-      if (!(erro instanceof AnaliseDePecaRecusadaError) || erro.motivo !== 'peca_nao_baixada') {
+      if (
+        !(erro instanceof AnaliseDePecaRecusadaError) ||
+        erro.motivo !== 'peca_nao_baixada'
+      ) {
         throw erro;
       }
     }
@@ -623,7 +633,10 @@ export class ServicoAnaliseDoProcesso {
         comMarcadores.push({
           peca,
           guardada: g as AnaliseDePeca & {
-            readonly resultado: Extract<ResultadoDaAnaliseDePeca, { estado: 'verificada' }>;
+            readonly resultado: Extract<
+              ResultadoDaAnaliseDePeca,
+              { estado: 'verificada' }
+            >;
           },
         });
       }
@@ -632,7 +645,10 @@ export class ServicoAnaliseDoProcesso {
     comMarcadores.sort(
       (a, b) => (a.peca.data?.getTime() ?? 0) - (b.peca.data?.getTime() ?? 0),
     );
-    const doSistema = this.blocosDoSistema(job, comMarcadores.map((c) => c.peca));
+    const doSistema = this.blocosDoSistema(
+      job,
+      comMarcadores.map((c) => c.peca),
+    );
     if (comMarcadores.length < MINIMO_DE_PECAS_LIDAS_PARA_A_SINTESE) {
       return { ...doSistema, sintese: null, semSintese: 'poucas_pecas' };
     }
@@ -642,7 +658,10 @@ export class ServicoAnaliseDoProcesso {
       data: c.peca.data,
       resultado: c.guardada.resultado,
     }));
-    const entrada = montarEntradaDaSintese(pecasParaSintese, pessoasDoProcesso(job.processo));
+    const entrada = montarEntradaDaSintese(
+      pecasParaSintese,
+      pessoasDoProcesso(job.processo),
+    );
     const modelo = this.o.modelo();
     const ids = comMarcadores.map((c) => c.guardada.id);
     const chaveDaSelecao = createHash('sha256')
@@ -689,7 +708,10 @@ export class ServicoAnaliseDoProcesso {
             }
           : { estado: 'nao_verificada', motivo: v.motivo };
       const descartes =
-        v.descartes.referencia + v.descartes.forma + v.descartes.numero + v.descartes.proibida;
+        v.descartes.referencia +
+        v.descartes.forma +
+        v.descartes.numero +
+        v.descartes.proibida;
       const criadaEm = this.o.clock.agora();
       sintese = {
         id: this.o.novoId(),
@@ -713,7 +735,9 @@ export class ServicoAnaliseDoProcesso {
         modeloPedido: modelo,
         medidas: {
           latenciaMs,
-          ...(bruta.tokensEntrada !== undefined ? { tokensEntrada: bruta.tokensEntrada } : {}),
+          ...(bruta.tokensEntrada !== undefined
+            ? { tokensEntrada: bruta.tokensEntrada }
+            : {}),
           ...(bruta.tokensSaida !== undefined ? { tokensSaida: bruta.tokensSaida } : {}),
           ...(bruta.custoUsd !== undefined ? { custoUsd: bruta.custoUsd } : {}),
         },
@@ -792,9 +816,11 @@ export class ServicoAnaliseDoProcesso {
     job: Job,
     pecas: readonly (PecaDoJob & { analise: AnaliseDePecaParaATela })[],
   ): Omit<ResultadoDaAnaliseDoProcessoParaATela, 'sintese' | 'semSintese'> {
-    const determinacoes: Array<ResultadoDaAnaliseDoProcessoParaATela['determinacoes'][number]> =
+    const determinacoes: Array<
+      ResultadoDaAnaliseDoProcessoParaATela['determinacoes'][number]
+    > = [];
+    const documentos: Array<ResultadoDaAnaliseDoProcessoParaATela['documentos'][number]> =
       [];
-    const documentos: Array<ResultadoDaAnaliseDoProcessoParaATela['documentos'][number]> = [];
     const valores: Array<ResultadoDaAnaliseDoProcessoParaATela['valores'][number]> = [];
     for (const p of pecas) {
       const r = p.analise.resultado;
@@ -857,7 +883,9 @@ export class ServicoAnaliseDoProcesso {
   }
 }
 
-const TIPO_DA_CATEGORIA: Readonly<Record<string, 'pedidos' | 'alegacoes' | 'preliminares' | 'determinacoes' | 'valores'>> = {
+const TIPO_DA_CATEGORIA: Readonly<
+  Record<string, 'pedidos' | 'alegacoes' | 'preliminares' | 'determinacoes' | 'valores'>
+> = {
   pedido: 'pedidos',
   alegacao: 'alegacoes',
   preliminar: 'preliminares',
@@ -901,4 +929,3 @@ function pessoasDoProcesso(processo: Processo): PessoasParaRedigir {
     })),
   };
 }
-

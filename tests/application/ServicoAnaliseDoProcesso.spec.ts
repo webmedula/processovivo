@@ -125,7 +125,12 @@ describe('ServicoAnaliseDoProcesso', () => {
   };
 
   function servicos(
-    o: { workspaces?: string[]; porDia?: number; porHoraDoProcesso?: number } = {},
+    o: {
+      workspaces?: string[];
+      habilitada?: boolean;
+      porDia?: number;
+      porHoraDoProcesso?: number;
+    } = {},
   ): { pecas: ServicoAnaliseDePeca; processo: ServicoAnaliseDoProcesso } {
     teto = new TetoDiario(o.porDia ?? 200, relogio);
     const pecas = new ServicoAnaliseDePeca({
@@ -172,6 +177,7 @@ describe('ServicoAnaliseDoProcesso', () => {
         clock: relogio,
       }),
       teto,
+      ...(o.habilitada !== undefined ? { habilitada: o.habilitada } : {}),
       workspaces: o.workspaces ?? [WS],
       tribunais: ['TJGO'],
       modelo: () => 'modelo/pedido',
@@ -383,7 +389,10 @@ describe('ServicoAnaliseDoProcesso', () => {
           pontos_controvertidos: [
             // Lados iguais (só a autora): não é controvérsia.
             { texto: 'Valor pago', refs: ['P1.alegacao1', 'P1.pedido1'] },
-            { texto: 'A autora tem razão sobre o defeito', refs: ['P1.alegacao1', 'P2.alegacao1'] },
+            {
+              texto: 'A autora tem razão sobre o defeito',
+              refs: ['P1.alegacao1', 'P2.alegacao1'],
+            },
           ],
         }),
       );
@@ -394,7 +403,9 @@ describe('ServicoAnaliseDoProcesso', () => {
       expect(sintese?.pedidos).toHaveLength(1);
       expect(sintese?.pedidos[0]?.defesa).toBeNull();
       expect(sintese?.controvertidos).toHaveLength(0);
-      expect(log.linhas.join('\n')).toMatch(/síntese do processo montada.*"descartesReferencia":1/);
+      expect(log.linhas.join('\n')).toMatch(
+        /síntese do processo montada.*"descartesReferencia":1/,
+      );
     });
 
     it('sem objeto verificado: "não verificada", e a tela manda ler as peças', async () => {
@@ -417,6 +428,26 @@ describe('ServicoAnaliseDoProcesso', () => {
       expect(s.liberado(WS)).toBe(false);
     });
 
+    it('chave geral ligada: libera sem a lista, mas só a conta com a análise de peça liberada', async () => {
+      const { processo: s } = servicos({ habilitada: true, workspaces: [] });
+      expect(s.liberado(WS)).toBe(true);
+      expect(s.liberado(OUTRA)).toBe(true);
+      expect(s.liberado('cccccccccccccccc')).toBe(false);
+      expect(
+        motivoDe(
+          await erroDe(s.iniciar('cccccccccccccccc', NUMERO_TJSP_A, ['p1', 'p2'])),
+        ),
+      ).toBe('indisponivel');
+    });
+
+    it('chave geral ligada não dispensa o plano IA: sem plano', async () => {
+      comPlano.clear();
+      const { processo: s } = servicos({ habilitada: true, workspaces: [] });
+      expect(motivoDe(await erroDe(s.iniciar(WS, NUMERO_TJSP_A, ['p1', 'p2'])))).toBe(
+        'sem_plano',
+      );
+    });
+
     it('sem o plano IA: sem plano', async () => {
       comPlano.clear();
       const { processo: s } = servicos();
@@ -427,7 +458,12 @@ describe('ServicoAnaliseDoProcesso', () => {
 
     it('seleção de 1 peça, repetida, desconhecida ou acima de 20: seleção inválida', async () => {
       const { processo: s } = servicos();
-      for (const sel of [['p1'], ['p1', 'p1'], ['p1', 'x'], Array.from({ length: 21 }, (_, i) => `p${i}`)]) {
+      for (const sel of [
+        ['p1'],
+        ['p1', 'p1'],
+        ['p1', 'x'],
+        Array.from({ length: 21 }, (_, i) => `p${i}`),
+      ]) {
         expect(motivoDe(await erroDe(s.iniciar(WS, NUMERO_TJSP_A, sel)))).toBe(
           'selecao_invalida',
         );
@@ -550,21 +586,21 @@ describe('ServicoAnaliseDoProcesso', () => {
     it('outra conta não vê nem cancela o job: "não encontrada"', async () => {
       const { processo: s } = servicos();
       const v = await rodar(s, ['p1', 'p3']);
-      expect(motivoDe(await erroDe(Promise.resolve().then(() => s.consultar(OUTRA, v.id))))).toBe(
-        'nao_encontrada',
-      );
-      expect(motivoDe(await erroDe(Promise.resolve().then(() => s.cancelar(OUTRA, v.id))))).toBe(
-        'nao_encontrada',
-      );
+      expect(
+        motivoDe(await erroDe(Promise.resolve().then(() => s.consultar(OUTRA, v.id)))),
+      ).toBe('nao_encontrada');
+      expect(
+        motivoDe(await erroDe(Promise.resolve().then(() => s.cancelar(OUTRA, v.id)))),
+      ).toBe('nao_encontrada');
     });
 
     it('o resultado some da memória uma hora depois de terminar', async () => {
       const { processo: s } = servicos();
       const v = await rodar(s, ['p1', 'p3']);
       relogio.avancar(3_600_001);
-      expect(motivoDe(await erroDe(Promise.resolve().then(() => s.consultar(WS, v.id))))).toBe(
-        'nao_encontrada',
-      );
+      expect(
+        motivoDe(await erroDe(Promise.resolve().then(() => s.consultar(WS, v.id)))),
+      ).toBe('nao_encontrada');
     });
 
     it('a estimativa conta sigilosas, a buscar no tribunal e as já analisadas', async () => {

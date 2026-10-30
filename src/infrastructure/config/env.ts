@@ -288,9 +288,11 @@ const schema = z.object({
   PROCESSOVIVO_IA_PECAS_TIMEOUT_MS: inteiroPositivo(120_000),
   // Por quantos dias o resultado (com citações curtas) fica guardado. Nunca o texto da peça.
   PROCESSOVIVO_IA_PECAS_RESULTADO_DIAS: inteiroPositivo(30),
-  // Análise do PROCESSO pelas peças (v0.66.0). Na versão 1 só as contas desta lista (16 ou 32 hex, separados
-  // por vírgula) usam, e elas também precisam da análise de peça liberada e do recurso `analiseIa`. Não há
-  // chave geral: abrir a todos espera a Política de Privacidade v1.6. Vazia = recurso desligado.
+  // Análise do PROCESSO pelas peças (v0.66.0). DUAS chaves, como a da peça: HABILITADA=true libera a toda
+  // conta com a análise de peça liberada e o recurso `analiseIa`; sem ela, só as contas da lista (16 ou 32
+  // hex, separados por vírgula), que também precisam das duas coisas. Ligar a geral só com a Política de
+  // Privacidade v1.6 publicada. Sem nenhuma das duas = recurso desligado.
+  PROCESSOVIVO_IA_PROCESSO_HABILITADA: booleano.default('false'),
   PROCESSOVIVO_IA_PROCESSO_WORKSPACES: z.string().default(''),
   // Freio próprio, por análise do processo (cada uma lê até 20 peças), por conta e por hora, em memória.
   PROCESSOVIVO_IA_PROCESSO_MAX_POR_HORA: inteiroPositivo(2),
@@ -470,8 +472,9 @@ export interface Config {
       readonly timeoutMs: number;
       readonly resultadoDias: number;
     };
-    /** Análise do processo pelas peças (v0.66.0): só contas da lista; usa o modelo e o prazo das peças. */
+    /** Análise do processo pelas peças (v0.66.0): geral ou lista; usa o modelo e o prazo das peças. */
     readonly processo: {
+      readonly habilitada: boolean;
       readonly workspaces: readonly string[];
       readonly workspacesInvalidos: number;
       readonly maxPorHora: number;
@@ -739,6 +742,7 @@ export function carregarConfig(fonte: NodeJS.ProcessEnv = process.env): Config {
         resultadoDias: env.PROCESSOVIVO_IA_PECAS_RESULTADO_DIAS,
       },
       processo: {
+        habilitada: env.PROCESSOVIVO_IA_PROCESSO_HABILITADA,
         ...lerListaDeWorkspaces(env.PROCESSOVIVO_IA_PROCESSO_WORKSPACES),
         maxPorHora: env.PROCESSOVIVO_IA_PROCESSO_MAX_POR_HORA,
         maxTokens: env.PROCESSOVIVO_IA_PROCESSO_MAX_TOKENS,

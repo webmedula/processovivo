@@ -25,13 +25,13 @@ processo inteiro automático (consultas ao MNI e custo sem controle). O Google D
 | Limite | Até **20 peças** por análise (mínimo 2). |
 | Teto diário | A síntese pesa **5**; cada peça NOVA pesa 5 (como sempre). Peça reaproveitada não pesa. |
 | Atalho | "Marcar peças principais": inicial, contestação, réplica, decisões, sentença, acórdão, recursos e embargos. **O laudo não entra** (dado de saúde): só se marcado à mão. |
-| Abertura | Só a uma **lista de contas** até a Política de Privacidade v1.6. Não há chave "para todos". |
+| Abertura | Decisão de 30/10/2026: liberada a **todo o plano IA** por `PROCESSOVIVO_IA_PROCESSO_HABILITADA=true`, ligada junto com a publicação da Política de Privacidade v1.6. A lista de contas continua para ligar só algumas. |
 | Entrega | v1 = etapa 1 + síntese com os sete blocos + comparador sintético. O link na capa do processo vem depois. |
 | Fase 2 | Envio direto do PDF de peças de outros tribunais, só em memória, sigilo declarado pelo advogado. **Depois da v1.** |
 
 ## 3. Versão 1 (v0.66.0)
 
-**Quem usa.** `PROCESSOVIVO_IA_PROCESSO_WORKSPACES` (vazia = desligada, rotas ausentes) E a análise de peça
+**Quem usa.** `PROCESSOVIVO_IA_PROCESSO_HABILITADA=true` (todas as contas) ou `PROCESSOVIVO_IA_PROCESSO_WORKSPACES` (lista; as duas vazias = desligada, rotas ausentes) E a análise de peça
 liberada para a conta E o plano IA. O interruptor do painel de IA para a função **peça** desliga também a
 análise do processo (503 `desligada`).
 
@@ -83,5 +83,5 @@ verificação da produção, ZDR da lista oficial de agora, teto de gasto, estim
 - **Função própria no painel de IA** (interruptor, teto, modelo e instruções editáveis): a síntese segue a
   função "peça". O teste obrigatório da Fase B mede a análise de peça, não a síntese — trocar o modelo da peça
   troca o da síntese; meça com o comparador antes.
-- Link na capa do processo; abertura a todas as contas (espera a Política v1.6); Fase 2 (PDF de outros
+- Link na capa do processo; Fase 2 (PDF de outros
   tribunais); OCR.
