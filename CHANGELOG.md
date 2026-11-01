@@ -9,6 +9,17 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.65.3] — 2026-11-01
+
+**Manutenção: o CI testa no mesmo Node da produção, dependências com correção de segurança e Dependabot.** Nenhuma regra, rota, tela ou dado mudou.
+
+- **CI no Node 24** (`.github/workflows/ci.yml`): era 22, enquanto o `Dockerfile` usa `node:24-alpine` e o `engines` exige `>=24`. No 22 o `node:sqlite` ainda é experimental, então a suíte verde não provava o runtime de produção.
+- **`npm audit fix` (sem versão maior):** Fastify 5.12.1 → 5.12.7 (corrige avisos altos, entre eles o de contornar autenticação com URL malformada que chega a um tratador de "não encontrado" encapsulado) e `fast-uri` 3.1.9 / 4.2.3. Só o `package-lock.json` mudou.
+- **Auditoria no CI:** `npm audit --omit=dev --audit-level=critical`. Ficam abertos, de propósito, o `zod` 3 (alto: memória ao validar coleção grande com restrição; o `bodyLimit` da API limita a entrada) e o `fast-xml-parser` 4 (moderado, só no `XMLBuilder`, que o projeto não usa). Os dois pedem troca de versão maior, em PR próprio.
+- **Dependabot** (`.github/dependabot.yml`): npm e GitHub Actions, toda segunda-feira, correções agrupadas, no máximo 5 PRs abertas. Só abre PR; nada entra sem revisão e CI verde.
+
+---
+
 ## [0.65.2] — 2026-10-29
 
 **Celular: o painel "Análise por IA" da tela Atualizações não fica mais por cima do processo seguinte.** Só CSS; nenhuma regra, rota, texto ou dado mudou.
