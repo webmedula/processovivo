@@ -17,12 +17,17 @@
  * Nunca vão para a resposta HTTP nem para o log.
  */
 export interface ArmazemDoLeitor {
-  /** Grava o arquivo de uma peça na pasta do job. */
+  /**
+   * Grava o arquivo de uma peça na pasta do job. `extensao` (padrão `bin`) é a
+   * do tipo que o tribunal declarou: PDF tem de terminar em `.pdf`, porque há
+   * sistema em que o qpdf só abre arquivo com essa extensão (v0.66.1).
+   */
   gravarPeca(
     workspace: string,
     jobId: string,
     ordem: number,
     bytes: Uint8Array,
+    extensao?: string,
   ): Promise<string>;
 
   /**

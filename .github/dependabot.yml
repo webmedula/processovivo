@@ -1,0 +1,20 @@
+# Atualizações de dependências (v0.65.3). Só ABRE PR: nada entra sem revisão e
+# sem o CI verde. Versão maior (zod 4, fast-xml-parser 5, Fastify 6) vem em PR
+# próprio, porque muda contrato e precisa de leitura do CHANGELOG da biblioteca.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      correcoes:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday

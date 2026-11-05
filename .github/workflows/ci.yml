@@ -11,12 +11,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # A MESMA versão do Dockerfile (`node:24-alpine`) e do `engines`. No 22 o
+      # `node:sqlite` ainda é experimental: a suíte verde não provava o runtime
+      # que vai para o VPS (v0.65.3).
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '24'
           cache: npm
 
       - run: npm ci
+
+      # Só as dependências de PRODUÇÃO, e só o nível crítico derruba o CI: as
+      # altas que restam (zod 3, fast-xml-parser 4) exigem troca de versão
+      # maior e ficam com o Dependabot. Subir o nível é decisão à parte.
+      - name: Auditoria de dependências
+        run: npm audit --omit=dev --audit-level=critical
 
       # O leitor de peças monta PDF com qpdf, e os testes dele rodam o qpdf de
       # verdade — é a única forma de provar que o índice bate com o arquivo.

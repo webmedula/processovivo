@@ -191,7 +191,7 @@ painel guia isso na própria aba).
 | File | `Dockerfile` |
 
 Nixpacks também detectaria o projeto, mas o Dockerfile é a escolha certa aqui:
-ele fixa Node 22, faz o build multi-stage (a imagem final não leva TypeScript
+ele fixa Node 24, faz o build multi-stage (a imagem final não leva TypeScript
 nem Vitest), roda como usuário não-root e trata SIGTERM via tini. Com Nixpacks
 você fica na mão da heurística de detecção — e ela muda entre versões.
 

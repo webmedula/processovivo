@@ -9,6 +9,15 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.66.1] — 2026-11-05
+
+**Manutenção: o CI volta a ficar verde depois que o GitHub trocou a máquina de testes, e entra o que estava no PR #83.** Nenhuma regra, rota, tela ou dado mudou para quem usa.
+
+- **Leitor de peças: o arquivo de trabalho de uma peça PDF agora termina em `.pdf`** (antes `.bin`). O `ubuntu-latest` passou a ser o Ubuntu 26.04, com o qpdf 12.3.2 e um perfil AppArmor que só deixa o qpdf abrir arquivos `*.pdf`. Com `.bin`, o `qpdf --show-npages` respondia "Permission denied", o leitor classificava TODA peça como "PDF ilegível" e 21 testes do leitor quebraram na main (CI #220). A causa foi conferida no próprio runner, com um passo de diagnóstico que já saiu do CI. A extensão segue o tipo declarado pelo tribunal (`pdf`, `png`, `jpg`, `html`, senão `bin`). **Produção não foi afetada:** a imagem `node:24-alpine` também traz o qpdf 12.3.2 (Alpine 3.24.3), mas não tem AppArmor. O nome certo protege quem rodar fora do contêiner num Ubuntu novo. Jobs gravados antes seguem lendo os arquivos antigos pelo localizador guardado.
+- **Inclui o PR #83 (v0.65.3), que não chegou a entrar sozinho:** CI no Node 24, `npm audit fix` (Fastify 5.12.7), auditoria no CI e Dependabot. Os detalhes estão na entrada 0.65.3 abaixo.
+
+---
+
 ## [0.66.0] — 2026-10-29
 
 **"Analisar processo com IA": a IA lê as peças escolhidas na Pasta digital e cruza o que elas dizem.** Decisões do dono de 29/10/2026; especificação `docs/ia-analise-do-processo-especificacao-v1.0.0.md`. **Nasce desligada.** Liga para todo o plano IA com `PROCESSOVIVO_IA_PROCESSO_HABILITADA=true` (decisão do dono de 30/10/2026: só com a Política de Privacidade v1.6 publicada) ou só para uma lista de contas. Nenhuma troca de modelo, provedor, ZDR, redação, plano, preço, análise do ato, resumo ou calendário.
@@ -29,6 +38,17 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 - A síntese **segue a função "peça" do painel de IA** (interruptor e modelo); não tem função, teto nem instruções editáveis próprios. O teste obrigatório da Fase B mede a peça, não a síntese.
 - Só TJGO; só peça com texto pesquisável (sem OCR). O link na capa do processo e a Fase 2 (PDF de outros tribunais) ficam para depois.
+
+---
+
+## [0.65.3] — 2026-11-01
+
+**Manutenção: o CI testa no mesmo Node da produção, dependências com correção de segurança e Dependabot.** Nenhuma regra, rota, tela ou dado mudou.
+
+- **CI no Node 24** (`.github/workflows/ci.yml`): era 22, enquanto o `Dockerfile` usa `node:24-alpine` e o `engines` exige `>=24`. No 22 o `node:sqlite` ainda é experimental, então a suíte verde não provava o runtime de produção.
+- **`npm audit fix` (sem versão maior):** Fastify 5.12.1 → 5.12.7 (corrige avisos altos, entre eles o de contornar autenticação com URL malformada que chega a um tratador de "não encontrado" encapsulado) e `fast-uri` 3.1.9 / 4.2.3. Só o `package-lock.json` mudou.
+- **Auditoria no CI:** `npm audit --omit=dev --audit-level=critical`. Ficam abertos, de propósito, o `zod` 3 (alto: memória ao validar coleção grande com restrição; o `bodyLimit` da API limita a entrada) e o `fast-xml-parser` 4 (moderado, só no `XMLBuilder`, que o projeto não usa). Os dois pedem troca de versão maior, em PR próprio.
+- **Dependabot** (`.github/dependabot.yml`): npm e GitHub Actions, toda segunda-feira, correções agrupadas, no máximo 5 PRs abertas. Só abre PR; nada entra sem revisão e CI verde.
 
 ---
 

@@ -138,6 +138,16 @@ describe('ArmazemEmDisco', () => {
     expect(() => armazem.novoArquivo('ws-a', '../x', 'pdf')).toThrow();
   });
 
+  it('a peça leva a extensão do tipo declarado: PDF termina em .pdf (perfil AppArmor do qpdf no Ubuntu 26.04)', async () => {
+    const armazem = new ArmazemEmDisco(pasta.caminho);
+    expect(await armazem.gravarPeca('ws', JOB, 0, new Uint8Array(1), 'pdf')).toMatch(/\/0\.pdf$/);
+    expect(await armazem.gravarPeca('ws', JOB, 1, new Uint8Array(1))).toMatch(/\/1\.bin$/);
+    // Extensão estranha não vira caminho: só letras e dígitos, até 8.
+    expect(await armazem.gravarPeca('ws', JOB, 2, new Uint8Array(1), '../X.Y')).toMatch(
+      /\/2\.xy$/,
+    );
+  });
+
   it('o nome do arquivo combinado é aleatório', () => {
     const armazem = new ArmazemEmDisco(pasta.caminho);
     const a = armazem.novoArquivo('ws', JOB, 'pdf');

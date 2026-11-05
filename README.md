@@ -229,7 +229,7 @@ um acerto não gasta nem cota do DataJud nem uma ida ao tribunal.
 
 ## Deploy
 
-Docker multi-stage pronto: Node 22, imagem final sem TypeScript nem Vitest,
+Docker multi-stage pronto: Node 24, imagem final sem TypeScript nem Vitest,
 usuário não-root, `HEALTHCHECK` e SIGTERM tratado (redeploy não derruba
 requisição em voo).
 
