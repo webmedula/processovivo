@@ -1011,6 +1011,51 @@ describe.skipIf(sem)(
       });
     }
 
+    it('não verificado: diz o motivo com frase fixa e oferece "Tentar de novo" (v0.66.4)', async () => {
+      await abrir();
+      responder = (rota) =>
+        json(rota, 200, {
+          ...RESULTADO,
+          estado: 'nao_verificado',
+          motivoDeNaoVerificacao: 'expressao_proibida',
+          situacao: [],
+          pendencias: [],
+          pontosDeAtencao: [],
+        });
+      await botao().click();
+      const p = painel();
+      await p
+        .getByText('Não foi possível resumir com segurança. Leia os atos.')
+        .waitFor();
+      expect(await p.locator('.pvres-motivo').innerText()).toContain(
+        'A IA usou um termo de parecer jurídico',
+      );
+      responder = (rota) => json(rota, 200, RESULTADO);
+      await p.getByRole('button', { name: 'Tentar de novo' }).click();
+      await painel().locator('.pvres-sec').first().waitFor();
+      expect(pedidos).toHaveLength(2);
+    });
+
+    it('não verificado com código desconhecido: só a frase de sempre, sem texto do servidor', async () => {
+      await abrir();
+      responder = (rota) =>
+        json(rota, 200, {
+          ...RESULTADO,
+          estado: 'nao_verificado',
+          motivoDeNaoVerificacao: '<b>texto do servidor</b>',
+          situacao: [],
+          pendencias: [],
+          pontosDeAtencao: [],
+        });
+      await botao().click();
+      const p = painel();
+      await p
+        .getByText('Não foi possível resumir com segurança. Leia os atos.')
+        .waitFor();
+      expect(await p.locator('.pvres-motivo').count()).toBe(0);
+      expect(await p.innerText()).not.toContain('texto do servidor');
+    });
+
     it('"Tentar de novo" depois do erro faz outro pedido', async () => {
       await abrir();
       responder = (rota) => json(rota, 200, { estado: 'erro' });

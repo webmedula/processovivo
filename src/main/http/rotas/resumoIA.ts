@@ -65,6 +65,10 @@ export function rotasDoResumoIA(
         if (r.estado === 'erro') return { estado: 'erro' };
         return {
           estado: r.estado,
+          // v0.66.4: só o CÓDIGO da recusa; a frase é fixa na tela.
+          ...(r.motivoDeNaoVerificacao
+            ? { motivoDeNaoVerificacao: r.motivoDeNaoVerificacao }
+            : {}),
           id: r.id,
           situacao: r.situacao.map(itemJson),
           pendencias: r.pendencias.map(itemJson),

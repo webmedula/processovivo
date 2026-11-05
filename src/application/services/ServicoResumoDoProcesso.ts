@@ -149,6 +149,11 @@ export interface PontoParaATela {
 
 export interface ResumoParaATela {
   readonly estado: 'verificado' | 'nao_verificado';
+  /**
+   * Por que a verificação recusou (v0.66.4), só com `nao_verificado`: um código de lista fechada que a tela
+   * troca por uma frase FIXA dela. Nunca texto do modelo nem do ato.
+   */
+  readonly motivoDeNaoVerificacao?: MotivoDeNaoVerificacaoDoResumo;
   readonly id: string;
   readonly situacao: readonly ItemDoResumoParaATela[];
   readonly pendencias: readonly ItemDoResumoParaATela[];
@@ -163,6 +168,9 @@ export interface ResumoParaATela {
   readonly criadaEm: Date;
   readonly avaliacao: AvaliacaoDaAnalise | null;
 }
+
+export type MotivoDeNaoVerificacaoDoResumo =
+  'sem_item_verificado' | 'expressao_proibida' | 'sem_ato_mais_recente';
 
 export type RespostaDoResumo = ResumoParaATela | { readonly estado: 'erro' };
 
@@ -692,6 +700,7 @@ export function resumoParaATela(
     return {
       ...base,
       estado: 'nao_verificado',
+      motivoDeNaoVerificacao: r.motivo,
       situacao: [],
       pendencias: [],
       pontosDeAtencao: [],
