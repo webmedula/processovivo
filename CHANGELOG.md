@@ -9,6 +9,15 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.66.1] — 2026-11-05
+
+**Manutenção: o CI volta a ficar verde depois que o GitHub trocou a máquina de testes, e entra o que estava no PR #83.** Nenhuma regra, rota, tela ou dado mudou para quem usa.
+
+- **Leitor de peças: o arquivo de trabalho de uma peça PDF agora termina em `.pdf`** (antes `.bin`). O `ubuntu-latest` passou a ser o Ubuntu 26.04, com o qpdf 12.3.2 e um perfil AppArmor que só deixa o qpdf abrir arquivos `*.pdf`. Com `.bin`, o `qpdf --show-npages` respondia "Permission denied", o leitor classificava TODA peça como "PDF ilegível" e 21 testes do leitor quebraram na main (CI #220). A causa foi conferida no próprio runner, com um passo de diagnóstico que já saiu do CI. A extensão segue o tipo declarado pelo tribunal (`pdf`, `png`, `jpg`, `html`, senão `bin`). **Produção não foi afetada:** a imagem `node:24-alpine` também traz o qpdf 12.3.2 (Alpine 3.24.3), mas não tem AppArmor. O nome certo protege quem rodar fora do contêiner num Ubuntu novo. Jobs gravados antes seguem lendo os arquivos antigos pelo localizador guardado.
+- **Inclui o PR #83 (v0.65.3), que não chegou a entrar sozinho:** CI no Node 24, `npm audit fix` (Fastify 5.12.7), auditoria no CI e Dependabot. Os detalhes estão na entrada 0.65.3 abaixo.
+
+---
+
 ## [0.66.0] — 2026-10-29
 
 **"Analisar processo com IA": a IA lê as peças escolhidas na Pasta digital e cruza o que elas dizem.** Decisões do dono de 29/10/2026; especificação `docs/ia-analise-do-processo-especificacao-v1.0.0.md`. **Nasce desligada.** Liga para todo o plano IA com `PROCESSOVIVO_IA_PROCESSO_HABILITADA=true` (decisão do dono de 30/10/2026: só com a Política de Privacidade v1.6 publicada) ou só para uma lista de contas. Nenhuma troca de modelo, provedor, ZDR, redação, plano, preço, análise do ato, resumo ou calendário.

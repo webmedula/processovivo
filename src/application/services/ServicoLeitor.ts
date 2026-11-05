@@ -1072,6 +1072,7 @@ export class ServicoLeitor {
           job.id,
           p.ordem,
           c.bytes,
+          extensaoDoTipo(c.mimetype),
         );
         novosBytes += c.bytes.length;
         atualizadas.set(p.pecaId, {
@@ -1793,3 +1794,17 @@ function reaproveitavel(
 }
 
 export { observacoesDaConversao, achatar as achatarPecas };
+
+/**
+ * Extensão do arquivo de trabalho a partir do tipo que o tribunal declarou.
+ * O que importa é o PDF terminar em `.pdf` (ver `ArmazemEmDisco.gravarPeca`);
+ * os outros tipos são lidos pelo próprio Node e convertidos.
+ */
+function extensaoDoTipo(mimetype: string | undefined): string {
+  const tipo = (mimetype ?? '').toLowerCase();
+  if (tipo.includes('pdf')) return 'pdf';
+  if (tipo.includes('png')) return 'png';
+  if (tipo.includes('jpeg') || tipo.includes('jpg')) return 'jpg';
+  if (tipo.includes('html')) return 'html';
+  return 'bin';
+}

@@ -169,6 +169,21 @@ describe('ServicoLeitor — montagem', () => {
     ]);
   });
 
+  it('grava a peça PDF com extensão .pdf (no Ubuntu 26.04 o qpdf só abre *.pdf)', async () => {
+    const m = await montar([
+      { id: 'a', bytes: await pdfSintetico(1, 'A') },
+      { id: 'b', bytes: new Uint8Array([1, 2, 3]), mimetype: 'image/png' },
+    ]);
+    const original = m.armazem.gravarPeca.bind(m.armazem);
+    const extensoes: (string | undefined)[] = [];
+    m.armazem.gravarPeca = (ws, job, ordem, bytes, extensao) => {
+      extensoes.push(extensao);
+      return original(ws, job, ordem, bytes, extensao);
+    };
+    await rodar(m, ['a', 'b']);
+    expect(extensoes).toEqual(['pdf', 'png']);
+  });
+
   it('o índice traz as páginas exatas de cada peça, contadas do arquivo gerado', async () => {
     const m = await montar([
       { id: 'a', bytes: await pdfSintetico(1, 'A'), movimento: 10 },

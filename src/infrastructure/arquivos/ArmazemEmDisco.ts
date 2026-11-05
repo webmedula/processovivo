@@ -36,8 +36,15 @@ export class ArmazemEmDisco implements ArmazemDoLeitor {
     jobId: string,
     ordem: number,
     bytes: Uint8Array,
+    extensao = 'bin',
   ): Promise<string> {
-    const localizador = join(this.idJob(jobId), 'pecas', `${Math.trunc(ordem)}.bin`);
+    // A extensão segue o tipo declarado (v0.66.1). No Ubuntu 26.04 o perfil
+    // AppArmor do qpdf só deixa abrir `*.pdf`: com `.bin`, o `--show-npages`
+    // dava "Permission denied" e TODA peça virava "PDF ilegível". Na imagem
+    // Alpine não há AppArmor, mas o nome certo não custa nada e não depende
+    // de onde o servidor roda.
+    const ext = extensao.replace(/[^a-z0-9]/gi, '').slice(0, 8).toLowerCase() || 'bin';
+    const localizador = join(this.idJob(jobId), 'pecas', `${Math.trunc(ordem)}.${ext}`);
     const caminho = this.caminho(workspace, localizador);
     await mkdir(join(caminho, '..'), { recursive: true, mode: 0o700 });
     // 0600: são autos de processo. Ninguém além do processo do servidor lê.
