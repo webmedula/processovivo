@@ -272,6 +272,8 @@ describe('ServicoResumoDoProcesso', () => {
       expect(r.estado).toBe('nao_verificado');
       if (r.estado === 'erro') return;
       expect(r.situacao).toEqual([]);
+      // v0.66.4: a tela recebe só o código da recusa, para trocar pela frase dela.
+      expect(r.motivoDeNaoVerificacao).toBe('sem_item_verificado');
       expect(db.prepare('SELECT count(*) AS n FROM resumos_ia').get()).toMatchObject({
         n: 1,
       });

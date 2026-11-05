@@ -9,6 +9,16 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.66.4] — 2026-11-05
+
+**Resumo do processo por IA: quando a verificação recusa, a tela diz por quê e oferece "Tentar de novo"** (só a mensagem; seleção, prompt, verificação, modelo, ZDR, teto e gravação não mudaram).
+
+- `POST /v1/acompanhamentos/:numero/resumo` com `estado: "nao_verificado"` ganhou `motivoDeNaoVerificacao` (aditivo): `expressao_proibida`, `sem_ato_mais_recente` ou `sem_item_verificado` — o código que já ia ao banco e ao painel de IA. Nunca texto do modelo nem do ato.
+- A tela troca o código por uma frase FIXA ("A IA usou um termo de parecer jurídico…", "A IA não descreveu o ato mais recente…", "As citações da IA não conferiram com o texto dos atos…"), diz que tentar de novo pode dar certo e mostra o botão "Tentar de novo" (o mesmo pedido, que conta no limite como qualquer outro). Código desconhecido = só a frase de sempre.
+- Motivo do ajuste: o resumo cai com frequência em "Não foi possível resumir com segurança" (ex.: processo do TRT com 546 andamentos), e a frase genérica não deixava saber qual regra recusou. As melhorias de fundo (segunda tentativa, regras mais justas) dependem de decisão do dono.
+
+---
+
 ## [0.66.3] — 2026-11-05
 
 **Tabela de Atualizações: cabeçalho em cinza, sem o selo "Intimação"/"Citação" na linha, e as colunas Data e Detectado antes de Atualização** (decisões do dono, 05/11/2026; só apresentação — detecção, "pede providência", "cumprido", filtros, contagens, `GET /v1/novidades`, `/v1/painel`, calendário, IA e a busca não mudaram).

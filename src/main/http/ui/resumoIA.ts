@@ -69,6 +69,12 @@ var RECUSAS={
 };
 var ANALISANDO='Resumindo o processo… isso pode levar até 2 minutos.';
 var NAO_VERIFICADO='Não foi possível resumir com segurança. Leia os atos.';
+// v0.66.4: por que a verificação recusou. O servidor manda só o código; a frase é daqui.
+var POR_QUE_NAO_VERIFICADO={
+  expressao_proibida:'A IA usou um termo de parecer jurídico (como recurso, súmula ou tese), e o resumo foi descartado.',
+  sem_ato_mais_recente:'A IA não descreveu o ato mais recente do processo, e o resumo foi descartado.',
+  sem_item_verificado:'As citações da IA não conferiram com o texto dos atos, e o resumo foi descartado.'
+};
 var ERRO='Não foi possível resumir agora. Tente de novo em alguns minutos.';
 var AVISO_FIXO='Resumo automático, apoio à leitura. Confira os atos e conte os prazos você mesmo.';
 var DESCARTE='Alguns pontos não puderam ser confirmados no texto e foram omitidos.';
@@ -204,7 +210,9 @@ function corpo(){
   }else if(S.fase==='resultado'){
     h+=resultadoHtml(S.dados);
   }else if(S.fase==='nao_verificado'){
-    h+='<p class="pvres-estado">'+esc(NAO_VERIFICADO)+'</p>';
+    h+='<p class="pvres-estado">'+esc(NAO_VERIFICADO)+'</p>'+
+      (Object.prototype.hasOwnProperty.call(POR_QUE_NAO_VERIFICADO,S.motivo)?'<p class="pvres-motivo">'+esc(POR_QUE_NAO_VERIFICADO[S.motivo])+' O modelo varia de uma vez para outra: tentar de novo pode dar certo.</p>':'')+
+      '<p><button type="button" class="nov-btn" data-pvres="repetir" id="pvres-repetir">Tentar de novo</button></p>';
   }else if(S.fase==='recusa'&&S.motivo==='sem_plano'&&window.__pvAnaliseIA){
     h+=window.__pvAnaliseIA.semPlano(RECUSAS.sem_plano,'pvres-estado');
   }else if(S.fase==='recusa'){
@@ -274,7 +282,7 @@ function iniciar(){
         e.fase='resultado';e.dados=x.b;
         var am=x.b.atualidade&&x.b.atualidade.maisRecente;
         refrescar(am&&!am.lido?'Resumo concluído. Atenção: o ato mais recente não foi lido. Confira na linha do tempo.':'Resumo concluído. Confira nos atos.');return}
-      if(x.ok&&x.b.estado==='nao_verificado'){e.fase='nao_verificado';refrescar(NAO_VERIFICADO);return}
+      if(x.ok&&x.b.estado==='nao_verificado'){e.fase='nao_verificado';e.motivo=String(x.b.motivoDeNaoVerificacao||'');refrescar(NAO_VERIFICADO);return}
       var motivo=x.b&&x.b.detalhes?x.b.detalhes.motivo:'';
       if(!x.ok&&motivo&&RECUSAS[motivo]){
         e.fase='recusa';e.motivo=motivo;
@@ -397,6 +405,7 @@ export const ESTILOS_RESUMO_IA = `
 .pvres-topo{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px}
 .pvres-tit{margin:0;font-size:15px;font-weight:700}
 .pvres-estado{margin:6px 0;display:flex;align-items:flex-start;gap:8px}
+.pvres-motivo{margin:4px 0 8px;color:var(--tinta2);font-size:13px}
 .pvres-sec{margin:12px 0}
 .pvres-rot{display:block;margin:0 0 4px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--tinta2)}
 .pvres-itens{margin:0;padding:0;list-style:none}
