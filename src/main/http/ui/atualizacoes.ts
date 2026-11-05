@@ -41,7 +41,6 @@ import {
   diaMesBrasilia,
   contarSaidasDaProvidencia,
   frasesDeSaidas,
-  seloDoTipo,
   contarSemLeitura,
   contarSituacoes,
   situacaoDaLinha,
@@ -80,7 +79,6 @@ var detectadoDistanteDoAto=${detectadoDistanteDoAto.toString()};
 var diaMesBrasilia=${diaMesBrasilia.toString()};
 var contarSaidasDaProvidencia=${contarSaidasDaProvidencia.toString()};
 var frasesDeSaidas=${frasesDeSaidas.toString()};
-var seloDoTipo=${seloDoTipo.toString()};
 var situacaoDaLinha=${situacaoDaLinha.toString()};
 
 /* Só a escolha da sessão: some quando a página recarrega e a aba volta a abrir em
@@ -160,15 +158,9 @@ function celulaPartes(g){
   return '<td class="c-partes" data-rotulo="Partes"><span class="nvt-partes" title="'+esc(txt)+'">'+esc(txt)+'</span></td>';
 }
 
-/* Selo "Intimação"/"Citação" ao lado do rótulo do ato (v0.37.6): vem da comunicação do Diário que gera
-   a providência. Destinatário não confirmado diz isso no title; "dirigida a outro" é aviso à parte. */
-function seloDoAto(a){
-  var t=seloDoTipo(a.tipo);
-  if(!t)return '';
-  return ' <span class="selo int" title="'+esc('Comunicação publicada no Diário Eletrônico (DJEN). '+
-    (a.paraOUsuario==='sim'?'Destinatário confirmado: uma das suas inscrições na OAB. ':'Destinatário não confirmado. ')+
-    'Leitura automática; confira no ato completo.')+'">'+esc(t)+'</span>';
-}
+/* O selo "Intimação"/"Citação" ao lado do rótulo do ato (v0.37.6) saiu da linha na v0.66.3 (decisão do dono: não era
+   preciso). A regra que ele mostrava não mudou: a intimação continua pedindo providência e a caixa "Cumprido" é o sinal
+   na linha. seloDoTipo segue em tabelaAtualizacoes.ts, sem uso na tela. */
 
 /* Quando o último andamento é outro ato, ele vai numa segunda linha. A linha diz o ato que gera a
    providência; nada aqui afirma prazo (rótulo e data, nunca o texto). */
@@ -195,7 +187,7 @@ function celulaSemNovidade(g){
      só desce quando falta largura; o aviso deixou de ter linha própria acima do ato. O texto visível é "Sem atualização
      detectada" nos dois casos; "Última movimentação conhecida" (quando o ato da linha é só o último andamento) vai no
      title e em texto para leitor de tela, para o aviso caber numa linha. */
-  h+='<div class="nvt-ato"><span class="nvt-tit" title="'+esc(a.rotulo)+'"><span class="nvt-tipo">'+esc(enxuto)+'</span>'+seloDoAto(a)+'</span>'+
+  h+='<div class="nvt-ato"><span class="nvt-tit" title="'+esc(a.rotulo)+'"><span class="nvt-tipo">'+esc(enxuto)+'</span>'+'</span>'+
     selosDaLinha(g)+(a.daProvidencia?'<span class="nvt-sem" title="Sem atualização detectada">Sem atualização detectada</span>':
       '<span class="nvt-sem" title="Última movimentação conhecida: o acompanhamento ainda não detectou atualização neste processo."><span class="nvt-sr">Última movimentação conhecida · </span>Sem atualização detectada</span>')+
     linkAbrir(n)+'</div>';
@@ -209,7 +201,7 @@ function celulaAtualizacao(g){
   var a=atoExibido(g);
   /* Só a exibição perde a repetição do tipo; o original fica no title. */
   var enxuto=descricaoDoAto(a.rotulo);
-  return '<td class="c-atu" data-rotulo="Atualização"><div class="nvt-ato"><span class="nvt-tit'+(n.vista?'':' nl')+'" title="'+esc(a.rotulo)+'"><span class="nvt-tipo">'+esc(enxuto)+'</span>'+seloDoAto(a)+'</span>'+
+  return '<td class="c-atu" data-rotulo="Atualização"><div class="nvt-ato"><span class="nvt-tit'+(n.vista?'':' nl')+'" title="'+esc(a.rotulo)+'"><span class="nvt-tipo">'+esc(enxuto)+'</span>'+'</span>'+
     selosDaLinha(g)+linkAbrir(n)+'</div>'+linhaUltimoAndamento(a)+'</td>';
 }
 
@@ -277,10 +269,11 @@ function celulaDetectado(g){
 function linha(g){
   var classe=classeDaLinha(g);
   var h='<tr class="nvt-linha'+(g.semNovidade?' nvt-sem-nov':'')+(situacaoDaLinha(g).estado==='cumprido'?' nvt-cumprida':'')+'" role="row" data-processo="'+esc(g.numero)+'">'+
-    celulaProcesso(g)+celulaPartes(g)+(g.semNovidade?celulaSemNovidade(g):celulaAtualizacao(g))+
+    /* v0.66.3: Data e Detectado vêm ANTES de Atualização (decisão do dono), para ler "quando" antes de "o quê". */
+    celulaProcesso(g)+celulaPartes(g)+celulaData(g)+celulaDetectado(g)+
+    (g.semNovidade?celulaSemNovidade(g):celulaAtualizacao(g))+
     '<td class="c-trib" data-rotulo="Tribunal">'+esc(g.processo&&g.processo.tribunal?g.processo.tribunal:'—')+classe.mini+'</td>'+
     '<td class="c-classe" data-rotulo="Classe">'+classe.cheia+'</td>'+
-    celulaData(g)+celulaDetectado(g)+
     celulaAcoes(g)+'</tr>'+ia().painel(g.numero);
   return h;
 }
@@ -296,9 +289,9 @@ function cabecalhoOrdenavel(chave){
 
 function cabecalho(){
   return '<thead><tr role="row">'+cabecalhoOrdenavel('processo')+
-    '<th scope="col" class="h-partes">Partes</th><th scope="col" class="h-atu">Atualização</th>'+
+    '<th scope="col" class="h-partes">Partes</th>'+cabecalhoOrdenavel('dataAto')+cabecalhoOrdenavel('detectado')+
+    '<th scope="col" class="h-atu">Atualização</th>'+
     cabecalhoOrdenavel('tribunal')+'<th scope="col" class="h-classe">Classe</th>'+
-    cabecalhoOrdenavel('dataAto')+cabecalhoOrdenavel('detectado')+
     '<th scope="col" class="h-acoes" title="A caixa Cumprido aparece onde há providência, por leitura automática do texto do andamento. Confira no ato completo.">Ações</th></tr></thead>';
 }
 

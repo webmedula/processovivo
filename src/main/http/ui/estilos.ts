@@ -3,7 +3,7 @@
  * (automático) quanto pela escolha manual na lateral.
  */
 const ESCURO = `
-    --fundo:#0b1220; --papel:#111b2e; --papel2:#16223a; --barra:#111b2e;
+    --fundo:#0b1220; --papel:#111b2e; --papel2:#16223a; --barra:#111b2e; --cab-tabela:#1e2c47;
     --linha:#223049; --linha2:#1b2740;
     --tinta:#e8eef7; --tinta2:#a7b4c8; --tinta3:#8391a8;
     --acento:#8ab4ff; --acento-bg:#15264a;
@@ -47,7 +47,7 @@ export const ESTILOS = `
   color-scheme:light dark;
   --fonte:"Plus Jakarta Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
   --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
-  --fundo:#f4f6f9; --papel:#fff; --papel2:#f8fafc; --barra:#fff;
+  --fundo:#f4f6f9; --papel:#fff; --papel2:#f8fafc; --barra:#fff; --cab-tabela:#e9edf2;
   --linha:#e3e8ef; --linha2:#edf0f4;
   --tinta:#0b192c; --tinta2:#475569; --tinta3:#64748b;
   --acento:#1f4e9e; --acento-bg:#eaf0fa;
