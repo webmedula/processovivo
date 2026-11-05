@@ -14,7 +14,7 @@ jobs:
       # A MESMA versão do Dockerfile (`node:24-alpine`) e do `engines`. No 22 o
       # `node:sqlite` ainda é experimental: a suíte verde não provava o runtime
       # que vai para o VPS (v0.65.3).
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: '24'
           cache: npm
