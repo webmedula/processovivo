@@ -86,7 +86,12 @@ export function construirServidor(app: Aplicacao, config: Config): FastifyInstan
   const log = app.logger.child({ camada: 'http' });
 
   if (config.http.corsOrigins.length > 0) {
-    void servidor.register(cors, { origin: [...config.http.corsOrigins] });
+    void servidor.register(cors, {
+      origin: [...config.http.corsOrigins],
+      // O @fastify/cors 11 passou a liberar só GET, HEAD e POST por padrão.
+      // Explícito para manter o que a v10 liberava: a API usa PUT, PATCH e DELETE.
+      methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE'],
+    });
   }
 
   void servidor.register(rateLimit, {

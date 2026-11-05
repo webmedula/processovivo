@@ -682,7 +682,7 @@ export class ServicoLeitor {
   /** Melhor esforço: as fontes públicas podem não responder, e o MNI confere depois. */
   private async recusarSegredoPelasFontesPublicas(numero: string): Promise<void> {
     if (!this.processos) return;
-    let segredo = false;
+    let segredo: boolean;
     try {
       segredo = (await this.processos.executar({ numeroProcesso: numero }))
         .segredoJustica;

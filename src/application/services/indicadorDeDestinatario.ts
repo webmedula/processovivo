@@ -55,7 +55,7 @@ export function comIndicadorDeDestinatario(
       processo: Processo,
       novidades: readonly Movimentacao[],
     ): Promise<void> {
-      let gravar = processo;
+      let gravar: Processo;
       try {
         const conjunto = await oabs.chaves(workspace);
         const anterior = await repositorio.buscar(workspace, numero);

@@ -9,6 +9,12 @@ updates:
       interval: weekly
       day: monday
     open-pull-requests-limit: 5
+    ignore:
+      # axe-core 4.14 liga a regra label-content-name-mismatch e reprova testes
+      # de navegador (que pulam no CI sem Chromium, então o PR viria verde).
+      # Sai daqui quando os nomes acessíveis forem ajustados (v0.66.2).
+      - dependency-name: axe-core
+        versions: ['>=4.14.0']
     groups:
       correcoes:
         update-types: [minor, patch]

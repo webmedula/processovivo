@@ -68,7 +68,7 @@ export class ArmazemEmDisco implements ArmazemDoLeitor {
 
   async apagarArquivo(workspace: string, localizador: string): Promise<number> {
     const caminho = this.caminho(workspace, localizador);
-    let bytes = 0;
+    let bytes: number;
     try {
       bytes = (await stat(caminho)).size;
     } catch {
@@ -177,7 +177,7 @@ export class ArmazemEmDisco implements ArmazemDoLeitor {
   }
 
   async usoTotal(): Promise<{ readonly bytes: number; readonly workspaces: number }> {
-    let entradas: string[] = [];
+    let entradas: string[];
     try {
       entradas = await readdir(this.raiz);
     } catch {
