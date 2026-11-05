@@ -34,6 +34,13 @@ jobs:
       - name: Ferramentas de PDF
         run: sudo apt-get update && sudo apt-get install -y qpdf poppler-utils
 
+      # TEMPORÁRIO (diagnóstico do qpdf do runner): sai antes do merge.
+      - name: Diagnóstico do qpdf
+        run: |
+          qpdf --version
+          node scripts/tmp/diag-qpdf.mjs
+          docker run --rm node:24-alpine sh -c 'apk add -q --no-cache qpdf >/dev/null && qpdf --version | head -1 && cat /etc/alpine-release'
+
       - name: Typecheck
         run: npm run typecheck
 
