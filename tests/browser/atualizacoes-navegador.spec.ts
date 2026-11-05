@@ -231,16 +231,17 @@ describe.skipIf(sem)(
       const nomes = (await ths.allTextContents()).map((t) =>
         t.replace(/[↕↑↓]/g, '').trim(),
       );
+      // v0.66.3: Data e Detectado vêm ANTES de Atualização (decisão do dono).
       expect(nomes).toEqual([
         'Processo',
         'Partes',
-        'Atualização',
-        'Tribunal',
-        'Classe',
         // v0.49.2: o rótulo visível é "Data" (o nome inteiro não cabe numa linha); "Data do ato" fica no
         // aria-label e no title do botão de ordenar (conferido no teste de ordenação).
         'Data',
         'Detectado',
+        'Atualização',
+        'Tribunal',
+        'Classe',
         'Ações',
       ]);
     });
@@ -1314,11 +1315,11 @@ describe.skipIf(sem)(
         expect(rotulos).toEqual([
           'Processo',
           'Partes',
+          'Data do ato',
+          'Detectado',
           'Atualização',
           'Tribunal',
           'Classe',
-          'Data do ato',
-          'Detectado',
           'Ações',
         ]);
         // O rótulo é conteúdo gerado, visível ao leitor de tela e ao olho.

@@ -63,8 +63,9 @@ export const ESTILOS_TABELA_ATUALIZACOES = `
 /* ---------- tabela ---------- */
 .nvt-wrap{border:1px solid var(--linha);border-radius:var(--r);background:var(--papel);box-shadow:var(--sombra)}
 .nvt-tabela{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed;font-size:13.5px}
-.nvt-tabela th{position:sticky;top:0;z-index:2;background:var(--papel2);text-align:left;
-  font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:var(--tinta2);
+/* v0.66.3: cabeçalho em cinza (--cab-tabela) e texto em --tinta, para se destacar das linhas (decisão do dono). */
+.nvt-tabela th{position:sticky;top:0;z-index:2;background:var(--cab-tabela);text-align:left;
+  font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:var(--tinta);
   padding:10px 8px;border-bottom:1px solid var(--linha)}
 .nvt-tabela th:first-child{border-top-left-radius:var(--r)}
 .nvt-tabela th:last-child{border-top-right-radius:var(--r)}
@@ -88,7 +89,7 @@ export const ESTILOS_TABELA_ATUALIZACOES = `
 .nvt-ord{font:inherit;font-size:inherit;font-weight:inherit;text-transform:inherit;letter-spacing:inherit;
   color:inherit;background:none;border:0;padding:4px 0;min-height:28px;cursor:pointer;text-align:left}
 .nvt-ord:hover{color:var(--tinta)}
-.nvt-seta{color:var(--tinta3)}
+.nvt-seta{color:var(--tinta2)}
 .nvt-tabela th[aria-sort="ascending"] .nvt-seta,.nvt-tabela th[aria-sort="descending"] .nvt-seta{color:var(--acento)}
 
 .nvt-proc{position:relative;display:flex;align-items:center;gap:2px;flex-wrap:nowrap}

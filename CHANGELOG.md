@@ -9,6 +9,17 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.66.3] — 2026-11-05
+
+**Tabela de Atualizações: cabeçalho em cinza, sem o selo "Intimação"/"Citação" na linha, e as colunas Data e Detectado antes de Atualização** (decisões do dono, 05/11/2026; só apresentação — detecção, "pede providência", "cumprido", filtros, contagens, `GET /v1/novidades`, `/v1/painel`, calendário, IA e a busca não mudaram).
+
+- **Cabeçalho da tabela com fundo cinza** (`--cab-tabela`, um tom em cada tema) e texto em `--tinta`, para se destacar das linhas. Segue fixo no topo ao rolar.
+- **O selo "Intimação"/"Citação" ao lado do tipo do ato saiu da linha.** Era redundante: quase toda linha o trazia, e o sinal de "pede providência" é a caixa "Cumprido" em Ações. A regra não mudou — intimação e citação do Diário continuam pedindo providência por 30 dias, o filtro "N com intimação a outro destinatário · Ver" continua, e `tipoComunicacao` segue na API e no e-mail de atualizações. `seloDoTipo` fica em `tabelaAtualizacoes.ts`, sem uso na tela.
+- **Ordem das colunas: Processo, Partes, Data, Detectado, Atualização, Tribunal, Classe, Ações.** As larguras de Data e Detectado são as de antes; Atualização continua a coluna `auto`. Nos cartões (abaixo de 1024 px) a ordem dos blocos acompanha.
+- Testes de navegador ajustados (ordem dos cabeçalhos e dos rótulos empilhados, célula sem o selo).
+
+---
+
 ## [0.66.2] — 2026-11-05
 
 **Manutenção: as atualizações que o Dependabot abriu em 05/11 (PRs #85 a #91), juntas e com o que cada uma pedia.** Nenhuma regra, rota, tela ou dado mudou para quem usa.

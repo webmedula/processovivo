@@ -192,7 +192,7 @@ describe.skipIf(sem)(
       ).toBe(false);
     });
 
-    it('a ordem dentro da célula é: ponto azul, tipo, etiqueta, "Não lida"; o ponto azul não é lido (é só desenho)', async () => {
+    it('a ordem dentro da célula é: ponto azul, tipo, "Não lida" (sem a etiqueta desde a 0.66.3); o ponto azul não é lido (é só desenho)', async () => {
       await abrir(1366);
       const c = linha(NU).locator('.c-atu');
       const m = await c.evaluate((el) => {
@@ -216,11 +216,8 @@ describe.skipIf(sem)(
       expect(m.naoLida).toBe(true);
       expect(m.ponto).toBe('""');
       expect(m.pontoNoDom).toBe(0);
-      expect(m.ordem.map((o) => o.texto)).toEqual([
-        'Ato ordinatório',
-        'Intimação',
-        'Não lida',
-      ]);
+      // v0.66.3: a etiqueta "Intimação" saiu da linha (decisão do dono).
+      expect(m.ordem.map((o) => o.texto)).toEqual(['Ato ordinatório', 'Não lida']);
       expect(m.ordem.map((o) => o.x)).toEqual(
         [...m.ordem.map((o) => o.x)].sort((a, b) => a - b),
       );

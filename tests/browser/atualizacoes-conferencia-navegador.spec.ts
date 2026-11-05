@@ -216,34 +216,29 @@ describe.skipIf(sem)(
     it('a linha com providência mostra o ATO da providência, com a data dele; o último andamento vai à parte', async () => {
       await abrir();
       const a = ao(NA);
-      expect(norm(await a.locator('.nvt-tit').textContent())).toBe(
-        'Ato ordinatório Intimação',
-      );
+      expect(norm(await a.locator('.nvt-tit').textContent())).toBe('Ato ordinatório');
       // Data do ato = a do ato que gera a providência, não a do despacho (28 dias atrás).
       expect(norm(await a.locator('td.c-data').textContent())).toBe(dataBr(iso(20)));
       expect(norm(await a.locator('.nvt-ult').textContent())).toBe(
         `Último andamento: Despacho · ${dataBr(iso(28))}`,
       );
       expect(await a.innerText()).not.toContain('Pede providência por');
-      // O selo diz se o destinatário está confirmado.
-      expect(await a.locator('.selo.int').getAttribute('title')).toContain(
-        'Destinatário confirmado',
-      );
+      // v0.66.3: o selo "Intimação" (e o title sobre o destinatário) saiu da linha.
+      expect(await a.locator('.selo.int').count()).toBe(0);
     });
 
     it('quando o ato da providência é a própria atualização, não há segunda linha', async () => {
       await abrir();
       const b = ao(NB);
-      expect(norm(await b.locator('.nvt-tit').textContent())).toBe('Citação Citação');
+      expect(norm(await b.locator('.nvt-tit').textContent())).toBe('Citação');
       expect(await b.locator('.nvt-ult').count()).toBe(0);
       expect(norm(await b.locator('td.c-data').textContent())).toBe(dataBr(iso(3)));
     });
 
-    it('destinatário não confirmado diz isso no title do selo', async () => {
+    it('sem o selo do tipo (v0.66.3), a linha do destinatário não confirmado não tem title de destinatário', async () => {
       await abrir();
-      expect(await ao(ND).locator('.selo.int').getAttribute('title')).toContain(
-        'Destinatário não confirmado',
-      );
+      expect(await ao(ND).locator('.selo.int').count()).toBe(0);
+      expect(await ao(ND).innerText()).not.toContain('Destinatário');
     });
 
     it('"Detectado" vira data absoluta quando está a mais de 7 dias do ato; senão fica relativo', async () => {

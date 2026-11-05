@@ -287,20 +287,18 @@ describe.skipIf(sem)(
     // redesenhada) antes dessa conferência; por isso, nesses casos, o teste clica.
     const todas = () => page.getByRole('button', { name: /^Todas \(/ }).click();
 
-    it('abre só com as intimações/citações pendentes, com o selo do tipo e a segunda linha quando o ato é outro', async () => {
+    it('abre só com as intimações/citações pendentes, sem o selo do tipo, e a segunda linha quando o ato é outro', async () => {
       await abrir();
 
       expect(await linhas().count()).toBe(2);
       const a = ao(NA);
-      // (v0.37.6) O selo mora junto do rótulo do ato que gera a providência.
-      expect(await a.locator('.c-atu .selo.int').textContent()).toBe('Intimação');
-      expect(await ao(NB).locator('.c-atu .selo.int').textContent()).toBe('Citação');
+      // (v0.66.3) O selo "Intimação"/"Citação" saiu da linha (decisão do dono): a caixa "Cumprido" é o sinal.
+      expect(await a.locator('.c-atu .selo.int').count()).toBe(0);
+      expect(await ao(NB).locator('.c-atu .selo.int').count()).toBe(0);
 
       // A: a linha é sobre o "Ato ordinatório" (o que gera a providência); a
       // "Juntada de petição", que é o último andamento, vai numa segunda linha.
-      expect(((await a.locator('.nvt-tit').textContent()) ?? '').trim()).toMatch(
-        /^Ato ordinatório\s*Intimação$/,
-      );
+      expect(((await a.locator('.nvt-tit').textContent()) ?? '').trim()).toBe('Ato ordinatório');
       const ult = ((await a.locator('.nvt-ult').textContent()) ?? '').replace(
         /\s+/g,
         ' ',
