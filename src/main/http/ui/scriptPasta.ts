@@ -144,6 +144,7 @@ function montarPainel(){
               '<button class="bt bt2" id="pasta-nenhuma">Nenhuma</button>'+
               '<button class="bt" id="pasta-baixar-pdf" disabled>Baixar PDF</button>'+
               '<button class="bt bt2" id="pasta-drive-bt" hidden>Salvar todas no Drive</button>'+
+              '<button class="bt bt2" id="pasta-proc-ia-bt" hidden>Analisar processo com IA</button>'+
             '</div>'+
             '<div class="chips" id="pasta-atalhos" role="group" aria-label="Marcar peças por tipo ou ver só as movimentações sem peça"></div>'+
             '<div class="contagem" id="pasta-contagem" aria-live="polite"></div>'+
@@ -227,6 +228,8 @@ function ligarEventos(){
   $('pasta-nenhuma').addEventListener('click',function(){st.sel={};desenharLista()});
   $('pasta-baixar-pdf').addEventListener('click',pedirPreviaDaSelecao);
   if(window.__pvDrive)window.__pvDrive.ligarPasta({numero:function(){return st.numero},marcadas:marcadas});// ui/drive.ts
+  if(window.__pvProcessoIA)window.__pvProcessoIA.ligarPasta({numero:function(){return st.numero},marcadas:marcadas,// ui/analiseProcessoIA.ts
+    pecas:function(){return (st.visao&&st.visao.pecas)||[]},marcar:function(ids){st.sel={};ids.forEach(function(i){st.sel[i]=1});desenharLista()}});
   var itens=$('pasta-itens');
   itens.addEventListener('click',aoClicarNaLista);
   itens.addEventListener('keydown',aoTeclarNaLista);
@@ -577,6 +580,7 @@ function desenharLista(){
   bp.textContent='Baixar PDF ('+n+')';
   bp.disabled=!n||!!st.baixando;
   if(window.__pvDrive)window.__pvDrive.selecaoMudou();// ui/drive.ts
+  if(window.__pvProcessoIA)window.__pvProcessoIA.selecaoMudou();// ui/analiseProcessoIA.ts
   desenharAtalhos();
 }
 

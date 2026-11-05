@@ -30,6 +30,7 @@ import {
   executarComparacaoDePecas,
   julgarPlanilhaDePecas,
 } from './comandoComparadorPecas.js';
+import { executarComparacaoDeProcesso } from './comandoComparadorProcesso.js';
 import { executarComparacaoDeResumo } from './comandoComparadorResumo.js';
 import type { PrecoPorToken } from './sondaIaAto.js';
 
@@ -52,7 +53,9 @@ Precisa de OPENROUTER_API_KEY e de PROCESSOVIVO_IA_MODELO (o modelo de produçã
 4. RESUMO do processo (v0.54.0; v0.56.0): compara resumo-1.1.0 × resumo-1.2.0 (padrão; a 1.0.0 por --versoes) com o modelo de produção (casos sintéticos em tests/fixtures/ia-resumo):
   node scripts/ia-comparar-modelos.mjs --tarefa=resumo            # estima; NADA é enviado
   node scripts/ia-comparar-modelos.mjs --tarefa=resumo --executar [--versoes=resumo-1.1.0,resumo-1.2.0] [--modelos=a,b]
-Opções: --tarefa=ato|pecas|resumo  --teto-usd=<n> (padrão ${TETO_PADRAO_USD})  --categorias=decisao,prazo_escrito  --casos=<arquivo.json>  --saida=<pasta>  --pausa-ms=<n>  --ajuda
+5. SÍNTESE da análise do processo pelas peças (v0.66.0; casos sintéticos em tests/fixtures/ia-processo):
+  node scripts/ia-comparar-modelos.mjs --tarefa=processo [--modelos=a,b]   # estima; --executar roda
+Opções: --tarefa=ato|pecas|resumo|processo  --teto-usd=<n> (padrão ${TETO_PADRAO_USD})  --categorias=decisao,prazo_escrito  --casos=<arquivo.json>  --saida=<pasta>  --pausa-ms=<n>  --ajuda
 Só roda modelo que a lista oficial de ZDR do OpenRouter aprova na hora; o resto é recusado. Preço é estimativa, não confirmado.
 A saída (relatório .md, métricas .csv e revisão humana .csv) fica FORA do repositório.`;
 
@@ -83,8 +86,13 @@ export async function executarComandoComparador(
     return argv.length === 0 ? 1 : 0;
   }
   const tarefa = op.get('tarefa') ?? 'ato';
-  if (tarefa !== 'ato' && tarefa !== 'pecas' && tarefa !== 'resumo') {
-    amb.aviso('--tarefa inválida. Use: ato (padrão), pecas ou resumo.');
+  if (
+    tarefa !== 'ato' &&
+    tarefa !== 'pecas' &&
+    tarefa !== 'resumo' &&
+    tarefa !== 'processo'
+  ) {
+    amb.aviso('--tarefa inválida. Use: ato (padrão), pecas, resumo ou processo.');
     return 1;
   }
   try {
@@ -206,6 +214,22 @@ export async function executarComandoComparador(
     // --- outra tarefa: resumo do processo, 1.1.0 × 1.2.0 por padrão (v0.54.0; v0.56.0) ---
     if (tarefa === 'resumo') {
       return await executarComparacaoDeResumo({
+        op,
+        amb,
+        chave,
+        producao,
+        aprovados,
+        lista,
+        tetoUsd,
+        pausa,
+        pastaDeSaida,
+        precos,
+      });
+    }
+
+    // --- outra tarefa: síntese da análise do processo pelas peças (v0.66.0) ---
+    if (tarefa === 'processo') {
+      return await executarComparacaoDeProcesso({
         op,
         amb,
         chave,

@@ -1282,6 +1282,40 @@ export class AnaliseDePecaRecusadaError extends DomainError {
 }
 
 /**
+ * A análise do PROCESSO pelas peças (v0.66.0) não pode começar ou não foi achada. Cada `motivo` tem a
+ * frase própria na tela; o corpo traz só o motivo. NENHUM desses casos chamou o modelo, e nenhum leva
+ * texto de peça, nome de arquivo ou número de processo na mensagem.
+ *
+ * - `indisponivel`: a conta não está na lista `PROCESSOVIVO_IA_PROCESSO_WORKSPACES` (ou a análise de peça
+ *   não está liberada para ela): a rota "não existe" para ela;
+ * - `sem_plano`: falta `analiseIa` (sem exceção); `desligada`: a análise de peça está desligada no painel;
+ * - `processo_sigiloso` / `tribunal_nao_suportado`: segredo de justiça nunca sai; só o TJGO tem peças;
+ * - `selecao_invalida`: menos de 2 ou mais de 20 peças, peça repetida ou fora da lista DESTA conta;
+ * - `limite_de_uso`: já há uma análise do processo em andamento nesta conta, ou o freio por hora;
+ * - `nao_encontrada`: o acompanhamento da análise não existe PARA ESTA conta (igual para "é de outra").
+ */
+export type MotivoDeAnaliseDoProcessoRecusada =
+  | 'indisponivel'
+  | 'sem_plano'
+  | 'desligada'
+  | 'processo_sigiloso'
+  | 'tribunal_nao_suportado'
+  | 'selecao_invalida'
+  | 'limite_de_uso'
+  | 'nao_encontrada';
+
+export class AnaliseDoProcessoRecusadaError extends DomainError {
+  readonly codigo = 'ANALISE_DO_PROCESSO_RECUSADA';
+
+  constructor(
+    readonly motivo: MotivoDeAnaliseDoProcessoRecusada,
+    mensagem: string,
+  ) {
+    super(mensagem);
+  }
+}
+
+/**
  * O painel de IA do /admin (v0.58.0) recusou a mudança. O pedido é do operador, não de um
  * assinante, e nada foi gravado. A mensagem é nossa e nunca repete o valor recebido.
  *

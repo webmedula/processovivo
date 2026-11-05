@@ -151,10 +151,16 @@ export class LimiteDeAnalises {
   /**
    * Reserva uma vaga. Devolve a função que a libera (idempotente), ou o motivo da recusa.
    * A recusa não consome nada. `peso` só conta no teto DIÁRIO (a hora conta iniciadas, não peso).
+   *
+   * `foraDoFreioPorHora` (v0.66.0): as peças lidas DENTRO de uma análise do processo não contam no freio
+   * por hora da peça — a análise do processo tem o freio próprio, por análise, e 20 peças numa análise só
+   * não podem esbarrar num freio de 6 por hora. O teto diário (peso 5 cada), o "uma por vez" e o global
+   * continuam valendo.
    */
   reservar(
     workspace: string,
     peso = 1,
+    opcoes: { readonly foraDoFreioPorHora?: boolean } = {},
   ): { readonly liberar: () => void } | { readonly negada: NegativaDoLimite } {
     const agora = this.opcoes.clock.agora().getTime();
     if (this.emAndamento.has(workspace)) return { negada: 'em_andamento' };
@@ -167,11 +173,11 @@ export class LimiteDeAnalises {
     const recentes = (this.inicios.get(workspace) ?? []).filter(
       (t) => agora - t < UMA_HORA_MS,
     );
-    if (recentes.length >= this.opcoes.porHora) {
+    if (!opcoes.foraDoFreioPorHora && recentes.length >= this.opcoes.porHora) {
       this.inicios.set(workspace, recentes);
       return { negada: 'hora' };
     }
-    recentes.push(agora);
+    if (!opcoes.foraDoFreioPorHora) recentes.push(agora);
     this.inicios.set(workspace, recentes);
     this.teto?.registrar(workspace, peso, this.opcoes.funcao);
     this.emAndamento.add(workspace);

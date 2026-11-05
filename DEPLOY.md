@@ -908,6 +908,24 @@ node scripts/ia-avaliacoes.mjs       # seção "Análises de peça": avaliaçõe
 
 ---
 
+## Análise do processo pelas peças, "Analisar processo com IA" (v0.66.0)
+
+O botão fica na barra da **Pasta digital**. O advogado marca de 2 a 20 peças (ou usa "Marcar peças principais", que não marca laudo), confere a estimativa e confirma. Cada peça passa pela análise de peça de sempre e, depois, as análises verificadas são cruzadas numa síntese com sete blocos. **Nasce desligada.** Para abrir a toda conta do plano IA há a chave geral `PROCESSOVIVO_IA_PROCESSO_HABILITADA=true`, que **só se liga com a Política de Privacidade v1.6 publicada** (a v1.5 cobre só a peça que a pessoa escolher, uma por vez).
+
+| Variável | Padrão | O que faz |
+|---|---|---|
+| `PROCESSOVIVO_IA_PROCESSO_HABILITADA` | `false` | `true` = toda conta com a análise de peça liberada e o plano IA. Ligar só com a Política v1.6 no ar. |
+| `PROCESSOVIVO_IA_PROCESSO_WORKSPACES` | vazio | Com a chave geral desligada, a lista de contas liberadas (identificadores de 16 ou 32 caracteres, separados por vírgula). As duas vazias/desligadas = recurso desligado, rotas ausentes. |
+| `PROCESSOVIVO_IA_PROCESSO_MAX_POR_HORA` | `2` | Análises do processo por conta por hora (em memória; reiniciar zera). |
+| `PROCESSOVIVO_IA_PROCESSO_MAX_TOKENS` | `3000` | Teto de saída da síntese. |
+| `PROCESSOVIVO_IA_PROCESSO_TIMEOUT_MS` | `120000` | Tempo máximo da chamada da síntese. |
+
+A conta liberada (pela chave geral ou pela lista) **também** precisa da análise de peça liberada para ela (`PROCESSOVIVO_IA_PECAS_HABILITADA=true` ou o id em `PROCESSOVIVO_IA_PECAS_WORKSPACES`), do plano IA e da Pasta digital (qpdf), como a análise de peça. **Para abrir a todo o plano IA:** publique a Política v1.6 (e ajuste `PROCESSOVIVO_TERMOS_VERSAO` se os Termos mudarem de versão junto), ponha `PROCESSOVIVO_IA_PECAS_HABILITADA=true` e `PROCESSOVIVO_IA_PROCESSO_HABILITADA=true`, salve e reinicie; o log de arranque diz `paraTodas: true`. Para ligar só algumas contas: descubra o id da conta (`node dist/main/cli.js assinatura ver email@da.conta`), ponha em `PROCESSOVIVO_IA_PROCESSO_WORKSPACES`, salve e reinicie. Id torto não derruba o serviço: o log avisa quantos foram ignorados.
+
+**Limites e custo:** só TJGO. Cada peça NOVA pesa **5** no teto diário `PROCESSOVIVO_IA_MAX_POR_DIA` e a síntese pesa mais **5** (20 peças novas = 105). Peça já analisada nos últimos 30 dias, com o mesmo prompt e modelo, não conta de novo; a síntese da mesma seleção também é reaproveitada. Dentro da análise do processo as peças **não** consomem o freio por hora da peça (`PROCESSOVIVO_IA_PECAS_MAX_POR_HORA`): o freio é o do processo. O modelo é o da análise de peça (no painel de IA, a função "peça"); a versão 1 não tem função própria no painel nem instruções editáveis. Peça que ainda não está na guarda de 24 h é buscada no tribunal pela fila da Pasta (sem retry). A síntese fica guardada 30 dias (`sinteses_processo_ia`, aditiva, só com marcadores e ids; nunca texto de peça) e entra no backup de sempre.
+
+**Medir antes de trocar algo (manual, fora do CI):** `node scripts/ia-comparar-modelos.mjs --tarefa=processo [--modelos=a,b]` estima; com `--executar` roda os 8 processos sintéticos de `tests/fixtures/ia-processo`, com ZDR e teto de gasto como os outros comparadores.
+
 ## IA de peças, Fase 0: medir a camada de texto e comparar modelos em peças (v0.53.0)
 
 Nada muda para o usuário: são ferramentas **manuais**, no Console do serviço, sem rota e sem chamada de IA nova em produção. O `poppler-utils`

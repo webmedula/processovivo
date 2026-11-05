@@ -104,6 +104,10 @@ import { OpenRouterAnalisadorDePeca } from '../../infrastructure/adapters/modelo
 import { PdftotextExtrator } from '../../infrastructure/pdf/PdftotextExtrator.js';
 import { RepositorioAnalisesDePecaSqlite } from '../../infrastructure/persistencia/sqlite/RepositorioAnalisesDePecaSqlite.js';
 import { ServicoAnaliseDePeca } from '../../application/services/ServicoAnaliseDePeca.js';
+import { ServicoAnaliseDoProcesso } from '../../application/services/ServicoAnaliseDoProcesso.js';
+import { fonteDaAnaliseDoProcesso } from '../../application/services/fonteDaAnaliseDoProcesso.js';
+import { OpenRouterSintetizadorDoProcesso } from '../../infrastructure/adapters/modelo/OpenRouterSintetizadorDoProcesso.js';
+import { RepositorioSintesesDoProcessoSqlite } from '../../infrastructure/persistencia/sqlite/RepositorioSintesesDoProcessoSqlite.js';
 import { OpenRouterResumidorDeProcesso } from '../../infrastructure/adapters/modelo/OpenRouterResumidorDeProcesso.js';
 import { OpenRouterAnalisadorDeAto } from '../../infrastructure/adapters/modelo/OpenRouterAnalisadorDeAto.js';
 import { TransporteOpenRouter } from '../../infrastructure/adapters/modelo/TransporteOpenRouter.js';
@@ -223,7 +227,12 @@ export interface Aplicacao {
    * mostra o botão.
    */
   readonly analiseDePeca: ServicoAnaliseDePeca | undefined;
-  /** Apaga as análises de peça vencidas (de hora em hora, só banco). */
+  /**
+   * Análise do PROCESSO pelas peças (v0.66.0). `undefined` sem a análise de peça ou com
+   * `PROCESSOVIVO_IA_PROCESSO_WORKSPACES` vazia: não há rota (404) e a tela não mostra o botão.
+   */
+  readonly analiseDoProcesso: ServicoAnaliseDoProcesso | undefined;
+  /** Apaga as análises de peça e as sínteses do processo vencidas (de hora em hora, só banco). */
   readonly agendadorLimpezaAnalisesDePeca: Agendador | undefined;
   /** Executor da fila do leitor (a cada minuto) e limpeza por prazo (a cada hora). */
   readonly agendadorLeitor: Agendador | undefined;
@@ -756,19 +765,25 @@ export function montarAplicacao(config: Config): Aplicacao {
     logger,
     modelosDeIa,
   );
-  const { analiseIa, resumoDoProcesso, analiseDePeca, repositorioDeAnalisesDePeca } =
-    montarAnaliseIa(
-      config,
-      db,
-      logger,
-      repositorio,
-      assinaturas,
-      pasta,
-      controleDaIa,
-      ocorrenciasDaIa,
-      modelosDeIa,
-      instrucoesDeIa,
-    );
+  const {
+    analiseIa,
+    resumoDoProcesso,
+    analiseDePeca,
+    repositorioDeAnalisesDePeca,
+    analiseDoProcesso,
+    repositorioDeSinteses,
+  } = montarAnaliseIa(
+    config,
+    db,
+    logger,
+    repositorio,
+    assinaturas,
+    pasta,
+    controleDaIa,
+    ocorrenciasDaIa,
+    modelosDeIa,
+    instrucoesDeIa,
+  );
   const testesDeModelo = new RepositorioDeTestesDeModeloSqlite(db);
   const verificacaoDeInstrucoes = new ServicoVerificacaoDeInstrucoes({
     executor: executorDoTeste,
@@ -843,6 +858,14 @@ export function montarAplicacao(config: Config): Aplicacao {
             );
             if (apagadas > 0)
               logger.info('análises de peça vencidas apagadas', { apagadas });
+            // As sínteses do processo (v0.66.0) vencem no mesmo prazo e saem na mesma rotina.
+            const sinteses = repositorioDeSinteses
+              ? await repositorioDeSinteses.apagarVencidas(clockDoSistema.agora())
+              : 0;
+            if (sinteses > 0)
+              logger.info('sínteses do processo vencidas apagadas', {
+                apagadas: sinteses,
+              });
           },
         })
       : undefined;
@@ -897,6 +920,7 @@ export function montarAplicacao(config: Config): Aplicacao {
     analiseIa,
     resumoDoProcesso,
     analiseDePeca,
+    analiseDoProcesso,
     agendadorLimpezaAnalisesDePeca,
     avisoDoPrazo:
       analiseIa === undefined
@@ -1105,6 +1129,8 @@ function montarAnaliseIa(
   resumoDoProcesso: ServicoResumoDoProcesso | undefined;
   analiseDePeca: ServicoAnaliseDePeca | undefined;
   repositorioDeAnalisesDePeca: RepositorioAnalisesDePecaSqlite | undefined;
+  analiseDoProcesso: ServicoAnaliseDoProcesso | undefined;
+  repositorioDeSinteses: RepositorioSintesesDoProcessoSqlite | undefined;
 } {
   const ia = config.ia;
   if (!ia.habilitada) {
@@ -1118,6 +1144,8 @@ function montarAnaliseIa(
       resumoDoProcesso: undefined,
       analiseDePeca: undefined,
       repositorioDeAnalisesDePeca: undefined,
+      analiseDoProcesso: undefined,
+      repositorioDeSinteses: undefined,
     };
   }
   const http = new HttpClient({ timeoutMs: 20_000, tentativas: 2 });
@@ -1280,7 +1308,67 @@ function montarAnaliseIa(
       });
     }
   }
-  return { analiseIa, resumoDoProcesso, analiseDePeca, repositorioDeAnalisesDePeca };
+
+  // --- Análise do PROCESSO pelas peças (v0.66.0) --------------------------------------------------------
+  // Só sobre a análise de peça (é ela que lê cada peça), para todas as contas (chave geral, que exige a
+  // Política de Privacidade v1.6 publicada) ou só as da lista. Interruptor, teto e modelo são os da função `peca`.
+  let analiseDoProcesso: ServicoAnaliseDoProcesso | undefined;
+  let repositorioDeSinteses: RepositorioSintesesDoProcessoSqlite | undefined;
+  const proc = ia.processo;
+  if (proc.workspacesInvalidos > 0) {
+    logger.warn(
+      'PROCESSOVIVO_IA_PROCESSO_WORKSPACES tem itens que não são identificadores (ignorados)',
+      { ignorados: proc.workspacesInvalidos },
+    );
+  }
+  if (proc.habilitada || proc.workspaces.length > 0) {
+    if (!analiseDePeca || !pasta) {
+      logger.warn(
+        'análise do processo por IA configurada, mas a análise de peça não está ligada: nada foi ligado',
+      );
+    } else {
+      repositorioDeSinteses = new RepositorioSintesesDoProcessoSqlite(db);
+      analiseDoProcesso = new ServicoAnaliseDoProcesso({
+        pecas: analiseDePeca,
+        repositorio,
+        assinaturas,
+        fonte: fonteDaAnaliseDoProcesso(pasta),
+        sintetizador: new OpenRouterSintetizadorDoProcesso({
+          modeloZdr: modeloDa('peca'),
+          maxTokens: proc.maxTokens,
+          timeoutMs: proc.timeoutMs,
+        }),
+        sinteses: repositorioDeSinteses,
+        // Freio PRÓPRIO por análise (por hora; uma por conta). O teto diário é o compartilhado.
+        limite: new LimiteDeAnalises({
+          porHora: proc.maxPorHora,
+          simultaneasNoTotal: ia.maxSimultaneas,
+          clock: clockDoSistema,
+        }),
+        teto: tetoDoDia,
+        habilitada: proc.habilitada,
+        workspaces: proc.workspaces,
+        tribunais: ['TJGO'],
+        modelo: () => modelosDeIa.efetivo('peca').modelo,
+        resultadoDias: pecas.resultadoDias,
+        clock: clockDoSistema,
+        logger,
+        novoId: () => randomUUID(),
+      });
+      logger.info('análise do processo por IA habilitada', {
+        paraTodas: proc.habilitada,
+        contasDaLista: proc.workspaces.length,
+      });
+    }
+  }
+  return {
+    analiseIa,
+    resumoDoProcesso,
+    analiseDePeca,
+    repositorioDeAnalisesDePeca,
+    analiseDoProcesso,
+    repositorioDeSinteses,
+  };
 }
 
 /**

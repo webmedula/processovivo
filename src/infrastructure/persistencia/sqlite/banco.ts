@@ -232,6 +232,37 @@ const ESQUEMA = [
   `CREATE INDEX IF NOT EXISTS idx_analises_pecas_expira
      ON analises_pecas_ia (expira_em)`,
 
+  // Análise do PROCESSO pelas peças (v0.66.0). Tabela NOVA e aditiva: a síntese das análises de peça, com
+  // marcadores e só com identificadores dos itens da etapa 1 (`P2.pedido1`); NUNCA texto de peça, nome de
+  // parte ou número de processo. `processo_chave` é o MESMO SHA-256 da análise de peça; `analises` é a
+  // lista (JSON) dos ids das análises de peça usadas; `chave_selecao` serve ao reaproveitamento; `expira_em`
+  // faz a linha sumir sozinha (o mesmo prazo e a mesma rotina das análises de peça).
+  `CREATE TABLE IF NOT EXISTS sinteses_processo_ia (
+     id             TEXT PRIMARY KEY,
+     workspace      TEXT NOT NULL,
+     processo_chave TEXT NOT NULL,
+     chave_selecao  TEXT NOT NULL,
+     analises       TEXT NOT NULL,
+     resultado      TEXT NOT NULL,
+     contagens      TEXT NOT NULL,
+     modelo         TEXT NOT NULL,
+     modelo_pedido  TEXT NOT NULL,
+     versao_prompt  TEXT NOT NULL,
+     provedor       TEXT NOT NULL,
+     tokens_entrada INTEGER,
+     tokens_saida   INTEGER,
+     custo_usd      REAL,
+     latencia_ms    INTEGER NOT NULL,
+     criada_em      TEXT NOT NULL,
+     expira_em      TEXT NOT NULL,
+     avaliacao      TEXT,
+     motivo_avaliacao TEXT
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_sinteses_processo_reuso
+     ON sinteses_processo_ia (workspace, chave_selecao)`,
+  `CREATE INDEX IF NOT EXISTS idx_sinteses_processo_expira
+     ON sinteses_processo_ia (expira_em)`,
+
   // Painel de IA do /admin (v0.58.0). Tabelas NOVAS e aditivas, só com números, rótulos de lista fechada e
   // o identificador CURTO do operador: nenhum texto de ato ou de peça, nome, número de processo, e-mail ou
   // chave. `ia_config` tem uma linha por função (`ato`, `resumo`, `peca`) e a linha `global`; linha ausente

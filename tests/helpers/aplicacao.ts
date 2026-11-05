@@ -113,6 +113,10 @@ import {
   SenhaFracaError,
 } from '../../src/domain/errors/index.js';
 import { ServicoAnaliseDePeca } from '../../src/application/services/ServicoAnaliseDePeca.js';
+import { ServicoAnaliseDoProcesso } from '../../src/application/services/ServicoAnaliseDoProcesso.js';
+import { fonteDaAnaliseDoProcesso } from '../../src/application/services/fonteDaAnaliseDoProcesso.js';
+import { RepositorioSintesesDoProcessoSqlite } from '../../src/infrastructure/persistencia/sqlite/RepositorioSintesesDoProcessoSqlite.js';
+import type { SintetizadorDoProcesso } from '../../src/domain/ports/SintetizadorDoProcesso.js';
 import { PdftotextExtrator } from '../../src/infrastructure/pdf/PdftotextExtrator.js';
 import { RepositorioAnalisesDePecaSqlite } from '../../src/infrastructure/persistencia/sqlite/RepositorioAnalisesDePecaSqlite.js';
 import type { AnalisadorDePeca } from '../../src/domain/ports/AnalisadorDePeca.js';
@@ -296,6 +300,16 @@ export interface OpcoesAplicacaoDeTeste {
     readonly modelo?: string;
     readonly tribunais?: readonly string[];
     readonly clock?: Clock;
+  };
+  /**
+   * Liga a análise do PROCESSO pelas peças (v0.66.0) sobre a análise de peça acima, com um sintetizador
+   * DUBLÊ. Exige `analiseDePeca`. Ausente = desligada.
+   */
+  readonly analiseDoProcesso?: {
+    readonly sintetizador: SintetizadorDoProcesso;
+    readonly workspaces: readonly string[];
+    readonly porHora?: number;
+    readonly esperar?: (ms: number) => Promise<void>;
   };
   /**
    * Liga o resumo de processo por IA (v0.40.0) com um resumidor DUBLÊ (nenhum teste toca a
@@ -692,6 +706,31 @@ export function aplicacaoDeTeste(
           instrucoes: instrucoesDeIa,
         })
       : undefined;
+  const analiseDoProcesso =
+    opcoes.analiseDoProcesso && analiseDePeca && pasta
+      ? new ServicoAnaliseDoProcesso({
+          pecas: analiseDePeca,
+          repositorio: repositorioCru,
+          assinaturas,
+          fonte: fonteDaAnaliseDoProcesso(pasta),
+          sintetizador: opcoes.analiseDoProcesso.sintetizador,
+          sinteses: new RepositorioSintesesDoProcessoSqlite(db),
+          limite: new LimiteDeAnalises({
+            porHora: opcoes.analiseDoProcesso.porHora ?? 100,
+            simultaneasNoTotal: 10,
+            clock: clockDaPeca,
+          }),
+          teto: tetoCompartilhado,
+          workspaces: opcoes.analiseDoProcesso.workspaces,
+          tribunais: opcoes.analiseDePeca?.tribunais ?? ['TJGO'],
+          modelo: () => opcoes.analiseDePeca?.modelo ?? 'modelo/de-teste',
+          resultadoDias: opcoes.analiseDePeca?.resultadoDias ?? 30,
+          clock: clockDaPeca,
+          logger: loggerSilencioso,
+          novoId: () => randomUUID(),
+          esperar: opcoes.analiseDoProcesso.esperar ?? (() => Promise.resolve()),
+        })
+      : undefined;
   const verificacaoDeInstrucoes = new ServicoVerificacaoDeInstrucoes({
     executor: opcoes.instrucoesDeIa?.executor,
     instrucoes: instrucoesDeIa,
@@ -827,6 +866,7 @@ export function aplicacaoDeTeste(
     analiseIa,
     resumoDoProcesso,
     analiseDePeca,
+    analiseDoProcesso,
     agendadorLimpezaAnalisesDePeca: undefined,
     avisoDoPrazo,
     leitor,

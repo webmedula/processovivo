@@ -21,7 +21,7 @@ export const SCRIPT_POLEGARES = String.raw`
 (function(){
 var pv=function(){return window.__pv};
 function esc(s){return pv().esc(s)}
-var ROTAS={resumo:'/v1/resumos/',ato:'/v1/analises/',peca:'/v1/analises-de-peca/'};
+var ROTAS={resumo:'/v1/resumos/',ato:'/v1/analises/',peca:'/v1/analises-de-peca/',processo:'/v1/sinteses-do-processo/'};
 var MOTIVOS=[['erro_de_fato','Erro de fato'],['citacao_inventada','Citação inventada'],['concluiu_prazo','Concluiu prazo'],
   ['deixou_de_fora','Deixou de fora algo importante'],['pode_causar_prejuizo','Pode causar prejuízo se seguido'],['outro','Outro']];
 var OBRIGADO='Obrigado pelo retorno.';
