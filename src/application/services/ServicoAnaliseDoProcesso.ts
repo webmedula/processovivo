@@ -299,6 +299,20 @@ export class ServicoAnaliseDoProcesso {
     return pelaChave && this.o.pecas.modoDa(workspace) !== undefined;
   }
 
+  /**
+   * O botão aparece para esta conta? `liberado` E o plano IA (`temRecursoSemExcecao`). Sem a conferência
+   * do plano a conta sem o plano IA via o botão e só era barrada no clique (v0.66.4). Falha ao ler a
+   * assinatura = sem botão: o clique recusaria do mesmo jeito.
+   */
+  async disponivelPara(workspace: string): Promise<boolean> {
+    if (!this.liberado(workspace)) return false;
+    try {
+      return await this.o.assinaturas.temRecursoSemExcecao(workspace, 'analiseIa');
+    } catch {
+      return false;
+    }
+  }
+
   async estimar(
     workspace: string,
     numeroBruto: string,

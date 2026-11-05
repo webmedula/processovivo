@@ -9,6 +9,12 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.66.4] — 2026-11-05
+
+**"Analisar processo com IA": o botão não aparece mais para conta sem o plano IA.** Antes a pergunta da tela (`GET /v1/analises-do-processo/disponibilidade`) conferia só a chave geral (ou a lista de contas) e a liberação da análise de peça; a conta sem o plano IA via o botão e só era barrada no clique ("sem plano", 403, nenhuma chamada ao modelo). Agora a resposta também confere o plano IA (`temRecursoSemExcecao`, novo `ServicoAnaliseDoProcesso.disponivelPara`); falha ao ler a assinatura = sem botão. A recusa no clique continua igual. Nenhuma outra regra, rota ou tela mudou.
+
+---
+
 ## [0.66.3] — 2026-11-05
 
 **Tabela de Atualizações: cabeçalho em cinza, sem o selo "Intimação"/"Citação" na linha, e as colunas Data e Detectado antes de Atualização** (decisões do dono, 05/11/2026; só apresentação — detecção, "pede providência", "cumprido", filtros, contagens, `GET /v1/novidades`, `/v1/painel`, calendário, IA e a busca não mudaram).

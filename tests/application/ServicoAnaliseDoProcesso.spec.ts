@@ -448,6 +448,15 @@ describe('ServicoAnaliseDoProcesso', () => {
       );
     });
 
+    it('sem o plano IA o botão não aparece, mesmo com a chave geral ligada', async () => {
+      const { processo: s } = servicos({ habilitada: true, workspaces: [] });
+      expect(await s.disponivelPara(WS)).toBe(true);
+      comPlano.clear();
+      expect(s.liberado(WS)).toBe(true);
+      expect(await s.disponivelPara(WS)).toBe(false);
+      expect(await s.disponivelPara('cccccccccccccccc')).toBe(false);
+    });
+
     it('sem o plano IA: sem plano', async () => {
       comPlano.clear();
       const { processo: s } = servicos();

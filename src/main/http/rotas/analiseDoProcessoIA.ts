@@ -22,14 +22,17 @@ const corpoDaSelecao = z
  * aceito, e o texto das peças nunca sai na resposta (só o resultado verificado, com citações curtas).
  *
  * `GET …/disponibilidade` está SEMPRE registrada: sem o serviço, ou para conta fora da lista, diz
- * `liberado: false` e a tela não desenha o botão. As demais rotas só existem com o serviço montado.
+ * `liberado: false` e a tela não desenha o botão; conta sem o plano IA também (v0.66.4). As demais rotas só existem com o serviço montado.
  */
 export function rotasDaAnaliseDoProcessoIA(
   servico: ServicoAnaliseDoProcesso | undefined,
 ): FastifyPluginAsync {
   return async (servidor) => {
     servidor.get('/v1/analises-do-processo/disponibilidade', async (req) => ({
-      liberado: servico !== undefined && req.workspace !== undefined && servico.liberado(req.workspace),
+      liberado:
+        servico !== undefined &&
+        req.workspace !== undefined &&
+        (await servico.disponivelPara(req.workspace)),
     }));
     if (!servico) return;
 
@@ -50,12 +53,14 @@ export function rotasDaAnaliseDoProcessoIA(
       },
     );
 
-    servidor.get<{ Params: { id: string } }>('/v1/analises-do-processo/:id', async (req) =>
-      servico.consultar(workspaceDe(req), req.params.id),
+    servidor.get<{ Params: { id: string } }>(
+      '/v1/analises-do-processo/:id',
+      async (req) => servico.consultar(workspaceDe(req), req.params.id),
     );
 
-    servidor.delete<{ Params: { id: string } }>('/v1/analises-do-processo/:id', async (req) =>
-      servico.cancelar(workspaceDe(req), req.params.id),
+    servidor.delete<{ Params: { id: string } }>(
+      '/v1/analises-do-processo/:id',
+      async (req) => servico.cancelar(workspaceDe(req), req.params.id),
     );
 
     servidor.post<{ Params: { id: string } }>(

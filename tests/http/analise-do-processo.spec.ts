@@ -107,7 +107,8 @@ async function montar(m: { semRecurso?: boolean } = {}): Promise<void> {
             analiseDoProcesso: {
               sintetizador,
               workspaces: [WS_A],
-              esperar: (ms: number) => new Promise((r) => setTimeout(r, Math.min(ms, 10))),
+              esperar: (ms: number) =>
+                new Promise((r) => setTimeout(r, Math.min(ms, 10))),
             },
           }),
     },
@@ -177,6 +178,15 @@ describe('conta da lista', () => {
     expect(analisador.chamadas + sintetizador.chamadas).toBe(0);
   });
 
+  it('conta da lista sem o plano IA não vê o botão (o clique recusaria com "sem plano")', async () => {
+    await montar();
+    await app.assinaturas.cancelar(WS_A);
+    expect((await disponibilidade()).json()).toEqual({ liberado: false });
+    const r = await iniciar(['a', 'b']);
+    expect(r.statusCode).toBe(403);
+    expect(analisador.chamadas + sintetizador.chamadas).toBe(0);
+  });
+
   it('estimativa, início (202), acompanhamento até o fim e polegar', async () => {
     await montar();
     const est = await servidor.inject({
@@ -192,7 +202,10 @@ describe('conta da lista', () => {
     expect(r.statusCode).toBe(202);
     const id = (r.json() as { id: string }).id;
     await app.analiseDoProcesso?.aguardarOcioso();
-    const fim = await servidor.inject({ url: `/v1/analises-do-processo/${id}`, headers: A });
+    const fim = await servidor.inject({
+      url: `/v1/analises-do-processo/${id}`,
+      headers: A,
+    });
     expect(fim.statusCode).toBe(200);
     const j = fim.json() as {
       fase: string;
@@ -207,7 +220,10 @@ describe('conta da lista', () => {
     // Só o resultado verificado e citações curtas: nada do texto corrido das peças.
     expect(fim.body).not.toContain('Residente e domiciliada');
 
-    const outra = await servidor.inject({ url: `/v1/analises-do-processo/${id}`, headers: B });
+    const outra = await servidor.inject({
+      url: `/v1/analises-do-processo/${id}`,
+      headers: B,
+    });
     expect(outra.statusCode).toBe(404);
 
     const pol = await servidor.inject({
