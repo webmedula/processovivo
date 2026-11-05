@@ -63,7 +63,7 @@ export class ServicoAlertaDeCustoDaIa {
     const link = this.o.urlBase
       ? `\nPainel de IA: ${this.o.urlBase.replace(/\/+$/, '')}/admin#ia\n`
       : '';
-    let enviado = false;
+    let enviado: boolean;
     try {
       enviado = await this.o.notificador.enviar({
         para: this.o.destinatario,

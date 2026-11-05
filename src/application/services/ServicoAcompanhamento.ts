@@ -446,8 +446,8 @@ export class ServicoAcompanhamento {
       falhas: 0,
       somaDuracoesMs: 0,
     };
-    let total = 0;
-    let usadas = 0;
+    let total: number;
+    let usadas: number;
 
     try {
       const fila = await this.repo.listarParaSincronizar(this.maximo, opcoes.workspace);

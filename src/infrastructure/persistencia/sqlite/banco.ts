@@ -1221,7 +1221,7 @@ function preencherPartesTexto(db: DatabaseSync): void {
   );
 
   for (const linha of pendentes) {
-    let nomes: string[] = [];
+    let nomes: string[];
     try {
       const bruto = JSON.parse(linha.processo) as { partes?: Array<{ nome?: string }> };
       nomes = (bruto.partes ?? [])
@@ -1461,7 +1461,7 @@ export function migrarCustosPara048(
   const quando = agora.toISOString();
   let reclassificados = 0;
   let recebimentos = 0;
-  let proprias = 0;
+  let proprias: number;
   db.exec('BEGIN');
   try {
     for (const [antigo, novo] of Object.entries(MAPA_DE_CATEGORIAS_ANTIGAS)) {

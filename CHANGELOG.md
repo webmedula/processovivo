@@ -9,6 +9,18 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.66.2] — 2026-11-05
+
+**Manutenção: as atualizações que o Dependabot abriu em 05/11 (PRs #85 a #91), juntas e com o que cada uma pedia.** Nenhuma regra, rota, tela ou dado mudou para quem usa.
+
+- **GitHub Actions:** `actions/checkout` 4 → 7 e `actions/setup-node` 4 → 7 (tiram o aviso de "Node.js 20 is deprecated" do CI).
+- **Grupo de correções:** `ai` 7.0.159, `fastify` 5.12.8, `pdfjs-dist` 6.5.438, `@types/nodemailer`, `playwright-core` 1.64, `prettier` 3.9 e `tsx`. **O `axe-core` fica em 4.13** (`~4.13.0`): a 4.14 passou a aplicar a regra `label-content-name-mismatch` (WCAG 2.5.3) e reprova seis testes de navegador (botões "Copiar número", "Abrir processo" e "Comprovante", cujo nome acessível não começa pelo texto visível). Os testes de navegador pulam no CI sem Chromium, por isso o PR do Dependabot aparecia verde. Ajustar esses nomes é uma mudança de tela à parte. O Prettier 3.9 formata diferente uns 100 arquivos; ninguém rodou `npm run format` aqui, para não misturar reformatação com atualização.
+- **`fastify-plugin` 6, `@fastify/rate-limit` 11:** só tipos antigos removidos; nada no código usava.
+- **`@fastify/cors` 11:** o padrão de `methods` passou a ser só GET, HEAD e POST. `servidor.ts` agora declara os seis métodos de antes. Só vale com `CORS_ORIGINS` preenchido (vazio = sem CORS, como em produção); a vitrine `/v1/planos` tem CORS próprio e não muda.
+- **ESLint 10 (era o PR #90, com o CI vermelho):** dois testes importavam `globals`, que vinha de carona com o ESLint 9 e saiu da árvore na 10; agora é dependência de desenvolvimento declarada (`globals` 17). `@eslint/js` vai junto para a 10. O `eslint:recommended` da 10 liga `no-useless-assignment`, que apontou nove `let x = valor` em que o valor inicial nunca era lido (sempre sobrescrito num `try`, ou a função saía no `catch`); o valor inicial saiu, sem mudar comportamento.
+
+---
+
 ## [0.66.1] — 2026-11-05
 
 **Manutenção: o CI volta a ficar verde depois que o GitHub trocou a máquina de testes, e entra o que estava no PR #83.** Nenhuma regra, rota, tela ou dado mudou para quem usa.
