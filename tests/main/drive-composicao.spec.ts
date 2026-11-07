@@ -87,11 +87,16 @@ describe('composition root — o Drive', () => {
 });
 
 describe('o Drive e as regras de dependência', () => {
-  it('só o adapter conhece o Google: nenhum outro arquivo de src/ cita googleapis.com', () => {
+  it('só os adapters conhecem o Google: nenhum outro arquivo de src/ cita googleapis.com', () => {
+    // Desde a v0.67.0 o login com Google (OIDC) tem adapter próprio; os dois moram em adapters/.
     const citam = arquivosTs(join(RAIZ, 'src'))
       .filter((a) => /googleapis\.com/.test(fonte(a)))
-      .map(rel);
-    expect(citam).toEqual(['src/infrastructure/adapters/drive/GoogleDriveAdapter.ts']);
+      .map(rel)
+      .sort();
+    expect(citam).toEqual([
+      'src/infrastructure/adapters/drive/GoogleDriveAdapter.ts',
+      'src/infrastructure/adapters/identidade/GoogleIdentidadeAdapter.ts',
+    ]);
   });
 
   it('o domínio e a aplicação do Drive não importam infraestrutura nem o adapter', () => {

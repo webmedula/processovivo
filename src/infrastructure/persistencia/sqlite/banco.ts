@@ -867,6 +867,19 @@ const ESQUEMA = [
   `CREATE INDEX IF NOT EXISTS idx_sessoes_usuario ON sessoes(usuario_id)`,
   `CREATE INDEX IF NOT EXISTS idx_sessoes_expira ON sessoes(expira_em)`,
 
+  // Login com Google (v0.67.0): a ligação entre a conta e a identidade de fora. Só provedor,
+  // sujeito (o `sub` do Google), conta e instante — sem e-mail do provedor, sem token. Um
+  // sujeito liga-se a UMA conta e uma conta a UM sujeito por provedor; as duas travas são daqui.
+  // ON DELETE CASCADE: apagar a conta apaga a ligação. Tabela nova e aditiva.
+  `CREATE TABLE IF NOT EXISTS identidades_externas (
+     provedor   TEXT NOT NULL,
+     sujeito    TEXT NOT NULL,
+     usuario_id TEXT NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+     ligada_em  TEXT NOT NULL,
+     PRIMARY KEY (provedor, sujeito),
+     UNIQUE (provedor, usuario_id)
+   )`,
+
   // Registros de acesso do Marco Civil (art. 15; v0.63.0): instante, IP, porta (só quando o servidor
   // vê a do cliente) e a conta. Nada de rota, corpo ou texto. Guardados 6 meses e apagados pelo
   // agendador; NÃO saem na exclusão da conta, porque a guarda é obrigação legal. Tabela nova e aditiva.

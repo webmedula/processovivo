@@ -660,6 +660,57 @@ autenticado). Por isso a conexão também se completa para conta de chave de API
 
 ---
 
+## Entrar com Google (v0.67.0)
+
+O botão **Entrar com Google** (e **Criar conta com Google**) na tela de entrada deixa o advogado
+entrar sem digitar senha, usando a conta Google. Nasce **desligado**; liga-se depois de publicar a
+**Política de Privacidade v1.7** (ela passa a listar o identificador da conta Google, o nome e o
+e-mail como dados tratados só para autenticar).
+
+**O que o sistema pede ao Google, e só isso:** `openid`, `email` e `profile` — nome, e-mail e o
+identificador estável da conta. Nenhum token do Google fica guardado; o Drive continua com o escopo
+próprio e a conexão própria. Conta que nasce pelo Google **não tem senha** (a pessoa cria uma em
+"Esqueci minha senha" se quiser). Conta que já existe com o mesmo e-mail é ligada sozinha **só se
+o Google informa o e-mail como verificado**.
+
+### 1. No Google Cloud (uma vez; o mesmo cliente OAuth do Drive)
+
+1. Em **Credenciais → ID do cliente OAuth** (o mesmo do Drive), acrescente em **URIs de
+   redirecionamento autorizados**: `https://app.processovivo.com.br/v1/sessoes/google/retorno`
+   (o valor de `PROCESSOVIVO_URL_BASE` + `/v1/sessoes/google/retorno`, sem barra no fim).
+2. Na **Tela de consentimento → Escopos**, os três (`openid`, `email`, `profile`) são
+   não-sensíveis e em geral já constam; se não, adicione. Nada além deles.
+3. Se o app ainda está em "Teste", só as contas em **Usuários de teste** conseguem entrar. Para
+   o uso real, publique o app (o mesmo passo do Drive).
+
+### 2. No Easypanel (aba Environment)
+
+```text
+PROCESSOVIVO_LOGIN_GOOGLE_HABILITADO=true
+GOOGLE_CLIENT_ID=<o mesmo do Drive>
+GOOGLE_CLIENT_SECRET=<o mesmo do Drive>
+PROCESSOVIVO_URL_BASE=https://app.processovivo.com.br
+PROCESSOVIVO_CREDENCIAL_CHAVE=<a chave do cofre, que já existe>
+```
+
+Se faltar qualquer uma, ou se o ID/segredo parecer texto de exemplo, **o serviço recusa subir** e
+diz qual variável falta (nunca mostra o valor). Para **desligar**, volte
+`PROCESSOVIVO_LOGIN_GOOGLE_HABILITADO=false` e faça o deploy: o botão e o cartão somem, as rotas
+respondem 404 e nada é apagado — quem ligou a conta Google continua entrando por e-mail e senha
+(se tiver senha; quem não tem usa "Esqueci minha senha").
+
+### 3. O que conferir depois do deploy
+
+1. Abra a tela de entrada numa aba anônima: o botão "Entrar com Google" aparece nas duas abas.
+2. Clique, escolha uma conta Google **de teste** e volte: a barra fica limpa (`/`), a lateral
+   abre e "Minha conta" mostra o cartão **Conta Google** como ligada.
+3. Em "Minha conta", **Desligar** e ligar de novo. Conta nascida pelo Google mostra "ainda não
+   tem senha" e não desliga até criar uma.
+4. Cancele na tela do Google: a entrada mostra "A entrada com o Google foi cancelada. Nada
+   mudou." e nenhuma sessão abre.
+
+---
+
 ## Cobrança recorrente pelo Mercado Pago (v0.44.0)
 
 A conta passa a poder **assinar** um plano pela própria tela "Minha conta": o Mercado Pago cobra o

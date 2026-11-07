@@ -9,6 +9,21 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.67.0] — 2026-11-07
+
+**Entrar com Google: a pessoa entra, cria conta ou liga a conta Google à conta que já tem, com `openid email profile` e nada mais; nasce DESLIGADO** (decisão do dono de 07/11/2026; só o Google — o Facebook foi avaliado e descartado: revisão do app pela Meta, e-mail não garantido e adequação pior ao público de advogados).
+
+- **Tela de entrada:** botão "Entrar com Google" (aba Entrar) e "Criar conta com Google" (aba Criar conta), com a nota "Usamos só o seu nome e o seu e-mail da conta Google. Nada mais." Com a chave desligada a tela é a de antes.
+- **Fluxo:** `POST /v1/sessoes/google` (pública) devolve a URL do Google com `state` assinado de uso único (10 min) e PKCE S256; `GET /v1/sessoes/google/retorno` (pública) troca o código, lê nome, e-mail e o identificador estável (`sub`) e abre a sessão de cookie de sempre. Conta nova nasce **sem senha** (marcador `sem-senha` em `usuarios.senha`; "Esqueci minha senha" cria uma) e com o mesmo teste de 14 dias. Conta que já existe com o mesmo e-mail é ligada automaticamente **só se o Google diz que o e-mail é verificado**; senão a entrada é recusada.
+- **"Minha conta":** cartão "Conta Google" com Ligar/Desligar (`GET/POST/DELETE /v1/eu/google`). Conta sem senha não desliga (409 `conta_sem_senha`): criar a senha primeiro. Ligar exige a MESMA sessão na volta (`sessao_diferente`); uma conta Google só se liga a uma conta.
+- **Dados:** tabela `identidades_externas` (provedor, `sub`, usuário, data), aditiva. Nenhum token do Google é guardado; nome e e-mail só servem para achar ou criar a conta.
+- **Configuração:** `PROCESSOVIVO_LOGIN_GOOGLE_HABILITADO=true` reaproveita `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` do Drive, `PROCESSOVIVO_URL_BASE` (https) e `PROCESSOVIVO_CREDENCIAL_CHAVE`; o retorno a cadastrar no Google Cloud é `PROCESSOVIVO_URL_BASE + /v1/sessoes/google/retorno`. O Drive continua independente (liga e desliga sozinho).
+- **Erros na volta** (`/?google=erro&motivo=…`): toda frase da tela é fixa e de lista fechada; o parâmetro sai da barra; nada do login vai ao `localStorage`.
+- **Política de Privacidade:** o login exige a versão 1.7 publicada (nova linha de dado: identificador da conta Google, nome e e-mail, só para autenticar). O rascunho está fora do repositório.
+- `script.ts` não cresceu: a tela mora em `ui/loginGoogle.ts` (`window.__pvLoginGoogle`). Testes: `tests/http/login-google.spec.ts`, `login-google-tela.spec.ts`, `tests/infrastructure/google-identidade-adapter.spec.ts`, `config-login-google.spec.ts` e `tests/browser/login-google-navegador.spec.ts`.
+
+---
+
 ## [0.66.5] — 2026-11-07
 
 **O botão "Resumir este processo com IA" passa a se chamar "Resumir andamentos com IA"** (só texto; seleção, prompt, verificação, modelo, ZDR, teto, rotas e gravação não mudaram).
