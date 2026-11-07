@@ -65,7 +65,20 @@ export const MOTIVOS_DE_OCORRENCIA_DA_IA = [
   'pagina_invalida',
   // Fase B (v0.60.0): o modelo guardado no painel saiu da lista (ou foi descontinuado) e a chamada usou o ambiente.
   'modelo_do_painel_invalido',
+  // v0.67.2: recusas do freio de uso da análise de peça (nada foi enviado ao modelo). NÃO são falhas de
+  // verificação: o painel as mostra à parte, em "Recusas por limite".
+  'recusa_em_andamento',
+  'recusa_por_hora',
+  'recusa_servico_ocupado',
+  'recusa_limite_diario',
 ] as const;
+/** As ocorrências que são recusa do freio de uso, e não falha da IA (v0.67.2). */
+export const RECUSAS_POR_LIMITE_DA_IA = [
+  'recusa_em_andamento',
+  'recusa_por_hora',
+  'recusa_servico_ocupado',
+  'recusa_limite_diario',
+] as const satisfies readonly (typeof MOTIVOS_DE_OCORRENCIA_DA_IA)[number][];
 export type MotivoDeOcorrenciaDaIa = (typeof MOTIVOS_DE_OCORRENCIA_DA_IA)[number];
 
 export interface RegistroDeOcorrenciasDeIa {

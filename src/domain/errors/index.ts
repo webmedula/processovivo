@@ -1293,6 +1293,7 @@ export class ExtracaoDeTextoError extends DomainError {
  *   `acima_de_80_mil_caracteres`: limites por peça; `pdf_invalido` / `pdf_protegido` / `arquivo_grande`:
  *   o PDF não pôde ser lido;
  * - `limite_de_uso` / `limite_diario`: freio por hora e teto técnico do dia (não é limite do plano).
+ *   Desde a v0.67.2 o `limite_de_uso` diz QUAL trava recusou, em `limite` (ver `LimiteDaAnaliseDePeca`).
  */
 export type MotivoDeAnaliseDePecaRecusada =
   | 'indisponivel'
@@ -1312,12 +1313,25 @@ export type MotivoDeAnaliseDePecaRecusada =
   | 'limite_diario'
   | 'desligada';
 
+/**
+ * Qual trava do freio de uso recusou a análise de peça (v0.67.2). Antes as três caíam na mesma frase, e
+ * nem a pessoa nem o operador sabiam se era esperar a outra análise, esperar a hora virar ou o servidor
+ * estar cheio — consertos diferentes:
+ *
+ * - `em_andamento`: esta conta já tem uma análise de peça em curso (inclusive dentro da análise do processo);
+ * - `por_hora`: a conta iniciou o máximo de análises de peça da última hora;
+ * - `servico_ocupado`: o teto de análises simultâneas do servidor inteiro (todas as contas) está cheio.
+ */
+export type LimiteDaAnaliseDePeca = 'em_andamento' | 'por_hora' | 'servico_ocupado';
+
 export class AnaliseDePecaRecusadaError extends DomainError {
   readonly codigo = 'ANALISE_DE_PECA_RECUSADA';
 
   constructor(
     readonly motivo: MotivoDeAnaliseDePecaRecusada,
     mensagem: string,
+    /** Só com `motivo === 'limite_de_uso'`: qual das três travas recusou. */
+    readonly limite?: LimiteDaAnaliseDePeca,
   ) {
     super(mensagem);
   }

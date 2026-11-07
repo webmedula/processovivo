@@ -9,6 +9,14 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.67.2] — 2026-11-07
+
+**A análise de peça por IA diz qual limite recusou o pedido.** Antes, as três travas do freio de uso caíam na mesma frase ("Há muitas análises em andamento ou o limite por hora foi atingido…"), e nem a pessoa nem o operador sabiam se era esperar a outra análise terminar, esperar a hora virar ou o servidor estar cheio. Os limites e os valores não mudaram (o por hora continua em `PROCESSOVIVO_IA_PECAS_MAX_POR_HORA`, ajustável no ambiente).
+
+- **Frase própria por trava**, fixa na tela: "Já há uma análise em andamento nesta conta (de outra peça ou da análise do processo)…", "Você atingiu o limite de análises de peça por hora…" e "O serviço de análise está ocupado agora…". O motivo segue `limite_de_uso` (429); o corpo ganha `detalhes.limite` = `em_andamento` | `por_hora` | `servico_ocupado` (aditivo). O teto do dia (`limite_diario`) não mudou.
+- **Log:** linha `análise de peça recusada pelo freio de uso` com a trava (`em_andamento`, `hora`, `global`, `dia`) e se a peça era de uma análise do processo. Sem conta, número, peça ou texto.
+- **Painel de IA do /admin:** na Análise de peça, a linha nova "Recusas por limite" conta as recusas por trava (ocorrências `recusa_em_andamento`, `recusa_por_hora`, `recusa_servico_ocupado`, `recusa_limite_diario`). Elas não entram em "Falhas de verificação" nem em "Não foi possível": nada foi enviado ao modelo.
+
 ## [0.67.1] — 2026-11-07
 
 **Correção: o login com Google recusava TODA entrada com "O Google não aceitou a entrada"** (primeiro teste em produção, 07/11/2026). A 0.67.0 pedia o escopo `email` e conferia, na resposta do token, se `email` tinha sido concedido — mas o Google devolve o escopo concedido pelo nome longo, `https://www.googleapis.com/auth/userinfo.email`. A conferência falhava para todo mundo e caía na frase da permissão negada. O Drive nunca sofreu disso porque confere o nome longo. Agora os dois nomes valem (`ESCOPOS_DE_EMAIL`), e o teste do adapter usa o nome longo, que é o que o Google manda de fato. Nenhuma mudança de escopo pedido, dado guardado, tela ou política.

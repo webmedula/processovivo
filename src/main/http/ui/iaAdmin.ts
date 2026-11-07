@@ -28,6 +28,9 @@ var ROTULO_DA_FALHA={citacao_invalida:'citação inválida',numero_invalido:'nú
   pendencia_negada:'"sem pendências" havendo providência',atualidade:'ato antigo apresentado como atual',
   forma:'forma fora do contrato',pagina_invalida:'página inexistente',chamada_falhou:'a chamada ao modelo falhou',
   formato_fora_do_esquema:'formato fora do esquema',tempo_esgotado:'tempo esgotado'};
+var ROTULO_DA_RECUSA={recusa_em_andamento:'já havia uma análise em andamento na conta',
+  recusa_por_hora:'limite por hora da conta',recusa_servico_ocupado:'servidor ocupado (análises simultâneas)',
+  recusa_limite_diario:'teto técnico do dia'};
 var ROTULO_DO_TIPO={ligada:'Liga/desliga',teto_dia_conta:'Teto por conta e dia',teto_dia_global:'Teto global do dia',
   alerta_custo:'Alerta de custo',modelo_publicado:'Modelo publicado',modelo_revertido:'Modelo revertido',
   teste_modelo_iniciado:'Teste de modelo iniciado',instrucoes_publicadas:'Instruções publicadas',instrucoes_revertidas:'Instruções revertidas'};
@@ -121,6 +124,17 @@ function listaDeFalhas(f){
   return h+'</ul>';
 }
 
+/* v0.67.2: recusas do freio de uso (nada foi ao modelo). Só a análise de peça as conta. */
+function listaDeRecusas(f){
+  var r=f.recusasPorLimite||[];
+  if(!r.length)return '<span class="ia-suave">Nenhuma no período.</span>';
+  var h='<ul class="ia-lista">';
+  for(var i=0;i<r.length;i++){
+    h+='<li>'+esc(ROTULO_DA_RECUSA[r[i].motivo]||r[i].motivo)+': <strong>'+n(r[i].contagem)+'</strong></li>';
+  }
+  return h+'</ul>';
+}
+
 function motivosDaAvaliacao(f){
   var m=f.motivosDaAvaliacao||{},partes=[];
   for(var k in ROTULO_DO_MOTIVO_DA_AVALIACAO){
@@ -159,6 +173,7 @@ function cartaoDaFuncao(f){
   h+=linha('Não verificadas',n(f.naoVerificadas)+(f.taxaNaoVerificado==null?'':' ('+pct(f.taxaNaoVerificado)+')'));
   h+=linha('Falhas de verificação',listaDeFalhas(f));
   h+=linha('Repetições automáticas',n(f.repeticoesAutomaticas));
+  if(f.funcao==='peca')h+=linha('Recusas por limite',listaDeRecusas(f));
   h+=linha('Custo total',esc(usd(f.custo.total,4)));
   h+=linha('Custo médio por análise',esc(usd(f.custo.medio,4)));
   h+=linha('Custo p50 · p95 · máximo',esc(usd(f.custo.p50,4))+' · '+esc(usd(f.custo.p95,4))+' · '+esc(usd(f.custo.maximo,4)));

@@ -64,6 +64,9 @@ var RECUSAS={
   arquivo_grande:'O arquivo desta peça é grande demais para a análise por IA. Leia a peça.',
   limite_de_uso:'Há muitas análises em andamento ou o limite por hora foi atingido. Tente novamente em instantes.',
   limite_diario:'Muitas análises hoje (cada peça conta como cinco). Tente de novo amanhã ou fale com a gente.',
+  limite_em_andamento:'Já há uma análise em andamento nesta conta (de outra peça ou da análise do processo). Espere terminar e tente de novo.',
+  limite_por_hora:'Você atingiu o limite de análises de peça por hora. Tente de novo mais tarde.',
+  limite_servico_ocupado:'O serviço de análise está ocupado agora. Tente de novo em instantes.',
   nao_acompanhado:'Este processo não está entre os que você acompanha.',
   desligada:'Este recurso está indisponível no momento.'
 };
@@ -329,6 +332,8 @@ function analisar(e){
         refrescar('Análise concluída. Confira na peça.','pvpe-painel');return}
       if(x.ok&&x.b.estado==='nao_verificada'){e.fase='nao_verificado';refrescar(NAO_VERIFICADO,'pvpe-painel');return}
       var motivo=x.b&&x.b.detalhes?x.b.detalhes.motivo:'';
+      /* v0.67.2: o freio diz qual trava recusou; cada uma tem a frase dela (lista fechada). */
+      if(motivo==='limite_de_uso'&&RECUSAS['limite_'+x.b.detalhes.limite])motivo='limite_'+x.b.detalhes.limite;
       if(!x.ok&&motivo&&RECUSAS[motivo]){
         e.fase='recusa';e.motivo=motivo;e.frase='';
         if(motivo==='sem_plano'){semPlanoDe(e);return}

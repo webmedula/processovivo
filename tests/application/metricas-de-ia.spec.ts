@@ -307,6 +307,19 @@ describe('o painel por período', () => {
     ]);
   });
 
+  it('as recusas do freio de uso da peça ficam à parte: não são falha de verificação nem "não foi possível"', () => {
+    ocorrencias.registrar('peca', 'recusa_em_andamento', 2);
+    ocorrencias.registrar('peca', 'recusa_por_hora');
+    ocorrencias.registrar('peca', 'citacao_invalida');
+    const f = painel.painel('hoje').funcoes.find((x) => x.funcao === 'peca')!;
+    expect(f.falhasDeVerificacao).toEqual([{ motivo: 'citacao_invalida', contagem: 1 }]);
+    expect(f.recusasPorLimite).toEqual([
+      { motivo: 'recusa_em_andamento', contagem: 2 },
+      { motivo: 'recusa_por_hora', contagem: 1 },
+    ]);
+    expect(f.naoFoiPossivel).toBe(0);
+  });
+
   it('a taxa de "não foi possível" soma as não verificadas e as chamadas que falharam', () => {
     for (let i = 0; i < 6; i++)
       inserirAto({ em: '2026-10-05T10:00:00.000Z', custo: 0.01 });

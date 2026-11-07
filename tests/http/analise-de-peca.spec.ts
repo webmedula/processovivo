@@ -5,6 +5,8 @@ import { carregarConfig } from '../../src/infrastructure/config/env.js';
 import type { Aplicacao } from '../../src/main/factories/makeProcessoSearchService.js';
 import { workspaceDaChave } from '../../src/main/http/chaves.js';
 import { construirServidor } from '../../src/main/http/servidor.js';
+import { mapearErro } from '../../src/main/http/erros.js';
+import { AnaliseDePecaRecusadaError } from '../../src/domain/errors/index.js';
 import { aplicacaoDeTeste } from '../helpers/aplicacao.js';
 import {
   AnalisadorDePecaFalso,
@@ -369,5 +371,20 @@ describe('avaliação', () => {
     expect((await enviar({ avaliacao: 'errado', motivo: 'inventado' })).statusCode).toBe(
       400,
     );
+  });
+});
+
+describe('recusa pelo freio de uso no HTTP (v0.67.2)', () => {
+  it('o corpo diz qual trava recusou em detalhes.limite; o teto do dia não leva o campo', () => {
+    const m = mapearErro(
+      new AnaliseDePecaRecusadaError('limite_de_uso', 'frase', 'em_andamento'),
+    );
+    expect(m.status).toBe(429);
+    expect(m.corpo).toMatchObject({
+      detalhes: { motivo: 'limite_de_uso', limite: 'em_andamento' },
+    });
+    const dia = mapearErro(new AnaliseDePecaRecusadaError('limite_diario', 'frase'));
+    expect(dia.corpo).toMatchObject({ detalhes: { motivo: 'limite_diario' } });
+    expect(JSON.stringify(dia.corpo)).not.toContain('"limite"');
   });
 });
