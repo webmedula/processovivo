@@ -9,6 +9,7 @@ import {
   SessaoInvalidaError,
 } from '../../domain/errors/index.js';
 import type { RepositorioUsuarios } from '../../domain/ports/RepositorioUsuarios.js';
+import { SENHA_AUSENTE } from '../../domain/ports/RepositorioUsuarios.js';
 import type { HashDeSenha, TokensDeSessao } from '../../domain/ports/Criptografia.js';
 import type { Notificador } from '../../domain/ports/Notificador.js';
 import { Oab } from '../../domain/entities/Oab.js';
@@ -137,10 +138,45 @@ export class ServicoContas {
     // `guardarSenha` ANTES de tocar no banco: se a senha é fraca, a pessoa
     // recebe o aviso sem que nada tenha sido gravado.
     const senhaGuardada = this.senhas.guardar(dados.senha);
+    const usuario = await this.criarConta(email, dados.nome, senhaGuardada);
+    return this.abrirSessao(usuario);
+  }
 
+  /**
+   * Conta que nasce pelo login com Google (v0.67.0): SEM senha. O e-mail já chegou
+   * normalizado e verificado pelo provedor; quem abre a sessão é `ServicoLoginGoogle`, depois
+   * de ligar a identidade — por isso aqui não há sessão. A conta ganha o mesmo teste de
+   * assinatura do cadastro comum: a porta de entrada não muda o plano.
+   *
+   * @throws {EmailJaCadastradoError}
+   */
+  async cadastrarSemSenha(dados: {
+    readonly email: string;
+    readonly nome: string;
+  }): Promise<Usuario> {
+    return this.criarConta(normalizarEmail(dados.email), dados.nome, SENHA_AUSENTE);
+  }
+
+  /** A conta tem senha própria? `false` para a que nasceu pelo Google e ainda não criou uma. */
+  async temSenha(usuario: Usuario): Promise<boolean> {
+    const achado = await this.repositorio.porEmail(usuario.email);
+    return achado !== undefined && achado.senha !== SENHA_AUSENTE;
+  }
+
+  /** Abre a sessão de quem acabou de ser identificado por OUTRO caminho (o login com Google). */
+  async abrirSessaoPara(usuario: Usuario): Promise<SessaoAberta> {
+    await this.repositorio.registrarAcesso(usuario.id);
+    return this.abrirSessao(usuario);
+  }
+
+  private async criarConta(
+    email: string,
+    nome: string,
+    senhaGuardada: string,
+  ): Promise<Usuario> {
     const usuario = await this.repositorio.criar({
       email,
-      nome: dados.nome.trim() || email.split('@')[0] || 'Advogado',
+      nome: nome.trim() || email.split('@')[0] || 'Advogado',
       senhaGuardada,
     });
 
@@ -160,7 +196,7 @@ export class ServicoContas {
       );
     }
 
-    return this.abrirSessao(usuario);
+    return usuario;
   }
 
   /**

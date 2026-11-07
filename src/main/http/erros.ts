@@ -10,6 +10,7 @@ import {
   AnaliseDoProcessoRecusadaError,
   ConfiguracaoDeIaRecusadaError,
   AdministradoresRecusadoError,
+  LoginGoogleRecusadoError,
   ModeloDeIaRecusadoError,
   InstrucaoDeIaRecusadaError,
   PrazoNaoCalculavelError,
@@ -246,6 +247,23 @@ export function mapearErro(erro: unknown): RespostaDeErro {
       valor_invalido: 400,
       confirmacao_necessaria: 409,
       ambiente_bloqueia: 409,
+    };
+    return {
+      status: status[erro.motivo],
+      corpo: {
+        erro: erro.codigo,
+        mensagem: erro.message,
+        detalhes: { motivo: erro.motivo },
+      },
+    };
+  }
+
+  // Login com Google (v0.67.0): ligar/desligar recusado; nada gravado.
+  if (erro instanceof LoginGoogleRecusadoError) {
+    const status: Record<LoginGoogleRecusadoError['motivo'], number> = {
+      indisponivel: 404,
+      nao_vinculada: 404,
+      conta_sem_senha: 409,
     };
     return {
       status: status[erro.motivo],

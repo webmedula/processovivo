@@ -16,6 +16,7 @@ import { SCRIPT_ANALISE_PROCESSO_IA } from '../../src/main/http/ui/analiseProces
 import { SCRIPT_PAGAMENTO } from '../../src/main/http/ui/pagamento.js';
 import { SCRIPT_PLANO_ESCOLHIDO } from '../../src/main/http/ui/planoEscolhido.js';
 import { SCRIPT_NAVEGACAO } from '../../src/main/http/ui/navegacao.js';
+import { SCRIPT_LOGIN_GOOGLE } from '../../src/main/http/ui/loginGoogle.js';
 
 /*
  * O console é JavaScript dentro de uma string.
@@ -56,6 +57,7 @@ describe.each([
   ['assinatura online e confirmação', SCRIPT_PAGAMENTO],
   ['plano escolhido no site', SCRIPT_PLANO_ESCOLHIDO],
   ['navegação por hash', SCRIPT_NAVEGACAO],
+  ['login com Google', SCRIPT_LOGIN_GOOGLE],
 ])('console web — o JavaScript da interface (%s)', (_nome, codigo) => {
   const linter = new Linter();
 

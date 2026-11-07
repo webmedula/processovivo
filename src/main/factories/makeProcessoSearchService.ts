@@ -6,6 +6,9 @@ import { GuardaDePecas } from '../../application/services/GuardaDePecas.js';
 import { ServicoLeitor } from '../../application/services/ServicoLeitor.js';
 import { ServicoPasta } from '../../application/services/ServicoPasta.js';
 import { ServicoDrive } from '../../application/services/ServicoDrive.js';
+import { ServicoLoginGoogle } from '../../application/services/ServicoLoginGoogle.js';
+import { GoogleIdentidadeAdapter } from '../../infrastructure/adapters/identidade/GoogleIdentidadeAdapter.js';
+import { RepositorioIdentidadesSqlite } from '../../infrastructure/persistencia/sqlite/RepositorioIdentidadesSqlite.js';
 import { ServicoPagamentos } from '../../application/services/ServicoPagamentos.js';
 import { GatewayFalso } from '../../infrastructure/adapters/pagamento/GatewayFalso.js';
 import { MercadoPagoAdapter } from '../../infrastructure/adapters/pagamento/MercadoPagoAdapter.js';
@@ -215,6 +218,11 @@ export interface Aplicacao {
    * rotas respondem 501 e a tela não mostra nada.
    */
   readonly drive: ServicoDrive | undefined;
+  /**
+   * Login com Google (v0.67.0). `undefined` com `PROCESSOVIVO_LOGIN_GOOGLE_HABILITADO=false` (o
+   * padrão): a tela não mostra o botão e as rotas respondem 404.
+   */
+  readonly loginGoogle: ServicoLoginGoogle | undefined;
   /**
    * Cobrança recorrente pelo gateway de pagamento (v0.44.0). `undefined` com
    * `PROCESSOVIVO_PAGAMENTO_HABILITADO=false` (o padrão): não há rota de checkout, o webhook
@@ -935,6 +943,7 @@ export function montarAplicacao(config: Config): Aplicacao {
     leitor,
     pasta,
     drive,
+    loginGoogle: montarLoginGoogle(config, db, logger, contas, usuarios),
     pagamentos: montarPagamentos(
       config,
       db,
@@ -1780,4 +1789,42 @@ function construirProviders(config: Config, logger: Logger): ProcessoProvider[] 
   }
 
   return providers;
+}
+
+/**
+ * O login com Google (v0.67.0) — ou nada (desligado por padrão).
+ *
+ * Usa o MESMO cliente OAuth do Drive (`GOOGLE_CLIENT_ID`/`_SECRET`), mas um `EstadosDeConexao`
+ * PRÓPRIO, com segredo próprio derivado da chave do cofre: um `state` emitido para o login nunca
+ * conclui uma conexão do Drive, nem o contrário. Nenhum token do Google é guardado — só o `sub`.
+ */
+function montarLoginGoogle(
+  config: Config,
+  db: ReturnType<typeof abrirBanco>,
+  logger: Logger,
+  contas: ServicoContas,
+  usuarios: RepositorioUsuarios,
+): ServicoLoginGoogle | undefined {
+  if (!config.loginGoogle.habilitado) return undefined;
+  const chave = Buffer.from(config.mni.chaveDoCofre, 'base64');
+  logger.info('login com Google habilitado', {
+    // Só o endereço de retorno (o que se cadastra no Google Cloud), nunca id nem segredo.
+    uriDeRetorno: config.loginGoogle.uriDeRetorno,
+  });
+  return new ServicoLoginGoogle({
+    provedor: new GoogleIdentidadeAdapter({
+      clientId: config.loginGoogle.clientId,
+      clientSecret: config.loginGoogle.clientSecret,
+      transporte: new TransporteComHttpClient(new HttpClient({ tentativas: 1 })),
+    }),
+    identidades: new RepositorioIdentidadesSqlite(db),
+    usuarios,
+    contas,
+    estados: new EstadosDeConexao({
+      segredo: createHmac('sha256', chave).update('login-google-state-v1').digest(),
+      clock: clockDoSistema,
+    }),
+    uriDeRetorno: config.loginGoogle.uriDeRetorno,
+    logger,
+  });
 }

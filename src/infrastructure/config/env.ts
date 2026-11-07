@@ -315,6 +315,11 @@ const schema = z.object({
   GOOGLE_CLIENT_SECRET: z.string().default(''),
   // Teto GLOBAL de envios em andamento (um job por workspace, e poucos ao mesmo tempo no
   // servidor): o Drive é do advogado, mas o disco e a banda são nossos.
+  // --- Login com Google (v0.67.0) -----------------------------------------------
+  // Nasce DESLIGADO; o dono liga. Usa o MESMO cliente OAuth do Drive (GOOGLE_CLIENT_ID/_SECRET),
+  // com os escopos `openid email profile` e nada mais. Exige PROCESSOVIVO_URL_BASE (https) e a
+  // chave do cofre (o `state` assinado deriva dela). Nenhum token do Google é guardado.
+  PROCESSOVIVO_LOGIN_GOOGLE_HABILITADO: booleano.default('false'),
   PROCESSOVIVO_DRIVE_MAX_SIMULTANEOS: inteiroPositivo(2),
   // Pausa entre uma peça e outra do mesmo envio. Sem rajada: uma peça por vez.
   PROCESSOVIVO_DRIVE_PAUSA_ENTRE_PECAS_MS: z.coerce.number().int().min(0).default(400),
@@ -503,6 +508,14 @@ export interface Config {
     readonly maxSimultaneos: number;
     readonly pausaEntrePecasMs: number;
   };
+  readonly loginGoogle: {
+    readonly habilitado: boolean;
+    /** Vazios quando o recurso está desligado. Nunca vão a log, resposta ou erro. */
+    readonly clientId: string;
+    readonly clientSecret: string;
+    /** `PROCESSOVIVO_URL_BASE` + `/v1/sessoes/google/retorno`; vazio com o recurso desligado. */
+    readonly uriDeRetorno: string;
+  };
   readonly pagamento: {
     readonly habilitado: boolean;
     readonly gateway: 'mercadopago' | 'falso';
@@ -616,6 +629,7 @@ export function carregarConfig(fonte: NodeJS.ProcessEnv = process.env): Config {
   const env = resultado.data;
   validarConfiguracaoDaIa(env);
   validarConfiguracaoDoDrive(env);
+  validarConfiguracaoDoLoginGoogle(env);
   validarConfiguracaoDoPagamento(env, fonte['NODE_ENV'] === 'production');
   return {
     cadeiaDeProviders: env.PROCESSOVIVO_PROVIDER_CHAIN.split(',')
@@ -764,6 +778,18 @@ export function carregarConfig(fonte: NodeJS.ProcessEnv = process.env): Config {
         : '',
       maxSimultaneos: env.PROCESSOVIVO_DRIVE_MAX_SIMULTANEOS,
       pausaEntrePecasMs: env.PROCESSOVIVO_DRIVE_PAUSA_ENTRE_PECAS_MS,
+    },
+    loginGoogle: {
+      habilitado: env.PROCESSOVIVO_LOGIN_GOOGLE_HABILITADO,
+      clientId: env.PROCESSOVIVO_LOGIN_GOOGLE_HABILITADO
+        ? env.GOOGLE_CLIENT_ID.trim()
+        : '',
+      clientSecret: env.PROCESSOVIVO_LOGIN_GOOGLE_HABILITADO
+        ? env.GOOGLE_CLIENT_SECRET.trim()
+        : '',
+      uriDeRetorno: env.PROCESSOVIVO_LOGIN_GOOGLE_HABILITADO
+        ? `${env.PROCESSOVIVO_URL_BASE.trim().replace(/\/+$/, '')}${ROTA_DE_RETORNO_DO_LOGIN_GOOGLE}`
+        : '',
     },
     pagamento: {
       habilitado: env.PROCESSOVIVO_PAGAMENTO_HABILITADO,
@@ -947,6 +973,8 @@ function validarConfiguracaoDoPagamento(
 
 /** O caminho que o Google chama de volta depois da autorização. Cadastrado no Cloud Console. */
 export const ROTA_DE_RETORNO_DO_DRIVE = '/v1/drive/retorno';
+/** O retorno do login com Google (v0.67.0). Também se cadastra no Cloud Console, ao lado do do Drive. */
+export const ROTA_DE_RETORNO_DO_LOGIN_GOOGLE = '/v1/sessoes/google/retorno';
 
 /**
  * Com o Drive habilitado, o arranque exige tudo o que ele precisa — e diz o que falta, sem
@@ -959,22 +987,39 @@ export const ROTA_DE_RETORNO_DO_DRIVE = '/v1/drive/retorno';
  */
 function validarConfiguracaoDoDrive(env: z.infer<typeof schema>): void {
   if (!env.PROCESSOVIVO_DRIVE_HABILITADO) return;
+  validarClienteDoGoogle(env, 'PROCESSOVIVO_DRIVE_HABILITADO', ROTA_DE_RETORNO_DO_DRIVE);
+}
+
+/**
+ * O login com Google (v0.67.0) exige o mesmo do Drive: cliente OAuth, URL base em https e o
+ * cofre (o `state` assinado deriva a chave dele). A mesma conferência, com o nome da chave que
+ * ligou o recurso na mensagem, para o operador saber qual variável a exigiu.
+ */
+function validarConfiguracaoDoLoginGoogle(env: z.infer<typeof schema>): void {
+  if (!env.PROCESSOVIVO_LOGIN_GOOGLE_HABILITADO) return;
+  validarClienteDoGoogle(
+    env,
+    'PROCESSOVIVO_LOGIN_GOOGLE_HABILITADO',
+    ROTA_DE_RETORNO_DO_LOGIN_GOOGLE,
+  );
+}
+
+function validarClienteDoGoogle(
+  env: z.infer<typeof schema>,
+  ligadoPor: string,
+  rotaDeRetorno: string,
+): void {
   const problemas: string[] = [];
   const id = env.GOOGLE_CLIENT_ID.trim();
   const segredo = env.GOOGLE_CLIENT_SECRET.trim();
-  if (id === '')
-    problemas.push(
-      'GOOGLE_CLIENT_ID: obrigatório com PROCESSOVIVO_DRIVE_HABILITADO=true',
-    );
+  if (id === '') problemas.push(`GOOGLE_CLIENT_ID: obrigatório com ${ligadoPor}=true`);
   else if (pareceValorDeExemplo(id)) {
     problemas.push(
       'GOOGLE_CLIENT_ID: parece um valor de exemplo; coloque o ID real do cliente OAuth',
     );
   }
   if (segredo === '') {
-    problemas.push(
-      'GOOGLE_CLIENT_SECRET: obrigatório com PROCESSOVIVO_DRIVE_HABILITADO=true',
-    );
+    problemas.push(`GOOGLE_CLIENT_SECRET: obrigatório com ${ligadoPor}=true`);
   } else if (pareceValorDeExemplo(segredo)) {
     problemas.push(
       'GOOGLE_CLIENT_SECRET: parece um valor de exemplo; coloque o segredo real',
@@ -983,8 +1028,8 @@ function validarConfiguracaoDoDrive(env: z.infer<typeof schema>): void {
   const base = env.PROCESSOVIVO_URL_BASE.trim().replace(/\/+$/, '');
   if (base === '') {
     problemas.push(
-      'PROCESSOVIVO_URL_BASE: obrigatória com PROCESSOVIVO_DRIVE_HABILITADO=true ' +
-        `(o endereço de retorno é ela + ${ROTA_DE_RETORNO_DO_DRIVE})`,
+      `PROCESSOVIVO_URL_BASE: obrigatória com ${ligadoPor}=true ` +
+        `(o endereço de retorno é ela + ${rotaDeRetorno})`,
     );
   } else if (
     !/^https:\/\//i.test(base) &&
@@ -997,7 +1042,7 @@ function validarConfiguracaoDoDrive(env: z.infer<typeof schema>): void {
   const cofre = env.PROCESSOVIVO_CREDENCIAL_CHAVE.trim();
   if (cofre === '' || pareceValorDeExemplo(cofre)) {
     problemas.push(
-      'PROCESSOVIVO_CREDENCIAL_CHAVE: obrigatória com PROCESSOVIVO_DRIVE_HABILITADO=true ' +
+      `PROCESSOVIVO_CREDENCIAL_CHAVE: obrigatória com ${ligadoPor}=true ` +
         '(a autorização do Google só é guardada cifrada)',
     );
   }

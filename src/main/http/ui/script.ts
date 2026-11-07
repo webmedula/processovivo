@@ -1741,14 +1741,14 @@ function telaEntrada(modo){
     (criar?'<div class="nota">Pelo menos 10 caracteres. Uma frase que só você '+
       'lembra protege mais do que trocar letra por símbolo.</div>':'')+
     '<div id="c-erro"></div>'+
-    '<button class="bt" id="c-enviar">'+(criar?'Criar conta e entrar':'Entrar')+'</button>'+
+    '<button class="bt" id="c-enviar">'+(criar?'Criar conta e entrar':'Entrar')+'</button><div id="c-google"></div>'+
     (criar?'':'<div id="c-esqueci" class="nota" style="margin-top:14px;text-align:center"></div>')+
     '<div class="rodape">Vai conectar uma integração, como n8n ou script? '+
     '<button class="link" id="c-chave">Entrar com chave de API</button></div>');
 
   document.querySelectorAll('[data-modo]').forEach(function(b){
     b.addEventListener('click',function(){telaEntrada(b.getAttribute('data-modo'))})});
-  $('c-chave').addEventListener('click',telaChave);
+  $('c-chave').addEventListener('click',telaChave);if(window.__pvLoginGoogle)window.__pvLoginGoogle.entrada(criar);// ui/loginGoogle.ts
 
   var enviar=function(){
     var email=$('c-email').value.trim(), senha=$('c-senha').value;
@@ -2054,7 +2054,7 @@ function verConta(){
       '<div><label class="rotulo" for="s-nova">Senha nova</label>'+
       '<input id="s-nova" type="password" autocomplete="new-password"></div>'+
       '<div style="align-self:end"><button class="bt bt2" id="s-salvar">Trocar</button></div>'+
-    '</div><div id="s-aviso"></div></div>';if(window.__pvPagamento)window.__pvPagamento.ligar();// ui/pagamento.ts
+    '</div><div id="s-aviso"></div></div><div id="g-cartao"></div>';if(window.__pvPagamento)window.__pvPagamento.ligar();if(window.__pvLoginGoogle)window.__pvLoginGoogle.cartao();// ui/pagamento.ts, ui/loginGoogle.ts
 
   $('p-salvar').addEventListener('click',function(){
     var oab=$('p-oab').value.trim(), uf=$('p-uf').value.trim().toUpperCase();

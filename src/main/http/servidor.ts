@@ -26,6 +26,11 @@ import { rotasDePecas } from './rotas/pecas.js';
 import { rotasDoLeitor } from './rotas/leitor.js';
 import { rotasDaPasta } from './rotas/pasta.js';
 import { ROTA_DRIVE_RETORNO, rotasDoDrive } from './rotas/drive.js';
+import {
+  ROTA_LOGIN_GOOGLE,
+  ROTA_LOGIN_GOOGLE_RETORNO,
+  rotasDoLoginGoogle,
+} from './rotas/loginGoogle.js';
 import { rotasDoPainel } from './rotas/painel.js';
 import { rotasDaAnaliseIA } from './rotas/analiseIA.js';
 import { rotasDoResumoIA } from './rotas/resumoIA.js';
@@ -145,6 +150,10 @@ export function construirServidor(app: Aplicacao, config: Config): FastifyInstan
       ROTA_FEED_PUBLICO,
       // Volta do Google: navegação sem cookie nem chave; autentica-se pelo `state` assinado.
       ROTA_DRIVE_RETORNO,
+      // Login com Google (v0.67.0): quem entra por aqui ainda não tem sessão; o retorno se autentica
+      // pelo `state` assinado. Desligado, respondem `disponivel: false` e 404.
+      ROTA_LOGIN_GOOGLE,
+      ROTA_LOGIN_GOOGLE_RETORNO,
       // O aviso do gateway de pagamento: sem cookie e sem chave. Quem o autentica é a assinatura do
       // próprio aviso (`x-signature`); inválida = 401. Desligado o recurso, a rota nem existe (404).
       ROTA_WEBHOOK_DE_PAGAMENTO,
@@ -161,6 +170,9 @@ export function construirServidor(app: Aplicacao, config: Config): FastifyInstan
       // DESCARTARIA o cookie e o login pareceria não funcionar.
       cookieSeguro: config.http.cookieSeguro,
     }),
+  );
+  void servidor.register(
+    rotasDoLoginGoogle(app.loginGoogle, { cookieSeguro: config.http.cookieSeguro }),
   );
   void servidor.register(rotasDeSaude(app));
   void servidor.register(rotasDeInterface());

@@ -95,6 +95,9 @@ import type { AnalisadorDeAto } from '../../src/domain/ports/AnalisadorDeAto.js'
 import { RepositorioAnalisesSqlite } from '../../src/infrastructure/persistencia/sqlite/RepositorioAnalisesSqlite.js';
 import type { Aplicacao } from '../../src/main/factories/makeProcessoSearchService.js';
 import { ServicoContas } from '../../src/application/services/ServicoContas.js';
+import { ServicoLoginGoogle } from '../../src/application/services/ServicoLoginGoogle.js';
+import type { ProvedorDeIdentidade } from '../../src/domain/ports/ProvedorDeIdentidade.js';
+import { RepositorioIdentidadesSqlite } from '../../src/infrastructure/persistencia/sqlite/RepositorioIdentidadesSqlite.js';
 import { ServicoAssinaturas } from '../../src/application/services/ServicoAssinaturas.js';
 import { ServicoChavesApi } from '../../src/application/services/ServicoChavesApi.js';
 import { ServicoPlanos } from '../../src/application/services/ServicoPlanos.js';
@@ -168,7 +171,12 @@ export const CONFIG_LEITOR_DE_TESTE: ConfiguracaoLeitor = {
 export class NotificadorEspiao implements Notificador {
   readonly nome = 'espiao';
   readonly habilitado = true;
-  readonly enviadas: Array<{ para: string; assunto: string; texto: string; html?: string }> = [];
+  readonly enviadas: Array<{
+    para: string;
+    assunto: string;
+    texto: string;
+    html?: string;
+  }> = [];
 
   async enviar(m: {
     para: string;
@@ -335,6 +343,15 @@ export interface OpcoesAplicacaoDeTeste {
     readonly esperar?: (ms: number) => Promise<void>;
     /** Teste de navegador: o envio anda sozinho com espera real curta. */
     readonly gerarId?: () => string;
+  };
+  /**
+   * Liga o login com Google (v0.67.0) com um provedor DUBLÊ (nenhum teste toca a rede).
+   * Ausente = desligado, o padrão de produção.
+   */
+  readonly loginGoogle?: {
+    readonly provedor: ProvedorDeIdentidade;
+    readonly uriDeRetorno?: string;
+    readonly clock?: Clock;
   };
   /** Liga a área administrativa. Ausente por padrão — mesma regra de `comAssinaturas`. */
   readonly admin?: {
@@ -854,6 +871,25 @@ export function aplicacaoDeTeste(
     ...(opcoes.agora ? { agora: opcoes.agora } : {}),
   });
 
+  const contas = new ServicoContas({
+    repositorio: usuarios,
+    ...(opcoes.comAssinaturas
+      ? { assinaturas: repositorioAssinaturas, regras: repositorioRegras }
+      : {}),
+    senhas: opcoes.senhas ?? hashDeTeste,
+    tokens: tokensDeSessao,
+    duracaoSessaoMs: opcoes.duracaoSessaoMs ?? 60 * 60 * 1000,
+    ...(opcoes.recuperacao
+      ? {
+          notificador: opcoes.recuperacao.notificador,
+          urlBase: opcoes.recuperacao.urlBase,
+          ...(opcoes.recuperacao.duracaoMs !== undefined
+            ? { duracaoRecuperacaoMs: opcoes.recuperacao.duracaoMs }
+            : {}),
+        }
+      : {}),
+  });
+
   return {
     buscarProcessoPorNumero: new BuscarProcessoPorNumero(orquestrador),
     buscarProcessosPorOab: new BuscarProcessosPorOab(orquestrador),
@@ -917,24 +953,23 @@ export function aplicacaoDeTeste(
       clock: clockDoSistema,
       logger: loggerSilencioso,
     }),
-    contas: new ServicoContas({
-      repositorio: usuarios,
-      ...(opcoes.comAssinaturas
-        ? { assinaturas: repositorioAssinaturas, regras: repositorioRegras }
-        : {}),
-      senhas: opcoes.senhas ?? hashDeTeste,
-      tokens: tokensDeSessao,
-      duracaoSessaoMs: opcoes.duracaoSessaoMs ?? 60 * 60 * 1000,
-      ...(opcoes.recuperacao
-        ? {
-            notificador: opcoes.recuperacao.notificador,
-            urlBase: opcoes.recuperacao.urlBase,
-            ...(opcoes.recuperacao.duracaoMs !== undefined
-              ? { duracaoRecuperacaoMs: opcoes.recuperacao.duracaoMs }
-              : {}),
-          }
-        : {}),
-    }),
+    contas,
+    loginGoogle: opcoes.loginGoogle
+      ? new ServicoLoginGoogle({
+          provedor: opcoes.loginGoogle.provedor,
+          identidades: new RepositorioIdentidadesSqlite(db),
+          usuarios,
+          contas,
+          estados: new EstadosDeConexao({
+            segredo: Buffer.alloc(32, 7),
+            clock: opcoes.loginGoogle.clock ?? clockDoSistema,
+          }),
+          uriDeRetorno:
+            opcoes.loginGoogle.uriDeRetorno ??
+            'https://app.exemplo.test/v1/sessoes/google/retorno',
+          logger: loggerSilencioso,
+        })
+      : undefined,
     preferenciasNotificacao,
     notificador: opcoes.notificador ?? new NotificadorEspiao(),
     agendador: parado(),

@@ -10,6 +10,15 @@ import type { Usuario } from '../entities/Usuario.js';
  */
 export type SenhaGuardada = string;
 
+/**
+ * O que vai na coluna `senha` de uma conta que nasceu pelo login com Google (v0.67.0) e
+ * ainda não escolheu senha. NÃO é hash: `conferir` devolve `false` para ele em todo caso
+ * (formato fora do contrato), então ninguém entra por senha nessa conta até ela criar uma
+ * pelo "Esqueci minha senha". A coluna é `NOT NULL` e é por isso que existe um marcador em
+ * vez de `NULL` — migração aditiva, sem mexer na tabela.
+ */
+export const SENHA_AUSENTE: SenhaGuardada = 'sem-senha';
+
 export interface NovoUsuario {
   readonly email: string;
   readonly nome: string;

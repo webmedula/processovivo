@@ -1437,3 +1437,25 @@ export class AdministradoresRecusadoError extends DomainError {
     super(mensagem);
   }
 }
+
+/**
+ * A ligação da conta com o Google foi recusada (v0.67.0). Nada foi gravado. A mensagem é nossa.
+ *
+ * - `indisponivel`: o login com Google está desligado neste servidor (404);
+ * - `nao_vinculada`: pediu para desligar uma conta Google que não está ligada (404);
+ * - `conta_sem_senha`: a conta nasceu pelo Google e ainda não tem senha — desligar o Google a
+ *   trancaria para fora. Primeiro criar a senha pelo "Esqueci minha senha" (409).
+ */
+export type MotivoDeLoginGoogleRecusado =
+  'indisponivel' | 'nao_vinculada' | 'conta_sem_senha';
+
+export class LoginGoogleRecusadoError extends DomainError {
+  readonly codigo = 'LOGIN_GOOGLE_RECUSADO';
+
+  constructor(
+    readonly motivo: MotivoDeLoginGoogleRecusado,
+    mensagem: string,
+  ) {
+    super(mensagem);
+  }
+}
