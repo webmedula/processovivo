@@ -4,9 +4,11 @@ import type {
   ProvedorDeIdentidade,
 } from '../../../domain/ports/ProvedorDeIdentidade.js';
 import {
+  CodigoDeAutorizacaoRecusadoError,
   DomainError,
   ProviderIndisponivelError,
   RespostaInvalidaError,
+  motivoDoProvedorOauth,
 } from '../../../domain/errors/index.js';
 import type {
   RespostaDoTransporte,
@@ -32,6 +34,11 @@ import type {
  * carregam só uma frase nossa.
  */
 export const ESCOPOS_DO_LOGIN = 'openid email profile';
+/** Como o escopo do e-mail pode voltar no token: o nome curto pedido e o longo que o Google usa. */
+export const ESCOPOS_DE_EMAIL = [
+  'email',
+  'https://www.googleapis.com/auth/userinfo.email',
+] as const;
 export const PROVEDOR_GOOGLE = 'google';
 
 const URL_DE_AUTORIZACAO = 'https://accounts.google.com/o/oauth2/v2/auth';
@@ -104,11 +111,10 @@ export class GoogleIdentidadeAdapter implements ProvedorDeIdentidade {
       timeoutMs: 20_000,
     });
     if (token.status >= 400 && token.status < 500) {
-      // Código inválido, usado ou vencido: o Google respondeu, e a resposta é "não".
-      throw new RespostaInvalidaError(
-        this.nome,
-        'o Google recusou o código de autorização',
-      );
+      // Código inválido, usado ou vencido, ou segredo errado: o Google respondeu, e a resposta
+      // é "não". Só o `error` (lista fechada) segue ao log; a `error_description` fica aqui.
+      const erro = (corpoJson(token) as { error?: unknown } | null)?.error;
+      throw new CodigoDeAutorizacaoRecusadoError(this.nome, motivoDoProvedorOauth(erro));
     }
     if (token.status < 200 || token.status >= 300) {
       throw new ProviderIndisponivelError(this.nome, `token respondeu ${token.status}`);
@@ -119,12 +125,15 @@ export class GoogleIdentidadeAdapter implements ProvedorDeIdentidade {
     }
     // O consentimento granular deixa a pessoa DESMARCAR o e-mail e ainda concluir a tela.
     // Sem e-mail não há conta: recusa-se aqui, antes de olhar o userinfo.
+    //
+    // ATENÇÃO (v0.67.1, visto em produção em 07/11/2026): pede-se `email`, mas o Google devolve
+    // o escopo concedido pelo nome LONGO, `https://www.googleapis.com/auth/userinfo.email`.
+    // A 0.67.0 procurava só `email` e recusava TODO login como "e-mail não concedido". Os dois
+    // nomes valem; o teste de adapter usa o longo, que é o que o Google manda de fato.
     const concedidos = new Set((t.data.scope ?? '').split(/\s+/));
-    if (t.data.scope !== undefined && !concedidos.has('email')) {
-      throw new RespostaInvalidaError(
-        this.nome,
-        'a permissão do e-mail não foi concedida',
-      );
+    const emailConcedido = ESCOPOS_DE_EMAIL.some((e) => concedidos.has(e));
+    if (t.data.scope !== undefined && !emailConcedido) {
+      throw new CodigoDeAutorizacaoRecusadoError(this.nome, 'escopo_negado');
     }
 
     const info = await this.chamar({

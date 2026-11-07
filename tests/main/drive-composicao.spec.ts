@@ -171,7 +171,13 @@ describe('o Drive e as regras de dependência', () => {
       for (const m of fonte(a).matchAll(/googleapis\.com\/auth\/[a-z._-]+/g))
         escopos.add(m[0]);
     }
-    expect([...escopos]).toEqual(['googleapis.com/auth/drive.file']);
+    // `userinfo.email` NÃO é pedido: é o nome LONGO com que o Google devolve o `email` do login
+    // (v0.67.1), e o adapter do login só o LÊ na resposta do token. O escopo pedido ao Google
+    // pelo login continua sendo `openid email profile` (teste do adapter de identidade).
+    expect([...escopos].sort()).toEqual([
+      'googleapis.com/auth/drive.file',
+      'googleapis.com/auth/userinfo.email',
+    ]);
   });
 
   it('sentido único: o adapter não tem listar, buscar, apagar, renomear nem compartilhar', () => {

@@ -3,9 +3,11 @@ import type {
   ProvedorDeIdentidade,
 } from '../../src/domain/ports/ProvedorDeIdentidade.js';
 import {
+  CodigoDeAutorizacaoRecusadoError,
   ProviderIndisponivelError,
   RespostaInvalidaError,
 } from '../../src/domain/errors/index.js';
+import type { MotivoDoProvedorOauth } from '../../src/domain/errors/index.js';
 
 /**
  * Provedor de identidade de MENTIRA (v0.67.0): valores sintéticos, nenhuma rede. O teste escreve
@@ -13,17 +15,21 @@ import {
  */
 export const CODIGO = 'CODIGO-DE-AUTORIZACAO-SINTETICO';
 
+/** `recusa:<motivo>` reproduz o 4xx do Google com `error` (v0.67.1). */
+type RespostaDoProvedorFalso =
+  | IdentidadeExterna
+  | 'indisponivel'
+  | 'recusa'
+  | `recusa:${MotivoDoProvedorOauth}`;
+
 export class ProvedorFalso implements ProvedorDeIdentidade {
   readonly nome = 'google';
   readonly pedidos: Array<{ codigo: string; verificador: string; uriDeRetorno: string }> =
     [];
-  private readonly respostas = new Map<
-    string,
-    IdentidadeExterna | 'indisponivel' | 'recusa'
-  >();
+  private readonly respostas = new Map<string, RespostaDoProvedorFalso>();
 
   /** O que `identidadePeloCodigo` devolve para este código. */
-  quandoCodigo(codigo: string, r: IdentidadeExterna | 'indisponivel' | 'recusa'): this {
+  quandoCodigo(codigo: string, r: RespostaDoProvedorFalso): this {
     this.respostas.set(codigo, r);
     return this;
   }
@@ -49,6 +55,13 @@ export class ProvedorFalso implements ProvedorDeIdentidade {
     }
     if (r === 'indisponivel')
       throw new ProviderIndisponivelError(this.nome, 'fora do ar');
+    if (typeof r === 'string') {
+      // O que o adapter de verdade lança quando o Google responde 4xx com `error` (v0.67.1).
+      throw new CodigoDeAutorizacaoRecusadoError(
+        this.nome,
+        r.slice('recusa:'.length) as MotivoDoProvedorOauth,
+      );
+    }
     return r;
   }
 }
