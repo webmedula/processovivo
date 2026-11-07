@@ -709,6 +709,20 @@ respondem 404 e nada é apagado — quem ligou a conta Google continua entrando 
 4. Cancele na tela do Google: a entrada mostra "A entrada com o Google foi cancelada. Nada
    mudou." e nenhuma sessão abre.
 
+**Se a tela disser "O Google não aceitou a entrada"** (v0.67.1): a pessoa passou pela tela do
+Google, mas o Google recusou a troca do código pelo token. Procure no log do contêiner a linha
+`login com Google: autorização recusada` e leia o campo `motivoDoGoogle`:
+
+| `motivoDoGoogle` | O que é | O que fazer |
+|---|---|---|
+| `invalid_client` | `GOOGLE_CLIENT_ID` e `GOOGLE_CLIENT_SECRET` não são do mesmo cliente OAuth, ou o segredo foi regerado | Copiar o segredo do cliente que recebeu a redirect URI (sem espaço no fim) e Deploy |
+| `invalid_grant` | código usado duas vezes ou vencido (F5 na página de retorno, clique duplo) | Testar de novo, numa aba anônima, um clique só |
+| `redirect_uri_mismatch` | a URI de retorno enviada não é a cadastrada | Conferir `PROCESSOVIVO_URL_BASE` e a URI no Cloud Console, letra por letra |
+| `escopo_negado` | a pessoa desmarcou o e-mail na tela do Google | Entrar de novo com a caixa do e-mail marcada |
+| `desconhecido` | o Google respondeu 4xx sem um `error` da lista | Conferir o cliente OAuth e a tela de consentimento (publicada ou em Teste) |
+
+A linha nunca traz a `error_description` do Google, código, token ou e-mail.
+
 ---
 
 ## Cobrança recorrente pelo Mercado Pago (v0.44.0)

@@ -4,6 +4,7 @@ import {
   GoogleIdentidadeAdapter,
 } from '../../src/infrastructure/adapters/identidade/GoogleIdentidadeAdapter.js';
 import {
+  CodigoDeAutorizacaoRecusadoError,
   ProviderIndisponivelError,
   RespostaInvalidaError,
 } from '../../src/domain/errors/index.js';
@@ -61,7 +62,10 @@ describe('GoogleIdentidadeAdapter', () => {
     const t = new TransporteFalso().responder(
       resposta(200, {
         access_token: TOKEN_DE_ACESSO,
-        scope: 'openid email profile',
+        // O que o Google devolve de verdade (visto em produção em 07/11/2026): o escopo do
+        // e-mail pelo nome LONGO, não o `email` pedido. A 0.67.0 recusava todo login por isso.
+        scope:
+          'https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile openid',
         expires_in: 3600,
       }),
       resposta(200, {
@@ -109,23 +113,56 @@ describe('GoogleIdentidadeAdapter', () => {
       new Error('ECONNRESET com a URL dentro'),
     );
     const a = adapter(t);
-    await expect(a.identidadePeloCodigo(entrada)).rejects.toBeInstanceOf(
-      RespostaInvalidaError,
-    );
+    const recusa = await a.identidadePeloCodigo(entrada).catch((e: Error) => e);
+    expect(recusa).toBeInstanceOf(RespostaInvalidaError);
+    expect(recusa).toBeInstanceOf(CodigoDeAutorizacaoRecusadoError);
+    // v0.67.1: o `error` do OAuth (lista fechada) vai ao log; a `error_description`, nunca.
+    expect((recusa as CodigoDeAutorizacaoRecusadoError).motivoDoProvedor).toBe('invalid_grant');
     await expect(a.identidadePeloCodigo(entrada)).rejects.toBeInstanceOf(
       ProviderIndisponivelError,
     );
     const erro = await a.identidadePeloCodigo(entrada).catch((e: Error) => e);
     expect(erro).toBeInstanceOf(ProviderIndisponivelError);
-    for (const p of [erro]) {
+    for (const p of [recusa, erro]) {
       expect(String((p as Error).message)).not.toContain('SEGREDO-NA-MENSAGEM');
       expect(String((p as Error).message)).not.toContain('ECONNRESET');
     }
   });
 
+  it('o escopo do e-mail vale pelo nome curto pedido e pelo nome longo que o Google devolve', async () => {
+    for (const scope of ['openid email profile', 'https://www.googleapis.com/auth/userinfo.email openid']) {
+      const t = new TransporteFalso().responder(
+        resposta(200, { access_token: TOKEN_DE_ACESSO, scope }),
+        resposta(200, { sub: 's', email: 'a@b.test', email_verified: true }),
+      );
+      expect((await adapter(t).identidadePeloCodigo(entrada)).email).toBe('a@b.test');
+    }
+  });
+
+  it('`error` do Google fora da lista fechada vira `desconhecido`; segredo errado é `invalid_client`', async () => {
+    const t = new TransporteFalso().responder(
+      resposta(401, { error: 'invalid_client', error_description: 'The OAuth client was not found.' }),
+      resposta(400, { error: 'x<script>y' }),
+      resposta(400, 'não é JSON'),
+    );
+    const a = adapter(t);
+    const motivos: string[] = [];
+    for (let i = 0; i < 3; i += 1) {
+      const e = await a.identidadePeloCodigo(entrada).catch((x: Error) => x);
+      expect(e).toBeInstanceOf(CodigoDeAutorizacaoRecusadoError);
+      motivos.push((e as CodigoDeAutorizacaoRecusadoError).motivoDoProvedor);
+      expect(String((e as Error).message)).not.toContain('script');
+      expect(String((e as Error).message)).not.toContain('not found');
+    }
+    expect(motivos).toEqual(['invalid_client', 'desconhecido', 'desconhecido']);
+  });
+
   it('permissão do e-mail desmarcada, ou userinfo sem e-mail: recusa sem inventar identidade', async () => {
     const t = new TransporteFalso().responder(
-      resposta(200, { access_token: TOKEN_DE_ACESSO, scope: 'openid profile' }),
+      resposta(200, {
+        access_token: TOKEN_DE_ACESSO,
+        scope: 'https://www.googleapis.com/auth/userinfo.profile openid',
+      }),
       resposta(200, { access_token: TOKEN_DE_ACESSO }),
       resposta(200, { sub: 's', name: 'Sem e-mail' }),
     );

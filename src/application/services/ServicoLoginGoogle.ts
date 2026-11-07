@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import type { Usuario } from '../../domain/entities/Usuario.js';
 import { normalizarEmail } from '../../domain/entities/Usuario.js';
 import {
+  CodigoDeAutorizacaoRecusadoError,
   DomainError,
   LoginGoogleRecusadoError,
   ProviderIndisponivelError,
@@ -144,8 +145,13 @@ export class ServicoLoginGoogle {
         return { ok: false, motivo: 'indisponivel' };
       }
       if (erro instanceof DomainError) {
+        // `motivoDoGoogle` é o `error` da resposta OAuth em lista fechada (v0.67.1): é o que
+        // separa segredo errado (`invalid_client`) de código usado de novo (`invalid_grant`).
         this.o.logger.warn('login com Google: autorização recusada', {
           motivo: erro.codigo,
+          ...(erro instanceof CodigoDeAutorizacaoRecusadoError
+            ? { motivoDoGoogle: erro.motivoDoProvedor }
+            : {}),
         });
         return { ok: false, motivo: 'autorizacao_recusada' };
       }

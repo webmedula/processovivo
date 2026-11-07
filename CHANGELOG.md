@@ -9,6 +9,16 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.67.1] — 2026-11-07
+
+**Correção: o login com Google recusava TODA entrada com "O Google não aceitou a entrada"** (primeiro teste em produção, 07/11/2026). A 0.67.0 pedia o escopo `email` e conferia, na resposta do token, se `email` tinha sido concedido — mas o Google devolve o escopo concedido pelo nome longo, `https://www.googleapis.com/auth/userinfo.email`. A conferência falhava para todo mundo e caía na frase da permissão negada. O Drive nunca sofreu disso porque confere o nome longo. Agora os dois nomes valem (`ESCOPOS_DE_EMAIL`), e o teste do adapter usa o nome longo, que é o que o Google manda de fato. Nenhuma mudança de escopo pedido, dado guardado, tela ou política.
+
+**E o log diz o que o Google respondeu ao recusar o código**, para a próxima vez não depender de adivinhar:
+
+- A troca do código pelo token que volta 4xx lança `CodigoDeAutorizacaoRecusadoError` (uma `RespostaInvalidaError`, então quem a tratava continua tratando) com `motivoDoProvedor`: o campo `error` do padrão OAuth 2.0 reduzido a uma **lista fechada** (`invalid_client`, `invalid_grant`, `redirect_uri_mismatch`, `unauthorized_client`, `invalid_request`, `invalid_scope`, `unsupported_grant_type`, `access_denied`, `escopo_negado`, `desconhecido`). A `error_description`, que pode ecoar o pedido, continua fora de erro e log.
+- A linha `login com Google: autorização recusada` ganha `motivoDoGoogle` com esse valor. `invalid_client` = `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` não são do mesmo cliente OAuth; `invalid_grant` = código usado duas vezes ou vencido (F5 na volta); `redirect_uri_mismatch` = a URI de retorno não bate com a cadastrada. O DEPLOY.md explica.
+- A tela não mudou: a frase segue fixa e o motivo do Google nunca chega ao navegador.
+
 ## [0.67.0] — 2026-11-07
 
 **Entrar com Google: a pessoa entra, cria conta ou liga a conta Google à conta que já tem, com `openid email profile` e nada mais; nasce DESLIGADO** (decisão do dono de 07/11/2026; só o Google — o Facebook foi avaliado e descartado: revisão do app pela Meta, e-mail não garantido e adequação pior ao público de advogados).

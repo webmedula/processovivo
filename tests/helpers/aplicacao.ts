@@ -352,6 +352,8 @@ export interface OpcoesAplicacaoDeTeste {
     readonly provedor: ProvedorDeIdentidade;
     readonly uriDeRetorno?: string;
     readonly clock?: Clock;
+    /** Para o teste ler o que o login registra no log (v0.67.1). Padrão: silencioso. */
+    readonly logger?: Logger;
   };
   /** Liga a área administrativa. Ausente por padrão — mesma regra de `comAssinaturas`. */
   readonly admin?: {
@@ -967,7 +969,7 @@ export function aplicacaoDeTeste(
           uriDeRetorno:
             opcoes.loginGoogle.uriDeRetorno ??
             'https://app.exemplo.test/v1/sessoes/google/retorno',
-          logger: loggerSilencioso,
+          logger: opcoes.loginGoogle.logger ?? loggerSilencioso,
         })
       : undefined,
     preferenciasNotificacao,

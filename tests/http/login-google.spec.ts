@@ -6,6 +6,7 @@ import { construirServidor } from '../../src/main/http/servidor.js';
 import type { Aplicacao } from '../../src/main/factories/makeProcessoSearchService.js';
 import { aplicacaoDeTeste } from '../helpers/aplicacao.js';
 import { ProviderFalso } from '../helpers/fabricas.js';
+import { LoggerEspiao } from '../helpers/drive.js';
 import {
   CODIGO,
   ProvedorFalso,
@@ -254,6 +255,27 @@ describe('login com Google — entrar', () => {
     provedor.quandoCodigo(CODIGO, 'indisponivel');
     const r2 = await entrarPeloGoogle();
     expect(r2.headers.location).toBe('/?google=erro&motivo=indisponivel');
+  });
+
+  it('o log da recusa leva o `error` do Google em lista fechada, e a tela segue com a mesma frase (v0.67.1)', async () => {
+    await servidor.close();
+    const logger = new LoggerEspiao();
+    provedor = new ProvedorFalso();
+    app = aplicacaoDeTeste([new ProviderFalso({ nome: 'falso' })], {
+      comAssinaturas: true,
+      loginGoogle: { provedor, logger },
+    });
+    servidor = construirServidor(app, config());
+    provedor.quandoCodigo(CODIGO, 'recusa:invalid_client');
+    const r = await entrarPeloGoogle();
+    expect(r.headers.location).toBe('/?google=erro&motivo=autorizacao_recusada');
+    const linha = logger.linhas.find((l) => l.includes('autorização recusada'));
+    expect(linha).toContain('"motivoDoGoogle":"invalid_client"');
+    // Recusa sem o código (provedor antigo ou outro erro de domínio): a linha sai sem o campo.
+    provedor.quandoCodigo(CODIGO, 'recusa');
+    await entrarPeloGoogle();
+    const ultima = logger.linhas.filter((l) => l.includes('autorização recusada')).at(-1);
+    expect(ultima).not.toContain('motivoDoGoogle');
   });
 });
 

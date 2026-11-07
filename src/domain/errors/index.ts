@@ -139,6 +139,48 @@ export class RespostaInvalidaError extends DomainError {
 }
 
 /**
+ * O que o Google (ou outro provedor OAuth) disse ao recusar a troca do código pelo token
+ * (v0.67.1): só o campo `error` do padrão OAuth 2.0, reduzido a uma lista fechada. É o que o
+ * operador precisa para distinguir "segredo do cliente errado" (`invalid_client`) de "código
+ * usado duas vezes ou vencido" (`invalid_grant`) — a `error_description`, que pode ecoar o
+ * pedido, nunca entra.
+ */
+export const MOTIVOS_DO_PROVEDOR_OAUTH = [
+  'invalid_request',
+  'invalid_client',
+  'invalid_grant',
+  'unauthorized_client',
+  'unsupported_grant_type',
+  'invalid_scope',
+  'redirect_uri_mismatch',
+  'access_denied',
+  'escopo_negado',
+  'desconhecido',
+] as const;
+export type MotivoDoProvedorOauth = (typeof MOTIVOS_DO_PROVEDOR_OAUTH)[number];
+
+/** Reduz o `error` de uma resposta OAuth à lista fechada; qualquer outro valor é `desconhecido`. */
+export function motivoDoProvedorOauth(error: unknown): MotivoDoProvedorOauth {
+  return typeof error === 'string' &&
+    (MOTIVOS_DO_PROVEDOR_OAUTH as readonly string[]).includes(error)
+    ? (error as MotivoDoProvedorOauth)
+    : 'desconhecido';
+}
+
+/**
+ * O provedor OAuth respondeu "não" à troca do código (4xx). É uma `RespostaInvalidaError` —
+ * quem a tratava continua tratando — que carrega o motivo da lista fechada para o log.
+ */
+export class CodigoDeAutorizacaoRecusadoError extends RespostaInvalidaError {
+  constructor(
+    provider: string,
+    readonly motivoDoProvedor: MotivoDoProvedorOauth,
+  ) {
+    super(provider, `o provedor recusou o código de autorização (${motivoDoProvedor})`);
+  }
+}
+
+/**
  * Toda a cadeia de providers foi percorrida sem sucesso.
  * Carrega o histórico das tentativas para diagnóstico e observabilidade.
  */
