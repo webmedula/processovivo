@@ -254,8 +254,7 @@ const FRASES_DO_LIMITE: Readonly<Record<LimiteDaAnaliseDePeca, string>> = {
     'Já há uma análise em andamento nesta conta (de outra peça ou da análise do processo). Espere terminar e tente de novo.',
   por_hora:
     'Você atingiu o limite de análises de peça por hora. Tente de novo mais tarde.',
-  servico_ocupado:
-    'O serviço de análise está ocupado agora. Tente de novo em instantes.',
+  servico_ocupado: 'O serviço de análise está ocupado agora. Tente de novo em instantes.',
 };
 
 /** Da negativa do freio para a trava que a tela nomeia; `dia` não chega aqui (é `limite_diario`). */
@@ -363,7 +362,11 @@ export class ServicoAnaliseDePeca {
       });
       if (vaga.negada === 'dia') throw recusa('limite_diario');
       const limite = LIMITE_DA_NEGATIVA[vaga.negada];
-      throw new AnaliseDePecaRecusadaError('limite_de_uso', FRASES_DO_LIMITE[limite], limite);
+      throw new AnaliseDePecaRecusadaError(
+        'limite_de_uso',
+        FRASES_DO_LIMITE[limite],
+        limite,
+      );
     }
     try {
       return await this.chamarEGuardar(pedido, {

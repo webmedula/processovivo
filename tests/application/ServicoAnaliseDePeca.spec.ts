@@ -584,13 +584,19 @@ describe('ServicoAnaliseDePeca', () => {
     });
 
     it('com outra análise da conta em curso, a recusa diz "em andamento", sem chamar o modelo', async () => {
-      const limite = new LimiteDeAnalises({ porHora: 100, simultaneasNoTotal: 10, clock: relogio });
+      const limite = new LimiteDeAnalises({
+        porHora: 100,
+        simultaneasNoTotal: 10,
+        clock: relogio,
+      });
       const ocupada = limite.reservar(WS);
       const ocorrencias: string[] = [];
       const e = await erroDe(servico({ limite, ocorrencias }).analisar(pedido()));
       expect(motivoDe(e)).toBe('limite_de_uso');
       expect((e as AnaliseDePecaRecusadaError).limite).toBe('em_andamento');
-      expect((e as Error).message).toContain('Já há uma análise em andamento nesta conta');
+      expect((e as Error).message).toContain(
+        'Já há uma análise em andamento nesta conta',
+      );
       expect(ocorrencias).toEqual(['recusa_em_andamento']);
       expect(analisador.chamadas).toBe(0);
       if ('liberar' in ocupada) ocupada.liberar();
@@ -598,7 +604,11 @@ describe('ServicoAnaliseDePeca', () => {
     });
 
     it('com o teto de simultâneas do servidor cheio (outras contas), a recusa diz "serviço ocupado"', async () => {
-      const limite = new LimiteDeAnalises({ porHora: 100, simultaneasNoTotal: 1, clock: relogio });
+      const limite = new LimiteDeAnalises({
+        porHora: 100,
+        simultaneasNoTotal: 1,
+        clock: relogio,
+      });
       limite.reservar(OUTRA);
       const ocorrencias: string[] = [];
       const e = await erroDe(servico({ limite, ocorrencias }).analisar(pedido()));

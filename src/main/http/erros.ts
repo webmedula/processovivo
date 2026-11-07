@@ -214,7 +214,10 @@ export function mapearErro(erro: unknown): RespostaDeErro {
         erro: erro.codigo,
         mensagem: erro.message,
         // v0.67.2: qual trava do freio recusou (aditivo; a tela escolhe a frase por ele).
-        detalhes: { motivo: erro.motivo, ...(erro.limite ? { limite: erro.limite } : {}) },
+        detalhes: {
+          motivo: erro.motivo,
+          ...(erro.limite ? { limite: erro.limite } : {}),
+        },
       },
     };
   }
