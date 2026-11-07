@@ -224,7 +224,7 @@ describe.skipIf(sem)(
       expect(await page.locator('#ia-i-reverter').isDisabled()).toBe(true);
       expect(await page.locator('[role="tab"]').allInnerTexts()).toEqual([
         'Análise de ato +e0',
-        'Resumo do processo +e0',
+        'Resumo dos andamentos +e0',
         'Análise de peça +e0',
       ]);
     });

@@ -298,7 +298,7 @@ describe.skipIf(sem)(
       await page.waitForFunction(() => true);
       expect(await botao().count()).toBe(0);
       expect(await page.evaluate(() => document.body.innerText)).not.toContain(
-        'Resumir este processo com IA',
+        'Resumir andamentos com IA',
       );
     });
 
@@ -313,7 +313,7 @@ describe.skipIf(sem)(
     it('processo acompanhado com a IA ligada: botão ao lado de "Deixar de acompanhar", fechado por padrão', async () => {
       await abrir();
       await botao().waitFor();
-      expect(await botao().textContent()).toBe('Resumir este processo com IA');
+      expect(await botao().textContent()).toBe('Resumir andamentos com IA');
       expect(await botao().getAttribute('aria-expanded')).toBe('false');
       expect(await botao().getAttribute('aria-controls')).toBe('pvres-painel');
       // Mesma fileira da capa, logo depois do "Deixar de acompanhar".

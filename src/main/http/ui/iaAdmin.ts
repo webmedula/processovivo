@@ -31,7 +31,7 @@ var ROTULO_DA_FALHA={citacao_invalida:'citação inválida',numero_invalido:'nú
 var ROTULO_DO_TIPO={ligada:'Liga/desliga',teto_dia_conta:'Teto por conta e dia',teto_dia_global:'Teto global do dia',
   alerta_custo:'Alerta de custo',modelo_publicado:'Modelo publicado',modelo_revertido:'Modelo revertido',
   teste_modelo_iniciado:'Teste de modelo iniciado',instrucoes_publicadas:'Instruções publicadas',instrucoes_revertidas:'Instruções revertidas'};
-var ROTULO_DA_FUNCAO={ato:'Análise de ato',resumo:'Resumo do processo',peca:'Análise de peça',global:'Geral'};
+var ROTULO_DA_FUNCAO={ato:'Análise de ato',resumo:'Resumo dos andamentos',peca:'Análise de peça',global:'Geral'};
 
 var FRASE={
   carregando:'Carregando o painel de IA…',

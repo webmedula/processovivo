@@ -12,7 +12,7 @@ export type FuncaoDeIa = (typeof FUNCOES_DE_IA)[number];
 
 export const ROTULO_DA_FUNCAO: Readonly<Record<FuncaoDeIa, string>> = Object.freeze({
   ato: 'Análise de ato',
-  resumo: 'Resumo do processo',
+  resumo: 'Resumo dos andamentos',
   peca: 'Análise de peça',
 });
 
