@@ -95,6 +95,8 @@ describe('ServicoAnaliseDePeca', () => {
       modelo?: string | (() => string);
       tribunais?: string[];
       dias?: number;
+      limite?: LimiteDeAnalises;
+      ocorrencias?: string[];
     } = {},
   ): ServicoAnaliseDePeca {
     return new ServicoAnaliseDePeca({
@@ -104,12 +106,21 @@ describe('ServicoAnaliseDePeca', () => {
       fonte: { pecaParaAnalise: () => alvo() },
       extrator,
       analisador,
-      limite: new LimiteDeAnalises({
-        porHora: o.porHora ?? 100,
-        simultaneasNoTotal: 10,
-        ...(o.porDia !== undefined ? { teto: new TetoDiario(o.porDia, relogio) } : {}),
-        clock: relogio,
-      }),
+      limite:
+        o.limite ??
+        new LimiteDeAnalises({
+          porHora: o.porHora ?? 100,
+          simultaneasNoTotal: 10,
+          ...(o.porDia !== undefined ? { teto: new TetoDiario(o.porDia, relogio) } : {}),
+          clock: relogio,
+        }),
+      ...(o.ocorrencias
+        ? {
+            ocorrencias: {
+              registrar: (_f: string, m: string) => void o.ocorrencias?.push(m),
+            },
+          }
+        : {}),
       liberacao: { habilitada: o.habilitada ?? false, workspaces: o.workspaces ?? [WS] },
       tribunais: o.tribunais ?? ['TJGO'],
       modelo: o.modelo ?? 'modelo/pedido',
@@ -560,11 +571,51 @@ describe('ServicoAnaliseDePeca', () => {
       expect((await s.analisar(pedido('p3'))).estado).toBe('verificada');
     });
 
-    it('freio por hora: a segunda análise da hora é recusada', async () => {
-      const s = servico({ porHora: 1 });
+    it('freio por hora: a segunda análise da hora é recusada, e a recusa diz que foi o limite por hora', async () => {
+      const ocorrencias: string[] = [];
+      const s = servico({ porHora: 1, ocorrencias });
       await s.analisar(pedido('p1'));
-      expect(motivoDe(await erroDe(s.analisar(pedido('p2'))))).toBe('limite_de_uso');
+      const e = await erroDe(s.analisar(pedido('p2')));
+      expect(motivoDe(e)).toBe('limite_de_uso');
+      expect((e as AnaliseDePecaRecusadaError).limite).toBe('por_hora');
+      expect((e as Error).message).toContain('limite de análises de peça por hora');
+      expect(ocorrencias).toEqual(['recusa_por_hora']);
       expect(analisador.chamadas).toBe(1);
+    });
+
+    it('com outra análise da conta em curso, a recusa diz "em andamento", sem chamar o modelo', async () => {
+      const limite = new LimiteDeAnalises({ porHora: 100, simultaneasNoTotal: 10, clock: relogio });
+      const ocupada = limite.reservar(WS);
+      const ocorrencias: string[] = [];
+      const e = await erroDe(servico({ limite, ocorrencias }).analisar(pedido()));
+      expect(motivoDe(e)).toBe('limite_de_uso');
+      expect((e as AnaliseDePecaRecusadaError).limite).toBe('em_andamento');
+      expect((e as Error).message).toContain('Já há uma análise em andamento nesta conta');
+      expect(ocorrencias).toEqual(['recusa_em_andamento']);
+      expect(analisador.chamadas).toBe(0);
+      if ('liberar' in ocupada) ocupada.liberar();
+      expect((await servico({ limite }).analisar(pedido())).estado).toBe('verificada');
+    });
+
+    it('com o teto de simultâneas do servidor cheio (outras contas), a recusa diz "serviço ocupado"', async () => {
+      const limite = new LimiteDeAnalises({ porHora: 100, simultaneasNoTotal: 1, clock: relogio });
+      limite.reservar(OUTRA);
+      const ocorrencias: string[] = [];
+      const e = await erroDe(servico({ limite, ocorrencias }).analisar(pedido()));
+      expect((e as AnaliseDePecaRecusadaError).limite).toBe('servico_ocupado');
+      expect((e as Error).message).toContain('ocupado');
+      expect(ocorrencias).toEqual(['recusa_servico_ocupado']);
+      expect(analisador.chamadas).toBe(0);
+    });
+
+    it('a recusa pelo teto do dia conta a ocorrência própria e não leva "limite"', async () => {
+      const ocorrencias: string[] = [];
+      const s = servico({ porDia: 5, ocorrencias });
+      await s.analisar(pedido('p1'));
+      const e = await erroDe(s.analisar(pedido('p2')));
+      expect(motivoDe(e)).toBe('limite_diario');
+      expect((e as AnaliseDePecaRecusadaError).limite).toBeUndefined();
+      expect(ocorrencias).toEqual(['recusa_limite_diario']);
     });
   });
 

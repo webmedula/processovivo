@@ -29,6 +29,7 @@ import {
   PecaSigilosaNaoGuardadaError,
   ProviderIndisponivelError,
   SegredoDeJusticaNaoGuardadoError,
+  type LimiteDaAnaliseDePeca,
 } from '../../domain/errors/index.js';
 import type {
   AnalisadorDePeca,
@@ -67,7 +68,10 @@ import {
   motivoDaFalhaDaChamada,
   registrarContagens,
 } from '../politicas/ocorrenciasDeIa.js';
-import type { LimiteDeAnalises } from '../politicas/limiteDeAnalises.js';
+import type {
+  LimiteDeAnalises,
+  NegativaDoLimite,
+} from '../politicas/limiteDeAnalises.js';
 import {
   modoDaAnaliseDePeca,
   type LiberacaoDaAnaliseDePeca,
@@ -241,6 +245,36 @@ const recusa = (
   motivo: AnaliseDePecaRecusadaError['motivo'],
 ): AnaliseDePecaRecusadaError => new AnaliseDePecaRecusadaError(motivo, FRASES[motivo]);
 
+/**
+ * A frase de cada trava do freio (v0.67.2). A tela tem as MESMAS frases e escolhe pelo `detalhes.limite`; a
+ * de `limite_de_uso` em `FRASES` fica para quem não sabe ler o campo novo.
+ */
+const FRASES_DO_LIMITE: Readonly<Record<LimiteDaAnaliseDePeca, string>> = {
+  em_andamento:
+    'Já há uma análise em andamento nesta conta (de outra peça ou da análise do processo). Espere terminar e tente de novo.',
+  por_hora:
+    'Você atingiu o limite de análises de peça por hora. Tente de novo mais tarde.',
+  servico_ocupado:
+    'O serviço de análise está ocupado agora. Tente de novo em instantes.',
+};
+
+/** Da negativa do freio para a trava que a tela nomeia; `dia` não chega aqui (é `limite_diario`). */
+const LIMITE_DA_NEGATIVA: Readonly<
+  Record<Exclude<NegativaDoLimite, 'dia'>, LimiteDaAnaliseDePeca>
+> = {
+  em_andamento: 'em_andamento',
+  hora: 'por_hora',
+  global: 'servico_ocupado',
+};
+
+/** A ocorrência do painel de IA de cada recusa do freio: só contagem, nunca a conta. */
+const OCORRENCIA_DA_NEGATIVA = {
+  em_andamento: 'recusa_em_andamento',
+  hora: 'recusa_por_hora',
+  global: 'recusa_servico_ocupado',
+  dia: 'recusa_limite_diario',
+} as const satisfies Record<NegativaDoLimite, string>;
+
 export class ServicoAnaliseDePeca {
   private readonly log: Logger;
   private readonly ocorrencias: RegistroDeOcorrenciasDeIa;
@@ -320,7 +354,16 @@ export class ServicoAnaliseDePeca {
       foraDoFreioPorHora: pedido.dentroDaAnaliseDoProcesso === true,
     });
     if ('negada' in vaga) {
-      throw recusa(vaga.negada === 'dia' ? 'limite_diario' : 'limite_de_uso');
+      // v0.67.2: diz QUAL trava recusou — à pessoa (frase própria), ao log e às ocorrências do painel.
+      // Nada da conta vai ao log (nem id): só a trava e se a peça era de uma análise do processo.
+      this.ocorrencias.registrar('peca', OCORRENCIA_DA_NEGATIVA[vaga.negada]);
+      this.log.info('análise de peça recusada pelo freio de uso', {
+        trava: vaga.negada,
+        dentroDaAnaliseDoProcesso: pedido.dentroDaAnaliseDoProcesso === true,
+      });
+      if (vaga.negada === 'dia') throw recusa('limite_diario');
+      const limite = LIMITE_DA_NEGATIVA[vaga.negada];
+      throw new AnaliseDePecaRecusadaError('limite_de_uso', FRASES_DO_LIMITE[limite], limite);
     }
     try {
       return await this.chamarEGuardar(pedido, {

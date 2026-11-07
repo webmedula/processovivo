@@ -1038,6 +1038,7 @@ function painelParaJson(p: PainelDeIa): Record<string, unknown> {
         custoTotal: m.metricas.custo.total,
       })),
       falhasDeVerificacao: f.falhasDeVerificacao,
+      recusasPorLimite: f.recusasPorLimite,
       latenciaP50Ms: numeroOuNulo(f.metricas.latenciaP50Ms),
       latenciaP95Ms: numeroOuNulo(f.metricas.latenciaP95Ms),
       custo: {

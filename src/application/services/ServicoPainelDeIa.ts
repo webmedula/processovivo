@@ -5,6 +5,7 @@ import {
 import type { Clock } from '../../domain/ports/Clock.js';
 import {
   MOTIVOS_DE_OCORRENCIA_DA_IA,
+  RECUSAS_POR_LIMITE_DA_IA,
   type AlteracaoDeConfigDeIa,
   type LeitorDeUsoDeIa,
   type MotivoDeOcorrenciaDaIa,
@@ -43,6 +44,11 @@ export interface PainelDaFuncao extends EstadoDaFuncao {
   /** Fase B (v0.60.0): as mesmas métricas quebradas pelo modelo que serviu cada análise (mais usado primeiro). */
   readonly porModelo: ReadonlyArray<{ readonly modelo: string; readonly metricas: MetricasDoConjunto }>;
   readonly falhasDeVerificacao: ReadonlyArray<{
+    readonly motivo: MotivoDeOcorrenciaDaIa;
+    readonly contagem: number;
+  }>;
+  /** v0.67.2: pedidos que o freio de uso recusou (nada foi ao modelo), por trava. */
+  readonly recusasPorLimite: ReadonlyArray<{
     readonly motivo: MotivoDeOcorrenciaDaIa;
     readonly contagem: number;
   }>;
@@ -131,8 +137,15 @@ export class ServicoPainelDeIa {
           .sort((a, b) => b.metricas.analises - a.metricas.analises || a.modelo.localeCompare(b.modelo)),
         falhasDeVerificacao: MOTIVOS_DE_OCORRENCIA_DA_IA.filter(
           (m) =>
-            m !== 'repeticao_automatica' && m !== 'modelo_do_painel_invalido' && total(m) > 0,
+            m !== 'repeticao_automatica' &&
+            m !== 'modelo_do_painel_invalido' &&
+            !ehRecusaPorLimite(m) &&
+            total(m) > 0,
         ).map((m) => ({ motivo: m, contagem: total(m) })),
+        recusasPorLimite: RECUSAS_POR_LIMITE_DA_IA.filter((m) => total(m) > 0).map((m) => ({
+          motivo: m,
+          contagem: total(m),
+        })),
       } satisfies PainelDaFuncao;
     });
     const contas = [...porConta.entries()]
@@ -149,4 +162,8 @@ export class ServicoPainelDeIa {
       alteracoes: this.o.controle.alteracoes(50),
     };
   }
+}
+
+function ehRecusaPorLimite(m: MotivoDeOcorrenciaDaIa): boolean {
+  return (RECUSAS_POR_LIMITE_DA_IA as readonly string[]).includes(m);
 }
