@@ -9,6 +9,16 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.66.5] — 2026-11-07
+
+**O botão "Resumir este processo com IA" passa a se chamar "Resumir andamentos com IA"** (só texto; seleção, prompt, verificação, modelo, ZDR, teto, rotas e gravação não mudaram).
+
+- Motivo: o resumo lê só os andamentos (atos) do processo, nunca as peças, e o nome antigo sugeria uma leitura do processo inteiro, que é o que faz o "Analisar processo com IA" da Pasta digital (v0.66.0).
+- Na página do processo: botão "Resumir andamentos com IA", dica "Resume os andamentos recentes do processo por IA (não lê as peças)…", título e região do painel "Resumo dos andamentos por IA".
+- No /admin (painel de IA, modelos, instruções e registro de mudanças), a função `resumo` aparece como "Resumo dos andamentos". O código da função, as rotas e os dados não mudaram.
+
+---
+
 ## [0.66.4] — 2026-11-05
 
 **Resumo do processo por IA: quando a verificação recusa, a tela diz por quê e oferece "Tentar de novo"** (só a mensagem; seleção, prompt, verificação, modelo, ZDR, teto e gravação não mudaram).

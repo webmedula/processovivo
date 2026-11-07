@@ -202,7 +202,7 @@ function resultadoHtml(d){
 }
 
 function corpo(){
-  var h='<div class="pvres-topo"><h3 class="pvres-tit">Resumo do processo por IA</h3>'+
+  var h='<div class="pvres-topo"><h3 class="pvres-tit">Resumo dos andamentos por IA</h3>'+
     (S.fase==='analisando'?'':'<button type="button" class="nov-btn" data-pvres="fechar" id="pvres-fechar">Fechar</button>')+'</div>';
   if(S.fase==='analisando'){
     h+='<p class="pvres-estado"><span class="gira" aria-hidden="true"></span>'+ANALISANDO+'</p>'+
@@ -225,7 +225,7 @@ function corpo(){
 }
 
 function painelInterno(){
-  return '<div class="pvres" id="pvres-painel" role="region" aria-label="Resumo do processo por IA" tabindex="-1" aria-busy="'+
+  return '<div class="pvres" id="pvres-painel" role="region" aria-label="Resumo dos andamentos por IA" tabindex="-1" aria-busy="'+
     (S.fase==='analisando'?'true':'false')+'">'+corpo()+'</div>';
 }
 
@@ -362,8 +362,8 @@ function aposDesenhar(numero,acompanhado){
     var b=document.createElement('button');
     b.type='button';b.className='bt bt2 pvres-btn';b.id='pvres-abrir';
     b.setAttribute('aria-controls','pvres-painel');b.setAttribute('aria-expanded','false');
-    b.title='Gera um resumo do processo por IA. Apoio à leitura: confira sempre nos atos.';
-    b.textContent='Resumir este processo com IA';
+    b.title='Resume os andamentos recentes do processo por IA (não lê as peças). Apoio à leitura: confira sempre nos atos.';
+    b.textContent='Resumir andamentos com IA';
     parar.insertAdjacentElement('afterend',b);
     b.addEventListener('click',function(){abrirResumo(n)});
     /* A tela foi redesenhada (régua carregada) com o resumo já em curso: devolve o painel. */

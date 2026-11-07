@@ -23,7 +23,7 @@ var $=function(i){return document.getElementById(i)};
 function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){
   return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
 
-var FUNCOES=[['ato','Análise de ato'],['resumo','Resumo do processo'],['peca','Análise de peça']];
+var FUNCOES=[['ato','Análise de ato'],['resumo','Resumo dos andamentos'],['peca','Análise de peça']];
 var M={dados:null,raiz:null,f:'ato',u:{},carregando:false,msg:'',tempo:null};
 var FMT=window.__pvIaFormato||{};
 

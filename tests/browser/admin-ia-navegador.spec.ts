@@ -200,7 +200,7 @@ describe.skipIf(sem)('tela "IA" do /admin, no navegador', { timeout: 120_000 }, 
     await abrirIa();
     expect(await page.evaluate(() => document.activeElement?.id)).toBe('ia-titulo');
     await cartao('ato').getByText('Análise de ato').waitFor({ state: 'visible' });
-    await cartao('resumo').getByText('Resumo do processo').waitFor({ state: 'visible' });
+    await cartao('resumo').getByText('Resumo dos andamentos').waitFor({ state: 'visible' });
     await cartao('peca').getByText('Análise de peça').waitFor({ state: 'visible' });
     const ato = await cartao('ato').innerText();
     expect(ato).toMatch(/Análises\s*3/);
