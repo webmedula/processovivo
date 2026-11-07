@@ -24,4 +24,4 @@ Toda tela nova ou alterada precisa de teste no navegador (Chromium, Playwright),
 
 ## Dica de velocidade
 
-Rode primeiro só o arquivo de teste da tela que mudou; a suíte completa roda uma vez no fim (duas, na entrega — veja a skill `entrega-pr`).
+Rode primeiro só o arquivo de teste da tela que mudou; a suíte completa roda uma vez no fim (duas, na entrega — veja a skill `entrega-pr`). Mudança só de texto ou estilo segue o caminho leve da `entrega-pr`: sem a matriz, salvo se o layout mudou de tamanho.
