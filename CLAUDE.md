@@ -8,6 +8,8 @@
 
 **Entrega.** `git fetch` + `git merge origin/main` (sem rebase, sem force-push). `npm run check` com `npm run build` e a suíte completa duas vezes verdes. Abra a PR e **não faça merge**. Informe a versão usada. Use a skill `entrega-pr` para o relatório final.
 
+**Caminho leve (decisão do dono, 07/11/2026).** Mudança que é SÓ texto visível, rótulo, cor, espaçamento ou documentação — sem lógica, rota, banco, dependência, variável de ambiente, regra de IA, segurança, cobrança ou dado pessoal — dispensa a entrega completa: bump de patch e UMA linha no `CHANGELOG.md` (sem mexer em `CLAUDE.md`/`DEPLOY.md`); typecheck, lint, `npm run build`, os testes dos arquivos tocados (e `tests/http/console-script.spec.ts` se mexeu em `ui/`) **uma vez**; teste que fixa o texto antigo é atualizado; a suíte completa fica com o CI. Relatório de três linhas: o que mudou, versão, PR. Na dúvida se é leve, não é. Detalhes na skill `entrega-pr`.
+
 **Interface.** Módulo próprio em `ui/`; `script.ts` não cresce. Siga a skill `teste-de-tela`.
 
 **Banco.** Só migração aditiva, no padrão que o repositório já usa (skill `migracao-aditiva`).
@@ -396,7 +398,7 @@ npm run check            # typecheck + lint + test  ← rode antes de commitar
 npm run build            # compila para dist/
 ```
 
-**Antes de qualquer commit: `npm run check` verde** (typecheck + lint + testes + build de produção). Sem exceção.
+**Antes de qualquer commit: `npm run check` verde** (typecheck + lint + testes + build de produção). A única exceção é o caminho leve (topo deste arquivo), em que a suíte completa roda no CI.
 
 ---
 

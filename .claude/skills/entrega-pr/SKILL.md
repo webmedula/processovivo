@@ -5,6 +5,18 @@ description: Fechamento de uma tarefa do Processo Vivo ao abrir a PR — versão
 
 # Entrega de PR — Processo Vivo (kit v1.1.0)
 
+## 0. É caminho leve?
+
+É leve quando a mudança é **só** texto visível, rótulo, cor, espaçamento ou documentação, sem lógica, rota, banco, dependência, variável de ambiente, regra de IA, segurança, cobrança ou dado pessoal. **Na dúvida, não é leve:** siga as seções 1 a 3.
+
+No caminho leve:
+
+1. Bump de **patch** no `package.json`/`package-lock.json` e **uma linha** no `CHANGELOG.md`. Não mexa em `CLAUDE.md` nem `DEPLOY.md`.
+2. `git fetch` + `git merge origin/main` (sem rebase, sem force-push).
+3. `npm run typecheck`, `npm run lint`, `npm run build` e só os testes dos arquivos tocados (`npx vitest run <arquivos>`), **uma vez**. Mexeu em `ui/`: inclua `tests/http/console-script.spec.ts` e procure com `grep` o texto antigo nos testes (teste que fixa o texto antigo é atualizado). Sem matriz de navegador, salvo se o layout mudou de tamanho.
+4. A suíte completa fica com o CI: abra a PR (sem merge) e confira que o CI iniciou.
+5. Relatório em três linhas: o que mudou, a versão, a PR e o estado do CI.
+
 ## 1. Antes de abrir a PR
 
 1. **Versão:** leia `package.json` e `CLAUDE.md`; use a versão indicada no prompt (ou a seguinte à de produção). Atualize `package.json`, `package-lock.json` e o texto de versão visível, se houver. Diga qual usou.
