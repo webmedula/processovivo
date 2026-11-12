@@ -328,10 +328,12 @@ export class ServicoAcompanhamento {
   /**
    * @param opcoes `workspace` limita a varredura a um assinante. A varredura
    *   AGENDADA chama sem ele, de propósito: ela é de todo mundo. A rota HTTP
-   *   sempre passa o do chamador.
+   *   sempre passa o do chamador. `pularVerificadosDesde` (v0.67.3) só vem na
+   *   retomada de uma varredura agendada que o reinício interrompeu: quem foi
+   *   verificado COM SUCESSO depois desse instante não é consultado de novo.
    */
   async sincronizar(
-    opcoes: { workspace?: string } = {},
+    opcoes: { workspace?: string; pularVerificadosDesde?: Date } = {},
   ): Promise<ResultadoSincronizacao> {
     try {
       return await this.executar(opcoes);
@@ -431,7 +433,7 @@ export class ServicoAcompanhamento {
   }
 
   private async executar(
-    opcoes: { workspace?: string } = {},
+    opcoes: { workspace?: string; pularVerificadosDesde?: Date } = {},
   ): Promise<ResultadoSincronizacao> {
     if (this.sincronizando) {
       throw new SincronizacaoEmAndamentoError();
@@ -450,12 +452,27 @@ export class ServicoAcompanhamento {
     let usadas: number;
 
     try {
-      const fila = await this.repo.listarParaSincronizar(this.maximo, opcoes.workspace);
+      const listados = await this.repo.listarParaSincronizar(
+        this.maximo,
+        opcoes.workspace,
+      );
+      const corte = opcoes.pularVerificadosDesde?.getTime();
+      // O critério é o último SUCESSO (`sincronizadoEm`), nunca a tentativa: quem
+      // falhou antes da interrupção continua na fila.
+      const fila =
+        corte === undefined
+          ? listados
+          : listados.filter(
+              (i) => !i.sincronizadoEm || i.sincronizadoEm.getTime() < corte,
+            );
       total = fila.length;
       usadas = Math.min(this.concorrencia, fila.length);
       this.log.info('varredura iniciada', {
         total: fila.length,
         concorrencia: this.concorrencia,
+        ...(corte === undefined
+          ? {}
+          : { retomada: true, jaVerificados: listados.length - fila.length }),
       });
       const inicioDaRodada = this.relogio();
       this.progressoGlobal = inicioDaRodada;

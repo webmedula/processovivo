@@ -235,7 +235,7 @@ interface ProcessoProvider {
 
 | Erro | Significado | Efeito |
 |---|---|---|
-| `ProcessoNaoEncontradoError` | a fonte respondeu, não tem o processo | tenta a próxima; se **todas** disserem isso, o resultado final é "não encontrado" |
+| `ProcessoNaoEncontradoError` | a fonte respondeu, não tem o processo | tenta a próxima; se **todas as consultadas** disserem isso, o resultado final é "não encontrado"; se alguma **falhou** (rede, timeout, limite, 5xx, resposta inválida), é `TodasAsFontesFalharamError` (v0.67.3) |
 | `OperacaoNaoSuportadaError` | limitação permanente da fonte | **pula** sem contar como falha |
 | `ProviderIndisponivelError` | rede, timeout, 5xx, captcha, tribunal fora | dispara o **fallback** |
 | `RespostaInvalidaError` | respondeu, payload fora do contrato | dispara o fallback |
@@ -750,6 +750,7 @@ Não são detalhes — moldam o código.
   contra um processo de thread única. A ordem é: validar (de graça), conferir o
   token, e só então pagar o hash. É por isso que `HashDeSenha` tem `validar`
   separado de `guardar`.
+- **Reinício não é motivo para rodar de novo: backup, varredura de processos e varredura de OAB contam a partir da última execução REGISTRADA** (v0.67.3; quatro deploys num dia eram quatro backups, que apagavam quatro dias de histórico, e quatro varreduras, que estouravam a cota do DataJud). (1) `Agendador` aceita `ultimaExecucaoEm` (lida de algo que sobrevive ao reinício): a primeira execução espera completar o intervalo desde ela; sem registro ou com leitura que falha, os 120 s de sempre. (2) **Backup:** a idade vem do NOME do arquivo mais recente (`ultimoBackupEm`); log `backup pulado na subida`. **Retenção por dia** (`escolherBackupsParaApagar`, pura): no máximo `BACKUP_MANTER` arquivos, saindo primeiro o extra de um dia com mais de uma cópia (fica a última do dia) e só depois o dia mais antigo — cópia a mais de hoje nunca tira dia anterior. (3) **Varreduras:** `MarcasDeVarredura` grava início e fim da varredura AGENDADA em `estado` (`varredura:processos:*`, `varredura:oab:*`; a de processos lê também `ultima_varredura_ok`); `varreduraRetomavel` adia a concluída e, na interrompida (início sem fim: SIGTERM no meio), retoma em 120 s pulando — SÓ na primeira execução — quem tem sucesso dentro do intervalo (`sincronizado_em` / `varrida_em`; nunca `tentado_em`: quem falhou volta). O "verificar agora" da conta não mexe nas marcas. Agendador novo que consulta fonte externa ou gera arquivo na subida nasce com `ultimaExecucaoEm`.
 - **Poda só apaga o que a poda criou.** O filtro de backups era "começa com
   `processovivo-` e termina em `.db`", e alcançava a cópia manual que alguém guardou
   antes de uma migração — a que mais importava. O padrão é o nome exato que o
@@ -2397,6 +2398,7 @@ teste e carência** (v0.28.0), **visual novo a partir do logo** (v0.29.0),
 **o botão do resumo por IA passa a se chamar "Resumir andamentos com IA" (lê só os andamentos, não as peças)** (v0.66.5),
 **Entrar com Google: entrar, criar conta sem senha e ligar/desligar a conta Google em "Minha conta", só `openid email profile`, desligado por padrão** (v0.67.0),
 **análise de peça por IA diz qual limite recusou (em andamento na conta, por hora ou servidor ocupado), com a contagem das recusas no painel de IA** (v0.67.2),
+**reinício sem perder backup (retenção por dia, sem cópia na subida antes de 24 h), sem varredura repetida (processos e OAB contam da última concluída; a interrompida retoma só o pendente) e sem "não encontrado" quando alguma fonte falhou** (v0.67.3),
 Dockerfile multi-stage, CI, 4400+ testes.
 
 **Pasta digital (v0.33.0, backend):** `GET /v1/processos/:numero/pasta` (lista +

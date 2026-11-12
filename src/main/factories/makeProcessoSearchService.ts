@@ -151,7 +151,15 @@ import type { Config } from '../../infrastructure/config/env.js';
 import { avisosDeRenomeacao } from '../../infrastructure/config/env.js';
 import { pareceValorDeExemplo } from '../../infrastructure/config/placeholder.js';
 import { ConsoleLogger } from '../../infrastructure/logging/ConsoleLogger.js';
-import { gerarBackup } from '../../infrastructure/persistencia/backup.js';
+import {
+  gerarBackup,
+  pastaDeBackups,
+  ultimoBackupEm,
+} from '../../infrastructure/persistencia/backup.js';
+import {
+  MarcasDeVarredura,
+  varreduraRetomavel,
+} from '../../infrastructure/agenda/retomadaDeVarredura.js';
 import { ServicoContas } from '../../application/services/ServicoContas.js';
 import { ServicoAssinaturas } from '../../application/services/ServicoAssinaturas.js';
 import { ServicoChavesApi } from '../../application/services/ServicoChavesApi.js';
@@ -541,14 +549,18 @@ export function montarAplicacao(config: Config): Aplicacao {
     ...(config.notificacao.urlBase ? { urlBase: config.notificacao.urlBase } : {}),
   });
 
-  const agendador = new Agendador({
+  // Reinício não repete a varredura (v0.67.3): a próxima conta a partir do fim da
+  // última concluída, e a interrompida retoma só o que faltou.
+  const varreduraDeProcessos = varreduraRetomavel({
+    marcas: new MarcasDeVarredura(db, 'processos', 'ultima_varredura_ok'),
     intervaloHoras: config.sincronizacao.intervaloHoras,
-    logger,
     // Notificar faz parte da varredura, não é um passo à parte: se separasse,
     // um deploy podia deixar a varredura viva e o aviso morto — o pior estado
     // possível, porque o sistema continua "funcionando" e ninguém é avisado.
-    tarefa: async () => {
-      const r = await acompanhamento.sincronizar();
+    executar: async (pularVerificadosDesde) => {
+      const r = await acompanhamento.sincronizar(
+        pularVerificadosDesde ? { pularVerificadosDesde } : {},
+      );
       await notificacao.marcarVarreduraOk();
       await notificacao.despachar();
       // Faxina das sessões vencidas, de carona na varredura que já roda.
@@ -577,6 +589,13 @@ export function montarAplicacao(config: Config): Aplicacao {
 
       return r;
     },
+  });
+  const agendador = new Agendador({
+    intervaloHoras: config.sincronizacao.intervaloHoras,
+    logger,
+    tarefa: varreduraDeProcessos.tarefa,
+    ultimaExecucaoEm: varreduraDeProcessos.ultimaExecucaoEm,
+    avisoAoAdiar: 'varredura adiada na subida',
   });
 
   // A vigilância só existe se a cadeia tiver uma fonte que busque por OAB com
@@ -676,18 +695,29 @@ export function montarAplicacao(config: Config): Aplicacao {
         })
       : undefined;
 
-  const agendadorVigilancia =
+  const varreduraDeOab =
     vigilancia && config.vigilancia.intervaloHoras > 0
-      ? new Agendador({
+      ? varreduraRetomavel({
+          marcas: new MarcasDeVarredura(db, 'oab'),
           intervaloHoras: config.vigilancia.intervaloHoras,
-          logger,
-          tarefa: async () => {
-            const r = await vigilancia.varrer();
+          executar: async (pularVarridasDesde) => {
+            const r = await vigilancia.varrer(
+              pularVarridasDesde ? { pularVarridasDesde } : {},
+            );
             if (r.novidades > 0 || r.processosNovos > 0) await notificacao.despachar();
             return r;
           },
         })
       : undefined;
+  const agendadorVigilancia = varreduraDeOab
+    ? new Agendador({
+        intervaloHoras: config.vigilancia.intervaloHoras,
+        logger,
+        tarefa: varreduraDeOab.tarefa,
+        ultimaExecucaoEm: varreduraDeOab.ultimaExecucaoEm,
+        avisoAoAdiar: 'varredura de OAB adiada na subida',
+      })
+    : undefined;
 
   /**
    * Backup automático, no agendador que já existe.
@@ -712,6 +742,10 @@ export function montarAplicacao(config: Config): Aplicacao {
               manter: config.backup.manter,
               logger,
             }),
+          // Reinício não gera cópia (v0.67.3): só há backup na subida se o mais
+          // recente tiver mais que o intervalo; senão, o próximo é quando completar.
+          ultimaExecucaoEm: () => ultimoBackupEm(pastaDeBackups(config.banco.caminho)),
+          avisoAoAdiar: 'backup pulado na subida',
         })
       : undefined;
 

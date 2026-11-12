@@ -75,8 +75,10 @@ interface Tentativa {
  *   ProcessoNaoEncontradoError a fonte respondeu e não tem o processo.
  *                              Segue para a próxima (outra base pode ter), mas
  *                              lembra que houve resposta legítima: se TODAS
- *                              disserem isso, o erro final é "não encontrado",
- *                              não "as fontes caíram".
+ *                              as consultadas disserem isso, o erro final é
+ *                              "não encontrado". Se alguma FALHOU, o erro final
+ *                              é "as fontes falharam" — a que falhou podia ter
+ *                              o processo.
  *   ProviderIndisponivelError  rede, timeout, captcha, tribunal fora do ar.
  *                              É o caso que o fallback existe para cobrir.
  *
@@ -190,6 +192,14 @@ export class ProcessoSearchService implements ProcessoProvider {
 
     const tentativas: Tentativa[] = [];
     let algumaFonteRespondeuSemAchar = false;
+    /**
+     * Alguma fonte NÃO conseguiu responder (rede, timeout, limite, 5xx, payload
+     * inválido, health check negativo). Enquanto houver uma, "não encontrado" de
+     * outra não prova nada: o DJEN só conhece o que foi publicado, então ele
+     * dizer "não tenho" com o DataJud em limite de requisições é "não consegui
+     * ver", não "não existe" (v0.67.3).
+     */
+    let algumaFonteFalhou = false;
 
     /**
      * Fontes que já foram descartadas NESTA consulta — porque falharam, porque
@@ -211,6 +221,7 @@ export class ProcessoSearchService implements ProcessoProvider {
       }
       if (this.verificarSaude && !(await this.estaSaudavel(provider))) {
         jaDescartadas.add(provider);
+        algumaFonteFalhou = true;
         tentativas.push({ provider: provider.nome, erro: 'healthCheck negativo' });
         continue;
       }
@@ -240,6 +251,7 @@ export class ProcessoSearchService implements ProcessoProvider {
           });
           continue;
         }
+        algumaFonteFalhou = true;
         tentativas.push({ provider: provider.nome, erro: descrever(erro) });
         this.logger.warn('fonte falhou, acionando fallback', {
           fonte: provider.nome,
@@ -248,7 +260,9 @@ export class ProcessoSearchService implements ProcessoProvider {
       }
     }
 
-    if (algumaFonteRespondeuSemAchar) {
+    // "Não existe" só quando TODA fonte consultada respondeu isso. Uma falha
+    // passageira no meio deixa o resultado como "não consegui ver".
+    if (algumaFonteRespondeuSemAchar && !algumaFonteFalhou) {
       throw new ProcessoNaoEncontradoError(criterio);
     }
     throw new TodasAsFontesFalharamError(criterio, tentativas);

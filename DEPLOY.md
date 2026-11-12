@@ -436,6 +436,21 @@ dele, o histórico de novidades e a credencial dele no tribunal. Perder isso nã
 Uma cópia por dia, guardando as 7 últimas, em `/dados/backups/`. Ligado por
 padrão — `BACKUP_INTERVALO_HORAS=24` e `BACKUP_MANTER=7`.
 
+**Reiniciar o app não gera cópia nem apaga histórico (v0.67.3).** Ao subir, o sistema olha o backup mais
+recente: se tem menos de 24 h, o log diz `backup pulado na subida` e a próxima cópia sai quando completar 24 h
+desde a última. A retenção é **por dia**: ficam no máximo `BACKUP_MANTER` arquivos (7; para mudar, defina essa
+variável no Easypanel), e quando sobra sai primeiro a cópia extra de um dia que tem mais de uma — uma cópia a mais
+de hoje nunca tira a de um dia anterior. O mesmo vale para a **varredura**: ela conta a partir da última
+concluída (log `varredura adiada na subida`), e a que o reinício interrompeu retoma só os processos que faltaram.
+
+Para conferir depois de um deploy: reinicie o app duas vezes seguidas e veja no log (1) `backup pulado na subida`,
+(2) nenhum `backup concluído` com arquivo de dia anterior em `apagados` e (3) nenhuma `varredura iniciada` nos
+minutos seguintes à subida (aparece `varredura adiada na subida`; se a anterior foi interrompida, aparece
+`varredura iniciada` com `retomada: true` e um `total` menor).
+
+**Limpeza de ambiente:** se o log avisar a cada subida que `PROCESSOVIVO_IA_WORKSPACES_LIBERADOS` não tem mais
+efeito, **apague essa variável** no Easypanel (aba Environment). Ela não libera nada desde a v0.50.0.
+
 A cópia é feita com `VACUUM INTO`, e não copiando o arquivo. A diferença
 importa: o banco roda em modo WAL, onde uma escrita recente vive no arquivo
 `-wal` até o checkpoint. Copiar só o `.db` devolveria um arquivo que abre,

@@ -123,7 +123,9 @@ export class ServicoVigilanciaOab {
    * @param opcoes `workspace` limita a um assinante — é o que a rota HTTP
    *   sempre passa. A varredura agendada chama sem ele.
    */
-  async varrer(opcoes: { workspace?: string } = {}): Promise<ResultadoVarredura> {
+  async varrer(
+    opcoes: { workspace?: string; pularVarridasDesde?: Date } = {},
+  ): Promise<ResultadoVarredura> {
     if (this.varrendo) {
       this.log.warn('varredura de OAB ignorada: outra em andamento');
       return {
@@ -142,7 +144,17 @@ export class ServicoVigilanciaOab {
     let varridas = 0;
 
     try {
-      const fila = await this.vigilancias.listarParaVarrer(this.maximo, opcoes.workspace);
+      const listadas = await this.vigilancias.listarParaVarrer(
+        this.maximo,
+        opcoes.workspace,
+      );
+      // Retomada de varredura interrompida por reinício (v0.67.3): a inscrição já
+      // varrida com sucesso depois do corte não volta ao DJEN.
+      const corte = opcoes.pularVarridasDesde?.getTime();
+      const fila =
+        corte === undefined
+          ? listadas
+          : listadas.filter((v) => !v.varridaEm || v.varridaEm.getTime() < corte);
       if (fila.length === 0) {
         return { vigilanciasVarridas: 0, processosNovos: 0, novidades: 0, falhas: 0 };
       }
