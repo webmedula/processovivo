@@ -9,6 +9,17 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.67.3] — 2026-11-12
+
+**Reiniciar o app não apaga mais histórico de backup, não repete a varredura e não transforma falha de rede em "não encontrado".** O log de produção de um dia com quatro reinícios mostrou os três: quatro backups de hoje no lugar de quatro dias de histórico, quatro varreduras completas (estourando o limite do DataJud) e `PROCESSO_NAO_ENCONTRADO` para processo que só não pôde ser consultado. Telas, rotas, intervalos, concorrência, ordem das fontes e fallback não mudaram.
+
+- **Backup na subida só se o último tiver mais de 24 h** (o intervalo de `BACKUP_INTERVALO_HORAS`). Com menos, o log diz `backup pulado na subida` (com `idadeHoras` e `proximaEmSegundos`) e o próximo sai quando completar o intervalo desde o último. A idade vem do nome do arquivo.
+- **Retenção por dia, não por contagem pura:** continuam no máximo `BACKUP_MANTER` (7) arquivos, mas quando sobra sai primeiro a cópia EXTRA de um dia que tem mais de uma (fica a última de cada dia), e só então o dia mais antigo. Cópia a mais de hoje nunca tira um dia anterior. Nome, pasta e o log `backup concluído` são os de antes. Vale também para o `backup` do CLI.
+- **Varredura de processos e de OAB contam a partir da última concluída**, não da hora da subida: início e fim da varredura agendada ficam na tabela `estado` (chaves `varredura:processos:*` e `varredura:oab:*`; sem coluna nova), e a de processos aproveita a marca `ultima_varredura_ok` que já existia. Subiu antes do intervalo: log `varredura adiada na subida` / `varredura de OAB adiada na subida` e nenhuma `varredura iniciada`. Sem registro, o comportamento de sempre (120 s).
+- **Varredura interrompida pelo reinício retoma em 120 s e pula quem já foi verificado com sucesso dentro do intervalo** (`sincronizado_em` do processo, `varrida_em` da inscrição). A linha `varredura iniciada` ganha `retomada: true` e `jaVerificados` nesse caso. Quem falhou antes da interrupção volta à fila.
+- **"Não encontrado" só quando toda fonte consultada respondeu isso.** Antes bastava UMA dizer "não tenho" (o DJEN só conhece o que foi publicado) para o resultado ser `PROCESSO_NAO_ENCONTRADO`, mesmo com o DataJud em limite de requisições. Agora qualquer falha (timeout, rede, limite, 5xx, resposta inválida, health check negativo) em outra fonte deixa `TODAS_AS_FONTES_FALHARAM`, com o "não encontrado" da outra entre as tentativas. Na API isso é 502 (o código que `TODAS_AS_FONTES_FALHARAM` já tinha) no lugar de 404 nesse caso. Nenhum dado gravado foi alterado.
+- **DEPLOY.md:** apagar `PROCESSOVIVO_IA_WORKSPACES_LIBERADOS` no Easypanel (sem efeito desde a 0.50.0; só gera aviso a cada subida).
+
 ## [0.67.2] — 2026-11-07
 
 **A análise de peça por IA diz qual limite recusou o pedido.** Antes, as três travas do freio de uso caíam na mesma frase ("Há muitas análises em andamento ou o limite por hora foi atingido…"), e nem a pessoa nem o operador sabiam se era esperar a outra análise terminar, esperar a hora virar ou o servidor estar cheio. Os limites e os valores não mudaram (o por hora continua em `PROCESSOVIVO_IA_PECAS_MAX_POR_HORA`, ajustável no ambiente).

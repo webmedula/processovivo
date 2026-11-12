@@ -121,17 +121,17 @@ describe('backup', () => {
     // Simula disco cheio / arquivo truncado: o destino já existe com lixo, e o
     // VACUUM INTO do SQLite recusa sobrescrever.
     const destino = join(pasta, 'backups');
-    const r1 = gerarBackup({ caminhoBanco: banco, destino });
+    // Instante FIXO nas duas chamadas: antes a segunda usava o `mtime` do arquivo,
+    // e quando o relógio virava o segundo entre a cópia e a escrita do lixo os
+    // nomes saíam diferentes e nada era recusado (falha intermitente no CI).
+    const agora = (): Date => new Date('2026-09-09T12:00:00.000Z');
+    const r1 = gerarBackup({ caminhoBanco: banco, destino, agora });
     writeFileSync(r1.caminho, 'isto não é um banco');
 
     // Mesma marca de tempo: tenta escrever no arquivo já existente.
-    expect(() =>
-      gerarBackup({
-        caminhoBanco: banco,
-        destino,
-        agora: () => new Date(statSync(r1.caminho).mtime),
-      }),
-    ).toThrow(BackupFalhouError);
+    expect(() => gerarBackup({ caminhoBanco: banco, destino, agora })).toThrow(
+      BackupFalhouError,
+    );
   });
 
   it('NÃO apaga cópia que a poda não criou', () => {

@@ -25,7 +25,10 @@ export interface OpcoesBackup {
   readonly caminhoBanco: string;
   /** Pasta onde as cópias ficam. Padrão: `backups/` ao lado do banco. */
   readonly destino?: string;
-  /** Quantas cópias manter. As mais antigas são apagadas. Padrão: 7. */
+  /**
+   * Quantas cópias manter. Padrão: 7. A retenção é por DIA (v0.67.3): extras do
+   * mesmo dia saem antes de qualquer dia anterior — ver `escolherBackupsParaApagar`.
+   */
   readonly manter?: number;
   readonly logger?: Logger;
   /** Injetável para teste; o padrão é a hora de agora. */
@@ -66,7 +69,7 @@ export function gerarBackup(opcoes: OpcoesBackup): ResultadoBackup {
     throw new BackupFalhouError('o banco está em memória e não tem o que copiar');
   }
 
-  const destino = opcoes.destino ?? join(dirname(caminhoBanco), 'backups');
+  const destino = opcoes.destino ?? pastaDeBackups(caminhoBanco);
   const manter = opcoes.manter ?? MANTER_PADRAO;
   const agora = (opcoes.agora ?? (() => new Date()))();
   const log = opcoes.logger?.child({ componente: 'backup' });
@@ -196,15 +199,82 @@ function contarContas(db: DatabaseSync): number {
 const NOME_DE_BACKUP =
   /^(?:processovivo|lexflow)-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z\.db$/;
 
-/** Apaga as cópias mais antigas, mantendo as `manter` últimas. */
-function podar(destino: string, manter: number): string[] {
+/** O dia (UTC, `AAAA-MM-DD`) que o nome do arquivo carrega. */
+function diaDoBackup(arquivo: string): string {
+  return arquivo.replace(/^[a-z]+-/, '').slice(0, 10);
+}
+
+/**
+ * Quais cópias sair, mantendo no máximo `manter` (v0.67.3). Pura: só nomes.
+ *
+ * A retenção é POR DIA, não por contagem. Antes, a poda era "as N últimas": quatro
+ * reinícios no mesmo dia geravam quatro cópias de hoje e apagavam quatro DIAS de
+ * histórico. Agora uma cópia a mais do mesmo dia nunca tira um dia anterior da
+ * lista: enquanto sobrar arquivo, sai primeiro o EXTRA de um dia que tem mais de
+ * uma cópia (o mais antigo deles; a última cópia de cada dia fica), e só quando
+ * cada dia tem uma cópia só é que sai o dia mais antigo.
+ */
+export function escolherBackupsParaApagar(
+  arquivos: readonly string[],
+  manter: number,
+): string[] {
   if (manter <= 0) return [];
-  const copias = readdirSync(destino)
-    .filter((f) => NOME_DE_BACKUP.test(f))
-    .sort();
-  const sobrando = copias.slice(0, Math.max(0, copias.length - manter));
+  const ordenadas = [...arquivos].sort(
+    (a, b) =>
+      diaDoBackup(a).localeCompare(diaDoBackup(b)) ||
+      a.slice(-23).localeCompare(b.slice(-23)),
+  );
+  const ultimaDoDia = new Map<string, string>();
+  for (const f of ordenadas) ultimaDoDia.set(diaDoBackup(f), f);
+  const extras = ordenadas.filter((f) => ultimaDoDia.get(diaDoBackup(f)) !== f);
+  const diarias = ordenadas.filter((f) => ultimaDoDia.get(diaDoBackup(f)) === f);
+
+  const apagar: string[] = [];
+  let sobra = ordenadas.length - manter;
+  for (const f of [...extras, ...diarias]) {
+    if (sobra <= 0) break;
+    apagar.push(f);
+    sobra--;
+  }
+  return apagar.sort();
+}
+
+/** Apaga o que `escolherBackupsParaApagar` indicar. */
+function podar(destino: string, manter: number): string[] {
+  const copias = readdirSync(destino).filter((f) => NOME_DE_BACKUP.test(f));
+  const sobrando = escolherBackupsParaApagar(copias, manter);
   for (const f of sobrando) rmSync(join(destino, f), { force: true });
   return sobrando;
+}
+
+/** A pasta padrão das cópias: `backups/` ao lado do banco. */
+export function pastaDeBackups(caminhoBanco: string): string {
+  return join(dirname(caminhoBanco), 'backups');
+}
+
+/**
+ * O instante da cópia mais recente, lido do NOME do arquivo (v0.67.3).
+ *
+ * Do nome e não do `mtime`: restaurar ou copiar a pasta muda a data do arquivo,
+ * e o nome é o instante em que a cópia foi tirada. `undefined` sem cópia nenhuma.
+ */
+export function ultimoBackupEm(destino: string): Date | undefined {
+  let nomes: string[];
+  try {
+    nomes = readdirSync(destino);
+  } catch {
+    return undefined;
+  }
+  const marcas = nomes
+    .filter((f) => NOME_DE_BACKUP.test(f))
+    .map((f) => f.slice(-23, -3))
+    .sort();
+  const ultima = marcas[marcas.length - 1];
+  if (!ultima) return undefined;
+  // `2026-11-12T11-15-00Z` → `2026-11-12T11:15:00Z`
+  const iso = `${ultima.slice(0, 13)}:${ultima.slice(14, 16)}:${ultima.slice(17)}`;
+  const quando = new Date(iso);
+  return Number.isNaN(quando.getTime()) ? undefined : quando;
 }
 
 /** As cópias existentes, da mais nova para a mais antiga. */
