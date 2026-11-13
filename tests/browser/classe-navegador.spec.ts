@@ -20,6 +20,7 @@ import {
 } from '../helpers/atualizacoesSinteticas.js';
 import type { GrupoSintetico } from '../helpers/atualizacoesSinteticas.js';
 import type { FastifyInstance } from 'fastify';
+import { clicarNoMenu } from './console.js';
 
 /*
  * v0.37.2 NUM NAVEGADOR: a classe legível em Atualizações (sem palavra cortada no meio,
@@ -264,7 +265,7 @@ describe.skipIf(sem)(
         const a = await larg();
         expect(a.sw).toBeLessThanOrEqual(a.cw);
         await page.unroute('**/v1/novidades**');
-        await page.click('#nav-processos');
+        await clicarNoMenu(page, '#nav-processos');
         await page.waitForSelector('table.tab');
         const b = await larg();
         expect(b.sw).toBeLessThanOrEqual(b.cw);
@@ -277,7 +278,7 @@ describe.skipIf(sem)(
           await abrirAtualizacoes(1366, escuro, [...gruposComClasses(), ...carteira(4)]);
           if (aba === 'processos') {
             await page.unroute('**/v1/novidades**');
-            await page.click('#nav-processos');
+            await clicarNoMenu(page, '#nav-processos');
             await page.waitForSelector('table.tab');
           }
           await page.addScriptTag({
@@ -309,7 +310,7 @@ describe.skipIf(sem)(
       await page.goto(url + '/');
       // A aba inicial precisa ter terminado de ligar o console antes do clique.
       await page.waitForSelector('#conteudo .nvt');
-      await page.click('#nav-processos');
+      await clicarNoMenu(page, '#nav-processos');
       await page.waitForSelector('table.tab');
     }
 

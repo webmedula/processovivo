@@ -260,7 +260,7 @@ describe('console — a tela da Pasta digital', () => {
 
   it('a lista nunca passa da largura da janela', () => {
     expect(ESTILOS_PASTA).toContain(
-      'width:min(var(--pasta-lista-w),calc(100vw - 256px - 320px))',
+      'width:min(var(--pasta-lista-w),calc(100vw - 360px))',
     );
     expect(SCRIPT_PASTA).toContain("window.addEventListener('resize',st.redimensionar)");
     expect(SCRIPT_PASTA).toContain(
@@ -310,12 +310,17 @@ describe('console — a tela da Pasta digital', () => {
     expect(SCRIPT_PASTA).toContain('v.totalAtosRecebidos');
     // O aviso depende de haver número na lista, e de mais nada.
     expect(SCRIPT_PASTA).toContain(
-      "if(haNumeros()&&typeof v.totalAtosRecebidos==='number')",
+      "var comNum=haNumeros()&&typeof v.totalAtosRecebidos==='number';",
     );
     expect(SCRIPT_PASTA).not.toMatch(/n[úu]mero oficial/i);
     expect(SCRIPT_PASTA_CALIBRACAO).not.toMatch(/n[úu]mero oficial/i);
     // Com calibração o aviso não some: o texto muda, a condição não.
-    expect(SCRIPT_PASTA).toContain('h+=cal.avisoHtml(v);');
+    // v0.68.0: o texto completo mora em "Detalhes"; o resumo da numeração fica sempre na linha.
+    expect(SCRIPT_PASTA).toContain("(comNum?cal.avisoHtml(v):'')");
+    expect(SCRIPT_PASTA).toContain('cal.resumoDoAviso(v)');
+    expect(SCRIPT_PASTA_CALIBRACAO).toContain(
+      'numeração calculada, pode ficar abaixo do Projudi',
+    );
   });
 
   it('a busca procura no rótulo, na descrição e no número (por igualdade sobre a posição)', () => {

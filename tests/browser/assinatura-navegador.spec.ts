@@ -13,7 +13,7 @@ import {
 } from '../helpers/pagamentos.js';
 import type { CenarioDePagamento } from '../helpers/pagamentos.js';
 import { construirServidor } from '../../src/main/http/servidor.js';
-import { esperarConsolePronto } from './console.js';
+import { clicarNoMenu, esperarConsolePronto } from './console.js';
 
 /*
  * A tela "Assinatura online" (v0.44.0) NUM NAVEGADOR: o servidor e o console são os reais, o gateway é o
@@ -110,7 +110,7 @@ describe.skipIf(sem)('Assinatura online, no navegador', { timeout: 90_000 }, () 
     await page.goto(url + (opcoes.caminho ?? '/'));
     // Com o relógio falso, `requestAnimationFrame` não anda sozinho: a espera não terminaria.
     if (!opcoes.relogio) await esperarConsolePronto(page);
-    await page.locator('#nav-conta').click();
+    await clicarNoMenu(page, '#nav-conta');
   }
 
   const cartao = () => page.locator('#pv-pagamento .pgto');
@@ -191,9 +191,9 @@ describe.skipIf(sem)('Assinatura online, no navegador', { timeout: 90_000 }, () 
     await abrir({ comPagamento: false });
     await page.waitForSelector('#pv-pagamento', { state: 'attached' });
     // Sai e volta à conta esperando a resposta de /v1/assinatura, para o cartão já ter sido desenhado.
-    await page.locator('#nav-processos').click();
+    await clicarNoMenu(page, '#nav-processos');
     const resposta = page.waitForResponse((r) => r.url().endsWith('/v1/assinatura'));
-    await page.locator('#nav-conta').click();
+    await clicarNoMenu(page, '#nav-conta');
     await resposta;
     expect(await page.locator('#pv-pagamento').innerHTML()).toBe('');
     expect(await page.getByRole('button', { name: /Assinar/ }).count()).toBe(0);
@@ -420,8 +420,8 @@ describe.skipIf(sem)('Assinatura online, no navegador', { timeout: 90_000 }, () 
       }),
     );
     await ativarRenovacao();
-    await page.locator('#nav-processos').click();
-    await page.locator('#nav-conta').click();
+    await clicarNoMenu(page, '#nav-processos');
+    await clicarNoMenu(page, '#nav-conta');
     await page.getByText('Renovação automática ativa').waitFor();
 
     // Confirmação na própria tela: o foco vai para "Sim", e "Voltar" devolve o foco ao botão.
@@ -519,8 +519,8 @@ describe.skipIf(sem)('Assinatura online, no navegador', { timeout: 90_000 }, () 
         }),
       );
       await ativarRenovacao();
-      await page.locator('#nav-processos').click();
-      await page.locator('#nav-conta').click();
+      await clicarNoMenu(page, '#nav-processos');
+      await clicarNoMenu(page, '#nav-conta');
       await page.getByRole('button', { name: 'Cancelar renovação automática' }).click();
       m = await medir();
       expect(m.sw).toBeLessThanOrEqual(m.cw);
@@ -593,8 +593,8 @@ describe.skipIf(sem)('Assinatura online, no navegador', { timeout: 90_000 }, () 
           body: JSON.stringify({ plano: 'pecas', aceiteTermos: true }),
         }),
       );
-      await page.locator('#nav-processos').click();
-      await page.locator('#nav-conta').click();
+      await clicarNoMenu(page, '#nav-processos');
+      await clicarNoMenu(page, '#nav-conta');
       await page
         .locator('.pgto-estado')
         .waitFor()
@@ -603,8 +603,8 @@ describe.skipIf(sem)('Assinatura online, no navegador', { timeout: 90_000 }, () 
       expect(await rodar(), 'depois do checkout').toBe('');
 
       await ativarRenovacao();
-      await page.locator('#nav-processos').click();
-      await page.locator('#nav-conta').click();
+      await clicarNoMenu(page, '#nav-processos');
+      await clicarNoMenu(page, '#nav-conta');
       await page.getByText('Renovação automática ativa').waitFor();
       expect(await rodar(), 'ativa').toBe('');
       await page.getByRole('button', { name: 'Cancelar renovação automática' }).click();

@@ -7,6 +7,7 @@ import { CHROMIUM } from './ambiente.js';
 import { NotificadorEspiao } from '../helpers/aplicacao.js';
 import { SENHA, montarCenarioDePagamento } from '../helpers/pagamentos.js';
 import type { CenarioDePagamento } from '../helpers/pagamentos.js';
+import { clicarNoMenu } from './console.js';
 
 /*
  * v0.51.0 NUM NAVEGADOR: no painel "Assinar no meu calendário", as opções de lembrete, o texto sobre o
@@ -96,7 +97,7 @@ describe.skipIf(sem)(
       await page.fill('#c-email', EMAIL);
       await page.fill('#c-senha', SENHA);
       await page.click('#c-enviar');
-      await page.locator('#nav-calendario').click();
+      await clicarNoMenu(page, '#nav-calendario');
       await page.locator('#cal-assinar').click();
       await page.locator('#cal-lem-dia').waitFor();
     }
@@ -151,7 +152,7 @@ describe.skipIf(sem)(
         lembretes: { umDiaAntes: true, umaHoraAntes: true },
       });
       await page.reload();
-      await page.locator('#nav-calendario').click();
+      await clicarNoMenu(page, '#nav-calendario');
       await page.locator('#cal-assinar').click();
       await page.locator('#cal-lem-dia').waitFor();
       expect(await page.locator('#cal-lem-dia').isChecked()).toBe(true);
@@ -176,7 +177,7 @@ describe.skipIf(sem)(
         },
       ]);
       await page.reload();
-      await page.locator('#nav-calendario').click();
+      await clicarNoMenu(page, '#nav-calendario');
       await page.locator('#cal-assinar').click();
       await page.locator('#cal-resumo').waitFor();
       expect(await page.locator('#cal-resumo').isChecked()).toBe(false);

@@ -171,6 +171,18 @@ function avisoHtml(v){
   return '<div class="nota num-aviso" id="pasta-aviso-num">'+h+'</div>';
 }
 
+/* O resumo de uma linha do aviso (v0.68.0): o que fica SEMPRE à vista ao lado da data da lista. O texto completo
+   continua em avisoHtml, dentro de "Detalhes". \`alerta\` é o único estado que o sistema detecta sozinho (número
+   informado que deixou de valer) e abre os detalhes. */
+function resumoDoAviso(v){
+  var c=v.calibracao;
+  if(c&&c.invalidadas>0)return {texto:'calibração anterior invalidada',alerta:true};
+  if(!c||!c.ancoras.length)return {texto:'numeração calculada, pode ficar abaixo do Projudi',alerta:false};
+  return c.atos.faixas+c.atos.estimados>0
+    ?{texto:'numeração conferida em parte',alerta:false}
+    :{texto:'numeração conferida por você',alerta:false};
+}
+
 function limparMsg(){msg={ok:false,texto:''}}
 function mensagemDoErro(e){
   if(e&&(e.codigo==='CALIBRACAO_DE_NUMERACAO_INVALIDA'||e.codigo==='LISTAGEM_DA_PASTA_AUSENTE'))return e.message;
@@ -335,6 +347,7 @@ window.__pvPastaCal={
   combina:combina,
   haNumeros:haNumeros,
   avisoHtml:avisoHtml,
+  resumoDoAviso:resumoDoAviso,
   posicaoDe:posicaoDe,
   abrirEditor:abrirEditor,
   desenhar:desenhar,

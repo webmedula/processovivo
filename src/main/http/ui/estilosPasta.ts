@@ -9,13 +9,13 @@
  * de estado diz a mesma coisa que a cor: ninguém depende só dela.
  */
 export const ESTILOS_PASTA = `
-/* ---------- pasta digital: a tela inteira à direita da lateral ---------- */
-:root{--pasta-lista-w:clamp(440px,32vw,520px)}
+/* ---------- pasta digital: a tela inteira; o menu lateral vira gaveta (v0.68.0) ---------- */
+:root{--pasta-lista-w:clamp(440px,36vw,620px)}
 /* Altura total (v0.35.3): a página por baixo não rola nem tem altura além da janela;
    rolam só a lista e o visualizador, cada um por dentro. */
 html:has(body.com-pasta){overflow:hidden}
 body.com-pasta{overflow:hidden;height:100vh;height:100dvh}
-#pasta{position:fixed;top:0;right:0;bottom:0;height:100vh;height:100dvh;left:256px;z-index:40;display:flex;
+#pasta{position:fixed;top:0;right:0;bottom:0;height:100vh;height:100dvh;left:0;z-index:40;display:flex;
   flex-direction:column;min-width:0;overflow:hidden;background:var(--papel);
   box-shadow:-6px 0 18px rgba(11,25,44,.08)}
 #pasta>*{min-width:0}
@@ -38,6 +38,17 @@ body.com-pasta{overflow:hidden;height:100vh;height:100dvh}
   padding:0 14px;font-size:12px;line-height:1.35;color:var(--tinta2);max-height:30vh;overflow:auto}
 #pasta .aviso:empty{display:none}
 #pasta .aviso>div{padding:3px 0;border-bottom:1px solid var(--linha2)}
+/* Uma linha (v0.68.0): data da lista, "não é consulta ao vivo" e o resumo da numeração ficam SEMPRE à vista;
+   o texto completo, sem mudar uma palavra, abre em "Detalhes". */
+#pasta .pav{border-bottom:1px solid var(--linha2)}
+#pasta .pav>summary{display:flex;align-items:center;gap:4px 10px;min-height:26px;padding:2px 0;cursor:pointer;
+  list-style:none;min-width:0}
+#pasta .pav>summary::-webkit-details-marker{display:none}
+#pasta .pav>summary:focus-visible{outline:3px solid var(--acento);outline-offset:1px}
+#pasta .pav-l{min-width:0;flex:1 1 auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#pasta .pav-d{flex:none;font-weight:700;color:var(--acento);white-space:nowrap}
+#pasta .pav-alerta{color:var(--atencao);font-weight:700}
+#pasta .pav>div{padding:3px 0}
 #pasta strong{color:var(--tinta)}
 #pasta .proc{color:var(--tinta2)}
 #pasta .aviso .nota{margin-top:0;font-size:inherit}
@@ -73,8 +84,8 @@ body.com-pasta{overflow:hidden;height:100vh;height:100dvh}
 #pasta>.corpo{flex:1 1 auto;min-height:0;display:flex}
 
 /* ---------- a lista ---------- */
-#pasta .lista{flex:none;width:min(var(--pasta-lista-w),calc(100vw - 256px - 320px));
-  min-width:260px;max-width:100%;display:flex;flex-direction:column;min-height:0;
+#pasta .lista{flex:none;width:min(var(--pasta-lista-w),calc(100vw - 360px));
+  min-width:320px;max-width:100%;display:flex;flex-direction:column;min-height:0;
   border-right:1px solid var(--linha);background:var(--papel)}
 #pasta .lista .barra{flex-shrink:0;padding:5px 12px;border-bottom:1px solid var(--linha2);
   display:flex;flex-direction:column;gap:3px}
@@ -85,15 +96,18 @@ body.com-pasta{overflow:hidden;height:100vh;height:100dvh}
 #pasta .so-disp{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--tinta2);
   cursor:pointer;min-height:24px;white-space:nowrap}
 #pasta .so-disp input{width:16px;height:16px}
-#pasta .acoes-chips{display:flex;flex-wrap:wrap;align-items:center;gap:3px 5px;min-width:0}
-#pasta .acoes-chips>.acoes,#pasta .acoes-chips>.chips{display:contents}
-#pasta .acoes,#pasta .acoes-previa{display:flex;gap:6px;flex-wrap:wrap}
+#pasta .acoes-chips{display:flex;flex-direction:column;gap:3px;min-width:0}
+#pasta .acoes,#pasta .acoes-previa{display:flex;gap:4px 5px;flex-wrap:wrap}
 #pasta .acoes .bt,#pasta .acoes .bt2{min-height:26px;padding:0 8px;font-size:12px}
-#pasta .barra .chips{margin:0;gap:3px 5px}
-#pasta .barra .chip{min-height:22px;padding:0 6px;font-size:11px;line-height:1;max-width:100%;
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* Os tipos em UMA linha (v0.68.0): rolam dentro do próprio contêiner, nunca a página; a borda direita
+   esmaece enquanto houver mais à direita (.tem-mais, posta pelo script). */
+#pasta .barra .chips{margin:0;display:flex;flex-wrap:nowrap;gap:5px;min-width:0;overflow-x:auto;
+  overflow-y:hidden;scrollbar-width:thin;padding:2px 2px 3px}
+#pasta .barra .chips.tem-mais{-webkit-mask-image:linear-gradient(to right,#000 calc(100% - 36px),transparent);
+  mask-image:linear-gradient(to right,#000 calc(100% - 36px),transparent)}
+#pasta .barra .chip{min-height:22px;padding:0 6px;font-size:11px;line-height:1;flex:none;white-space:nowrap}
 #pasta .chip.on{border-color:var(--acento);color:var(--acento);background:var(--acento-bg)}
-#pasta .contagem{font-size:12px;color:var(--tinta2);min-width:0;flex:1 1 auto;text-align:right}
+#pasta .contagem{font-size:12px;color:var(--tinta2);min-width:0}
 #pasta .filtro-ativo{color:var(--atencao)}
 #pasta #pasta-baixar-caixa{flex-shrink:0;max-height:34vh;overflow:auto}
 #pasta .previa{margin:8px 12px;padding:10px 12px;border:1px solid var(--linha);
@@ -242,7 +256,7 @@ body.com-pasta{overflow:hidden;height:100vh;height:100dvh}
 
 /* ---------- celular: lista em tela cheia; a peça abre em tela cheia, com voltar ---------- */
 @media (max-width:900px){
-  #pasta{left:0;box-shadow:none}
+  #pasta{box-shadow:none}
   #pasta .lista{width:100%;min-width:0;border-right:0;overflow:auto}
   /* A tela é pequena: filtros e lista rolam juntos, e a lista não fica espremida. */
   #pasta .itens{overflow:visible;flex:none}
@@ -252,6 +266,7 @@ body.com-pasta{overflow:hidden;height:100vh;height:100dvh}
   body.pasta-lendo #pasta .visor{display:flex}
   body.pasta-lendo #pasta>.topo,body.pasta-lendo #pasta>.aviso,
   body.pasta-lendo #pasta>.pcal-caixa{display:none}
+  #pasta .pav-l{white-space:normal}
   #pasta .topo-visor .voltar{display:inline-flex}
   #pasta .visor .estado{max-height:26vh}
 }

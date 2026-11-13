@@ -385,11 +385,11 @@ describe.skipIf(sem)(
       expect(TEXTO_LONGO).toContain('FIM-DO-TEXTO-LONGO');
     });
 
-    it('largura da lista: 440 px em 1366 e até 520 px em 1920; placeholder da busca inteiro', async () => {
+    it('largura da lista (v0.68.0, sem o menu ao lado): 492 px em 1366 e até 620 px em 1920; placeholder da busca inteiro', async () => {
       await abrir({ w: 1366, h: 768 });
       const larg = async (): Promise<number> =>
         Math.round((await page.locator('#pasta-lista').boundingBox())!.width);
-      expect(await larg()).toBe(440);
+      expect(await larg()).toBe(492);
       const corta = await page.$eval('#pasta-busca', (el) => {
         const i = el as HTMLInputElement;
         return i.scrollWidth > i.clientWidth;
@@ -400,7 +400,7 @@ describe.skipIf(sem)(
       );
       await page.setViewportSize({ width: 1920, height: 1080 });
       await page.waitForTimeout(300);
-      expect(await larg()).toBe(520);
+      expect(await larg()).toBe(620);
     });
 
     for (const [w, h] of [

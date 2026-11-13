@@ -157,7 +157,8 @@ describe.skipIf(sem)(
           return {
             proc: document.querySelector('#pasta-aviso .proc')?.textContent ?? '',
             procVisivel: dentro('pasta-aviso'),
-            numVisivel: dentro('pasta-aviso-num'),
+            numVisivel: dentro('pasta-aviso-linha'),
+            linha: document.getElementById('pasta-aviso-linha')?.textContent ?? '',
             num: document.getElementById('pasta-aviso-num')?.textContent ?? '',
             cal: dentro('pasta-cal'),
           };
@@ -166,6 +167,7 @@ describe.skipIf(sem)(
         expect(r.procVisivel).toBe(true);
         expect(r.num).toContain('Numeração das movimentações calculada');
         expect(r.numVisivel).toBe(true);
+        expect(r.linha).toContain('numeração calculada, pode ficar abaixo do Projudi');
         expect(r.cal).toBe(true);
         // A estimativa do "Montar" saiu da faixa fixa do topo.
         expect(await page.textContent('#pasta-aviso')).not.toContain(

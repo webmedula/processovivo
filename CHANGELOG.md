@@ -9,6 +9,18 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.68.0] — 2026-11-13
+
+**A Pasta digital ganhou a largura toda da janela e o menu lateral ficou mais econômico em tela estreita.** Só layout e apresentação: fila do tribunal, numeração, download, Drive, IA, planos, rotas e o conteúdo das outras telas não mudaram. Sem migração e sem dependência nova.
+
+- **Pasta digital sem menu lateral, em qualquer largura.** À esquerda de "← Fechar a pasta" (que continua igual) há um botão ☰ "Menu", que abre o menu completo como gaveta por cima da tela, com o fundo escurecido. Fecha com Esc, clique no fundo, botão de fechar e ao escolher um item (que sai da Pasta e vai para a tela escolhida). O foco vai para a gaveta e volta ao ☰; Tab não sai dela. O contador de Atualizações aparece também no ☰. Animação de 180 ms, nenhuma com "reduzir movimento".
+- **Menu só com ícones abaixo de 1280 px** (60 px no lugar de 256 px), fora da Pasta: cada ícone tem nome acessível e dica no mouse e no foco; o contador de Atualizações fica sobre o ícone e o total de "Meus processos" aparece na dica; tema, iniciais da conta, sair e "estado das fontes" continuam na barra. Um botão na própria barra expande e recolhe, e a escolha fica guardada no navegador (se o armazenamento falhar, vale na sessão e depois o padrão da largura). De 1280 px para cima o padrão continua o menu completo.
+- **De 900 px para baixo (tablet em pé e celular) o menu também é gaveta**, com um ☰ numa barra fina no alto. Antes era uma barra de cima com os itens quebrando em linhas. O `/admin` não mudou.
+- **Aviso do topo da Pasta em uma linha:** "Lista de DATA, HORA · não é consulta ao vivo · numeração calculada, pode ficar abaixo do Projudi · ⓘ Detalhes". "Detalhes" abre o texto completo de antes, sem mudar uma palavra. O resumo da numeração fica sempre à vista (decisão do dono); os detalhes abrem sozinhos quando há "Calibração anterior invalidada". Pausa do tribunal, segredo de justiça e o andamento da montagem continuam aparecendo inteiros.
+- **Tipos de peça em uma linha**, que rola dentro do próprio contêiner (a borda direita esmaece enquanto houver mais). Contagens, ordem e o que cada filtro faz são os de antes; "N marcadas · mostrando X de Y linhas…" ficou em linha própria.
+- **Lista mais larga e divisor com limites novos:** o padrão passou a `clamp(440px, 36vw, 620px)` (492 px em 1366); o divisor (que já existia) agora se chama "Redimensionar lista", respeita 320 px de mínimo para a lista e 360 px para o painel da peça, e volta ao padrão com duplo clique ou Enter. A largura escolhida continua guardada no navegador.
+- **Testes antigos ajustados** (o comportamento coberto é o mesmo): os que mediam a largura da lista (440/520 → 492/620), o que exigia o parágrafo da numeração visível (agora a linha de resumo), e os que clicavam no menu em 768 e 390 px (passam a abrir a gaveta, pelo helper `clicarNoMenu`).
+
 ## [0.67.3] — 2026-11-12
 
 **Reiniciar o app não apaga mais histórico de backup, não repete a varredura e não transforma falha de rede em "não encontrado".** O log de produção de um dia com quatro reinícios mostrou os três: quatro backups de hoje no lugar de quatro dias de histórico, quatro varreduras completas (estourando o limite do DataJud) e `PROCESSO_NAO_ENCONTRADO` para processo que só não pôde ser consultado. Telas, rotas, intervalos, concorrência, ordem das fontes e fallback não mudaram.

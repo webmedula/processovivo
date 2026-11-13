@@ -14,7 +14,7 @@ import {
 } from '../../src/domain/errors/index.js';
 import { workspaceDaChave } from '../../src/main/http/chaves.js';
 import { CODIGO_DO_GOOGLE } from '../helpers/transporteDoDrive.js';
-import { esperarConsolePronto } from './console.js';
+import { clicarNoMenu, esperarConsolePronto } from './console.js';
 
 /*
  * O envio ao Google Drive NUM NAVEGADOR (v0.42.0): o cartão em "Meus acessos" em cada estado, o
@@ -146,7 +146,7 @@ describe.skipIf(sem)('Google Drive — no navegador', { timeout: 90_000 }, () =>
   }
 
   async function abrirAcessos(): Promise<void> {
-    await page.click('#nav-credenciais');
+    await clicarNoMenu(page, '#nav-credenciais');
     await page.waitForSelector('#conteudo h2:has-text("Meus acessos")');
   }
 
@@ -510,7 +510,7 @@ describe.skipIf(sem)('Google Drive — no navegador', { timeout: 90_000 }, () =>
         await conectarPeloServico();
         await page.reload();
         await page.waitForSelector('#nav-credenciais');
-        await page.click('#nav-credenciais');
+        await clicarNoMenu(page, '#nav-credenciais');
         await page.waitForSelector('#drive-desconectar');
         expect(await rodar('#drive-cartao'), 'conectado').toBe('');
         await page.click('#drive-desconectar');
