@@ -6,6 +6,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { PROCESSO_TJGO, PROCESSO_TJGO_DIGITOS } from '../helpers/leitor.js';
 import { CHAVE, CHAVE_B, CHROMIUM, iniciar } from './ambiente.js';
 import type { Ambiente } from './ambiente.js';
+import { clicarNoMenu } from './console.js';
 
 /*
  * Navegação por HASH (v0.57.0) NUM NAVEGADOR de verdade: Voltar/Avançar, F5, link direto, outra conta, sair e Voltar,
@@ -98,7 +99,7 @@ describe.skipIf(sem)('Navegação por hash — no navegador', { timeout: 90_000 
     );
   }
   async function listaDeProcessos(): Promise<void> {
-    await page.click('#nav-processos');
+    await clicarNoMenu(page, '#nav-processos');
     await page.waitForSelector('[data-abrir]');
   }
   async function abrirProcessoDaLista(): Promise<void> {
@@ -329,7 +330,7 @@ describe.skipIf(sem)('Navegação por hash — no navegador', { timeout: 90_000 
     }
     // Endereço inventado também cai no aviso, e o aviso leva de volta à lista.
     await irAoAviso(`${amb.url}/#/processo/naoexiste1234`);
-    await page.click('#nav-aviso-lista');
+    await clicarNoMenu(page, '#nav-aviso-lista');
     await page.waitForSelector('text=Meus processos');
     await page.goto(`${amb.url}/#/qualquer-coisa`);
     await page.waitForSelector('#nav-aviso-lista');
@@ -403,7 +404,7 @@ describe.skipIf(sem)('Navegação por hash — no navegador', { timeout: 90_000 
     // Voltar da peça para a lista da Pasta já aberta não rouba o foco para o título.
     await page.goBack();
     await comEsperaDe(/\/pasta$/);
-    await page.click('#nav-calendario').catch(() => undefined);
+    await clicarNoMenu(page, '#nav-calendario').catch(() => undefined);
   });
 
   it('as abas principais têm endereço próprio e o F5 mantém cada uma', async () => {

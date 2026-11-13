@@ -16,7 +16,7 @@ import {
 import { CODIGO_DO_GOOGLE } from '../helpers/transporteDoDrive.js';
 import { CHAVE, CHROMIUM, iniciar } from './ambiente.js';
 import type { Ambiente } from './ambiente.js';
-import { esperarConsolePronto } from './console.js';
+import { clicarNoMenu, esperarConsolePronto } from './console.js';
 
 /*
  * v0.49.0 NUM NAVEGADOR: a tela "Custos" por cliente (menu, filtros aviso de "Sem cliente", PDF e
@@ -120,7 +120,7 @@ describe.skipIf(sem)(
     }
 
     async function irParaCustos(): Promise<void> {
-      await page.locator('#nav-custos').click();
+      await clicarNoMenu(page, '#nav-custos');
       await page.waitForSelector('#cc');
       await page.waitForFunction(
         () => !document.querySelector('#cc-corpo')?.textContent?.includes('Carregando'),
@@ -281,7 +281,7 @@ describe.skipIf(sem)(
       );
       expect(await page.locator('#cust-lista').innerText()).toContain('Guia do Azul');
       // Voltar à tela de Custos mostra a lista de novo.
-      await page.locator('#nav-custos').click();
+      await clicarNoMenu(page, '#nav-custos');
       await page.waitForSelector('#cc');
       await page.waitForSelector('#cc-corpo .cc-tab');
     });
@@ -827,7 +827,7 @@ describe.skipIf(sem)(
         'vigilancia',
         'credenciais',
       ]) {
-        await page.locator(`#nav-${aba}`).click();
+        await clicarNoMenu(page, `#nav-${aba}`);
         await page.waitForFunction(
           (a) => document.querySelector(`#nav-${a}`)?.classList.contains('ativo'),
           aba,
@@ -837,7 +837,7 @@ describe.skipIf(sem)(
         );
       }
       // Só a aba Custos fala com a API de custos por cliente.
-      await page.locator('#nav-novidades').click();
+      await clicarNoMenu(page, '#nav-novidades');
       expect(await page.locator('#cc').count()).toBe(0);
     });
   },

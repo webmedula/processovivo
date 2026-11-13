@@ -32,3 +32,29 @@ export async function esperarConsolePronto(page: Page): Promise<void> {
   });
   await page.waitForLoadState('networkidle', { timeout: 10_000 }).catch(() => undefined);
 }
+
+/**
+ * Clica num item do menu lateral como a pessoa faria (v0.68.0): de 900 px para baixo o menu é uma gaveta, então
+ * primeiro o ☰ da barra de cima; nas outras larguras o item está à vista (por extenso ou só o ícone).
+ */
+export async function clicarNoMenu(page: Page, seletor: string): Promise<void> {
+  const abrir = page.locator('#menu-abrir');
+  // Logo depois de entrar o menu ainda não está na tela: espera o que aparecer primeiro, o ☰ ou o item.
+  await page.waitForFunction((q) => {
+    const visivel = (e: Element | null) =>
+      !!e &&
+      e.getClientRects().length > 0 &&
+      getComputedStyle(e).visibility === 'visible';
+    return (
+      visivel(document.getElementById('menu-abrir')) || visivel(document.querySelector(q))
+    );
+  }, seletor);
+  if (await abrir.isVisible()) {
+    await abrir.click();
+    await page.waitForFunction(() => {
+      const l = document.getElementById('lateral');
+      return !!l && Math.round(l.getBoundingClientRect().left) === 0;
+    });
+  }
+  await page.locator(seletor).click();
+}

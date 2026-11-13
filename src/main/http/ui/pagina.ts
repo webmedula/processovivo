@@ -20,6 +20,7 @@ import { ESTILOS_PAGAMENTO, SCRIPT_PAGAMENTO } from './pagamento.js';
 import { SCRIPT_PLANO_ESCOLHIDO } from './planoEscolhido.js';
 import { ESTILOS_LOGIN_GOOGLE, SCRIPT_LOGIN_GOOGLE } from './loginGoogle.js';
 import { ESTILOS_VERIFICACAO, SCRIPT_VERIFICACAO } from './verificacao.js';
+import { ESTILOS_MENU, SCRIPT_MENU } from './menuLateral.js';
 import { SCRIPT_NAVEGACAO } from './navegacao.js';
 
 /**
@@ -89,7 +90,7 @@ export function paginaConsole(versao: string): string {
 <link rel="icon" type="image/svg+xml" href="${FAVICON_DATA_URI}">
 <meta name="theme-color" content="#0b192c">
 <script>${SCRIPT_TEMA}</script>
-<style>${ESTILOS}${ESTILOS_PASTA}${ESTILOS_CALENDARIO}${ESTILOS_ATUALIZACOES}${ESTILOS_PROVIDENCIA}${ESTILOS_POLEGARES}${ESTILOS_ANALISE_IA}${ESTILOS_RESUMO_IA}${ESTILOS_ANALISE_PECA_IA}${ESTILOS_ANALISE_PROCESSO_IA}${ESTILOS_DRIVE}${ESTILOS_CUSTOS}${ESTILOS_CUSTOS_CLIENTE}${ESTILOS_PAGAMENTO}${ESTILOS_VERIFICACAO}${ESTILOS_LOGIN_GOOGLE}</style>
+<style>${ESTILOS}${ESTILOS_MENU}${ESTILOS_PASTA}${ESTILOS_CALENDARIO}${ESTILOS_ATUALIZACOES}${ESTILOS_PROVIDENCIA}${ESTILOS_POLEGARES}${ESTILOS_ANALISE_IA}${ESTILOS_RESUMO_IA}${ESTILOS_ANALISE_PECA_IA}${ESTILOS_ANALISE_PROCESSO_IA}${ESTILOS_DRIVE}${ESTILOS_CUSTOS}${ESTILOS_CUSTOS_CLIENTE}${ESTILOS_PAGAMENTO}${ESTILOS_VERIFICACAO}${ESTILOS_LOGIN_GOOGLE}</style>
 </head>
 <body>
 
@@ -100,7 +101,7 @@ export function paginaConsole(versao: string): string {
     estivessem no mesmo bloco, esconder a navegação esconderia o login junto.
     A grade some para uma coluna sozinha quando a lateral não está lá.
   -->
-  <aside class="lateral oculto" id="lateral">
+  <div class="lateral oculto" id="lateral" role="complementary">
     <div class="marca" id="marca">${LOGO_FUNDO_ESCURO}</div>
     <nav class="nav">
       <button id="nav-novidades">${ICONES.sino}<span>Atualizações</span> <span class="bolha oculto" id="bolha"></span></button>
@@ -121,12 +122,13 @@ export function paginaConsole(versao: string): string {
       </div>
       <div class="versao">v${versao} &middot; <a href="/ready">estado das fontes</a></div>
     </div>
-  </aside>
+  </div>
 
   <main class="env" id="conteudo"></main>
 </div>
 
 <script>${SCRIPT}</script>
+<script>${SCRIPT_MENU}</script>
 <script>${SCRIPT_PASTA_CALIBRACAO}</script>
 <script>${SCRIPT_PASTA_BAIXADAS}</script>
 <script>${SCRIPT_PASTA}</script>

@@ -436,6 +436,8 @@ dele, o histórico de novidades e a credencial dele no tribunal. Perder isso nã
 Uma cópia por dia, guardando as 7 últimas, em `/dados/backups/`. Ligado por
 padrão — `BACKUP_INTERVALO_HORAS=24` e `BACKUP_MANTER=7`.
 
+**Menu lateral e Pasta digital (v0.68.0).** Nada a configurar: sem variável nova, sem migração. A forma do menu (completo ou ícones) e a largura da lista da Pasta ficam guardadas no navegador de cada pessoa (`processovivo.menu` e `processovivo.pasta.lista`); limpar os dados do site volta ao padrão.
+
 **Reiniciar o app não gera cópia nem apaga histórico (v0.67.3).** Ao subir, o sistema olha o backup mais
 recente: se tem menos de 24 h, o log diz `backup pulado na subida` e a próxima cópia sai quando completar 24 h
 desde a última. A retenção é **por dia**: ficam no máximo `BACKUP_MANTER` arquivos (7; para mudar, defina essa

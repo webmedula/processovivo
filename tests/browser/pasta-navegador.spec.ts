@@ -224,7 +224,14 @@ describe.skipIf(sem)('Pasta digital — no navegador', { timeout: 60_000 }, () =
     expect(aviso).not.toMatch(/oficial/i);
     // O aviso permanece enquanto a lista é refeita (busca/filtro não o esconde).
     await page.fill('#pasta-busca', 'nada-disto-existe');
-    expect(await page.locator('#pasta-aviso-num').isVisible()).toBe(true);
+    // v0.68.0: o que fica sempre à vista é a linha com o resumo; o texto completo está em "Detalhes".
+    expect(await page.locator('#pasta-aviso-linha').isVisible()).toBe(true);
+    expect(await page.textContent('#pasta-aviso-linha')).toContain(
+      'numeração calculada, pode ficar abaixo do Projudi',
+    );
+    expect(await page.textContent('#pasta-aviso-num')).toContain(
+      'Numeração das movimentações calculada',
+    );
   });
 
   it('descrição longa: até 2 linhas, texto inteiro no mouse, no foco e no cabeçalho do visualizador — sem estourar a lista', async () => {

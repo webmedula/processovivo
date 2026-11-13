@@ -138,32 +138,34 @@ a{color:var(--acento);text-decoration:none}
 .env{max-width:1240px;margin:0 auto;padding:34px 40px 80px;width:100%}
 
 /* Abaixo de 900px a lateral volta a ser barra de cima: numa tela estreita,
-   256px fixos comeriam um quarto da largura útil da tabela. */
+   256px fixos comeriam um quarto da largura útil da tabela.
+   Desde a v0.68.0 isto vale só para o /admin: no console o menu vira GAVETA nessa
+   largura (ui/menuLateral.ts põe html.menu-gaveta), e estas regras não se aplicam. */
 @media (max-width:900px){
   .app{grid-template-columns:1fr}
-  .lateral{position:sticky;height:auto;width:auto;flex-direction:row;
+  html:not(.menu-gaveta) .lateral{position:sticky;height:auto;width:auto;flex-direction:row;
     align-items:center;gap:10px;border-right:0;
     border-bottom:1px solid var(--lateral-linha);padding:10px 14px;flex-wrap:wrap}
-  .marca{padding:0}
-  .marca .logo-svg{width:120px}
-  .marca .sub{display:none}
-  .nav{flex-direction:row;flex-wrap:wrap;margin-left:auto}
-  .nav button{width:auto;min-height:40px;padding:0 10px;gap:7px}
-  .nav button.ativo{box-shadow:inset 0 -2px 0 var(--verde)}
-  .lateral-pe{margin-top:0;flex-direction:row;align-items:center}
-  .usuario{border:0;padding:0}
-  .lateral-pe button.tema span{display:none}
-  .usuario .quem,.usuario .av{display:none}
-  .versao{display:none}
+  html:not(.menu-gaveta) .marca{padding:0}
+  html:not(.menu-gaveta) .marca .logo-svg{width:120px}
+  html:not(.menu-gaveta) .marca .sub{display:none}
+  html:not(.menu-gaveta) .nav{flex-direction:row;flex-wrap:wrap;margin-left:auto}
+  html:not(.menu-gaveta) .nav button{width:auto;min-height:40px;padding:0 10px;gap:7px}
+  html:not(.menu-gaveta) .nav button.ativo{box-shadow:inset 0 -2px 0 var(--verde)}
+  html:not(.menu-gaveta) .lateral-pe{margin-top:0;flex-direction:row;align-items:center}
+  html:not(.menu-gaveta) .usuario{border:0;padding:0}
+  html:not(.menu-gaveta) .lateral-pe button.tema span{display:none}
+  html:not(.menu-gaveta) .usuario .quem,html:not(.menu-gaveta) .usuario .av{display:none}
+  html:not(.menu-gaveta) .versao{display:none}
   .env{padding:18px 14px 70px}
 }
 /* No celular a navegação vira só ícones: seis rótulos por extenso ocupavam
    três linhas antes do conteúdo. O texto continua lá para o leitor de tela. */
 @media (max-width:560px){
-  .nav button>span:not(.bolha):not(.cont){position:absolute;width:1px;height:1px;
+  html:not(.menu-gaveta) .nav button>span:not(.bolha):not(.cont){position:absolute;width:1px;height:1px;
     overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
-  .nav button{padding:0 9px}
-  .cont{display:none}
+  html:not(.menu-gaveta) .nav button{padding:0 9px}
+  html:not(.menu-gaveta) .cont{display:none}
   .titulo-secao h2{font-size:24px}
 }
 /* ---------- trilha de liberação ---------- */

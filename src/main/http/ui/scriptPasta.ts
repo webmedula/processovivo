@@ -40,6 +40,8 @@ export const SCRIPT_PASTA = String.raw`
 /* A MESMA função que o teste exercita (domain/entities/descricaoDoAto.ts), injetada como texto. */
 var descricaoDoAto=${descricaoDoAto.toString()};
 var LARGURA='processovivo.pasta.lista';
+/* Limites do divisor (v0.68.0): a lista mostra número, tipo e data numa linha; o visualizador não quebra os botões. */
+var MIN_LISTA=320, MIN_VISOR=360;
 var PDFJS='/ui/pdfjs/';
 /* Janela em que cliques seguidos viram um pedido só. */
 var DEBOUNCE_MS=400;
@@ -58,7 +60,7 @@ function novoEstado(numero){
     carga:0,pdf:null,lib:null,pdfDe:'',zoom:'largura',escala:1,larguraBase:0,alturaBase:0,
     desenhadas:[],observador:null,pagina:1,textos:{},achadas:{id:0,termo:'',paginas:[],i:-1},
     baixando:null,previa:null,msgBaixar:'',confirmouMontar:false,montando:false,
-    ultimoAviso:'',ultimoEstado:'',redimensionar:null,gatilho:null,pedidoFalhou:null,pdfUrl:''};
+    ultimoAviso:'',avisoAberto:false,ultimoEstado:'',redimensionar:null,gatilho:null,pedidoFalhou:null,pdfUrl:''};
 }
 
 /* A calibração do número com o Projudi (v0.35.0) mora em scriptPastaCalibracao.ts. */
@@ -156,7 +158,7 @@ function montarPainel(){
           'aria-label="Peças e movimentações, na ordem dos autos"></div>'+
       '</section>'+
       '<div class="divisor" id="pasta-divisor" role="separator" aria-orientation="vertical" '+
-        'tabindex="0" aria-label="Ajustar a largura da lista" title="Arraste para ajustar"></div>'+
+        'tabindex="0" aria-label="Redimensionar lista" title="Arraste para ajustar; duplo clique volta ao padrão"></div>'+
       '<section class="visor" id="pasta-visor" aria-label="Visualizador da peça">'+
         '<div class="topo-visor">'+
           '<button class="bt bt2 voltar" id="pasta-voltar">&larr; lista de peças</button>'+
@@ -230,6 +232,7 @@ function ligarEventos(){
   if(window.__pvDrive)window.__pvDrive.ligarPasta({numero:function(){return st.numero},marcadas:marcadas});// ui/drive.ts
   if(window.__pvProcessoIA)window.__pvProcessoIA.ligarPasta({numero:function(){return st.numero},marcadas:marcadas,// ui/analiseProcessoIA.ts
     pecas:function(){return (st.visao&&st.visao.pecas)||[]},marcar:function(ids){st.sel={};ids.forEach(function(i){st.sel[i]=1});desenharLista()}});
+  $('pasta-atalhos').addEventListener('scroll',haMaisTipos);
   var itens=$('pasta-itens');
   itens.addEventListener('click',aoClicarNaLista);
   itens.addEventListener('keydown',aoTeclarNaLista);
@@ -254,20 +257,20 @@ function ajustarLargura(){
   if(window.innerWidth<=900)return;
   var v=getComputedStyle(document.documentElement).getPropertyValue('--pasta-lista-w').trim();
   var m=/^(\d+(?:\.\d+)?)px$/.exec(v); if(!m)return;
-  var max=Math.max(260,window.innerWidth-256-320);
+  var max=Math.max(MIN_LISTA,window.innerWidth-MIN_VISOR);
   if(Number(m[1])>max)document.documentElement.style.setProperty('--pasta-lista-w',max+'px');
 }
 function definirLargura(w){
-  var max=Math.max(260,window.innerWidth-256-320);
-  w=Math.max(260,Math.min(max,w));
+  var max=Math.max(MIN_LISTA,window.innerWidth-MIN_VISOR);
+  w=Math.max(MIN_LISTA,Math.min(max,w));
   document.documentElement.style.setProperty('--pasta-lista-w',w+'px');
   informarLargura();
 }
 /* O separador focável diz onde está (leitor de tela): valor, mínimo e máximo. */
 function informarLargura(){
   var d=$('pasta-divisor'), l=$('pasta-lista'); if(!d||!l)return;
-  d.setAttribute('aria-valuemin','260');
-  d.setAttribute('aria-valuemax',String(Math.max(260,window.innerWidth-256-320)));
+  d.setAttribute('aria-valuemin',String(MIN_LISTA));
+  d.setAttribute('aria-valuemax',String(Math.max(MIN_LISTA,window.innerWidth-MIN_VISOR)));
   d.setAttribute('aria-valuenow',String(Math.round(l.getBoundingClientRect().width)));
 }
 function gravarLargura(){
@@ -290,8 +293,17 @@ function ligarDivisor(){
     d.addEventListener('pointermove',mover);
     d.addEventListener('pointerup',soltar);
   });
+  /* Duplo clique (ou Enter com o foco no divisor) volta à divisão padrão e esquece a preferência. */
+  function padrao(){
+    document.documentElement.style.removeProperty('--pasta-lista-w');
+    try{localStorage.removeItem(LARGURA)}catch(x){}
+    informarLargura();
+    if(st.zoom==='largura')relayout();
+  }
+  d.addEventListener('dblclick',padrao);
   /* Pelo teclado também: setas movem de 24 em 24 px. */
   d.addEventListener('keydown',function(e){
+    if(e.key==='Enter'){e.preventDefault();padrao();return}
     if(e.key!=='ArrowLeft'&&e.key!=='ArrowRight')return;
     e.preventDefault();
     definirLargura($('pasta-lista').getBoundingClientRect().width+(e.key==='ArrowRight'?24:-24));
@@ -595,6 +607,11 @@ function grupos(){
   return Object.keys(g).map(function(k){return{rotulo:k,ids:g[k]}})
     .sort(function(a,b){return b.ids.length-a.ids.length}).slice(0,8);
 }
+/* A linha dos tipos rola por dentro; a borda direita esmaece enquanto houver mais à direita. */
+function haMaisTipos(){
+  var el=$('pasta-atalhos'); if(!el)return;
+  el.classList.toggle('tem-mais',el.scrollLeft+el.clientWidth<el.scrollWidth-2);
+}
 function desenharAtalhos(){
   var el=$('pasta-atalhos'); if(!el)return;
   var gs=grupos(), h='';
@@ -607,7 +624,10 @@ function desenharAtalhos(){
   var nSem=todasAsLinhas().filter(function(l){return l.semPeca}).length;
   if(nSem)h+='<button class="chip'+(st.soSem?' on':'')+'" id="pasta-chip-sem" aria-pressed="'+
     (st.soSem?'true':'false')+'">Sem peça ('+nSem+')</button>';
+  var rolado=el.scrollLeft;
   el.innerHTML=h;
+  el.scrollLeft=rolado;
+  haMaisTipos();
   var cs=$('pasta-chip-sem');
   if(cs)cs.addEventListener('click',function(){st.soSem=!st.soSem;desenharLista()});
   el.querySelectorAll('[data-grupo]').forEach(function(b){
@@ -678,9 +698,22 @@ function desenharAviso(){
   var el=$('pasta-aviso'); if(!el||!st.visao)return;
   var v=st.visao, h='';
   var pr=v.procedencia||{};
-  h+='<div class="proc">Lista obtida do tribunal em '+esc(pv().dth(pr.listadaEm))+
+  /* Uma linha (v0.68.0): a data da lista, "não é consulta ao vivo" e o resumo da numeração ficam sempre à vista;
+     o texto completo de antes, sem mudar uma palavra, mora em "Detalhes". Abre sozinho quando a calibração
+     anterior foi invalidada (o único estado de alerta que o sistema DETECTA) e fica como a pessoa deixou. */
+  var comNum=haNumeros()&&typeof v.totalAtosRecebidos==='number';
+  var rn=comNum?cal.resumoDoAviso(v):null;
+  var det=$('pasta-aviso-det');
+  if(det)st.avisoAberto=det.open;
+  h+='<details class="pav" id="pasta-aviso-det"'+(st.avisoAberto||(rn&&rn.alerta)?' open':'')+'><summary>'+
+    '<span class="pav-l" id="pasta-aviso-linha">Lista de '+esc(pv().dth(pr.listadaEm))+
+    ' · <strong>não é consulta ao vivo</strong>'+
+    (rn?' · <span'+(rn.alerta?' class="pav-alerta"':'')+'>'+esc(rn.texto)+'</span>':'')+'</span>'+
+    '<span class="pav-d">&#9432; Detalhes</span></summary>'+
+    '<div class="proc">Lista obtida do tribunal em '+esc(pv().dth(pr.listadaEm))+
     ' — <strong>não é consulta ao vivo</strong>. Peça nova só aparece quando as peças do '+
-    'processo são recarregadas (botão "Atualizar" do cartão das peças).</div>';
+    'processo são recarregadas (botão "Atualizar" do cartão das peças).</div>'+
+    (comNum?cal.avisoHtml(v):'')+'</details>';
   if(v.pausadoAte&&Date.parse(v.pausadoAte)>agora()){
     h+='<div class="pausa"><strong>Tribunal em pausa até '+esc(hora(v.pausadoAte))+'.</strong> '+
       'O tribunal bloqueou temporariamente as consultas deste servidor; os pedidos '+
@@ -696,13 +729,6 @@ function desenharAviso(){
     h+='<div class="proc" id="pasta-aviso-atos"><strong>Esta lista tem só as peças.</strong> '+
       'Atualize as peças para carregar todas as movimentações do processo. '+
       '<button class="bt bt2" id="pasta-atualizar-lista">Atualizar as peças</button></div>';
-  }
-  if(haNumeros()&&typeof v.totalAtosRecebidos==='number'){
-    /* Sempre que houver número na lista: sem este aviso o "mov. N" passaria por
-       número do Projudi, e ele só é igual até o primeiro ato bloqueado. Com a
-       calibração o texto muda, mas o aviso não some enquanto houver número
-       que não seja exato. */
-    h+=cal.avisoHtml(v);
   }
   h+=blocoDaMontagem(v.montagem);
   h+=blocoDasSelecionadas(v.selecionadas);
@@ -720,8 +746,10 @@ function desenharAviso(){
     if(dica)$('pasta-montar').setAttribute('aria-describedby','pasta-dica-montar');
     else $('pasta-montar').removeAttribute('aria-describedby');
   }
-  if(h!==st.ultimoAviso){
-    st.ultimoAviso=h;el.innerHTML=h;
+  /* Abrir ou fechar "Detalhes" não é mudança de conteúdo: não redesenha (o foco ficaria perdido). */
+  var chave=h.replace('id="pasta-aviso-det" open','id="pasta-aviso-det"')+(rn&&rn.alerta?'!':'');
+  if(chave!==st.ultimoAviso){
+    st.ultimoAviso=chave;el.innerHTML=h;
     var au=$('pasta-atualizar-lista');
     if(au)au.addEventListener('click',function(){carregarListagem(true)});
   }
