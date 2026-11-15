@@ -3,6 +3,7 @@ import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import type { FastifyPluginAsync } from 'fastify';
 import { VERSAO } from '../../../infrastructure/config/versao.js';
+import { FAVICON_ICO, ICONE_DA_TELA_INICIAL_PNG } from '../ui/icones.js';
 import { paginaConsole } from '../ui/pagina.js';
 
 export const ROTA_CONSOLE = '/';
@@ -11,6 +12,9 @@ export const ROTA_FONTES = '/ui/fontes/:arquivo';
 export const PREFIXO_FONTES = '/ui/fontes/';
 export const ROTA_PDFJS = '/ui/pdfjs/:arquivo';
 export const PREFIXO_PDFJS = '/ui/pdfjs/';
+/** Os ícones que o navegador pede sozinho (Safari, iPhone): sem chave, sem dado, sem cota. */
+export const ROTA_FAVICON = '/favicon.ico';
+export const ROTA_ICONE_DA_TELA_INICIAL = '/apple-touch-icon.png';
 
 /**
  * Os arquivos do PDF.js que o leitor carrega, servidos pelo PRÓPRIO servidor.
@@ -158,6 +162,18 @@ export function rotasDeInterface(): FastifyPluginAsync {
       // cache poupam 70 KB a cada abertura do console.
       resposta.header('cache-control', 'public, max-age=2592000');
       return fonte;
+    });
+
+    // Uma semana de cache: o ícone muda quase nunca, e o navegador o pede a cada aba.
+    servidor.get(ROTA_FAVICON, async (_requisicao, resposta) => {
+      resposta.header('content-type', 'image/x-icon');
+      resposta.header('cache-control', 'public, max-age=604800');
+      return FAVICON_ICO;
+    });
+    servidor.get(ROTA_ICONE_DA_TELA_INICIAL, async (_requisicao, resposta) => {
+      resposta.header('content-type', 'image/png');
+      resposta.header('cache-control', 'public, max-age=604800');
+      return ICONE_DA_TELA_INICIAL_PNG;
     });
 
     servidor.get<{ Params: { arquivo: string } }>(ROTA_PDFJS, async (req, resposta) => {
