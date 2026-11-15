@@ -9,6 +9,13 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.68.1] — 2026-11-15
+
+**O ícone da aba agora é o símbolo do logo também no Safari e na tela inicial do iPhone.** O console e o `/admin` só tinham o ícone em SVG, que o Safari e o "Adicionar à tela de início" não leem: aparecia um ícone genérico. Nada mais mudou.
+
+- **Duas rotas públicas, sem dado:** `GET /favicon.ico` (16, 32 e 48 px) e `GET /apple-touch-icon.png` (180 px, fundo branco inteiro, porque o iPhone pinta de preto o canto transparente). São o mesmo símbolo do SVG, gerados junto com os do site (v1.4.9), e vêm do código (`ui/icones.ts`), sem arquivo novo na imagem. Ficam fora do limite de requisições e dos registros de acesso, como as fontes.
+- **O console e o `/admin` apontam para eles**, além do SVG de antes.
+
 ## [0.68.0] — 2026-11-13
 
 **A Pasta digital ganhou a largura toda da janela e o menu lateral ficou mais econômico em tela estreita.** Só layout e apresentação: fila do tribunal, numeração, download, Drive, IA, planos, rotas e o conteúdo das outras telas não mudaram. Sem migração e sem dependência nova.

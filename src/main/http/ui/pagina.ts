@@ -87,7 +87,9 @@ export function paginaConsole(versao: string): string {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>Processo Vivo</title>
+<link rel="icon" href="/favicon.ico" sizes="48x48">
 <link rel="icon" type="image/svg+xml" href="${FAVICON_DATA_URI}">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <meta name="theme-color" content="#0b192c">
 <script>${SCRIPT_TEMA}</script>
 <style>${ESTILOS}${ESTILOS_MENU}${ESTILOS_PASTA}${ESTILOS_CALENDARIO}${ESTILOS_ATUALIZACOES}${ESTILOS_PROVIDENCIA}${ESTILOS_POLEGARES}${ESTILOS_ANALISE_IA}${ESTILOS_RESUMO_IA}${ESTILOS_ANALISE_PECA_IA}${ESTILOS_ANALISE_PROCESSO_IA}${ESTILOS_DRIVE}${ESTILOS_CUSTOS}${ESTILOS_CUSTOS_CLIENTE}${ESTILOS_PAGAMENTO}${ESTILOS_VERIFICACAO}${ESTILOS_LOGIN_GOOGLE}</style>

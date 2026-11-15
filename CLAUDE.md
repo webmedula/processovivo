@@ -519,7 +519,7 @@ rota e 500 na outra.
 
 Rota que dispensa autenticação precisa entrar em `rotasPublicas` ao registrar o
 plugin de autenticação: hoje `/health`, `/ready`, o console, as fontes do
-console (`/ui/fontes/:arquivo`), `/v1/contas`, `/v1/sessoes`,
+console (`/ui/fontes/:arquivo`), os ícones `/favicon.ico` e `/apple-touch-icon.png` (v0.68.1; Safari e iPhone não leem o SVG), `/v1/contas`, `/v1/sessoes`,
 `/v1/senha/recuperar` e `/v1/senha/redefinir`, `/v1/planos` (a vitrine do site de vendas, v0.45.0) (e as rotas `/admin`, que têm
 autenticação própria, o feed do calendário `/calendario/feed/:arquivo`, que
 se autentica pelo token no próprio caminho, e o webhook do gateway de pagamento
@@ -2401,6 +2401,7 @@ teste e carência** (v0.28.0), **visual novo a partir do logo** (v0.29.0),
 **análise de peça por IA diz qual limite recusou (em andamento na conta, por hora ou servidor ocupado), com a contagem das recusas no painel de IA** (v0.67.2),
 **reinício sem perder backup (retenção por dia, sem cópia na subida antes de 24 h), sem varredura repetida (processos e OAB contam da última concluída; a interrompida retoma só o pendente) e sem "não encontrado" quando alguma fonte falhou** (v0.67.3),
 **Pasta digital na largura toda com ☰ e gaveta, menu em ícones abaixo de 1280 px, aviso do topo em uma linha, tipos de peça em uma linha e divisor com limites novos** (v0.68.0),
+**ícone da aba também no Safari e na tela inicial do iPhone: `/favicon.ico` e `/apple-touch-icon.png` com o símbolo do logo** (v0.68.1),
 Dockerfile multi-stage, CI, 4400+ testes.
 
 **Pasta digital (v0.33.0, backend):** `GET /v1/processos/:numero/pasta` (lista +

@@ -16,6 +16,8 @@ import {
   PREFIXO_PDFJS,
   ROTA_CONSOLE,
   ROTA_FONTES,
+  ROTA_FAVICON,
+  ROTA_ICONE_DA_TELA_INICIAL,
   ROTA_PDFJS,
   rotasDeInterface,
 } from './rotas/interface.js';
@@ -111,6 +113,8 @@ export function construirServidor(app: Aplicacao, config: Config): FastifyInstan
       requisicao.url === ROTA_READY ||
       requisicao.url === ROTA_CONSOLE ||
       requisicao.url.startsWith(PREFIXO_FONTES) ||
+      requisicao.url === ROTA_FAVICON ||
+      requisicao.url === ROTA_ICONE_DA_TELA_INICIAL ||
       // O PDF.js pede dezenas de arquivos ao abrir (fontes padrão, decodificador):
       // são estáticos e sem dado, e não podem gastar a cota das consultas.
       requisicao.url.startsWith(PREFIXO_PDFJS),
@@ -136,6 +140,9 @@ export function construirServidor(app: Aplicacao, config: Config): FastifyInstan
       ROTA_READY,
       ROTA_CONSOLE,
       ROTA_FONTES,
+      // Os ícones que o Safari e o iPhone pedem sozinhos, sem chave: o símbolo do logo, sem dado.
+      ROTA_FAVICON,
+      ROTA_ICONE_DA_TELA_INICIAL,
       // O PDF.js entra por import() e new Worker(): o navegador não manda
       // x-api-key nessas requisições. São arquivos da biblioteca, sem dado.
       ROTA_PDFJS,
@@ -338,7 +345,7 @@ export function construirServidor(app: Aplicacao, config: Config): FastifyInstan
  * Registro de acesso do Marco Civil (art. 15, v0.63.0): instante, IP, porta e conta, e mais nada.
  *
  * Fica de fora o que não é USO da aplicação por alguém: as verificações de saúde do Easypanel e os
- * arquivos estáticos do console (fontes e PDF.js, dezenas por página aberta, sem dado nenhum).
+ * arquivos estáticos do console (fontes, PDF.js e ícones, dezenas por página aberta, sem dado nenhum).
  *
  * A porta só entra quando o IP da requisição é o do próprio soquete, isto é, sem proxy no meio. Atrás
  * do proxy do Easypanel o soquete é do proxy, e a porta dele não identifica o cliente: gravá-la seria
@@ -350,6 +357,8 @@ function registrarAcesso(app: Aplicacao, requisicao: FastifyRequest): void {
     url === ROTA_READY ||
     url.startsWith(PREFIXO_FONTES) ||
     url.startsWith(PREFIXO_PDFJS) ||
+    url === ROTA_FAVICON ||
+    url === ROTA_ICONE_DA_TELA_INICIAL ||
     !requisicao.ip
   ) {
     return;

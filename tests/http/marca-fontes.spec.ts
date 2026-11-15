@@ -5,6 +5,9 @@ import { carregarConfig } from '../../src/infrastructure/config/env.js';
 import { montarAplicacao } from '../../src/main/factories/makeProcessoSearchService.js';
 import { ESTILOS } from '../../src/main/http/ui/estilos.js';
 import { FAVICON_DATA_URI, LOGO_FUNDO_ESCURO } from '../../src/main/http/ui/marca.js';
+import { readFileSync } from 'node:fs';
+
+const paginaAdmin = readFileSync('src/main/http/ui/paginaAdmin.ts', 'utf8');
 
 const CHAVE = 'chave-de-teste-1234567890';
 
@@ -84,6 +87,38 @@ describe('marca no console', () => {
     // parte dos celulares, "PROCESSO VIVO" aparecia em outra fonte.
     expect(LOGO_FUNDO_ESCURO).not.toMatch(/<text|font-family|<font/);
     expect(LOGO_FUNDO_ESCURO.startsWith('<svg')).toBe(true);
+  });
+
+  it('serve o .ico e o ícone do iPhone sem pedir autenticação, nos formatos de verdade', async () => {
+    const ico = await servidor.inject({ method: 'GET', url: '/favicon.ico' });
+    expect(ico.statusCode).toBe(200);
+    expect(ico.headers['content-type']).toBe('image/x-icon');
+    // Cabeçalho ICO: reservado 0, tipo 1 (ícone) e as três imagens (16, 32 e 48 px).
+    expect([...ico.rawPayload.subarray(0, 6)]).toEqual([0, 0, 1, 0, 3, 0]);
+    const lados = [0, 1, 2]
+      .map((i) => ico.rawPayload[6 + i * 16])
+      .sort((a, b) => (a ?? 0) - (b ?? 0));
+    expect(lados).toEqual([16, 32, 48]);
+
+    const png = await servidor.inject({ method: 'GET', url: '/apple-touch-icon.png' });
+    expect(png.statusCode).toBe(200);
+    expect(png.headers['content-type']).toBe('image/png');
+    expect(png.rawPayload.subarray(1, 4).toString('latin1')).toBe('PNG');
+    // Largura e altura no IHDR: 180 × 180, e cor sem canal alfa (tipo 2), porque o iPhone pinta
+    // de preto o canto transparente.
+    expect(png.rawPayload.readUInt32BE(16)).toBe(180);
+    expect(png.rawPayload.readUInt32BE(20)).toBe(180);
+    expect(png.rawPayload[25]).toBe(2);
+  });
+
+  it('o console e o /admin apontam os ícones para o próprio servidor', async () => {
+    const r = await servidor.inject({ method: 'GET', url: '/' });
+    expect(r.body).toContain('<link rel="icon" href="/favicon.ico" sizes="48x48">');
+    expect(r.body).toContain(
+      '<link rel="apple-touch-icon" href="/apple-touch-icon.png">',
+    );
+    expect(paginaAdmin).toContain('href="/favicon.ico"');
+    expect(paginaAdmin).toContain('href="/apple-touch-icon.png"');
   });
 
   it('o ícone da aba não pode quebrar o atributo href', () => {
