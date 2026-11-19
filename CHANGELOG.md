@@ -9,6 +9,15 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.69.0] — 2026-11-19
+
+**A tela inicial agora diz QUAL processo ficou sem verificação.** Antes ela avisava "1 sem verificação — o silêncio destas não significa que nada aconteceu" e um selo âmbar com a contagem, mas não dizia qual era o processo; o advogado lia o aviso e não tinha como agir. Sem migração, sem dependência nova e sem variável de ambiente.
+
+- **O selo âmbar virou botão:** "1 sem verificação · ver qual" (ou "N sem verificação · ver quais"). Ao tocar, abre logo abaixo do cabeçalho a lista: o número (toque abre o processo), o cliente e o tribunal quando existem, o motivo numa frase fixa e a última verificação que deu certo. O rodapé lembra de conferir no sistema do tribunal enquanto isso. A lista aberta continua aberta quando a tela se redesenha.
+- **Motivo de lista fechada** (`motivoSemVerificacao`, decidido pelo código do erro): ainda não verificado pela primeira vez; as fontes responderam e não acharam o número; as fontes (CNJ e Diário) não responderam; ou "a última tentativa não deu certo". A mensagem de erro gravada nunca vai à tela (pode trazer texto da fonte).
+- **`GET /v1/painel`** ganhou `verificacao.semVerificacao` (aditivo): `numero`, `cliente`, `tribunal`, `motivo`, `ultimaVerificacaoEm`, até 100 itens; `naoVerificados` continua o total.
+- **Não mudou:** a regra do que é "sem verificação", a varredura, os e-mails (o de atualizações não menciona processo sem verificação; o alerta de silêncio é da conta inteira).
+
 ## [0.68.1] — 2026-11-15
 
 **O ícone da aba agora é o símbolo do logo também no Safari e na tela inicial do iPhone.** O console e o `/admin` só tinham o ícone em SVG, que o Safari e o "Adicionar à tela de início" não leem: aparecia um ícone genérico. Nada mais mudou.

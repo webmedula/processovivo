@@ -18,6 +18,7 @@ import { SCRIPT_PLANO_ESCOLHIDO } from '../../src/main/http/ui/planoEscolhido.js
 import { SCRIPT_NAVEGACAO } from '../../src/main/http/ui/navegacao.js';
 import { SCRIPT_LOGIN_GOOGLE } from '../../src/main/http/ui/loginGoogle.js';
 import { SCRIPT_MENU } from '../../src/main/http/ui/menuLateral.js';
+import { SCRIPT_SEM_VERIFICACAO } from '../../src/main/http/ui/semVerificacao.js';
 
 /*
  * O console é JavaScript dentro de uma string.
@@ -60,6 +61,7 @@ describe.each([
   ['navegação por hash', SCRIPT_NAVEGACAO],
   ['login com Google', SCRIPT_LOGIN_GOOGLE],
   ['menu lateral', SCRIPT_MENU],
+  ['processos sem verificação', SCRIPT_SEM_VERIFICACAO],
 ])('console web — o JavaScript da interface (%s)', (_nome, codigo) => {
   const linter = new Linter();
 

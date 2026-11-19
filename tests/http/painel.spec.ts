@@ -9,6 +9,7 @@ import { construirServidor } from '../../src/main/http/servidor.js';
 import type { Aplicacao } from '../../src/main/factories/makeProcessoSearchService.js';
 import { aplicacaoDeTeste } from '../helpers/aplicacao.js';
 import { ProviderFalso } from '../helpers/fabricas.js';
+import { ProviderIndisponivelError } from '../../src/domain/errors/index.js';
 
 const CHAVE = 'chave-de-teste-1234567890';
 const PROCESSO = '5818922-04.2026.8.09.0011';
@@ -193,6 +194,57 @@ describe('painel', () => {
       desde: null,
       demorando: false,
     });
+  });
+
+  it('diz QUAL processo está sem verificação, com motivo de lista fechada e sem a mensagem de erro (v0.69.0)', async () => {
+    await servidor.close();
+    app = aplicacaoDeTeste(
+      [
+        new ProviderFalso({
+          nome: 'falso',
+          porNumero: () => {
+            throw new ProviderIndisponivelError(
+              'falso',
+              'http://interno.local:9200 caiu',
+            );
+          },
+        }),
+      ],
+      { provedorDePecas: provedor },
+    );
+    servidor = construirServidor(app, config());
+    await servidor.inject({
+      method: 'POST',
+      url: '/v1/acompanhamentos',
+      headers: cabecalhos,
+      payload: { numero: PROCESSO },
+    });
+
+    const p = await painel();
+    const v = p['verificacao'] as unknown as Record<string, unknown>;
+    expect(v['naoVerificados']).toBe(1);
+    expect(v['semVerificacao']).toEqual([
+      {
+        numero: PROCESSO,
+        cliente: null,
+        tribunal: null,
+        motivo: 'fontes_indisponiveis',
+        ultimaVerificacaoEm: null,
+      },
+    ]);
+    // A mensagem gravada pode trazer endereço interno: nunca sai no painel.
+    expect(JSON.stringify(p)).not.toContain('interno.local');
+  });
+
+  it('sem processo com falha, a lista vem vazia', async () => {
+    await servidor.inject({
+      method: 'POST',
+      url: '/v1/acompanhamentos',
+      headers: cabecalhos,
+      payload: { numero: PROCESSO },
+    });
+    const v = (await painel())['verificacao'] as unknown as Record<string, unknown>;
+    expect(v['semVerificacao']).toEqual([]);
   });
 
   it('o painel NÃO promete prazo', async () => {
