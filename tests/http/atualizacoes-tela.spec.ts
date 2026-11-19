@@ -182,7 +182,10 @@ describe('selo de verificação por conta (v0.37.3; progresso e "demorando" só 
     const selo = corpoDe('seloDeVerificacao');
     expect(selo).toContain('window.__pvVerificacao.selo(ver)');
     expect(selo).not.toContain('as fontes do tribunal estão lentas');
-    expect(selo.indexOf('ver.emAndamento')).toBeLessThan(selo.indexOf('sem verificação'));
+    // v0.69.0: o selo âmbar (sem verificação) vem de ui/semVerificacao.ts, e só depois da rodada em curso.
+    expect(selo.indexOf('ver.emAndamento')).toBeLessThan(
+      selo.indexOf('__pvSemVerif.selo'),
+    );
   });
 
   it('o clique delega ao módulo, que lê o estado DA CONTA, mostra "Na fila" e não dispara de novo', () => {

@@ -4,6 +4,19 @@ import type { ServicoPecas } from '../../../application/services/ServicoPecas.js
 import { WorkspaceNaoResolvidoError } from '../../../domain/errors/index.js';
 import { estadoDaVerificacaoJson } from './acompanhamentos.js';
 import { estadoDaPasta } from '../../../domain/entities/estadoDaPasta.js';
+import { motivoSemVerificacao } from '../../../domain/entities/motivoSemVerificacao.js';
+import { NumeroCNJ } from '../../../domain/entities/NumeroCNJ.js';
+
+/** Teto da lista de processos sem verificação no painel; `naoVerificados` segue com o total. */
+export const LIMITE_DA_LISTA_SEM_VERIFICACAO = 100;
+
+function numeroFormatado(digitos: string): string {
+  try {
+    return NumeroCNJ.criar(digitos).formatado;
+  } catch {
+    return digitos;
+  }
+}
 
 function workspaceDe(requisicao: FastifyRequest): string {
   const ws = requisicao.workspace;
@@ -52,6 +65,7 @@ export function rotasDoPainel(
       let ativos = 0;
       let pedemProvidencia = 0;
       let naoVerificados = 0;
+      const semVerificacao: Array<Record<string, unknown>> = [];
       let ultimaVerificacao: Date | undefined;
 
       for (const a of carteira) {
@@ -70,7 +84,23 @@ export function rotasDoPainel(
         );
         if (e.rotulo !== 'ARQUIVADO') ativos += 1;
         if (e.rotulo === 'PROVIDENCIA') pedemProvidencia += 1;
-        if (e.naoVerificado) naoVerificados += 1;
+        if (e.naoVerificado) {
+          naoVerificados += 1;
+          /*
+           * QUAL processo (v0.69.0). Só o que a própria conta já vê na carteira: número,
+           * rótulo de cliente que ELE deu, tribunal do retrato, último sucesso e um motivo de
+           * lista fechada. A mensagem de erro gravada NUNCA sai: pode trazer texto da fonte.
+           */
+          if (semVerificacao.length < LIMITE_DA_LISTA_SEM_VERIFICACAO) {
+            semVerificacao.push({
+              numero: numeroFormatado(a.numero),
+              cliente: a.cliente ?? null,
+              tribunal: a.processo?.tribunal ?? null,
+              motivo: motivoSemVerificacao(a.erro, a.sincronizadoEm),
+              ultimaVerificacaoEm: a.sincronizadoEm?.toISOString() ?? null,
+            });
+          }
+        }
         if (
           a.sincronizadoEm &&
           (!ultimaVerificacao || a.sincronizadoEm > ultimaVerificacao)
@@ -93,6 +123,9 @@ export function rotasDoPainel(
         verificacao: {
           ultimaEm: ultimaVerificacao?.toISOString() ?? null,
           naoVerificados,
+          semVerificacao: semVerificacao.sort((x, y) =>
+            String(x['numero']).localeCompare(String(y['numero'])),
+          ),
           // Por CONTA (v0.37.3): a varredura dos outros assinantes não é desta tela.
           ...estadoDaVerificacaoJson(acompanhamento.estadoDa(ws)),
         },

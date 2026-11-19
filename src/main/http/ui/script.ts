@@ -279,7 +279,7 @@ function verNovidades(){
         '<div class="acoes">'+seloDeVerificacao(ver,acomp);
     if(r.naoVistas>0)h+='<button class="bt bt2" id="marcar">Marcar todas como lidas</button>';
     h+='<button class="bt bt2" id="sincronizar">'+ICONE_ATUALIZAR+'Verificar agora</button></div></div></div>'+
-      '<div id="nv-tabela"></div>';
+      window.__pvSemVerif.painel(ver)+'<div id="nv-tabela"></div>';
     alvo.innerHTML=h;
     if(ver.emAndamento)window.__pvVerificacao.iniciar(null,null,function(){atualizarBolha();verNovidades()});/* rodada em curso ao abrir: o selo acompanha */
 
@@ -348,9 +348,8 @@ function seloDeVerificacao(ver,acomp){
   window.__pvVerificacao.ultimaEm=ver.ultimaEm||'';/* o aviso de "demorando" diz a última verificação */
   if(!acomp)return '';
   if(ver.emAndamento)return window.__pvVerificacao.selo(ver);/* "Verificando X de N", "Na fila" ou "demorando" (só sem avanço): ui/verificacao.ts */
-  if(ver.naoVerificados>0){
-    return '<span class="vigia atencao"><span class="ponto-vivo"></span>'+
-      ver.naoVerificados+' sem verificação</span>';
+  if(ver.naoVerificados>0){/* v0.69.0: botão que abre QUAIS processos (ui/semVerificacao.ts) */
+    return window.__pvSemVerif.selo(ver);
   }
   if(!ver.ultimaEm)return '<span class="vigia neutro"><span class="ponto-vivo"></span>Aguardando a primeira verificação</span>';
   return '<span class="vigia"><span class="ponto-vivo"></span>Verificado às '+
