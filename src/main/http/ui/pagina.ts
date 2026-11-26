@@ -23,6 +23,7 @@ import { ESTILOS_VERIFICACAO, SCRIPT_VERIFICACAO } from './verificacao.js';
 import { ESTILOS_MENU, SCRIPT_MENU } from './menuLateral.js';
 import { ESTILOS_SEM_VERIFICACAO, SCRIPT_SEM_VERIFICACAO } from './semVerificacao.js';
 import { SCRIPT_NAVEGACAO } from './navegacao.js';
+import { SCRIPT_APLICATIVO } from './aplicativo.js';
 
 /**
  * Ícones da navegação: traço, sem preenchimento, na cor do texto
@@ -92,6 +93,8 @@ export function paginaConsole(versao: string): string {
 <link rel="icon" type="image/svg+xml" href="${FAVICON_DATA_URI}">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <meta name="theme-color" content="#0b192c">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="apple-mobile-web-app-title" content="Processo Vivo">
 <script>${SCRIPT_TEMA}</script>
 <style>${ESTILOS}${ESTILOS_MENU}${ESTILOS_PASTA}${ESTILOS_CALENDARIO}${ESTILOS_ATUALIZACOES}${ESTILOS_PROVIDENCIA}${ESTILOS_POLEGARES}${ESTILOS_ANALISE_IA}${ESTILOS_RESUMO_IA}${ESTILOS_ANALISE_PECA_IA}${ESTILOS_ANALISE_PROCESSO_IA}${ESTILOS_DRIVE}${ESTILOS_CUSTOS}${ESTILOS_CUSTOS_CLIENTE}${ESTILOS_PAGAMENTO}${ESTILOS_VERIFICACAO}${ESTILOS_SEM_VERIFICACAO}${ESTILOS_LOGIN_GOOGLE}</style>
 </head>
@@ -152,6 +155,7 @@ export function paginaConsole(versao: string): string {
 <script>${SCRIPT_LOGIN_GOOGLE}</script>
 <script>${SCRIPT_ATUALIZACOES}</script>
 <script>${SCRIPT_NAVEGACAO}</script>
+<script>${SCRIPT_APLICATIVO}</script>
 </body>
 </html>`;
 }

@@ -9,6 +9,15 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.70.0] — 2026-11-26
+
+**O Processo Vivo pode ser instalado como aplicativo no celular e no computador (PWA, etapa 1).** No Chrome e no Edge aparece "Instalar"; no Android, "Adicionar à tela inicial" vira um aplicativo com ícone próprio; no iPhone, "Compartilhar > Adicionar à Tela de Início". Abre em tela cheia, sem a barra do navegador. Sem migração, sem dependência nova e sem variável de ambiente. Notificação push fica para a etapa 2.
+
+- **Manifesto** em `GET /manifest.webmanifest`: nome, tela cheia (`standalone`), cor azul-marinho da lateral e três ícones (192 e 512 px, e um de 512 px "recortável", com fundo branco inteiro e o símbolo dentro da zona segura, para o Android recortar em círculo sem cortar o ✓), em `GET /icones/app-192.png`, `/icones/app-512.png` e `/icones/app-512-recortavel.png`, gerados do mesmo SVG do favicon e guardados no código (`ui/icones.ts`).
+- **Service worker mínimo** em `GET /sw.js` (`ui/aplicativo.ts`), registrado pelo console: **não guarda nada no aparelho** (nenhum Cache Storage, nenhuma resposta da API) e só intercepta a navegação para `/`. Sem internet, em vez da página de erro do navegador aparece "Sem conexão com a internet" com "Tentar de novo". API, `/admin`, os retornos do Google e do Mercado Pago, o feed do calendário e o PDF.js seguem direto para a rede.
+- **As cinco rotas são públicas e sem dado**, como o favicon, e ficam fora do limite de requisições e dos registros de acesso.
+- **Não mudou:** login, sessão, telas, rotas da API e o uso offline (fora de propósito: o sistema consulta ao vivo).
+
 ## [0.69.0] — 2026-11-19
 
 **A tela inicial agora diz QUAL processo ficou sem verificação.** Antes ela avisava "1 sem verificação — o silêncio destas não significa que nada aconteceu" e um selo âmbar com a contagem, mas não dizia qual era o processo; o advogado lia o aviso e não tinha como agir. Sem migração, sem dependência nova e sem variável de ambiente.

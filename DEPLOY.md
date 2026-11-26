@@ -1589,3 +1589,18 @@ O comando só lê o banco (`readOnly`). Os horários estão em UTC (3 horas à f
 ## E-mail de atualizações em lista curta (v0.64.0)
 
 Nada a configurar: sem variável nova, sem migração. O e-mail continua saindo uma vez por varredura (`SYNC_INTERVALO_HORAS`), e agora é uma lista de até 10 processos com número, tipo do ato e data, mais o botão "Ver atualizações". Os links usam `PROCESSOVIVO_URL_BASE` (sem ela o e-mail sai sem links). Para ver o e-mail sem enviar nada: deixe `SMTP_HOST` vazio (modo log) ou rode `npx vitest run tests/application/email-de-atualizacoes.spec.ts`. Confira com `curl https://SEU-DOMINIO/health` (a `versao` é `0.64.0`).
+
+## Aplicativo instalável, PWA (v0.70.0)
+
+Nada a configurar: sem variável nova, sem migração. Basta o Deploy. O sistema precisa estar em HTTPS (já está).
+
+Para conferir depois do Deploy:
+
+1. `curl -I https://SEU-DOMINIO/manifest.webmanifest` responde 200; `curl https://SEU-DOMINIO/health` mostra `versao` `0.70.0`.
+2. No computador, abra o sistema no Chrome ou no Edge: aparece o ícone "Instalar" no fim da barra de endereço.
+3. No Android (Chrome): menu ⋮ > "Instalar aplicativo" (ou "Adicionar à tela inicial"). Abra pelo ícone: tela cheia, sem barra do navegador, já logado.
+4. No iPhone (Safari): botão Compartilhar > "Adicionar à Tela de Início". Abra pelo ícone. O app instalado guarda o login separado do Safari: entre uma vez dentro dele.
+5. Dentro do app instalado, teste uma vez: "Entrar com Google", "Conectar" o Drive em "Meus acessos" e, se quiser, abrir a confirmação de assinatura. Cada um sai para o Google ou o Mercado Pago e precisa voltar para dentro do app, logado.
+6. Com o celular em modo avião, abra o app: aparece "Sem conexão com a internet" e "Tentar de novo".
+
+O worker não guarda dado nenhum no aparelho. Para desfazer num aparelho: desinstale o app (o login no navegador continua).
