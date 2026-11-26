@@ -33,6 +33,7 @@ import {
   ROTA_LOGIN_GOOGLE_RETORNO,
   rotasDoLoginGoogle,
 } from './rotas/loginGoogle.js';
+import { ROTAS_DO_APLICATIVO } from './ui/aplicativo.js';
 import { rotasDoPainel } from './rotas/painel.js';
 import { rotasDaAnaliseIA } from './rotas/analiseIA.js';
 import { rotasDoResumoIA } from './rotas/resumoIA.js';
@@ -115,6 +116,7 @@ export function construirServidor(app: Aplicacao, config: Config): FastifyInstan
       requisicao.url.startsWith(PREFIXO_FONTES) ||
       requisicao.url === ROTA_FAVICON ||
       requisicao.url === ROTA_ICONE_DA_TELA_INICIAL ||
+      ROTAS_DO_APLICATIVO.includes(requisicao.url) ||
       // O PDF.js pede dezenas de arquivos ao abrir (fontes padrão, decodificador):
       // são estáticos e sem dado, e não podem gastar a cota das consultas.
       requisicao.url.startsWith(PREFIXO_PDFJS),
@@ -143,6 +145,8 @@ export function construirServidor(app: Aplicacao, config: Config): FastifyInstan
       // Os ícones que o Safari e o iPhone pedem sozinhos, sem chave: o símbolo do logo, sem dado.
       ROTA_FAVICON,
       ROTA_ICONE_DA_TELA_INICIAL,
+      // O aplicativo instalável (v0.70.0): o navegador pede manifesto, worker e ícones sem chave.
+      ...ROTAS_DO_APLICATIVO,
       // O PDF.js entra por import() e new Worker(): o navegador não manda
       // x-api-key nessas requisições. São arquivos da biblioteca, sem dado.
       ROTA_PDFJS,
@@ -359,6 +363,7 @@ function registrarAcesso(app: Aplicacao, requisicao: FastifyRequest): void {
     url.startsWith(PREFIXO_PDFJS) ||
     url === ROTA_FAVICON ||
     url === ROTA_ICONE_DA_TELA_INICIAL ||
+    ROTAS_DO_APLICATIVO.includes(url) ||
     !requisicao.ip
   ) {
     return;

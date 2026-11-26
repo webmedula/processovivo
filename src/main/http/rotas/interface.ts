@@ -4,6 +4,13 @@ import { dirname, join } from 'node:path';
 import type { FastifyPluginAsync } from 'fastify';
 import { VERSAO } from '../../../infrastructure/config/versao.js';
 import { FAVICON_ICO, ICONE_DA_TELA_INICIAL_PNG } from '../ui/icones.js';
+import {
+  ICONES_DO_APLICATIVO,
+  MANIFESTO,
+  ROTA_MANIFESTO,
+  ROTA_SERVICE_WORKER,
+  serviceWorker,
+} from '../ui/aplicativo.js';
 import { paginaConsole } from '../ui/pagina.js';
 
 export const ROTA_CONSOLE = '/';
@@ -175,6 +182,28 @@ export function rotasDeInterface(): FastifyPluginAsync {
       resposta.header('cache-control', 'public, max-age=604800');
       return ICONE_DA_TELA_INICIAL_PNG;
     });
+
+    // O aplicativo instalável (v0.70.0, `ui/aplicativo.ts`): manifesto, worker e ícones, sem dado.
+    servidor.get(ROTA_MANIFESTO, async (_requisicao, resposta) => {
+      resposta.header('content-type', 'application/manifest+json; charset=utf-8');
+      resposta.header('cache-control', 'public, max-age=86400');
+      return MANIFESTO;
+    });
+    const textoDoWorker = serviceWorker(VERSAO);
+    servidor.get(ROTA_SERVICE_WORKER, async (_requisicao, resposta) => {
+      resposta.header('content-type', 'text/javascript; charset=utf-8');
+      // Sem cache: é por este arquivo que o navegador percebe um deploy novo do worker.
+      resposta.header('cache-control', 'no-cache');
+      resposta.header('x-content-type-options', 'nosniff');
+      return textoDoWorker;
+    });
+    for (const [caminho, bytes] of ICONES_DO_APLICATIVO) {
+      servidor.get(caminho, async (_requisicao, resposta) => {
+        resposta.header('content-type', 'image/png');
+        resposta.header('cache-control', 'public, max-age=604800');
+        return bytes;
+      });
+    }
 
     servidor.get<{ Params: { arquivo: string } }>(ROTA_PDFJS, async (req, resposta) => {
       const arquivo = pdfjs.get(req.params.arquivo);
