@@ -66,8 +66,8 @@ export function rotasDePecas(
       async (req) => {
         await exigirPlano(req);
         const servico = exigirServico();
-        const [linha, jaBaixadas] = await Promise.all([
-          servico.linhaDoTempoDoProcesso(workspaceDe(req), req.params.numero),
+        const [{ linha, partes: partesDoTribunal }, jaBaixadas] = await Promise.all([
+          servico.reguaDoProcesso(workspaceDe(req), req.params.numero),
           servico.idsJaBaixados(workspaceDe(req), req.params.numero),
         ]);
         const pecas = [
@@ -76,6 +76,19 @@ export function rotasDePecas(
         ];
 
         return {
+          // As partes como estão nos AUTOS, da mesma resposta do tribunal (v0.71.0). A tela as
+          // prefere às do Diário, que só conhecem quem foi intimado. Só nome, polo, tipo de pessoa e
+          // advogados — nunca CPF/CNPJ nem endereço. Vazio = o tribunal não trouxe o cabeçalho.
+          partes: partesDoTribunal.map((p) => ({
+            nome: p.nome,
+            polo: p.polo,
+            tipoPessoa: p.tipoPessoa,
+            advogados: p.advogados.map((a) => ({
+              nome: a.nome,
+              ...(a.oab ? { oab: a.oab } : {}),
+              ...(a.ufOab ? { ufOab: a.ufOab } : {}),
+            })),
+          })),
           // Quais peças DESTE processo já saíram daqui. A tela marca o botão, e
           // a marca economiza uma consulta ao tribunal de dezenas de segundos
           // para quem não lembra se já puxou a contestação.

@@ -9,6 +9,14 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.71.0] — 2026-11-27
+
+**As partes do processo passam a vir dos autos do tribunal, e não só do Diário.** Um cumprimento de sentença no TJGO aparecia só com o exequente (quem foi intimado na publicação), sem o executado nem o outro exequente. A causa: sem o DataJud (que não indexa partes), a tela montava as partes com os DESTINATÁRIOS das intimações do DJEN. A consulta ao tribunal que já trazia as peças (MNI, com o acesso do advogado) também traz o cabeçalho com todas as partes, e era jogado fora.
+
+- **`GET /v1/processos/:numero/pecas`** ganhou `partes` (aditivo): nome, polo (`ATIVO`/`PASSIVO`/`OUTROS`), tipo de pessoa e advogados (nome e OAB), lidos de `dadosBasicos > polo > parte` da MESMA resposta — nenhuma consulta a mais ao tribunal. **CPF/CNPJ e endereço, que o tribunal entrega sem máscara a quem tem procuração, não são lidos.** Vazio quando o tribunal não trouxe o cabeçalho.
+- **Cartão "Partes"** (`ui/partesDoProcesso.ts`): com o tribunal, as partes dos autos, com a frase "Conforme os autos no tribunal."; sem ele, as do Diário, com o aviso de que aparecem só as partes intimadas e a lista pode estar incompleta. A OAB só aparece quando a inscrição do tribunal é lida sem ambiguidade.
+- **Não mudou:** o retrato gravado, a coluna Partes da carteira e de Atualizações, o e-mail e a busca por OAB (continuam com as partes do Diário); a tela do processo não consulta o tribunal mais vezes.
+
 ## [0.70.0] — 2026-11-26
 
 **O Processo Vivo pode ser instalado como aplicativo no celular e no computador (PWA, etapa 1).** No Chrome e no Edge aparece "Instalar"; no Android, "Adicionar à tela inicial" vira um aplicativo com ícone próprio; no iPhone, "Compartilhar > Adicionar à Tela de Início". Abre em tela cheia, sem a barra do navegador. Sem migração, sem dependência nova e sem variável de ambiente. Notificação push fica para a etapa 2.

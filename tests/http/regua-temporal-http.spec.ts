@@ -137,6 +137,27 @@ function montar(provedor: ProvedorDePecas): {
   return { app, servidor: construirServidor(app, config()) };
 }
 
+/** O MNI de quem tem procuração: além das peças, o cabeçalho com as partes dos autos (v0.71.0). */
+class TribunalComPartes extends TribunalFalso {
+  override async listarAtos(): Promise<AtosDoProcesso> {
+    const base = await super.listarAtos();
+    return {
+      ...base,
+      partes: [
+        {
+          nome: 'BANCO INVENTADO S.A',
+          polo: 'ATIVO',
+          tipoPessoa: 'JURIDICA',
+          // Simula um adaptador descuidado: o que não é do contrato da rota não pode sair.
+          documento: '00000000000191',
+          advogados: [{ nome: 'ADVOGADA FICTICIA', oab: '99999', ufOab: 'GO' }],
+        },
+        { nome: 'FULANO DE TESTE', polo: 'PASSIVO', tipoPessoa: 'FISICA', advogados: [] },
+      ],
+    };
+  }
+}
+
 describe('API — a régua temporal', () => {
   let servidor: FastifyInstance;
 
@@ -200,6 +221,40 @@ describe('API — a régua temporal', () => {
     expect(ruido).toContain('Expedição de certidão');
     expect(ruido).not.toContain('Decisão');
     expect(ruido.some((t) => t.startsWith('Juntada de Petição'))).toBe(false);
+  });
+
+  it('devolve as partes dos autos que vieram na mesma resposta, sem CPF/CNPJ', async () => {
+    servidor = montar(new TribunalComPartes()).servidor;
+    await comCredencial(servidor);
+
+    const r = await servidor.inject({
+      method: 'GET',
+      url: `/v1/processos/${PROCESSO}/pecas`,
+      headers: cabecalhos,
+    });
+
+    expect(r.statusCode).toBe(200);
+    expect(r.json().partes).toEqual([
+      {
+        nome: 'BANCO INVENTADO S.A',
+        polo: 'ATIVO',
+        tipoPessoa: 'JURIDICA',
+        advogados: [{ nome: 'ADVOGADA FICTICIA', oab: '99999', ufOab: 'GO' }],
+      },
+      { nome: 'FULANO DE TESTE', polo: 'PASSIVO', tipoPessoa: 'FISICA', advogados: [] },
+    ]);
+    expect(r.body).not.toContain('00000000000191');
+  });
+
+  it('sem cabeçalho do tribunal, a lista de partes vem vazia (a tela fica com as que já tinha)', async () => {
+    servidor = montar(new TribunalFalso()).servidor;
+    await comCredencial(servidor);
+    const r = await servidor.inject({
+      method: 'GET',
+      url: `/v1/processos/${PROCESSO}/pecas`,
+      headers: cabecalhos,
+    });
+    expect(r.json().partes).toEqual([]);
   });
 
   it('fonte sem linha do tempo continua funcionando, e a régua avisa', async () => {

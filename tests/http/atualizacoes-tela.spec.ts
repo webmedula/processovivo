@@ -111,7 +111,7 @@ describe('tela do processo — ordem dos blocos', () => {
       pos('class="capa"'),
       pos('class="fatos"'), // dados do processo
       pos('id="pecas-resumo"'), // card "Peças do processo"
-      pos('<h3 class="sec">Partes</h3>'),
+      pos('__pvPartes.cartao(p)'), // cartão "Partes" (ui/partesDoProcesso.ts, v0.71.0)
       pos("'Linha do tempo'"),
     ];
     expect([...ordem].sort((a, b) => a - b)).toEqual(ordem);

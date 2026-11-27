@@ -23,6 +23,7 @@ import {
   batizarPeloCodigo,
   montarLinhaDoTempo,
 } from '../../domain/entities/linhaDoTempo.js';
+import type { Parte } from '../../domain/entities/Parte.js';
 import type { LinhaDoTempo } from '../../domain/entities/linhaDoTempo.js';
 
 export interface OpcoesServicoPecas {
@@ -98,16 +99,31 @@ export class ServicoPecas {
     workspace: string,
     numeroProcesso: string,
   ): Promise<LinhaDoTempo> {
+    return (await this.reguaDoProcesso(workspace, numeroProcesso)).linha;
+  }
+
+  /**
+   * A régua e, da MESMA resposta do tribunal, as partes como estão nos autos (v0.71.0). Sem
+   * consulta a mais: o cabeçalho já vinha na listagem. `partes` vazio = o tribunal não trouxe
+   * cabeçalho com partes, e a tela fica com as que já tinha.
+   */
+  async reguaDoProcesso(
+    workspace: string,
+    numeroProcesso: string,
+  ): Promise<{ linha: LinhaDoTempo; partes: readonly Parte[] }> {
     const [atos, publicas] = await Promise.all([
       this.listarDoProcesso(workspace, numeroProcesso),
       this.movimentacoesPublicas(numeroProcesso),
     ]);
 
-    return montarLinhaDoTempo({
-      movimentacoes: publicas,
-      movimentosDoTribunal: batizarPeloCodigo(atos.movimentos, publicas),
-      pecas: atos.pecas,
-    });
+    return {
+      linha: montarLinhaDoTempo({
+        movimentacoes: publicas,
+        movimentosDoTribunal: batizarPeloCodigo(atos.movimentos, publicas),
+        pecas: atos.pecas,
+      }),
+      partes: atos.partes,
+    };
   }
 
   private async movimentacoesPublicas(
@@ -137,7 +153,11 @@ export class ServicoPecas {
   async listarDoProcesso(
     workspace: string,
     numeroProcesso: string,
-  ): Promise<{ pecas: Peca[]; movimentos: readonly Movimentacao[] }> {
+  ): Promise<{
+    pecas: Peca[];
+    movimentos: readonly Movimentacao[];
+    partes: readonly Parte[];
+  }> {
     const atos = await this.registrando(workspace, numeroProcesso, () =>
       this.listar.executar({ workspace, numeroProcesso }),
     );
@@ -153,6 +173,7 @@ export class ServicoPecas {
     return {
       pecas: herdarOrigemPorMovimento(atos.pecas),
       movimentos: atos.movimentos,
+      partes: atos.partes ?? [],
     };
   }
 

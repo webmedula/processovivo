@@ -22,6 +22,7 @@ import { ESTILOS_LOGIN_GOOGLE, SCRIPT_LOGIN_GOOGLE } from './loginGoogle.js';
 import { ESTILOS_VERIFICACAO, SCRIPT_VERIFICACAO } from './verificacao.js';
 import { ESTILOS_MENU, SCRIPT_MENU } from './menuLateral.js';
 import { ESTILOS_SEM_VERIFICACAO, SCRIPT_SEM_VERIFICACAO } from './semVerificacao.js';
+import { ESTILOS_PARTES, SCRIPT_PARTES } from './partesDoProcesso.js';
 import { SCRIPT_NAVEGACAO } from './navegacao.js';
 import { SCRIPT_APLICATIVO } from './aplicativo.js';
 
@@ -96,7 +97,7 @@ export function paginaConsole(versao: string): string {
 <link rel="manifest" href="/manifest.webmanifest">
 <meta name="apple-mobile-web-app-title" content="Processo Vivo">
 <script>${SCRIPT_TEMA}</script>
-<style>${ESTILOS}${ESTILOS_MENU}${ESTILOS_PASTA}${ESTILOS_CALENDARIO}${ESTILOS_ATUALIZACOES}${ESTILOS_PROVIDENCIA}${ESTILOS_POLEGARES}${ESTILOS_ANALISE_IA}${ESTILOS_RESUMO_IA}${ESTILOS_ANALISE_PECA_IA}${ESTILOS_ANALISE_PROCESSO_IA}${ESTILOS_DRIVE}${ESTILOS_CUSTOS}${ESTILOS_CUSTOS_CLIENTE}${ESTILOS_PAGAMENTO}${ESTILOS_VERIFICACAO}${ESTILOS_SEM_VERIFICACAO}${ESTILOS_LOGIN_GOOGLE}</style>
+<style>${ESTILOS}${ESTILOS_MENU}${ESTILOS_PASTA}${ESTILOS_CALENDARIO}${ESTILOS_ATUALIZACOES}${ESTILOS_PROVIDENCIA}${ESTILOS_POLEGARES}${ESTILOS_ANALISE_IA}${ESTILOS_RESUMO_IA}${ESTILOS_ANALISE_PECA_IA}${ESTILOS_ANALISE_PROCESSO_IA}${ESTILOS_DRIVE}${ESTILOS_CUSTOS}${ESTILOS_CUSTOS_CLIENTE}${ESTILOS_PAGAMENTO}${ESTILOS_VERIFICACAO}${ESTILOS_SEM_VERIFICACAO}${ESTILOS_LOGIN_GOOGLE}${ESTILOS_PARTES}</style>
 </head>
 <body>
 
@@ -142,6 +143,7 @@ export function paginaConsole(versao: string): string {
 <script>${SCRIPT_PROVIDENCIA}</script>
 <script>${SCRIPT_VERIFICACAO}</script>
 <script>${SCRIPT_SEM_VERIFICACAO}</script>
+<script>${SCRIPT_PARTES}</script>
 <script>${SCRIPT_POLEGARES}</script>
 <script>${SCRIPT_ANALISE_IA}</script>
 <script>${SCRIPT_RESUMO_IA}</script>
