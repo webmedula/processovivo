@@ -24,6 +24,7 @@ import {
   montarLinhaDoTempo,
 } from '../../domain/entities/linhaDoTempo.js';
 import type { Parte } from '../../domain/entities/Parte.js';
+import type { RepositorioPartesDoTribunal } from '../../domain/ports/RepositorioPartesDoTribunal.js';
 import type { LinhaDoTempo } from '../../domain/entities/linhaDoTempo.js';
 
 export interface OpcoesServicoPecas {
@@ -54,6 +55,14 @@ export interface OpcoesServicoPecas {
     numeroProcesso: string,
     atos: AtosDoProcesso,
   ) => Promise<void>;
+  /**
+   * Onde guardar as partes do cabeçalho dos autos (v0.71.0), para as colunas "Partes" da
+   * carteira e das Atualizações usarem sem ir ao tribunal. Opcional: sem ele as colunas
+   * seguem com as partes do Diário. Falha aqui nunca derruba a listagem.
+   */
+  readonly partesDoTribunal?: RepositorioPartesDoTribunal;
+  /** Injetável para teste; só carimba quando a lista de partes foi gravada. */
+  readonly agora?: () => Date;
 }
 
 /**
@@ -76,6 +85,8 @@ export class ServicoPecas {
   private readonly processos: BuscarProcessoPorNumero | undefined;
   private readonly baixadas: RepositorioPecasBaixadas | undefined;
   private readonly aoListar: OpcoesServicoPecas['aoListar'];
+  private readonly partesDoTribunal: RepositorioPartesDoTribunal | undefined;
+  private readonly agora: () => Date;
 
   constructor(opcoes: OpcoesServicoPecas) {
     this.listar = opcoes.listar;
@@ -85,6 +96,8 @@ export class ServicoPecas {
     this.processos = opcoes.processos;
     this.baixadas = opcoes.baixadas;
     this.aoListar = opcoes.aoListar;
+    this.partesDoTribunal = opcoes.partesDoTribunal;
+    this.agora = opcoes.agora ?? (() => new Date());
   }
 
   /**
@@ -168,6 +181,7 @@ export class ServicoPecas {
         erro: erro instanceof Error ? erro.message : String(erro),
       });
     }
+    await this.guardarPartes(workspace, numeroProcesso, atos);
     // A dedução por movimento é sobre o CONJUNTO, não sobre uma peça — por isso
     // acontece aqui e não no mapper, que monta uma de cada vez.
     return {
@@ -292,6 +306,40 @@ export class ServicoPecas {
         });
       }
       throw erro;
+    }
+  }
+
+  /**
+   * Guarda as partes do cabeçalho para as colunas da carteira e das Atualizações (v0.71.0).
+   *
+   * Resposta sem partes não apaga a lista anterior: o tribunal só não trouxe o cabeçalho
+   * desta vez, e "não veio" não é "não existe". Processo que o tribunal declara sob sigilo
+   * tira a lista guardada — as listas seguem a regra do segredo, e quem é parte vê as partes
+   * na tela do processo. NUNCA lança: a tela do processo não cai por causa de uma coluna.
+   */
+  private async guardarPartes(
+    workspace: string,
+    numeroProcesso: string,
+    atos: AtosDoProcesso,
+  ): Promise<void> {
+    if (!this.partesDoTribunal) return;
+    try {
+      const numero = NumeroCNJ.criar(numeroProcesso).digitos;
+      if ((atos.nivelSigiloDoProcesso ?? 0) > 0) {
+        await this.partesDoTribunal.remover(workspace, numero);
+        return;
+      }
+      const partes = atos.partes ?? [];
+      if (partes.length === 0) return;
+      await this.partesDoTribunal.guardar(workspace, numero, partes, this.agora());
+    } catch (erro) {
+      // Só a mensagem do erro: nome de parte nunca vai ao log.
+      this.logger.warn(
+        'listagem entregue, mas as partes do tribunal não foram guardadas',
+        {
+          erro: erro instanceof Error ? erro.message : String(erro),
+        },
+      );
     }
   }
 }

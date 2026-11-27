@@ -634,6 +634,21 @@ const ESQUEMA = [
      PRIMARY KEY (workspace, numero, posicao)
    )`,
 
+  // Partes que o TRIBUNAL informou no cabeçalho dos autos (v0.71.0), para as colunas
+  // "Partes" da carteira e das Atualizações. Tabela nova, sem retrocarga: a lista só
+  // existe na resposta do MNI, e consultar o tribunal sem a pessoa pedir é o que a regra
+  // do MNI proíbe — enche na próxima vez que a tela do processo carregar as peças; até
+  // lá, as colunas seguem com as partes do Diário. Por workspace (veio com a credencial
+  // de quem tem procuração). `partes` é JSON só com nome, polo, tipo e advogados (nome,
+  // OAB, UF): nunca CPF/CNPJ nem endereço.
+  `CREATE TABLE IF NOT EXISTS partes_do_tribunal (
+     workspace    TEXT NOT NULL,
+     numero       TEXT NOT NULL,
+     partes       TEXT NOT NULL,
+     gravadas_em  TEXT NOT NULL,
+     PRIMARY KEY (workspace, numero)
+   )`,
+
   // Calendário (v0.32.0): eventos da agenda do advogado.
   //
   // A chave é (workspace, id): nenhuma consulta chega a um evento sem dizer de

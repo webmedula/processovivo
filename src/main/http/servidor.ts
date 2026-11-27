@@ -188,7 +188,14 @@ export function construirServidor(app: Aplicacao, config: Config): FastifyInstan
   void servidor.register(rotasDeSaude(app));
   void servidor.register(rotasDeInterface());
   void servidor.register(rotasDeProcesso(app));
-  void servidor.register(rotasDeAcompanhamento(app.acompanhamento, config.telas));
+  void servidor.register(
+    rotasDeAcompanhamento(
+      app.acompanhamento,
+      config.telas,
+      undefined,
+      app.partesDoTribunal,
+    ),
+  );
   void servidor.register(rotasDePecas(app.pecas, app.assinaturas));
   void servidor.register(
     rotasDaAnaliseIA(

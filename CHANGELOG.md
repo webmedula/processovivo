@@ -15,7 +15,8 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 - **`GET /v1/processos/:numero/pecas`** ganhou `partes` (aditivo): nome, polo (`ATIVO`/`PASSIVO`/`OUTROS`), tipo de pessoa e advogados (nome e OAB), lidos de `dadosBasicos > polo > parte` da MESMA resposta — nenhuma consulta a mais ao tribunal. **CPF/CNPJ e endereço, que o tribunal entrega sem máscara a quem tem procuração, não são lidos.** Vazio quando o tribunal não trouxe o cabeçalho.
 - **Cartão "Partes"** (`ui/partesDoProcesso.ts`): com o tribunal, as partes dos autos, com a frase "Conforme os autos no tribunal."; sem ele, as do Diário, com o aviso de que aparecem só as partes intimadas e a lista pode estar incompleta. A OAB só aparece quando a inscrição do tribunal é lida sem ambiguidade.
-- **Não mudou:** o retrato gravado, a coluna Partes da carteira e de Atualizações, o e-mail e a busca por OAB (continuam com as partes do Diário); a tela do processo não consulta o tribunal mais vezes.
+- **Coluna "Partes" de Meus processos e de Atualizações:** quando a conta já carregou as peças do processo, mostra a lista dos autos (com o executado); até lá, as partes do Diário, como antes. A lista fica guardada na tabela nova `partes_do_tribunal` (migração aditiva, sem retrocarga, por conta: só nome, polo, tipo e advogados, nunca CPF/CNPJ nem endereço). `GET /v1/acompanhamentos`, `GET /v1/novidades` e as rotas de "cumprido" passam a preferir essa lista; processo em segredo de justiça e leitura que falha ficam com as do Diário. Resposta do tribunal sem cabeçalho não apaga a lista guardada; processo que o tribunal declara sob sigilo a remove. Outra conta que acompanha o mesmo processo continua vendo as do Diário até carregar as peças com o próprio acesso.
+- **Não mudou:** o retrato gravado (as partes dos autos não entram nele), o e-mail, a busca por parte e a busca por OAB (continuam com as partes do Diário); nenhuma consulta nova ao tribunal.
 
 ## [0.70.0] — 2026-11-26
 

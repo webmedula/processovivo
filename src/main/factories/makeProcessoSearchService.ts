@@ -126,6 +126,8 @@ import { ListarPecasDoProcesso } from '../../domain/usecases/ListarPecasDoProces
 import { MniAdapter } from '../../infrastructure/adapters/mni/MniAdapter.js';
 import { RepositorioDaPastaSqlite } from '../../infrastructure/persistencia/sqlite/RepositorioDaPastaSqlite.js';
 import { RepositorioPecasBaixadasSqlite } from '../../infrastructure/persistencia/sqlite/RepositorioPecasBaixadasSqlite.js';
+import { RepositorioPartesDoTribunalSqlite } from '../../infrastructure/persistencia/sqlite/RepositorioPartesDoTribunalSqlite.js';
+import type { RepositorioPartesDoTribunal } from '../../domain/ports/RepositorioPartesDoTribunal.js';
 import { RegistroDeAcessosSqlite } from '../../infrastructure/persistencia/sqlite/RegistroDeAcessosSqlite.js';
 import {
   GUARDA_DOS_REGISTROS_DE_ACESSO_DIAS,
@@ -194,6 +196,11 @@ export interface Aplicacao {
   readonly orquestrador: ProcessoSearchService;
   readonly provider: ProcessoProvider;
   readonly acompanhamento: ServicoAcompanhamento;
+  /**
+   * Partes do cabeçalho dos autos guardadas por conta (v0.71.0): as colunas "Partes" da
+   * carteira e das Atualizações preferem estas às do Diário quando existem.
+   */
+  readonly partesDoTribunal: RepositorioPartesDoTribunal;
   readonly vigilancia: ServicoVigilanciaOab | undefined;
   readonly notificacao: ServicoNotificacao;
   /**
@@ -624,12 +631,14 @@ export function montarAplicacao(config: Config): Aplicacao {
   // tenha as publicações do DJEN que o tribunal não numera. Cai em cache, então
   // não custa consulta nova quando a tela acabou de carregar o processo.
   const buscarProcessoPorNumero = new BuscarProcessoPorNumero(provider);
+  const partesDoTribunal = new RepositorioPartesDoTribunalSqlite(db);
   const { pecas, leitor, pasta, drive } = montarServicoPecas(
     config,
     db,
     logger,
     buscarProcessoPorNumero,
     assinaturas,
+    partesDoTribunal,
   );
 
   // O executor do leitor acorda a cada minuto para retomar job pausado por
@@ -956,6 +965,7 @@ export function montarAplicacao(config: Config): Aplicacao {
     orquestrador,
     provider,
     acompanhamento,
+    partesDoTribunal,
     vigilancia,
     notificacao,
     pecas,
@@ -1429,6 +1439,7 @@ function montarServicoPecas(
   logger: Logger,
   processos: BuscarProcessoPorNumero,
   assinaturas: ServicoAssinaturas,
+  partesDoTribunal: RepositorioPartesDoTribunal,
 ): {
   pecas: ServicoPecas | undefined;
   leitor: ServicoLeitor | undefined;
@@ -1504,6 +1515,7 @@ function montarServicoPecas(
     aoListar: async (workspace, numero, atos) => {
       await pasta?.registrarListagem(workspace, numero, atos);
     },
+    partesDoTribunal,
   });
 
   const drive = montarDrive(config, db, logger, cofre, assinaturas, montado);
