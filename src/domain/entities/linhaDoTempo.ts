@@ -188,7 +188,7 @@ function eventoDePecaSolta(p: Peca): EventoDaLinha {
  * fonte pública. Se o DataJud tem três juntadas num dia e o tribunal mandou
  * duas, a terceira fica. A contagem de atos nunca diminui.
  */
-function naoCobertas(
+export function naoCobertas(
   publicas: readonly Movimentacao[],
   doTribunal: readonly Movimentacao[],
 ): Movimentacao[] {

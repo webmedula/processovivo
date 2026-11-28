@@ -1,6 +1,7 @@
 import { ProcessoSearchService } from '../../application/services/ProcessoSearchService.js';
 import { ServicoAcompanhamento } from '../../application/services/ServicoAcompanhamento.js';
 import { ServicoNotificacao } from '../../application/services/ServicoNotificacao.js';
+import { ConsultaDoTribunalNaVarredura } from '../../application/services/consultaDoTribunalNaVarredura.js';
 import { ServicoPecas } from '../../application/services/ServicoPecas.js';
 import { GuardaDePecas } from '../../application/services/GuardaDePecas.js';
 import { ServicoLeitor } from '../../application/services/ServicoLeitor.js';
@@ -624,13 +625,22 @@ export function montarAplicacao(config: Config): Aplicacao {
   // tenha as publicações do DJEN que o tribunal não numera. Cai em cache, então
   // não custa consulta nova quando a tela acabou de carregar o processo.
   const buscarProcessoPorNumero = new BuscarProcessoPorNumero(provider);
-  const { pecas, leitor, pasta, drive } = montarServicoPecas(
+  const { pecas, leitor, pasta, drive, fonteDoTribunal } = montarServicoPecas(
     config,
     db,
     logger,
     buscarProcessoPorNumero,
     assinaturas,
   );
+  // v0.72.0: a varredura lê também o Projudi das contas com acesso cadastrado — pelo MESMO adapter
+  // (um balde, um disjuntor) e pelo MESMO serviço de peças da tela. Ligado depois de montado porque
+  // o serviço de peças nasce depois do acompanhamento.
+  if (fonteDoTribunal && config.sincronizacao.projudi) {
+    acompanhamento.ligarFonteDoTribunal(fonteDoTribunal);
+    logger.info('varredura lê o tribunal das contas com acesso cadastrado', {
+      tribunais: config.mni.tribunais,
+    });
+  }
 
   // O executor do leitor acorda a cada minuto para retomar job pausado por
   // bloqueio e pegar o que um redeploy interrompeu; o pedido novo não espera
@@ -1434,12 +1444,14 @@ function montarServicoPecas(
   leitor: ServicoLeitor | undefined;
   pasta: ServicoPasta | undefined;
   drive: ServicoDrive | undefined;
+  fonteDoTribunal: ConsultaDoTribunalNaVarredura | undefined;
 } {
   const nada = {
     pecas: undefined,
     leitor: undefined,
     pasta: undefined,
     drive: undefined,
+    fonteDoTribunal: undefined,
   };
   if (pareceValorDeExemplo(config.mni.chaveDoCofre)) {
     logger.warn(
@@ -1507,7 +1519,13 @@ function montarServicoPecas(
   });
 
   const drive = montarDrive(config, db, logger, cofre, assinaturas, montado);
-  return { pecas, leitor: montado?.leitor, pasta, drive };
+  const fonteDoTribunal = new ConsultaDoTribunalNaVarredura({
+    pecas,
+    provedor,
+    credenciais,
+    logger,
+  });
+  return { pecas, leitor: montado?.leitor, pasta, drive, fonteDoTribunal };
 }
 
 /**

@@ -125,6 +125,17 @@ export interface RepositorioAcompanhamentos {
 
   registrarFalha(workspace: string, numero: string, erro: string): Promise<void>;
 
+  /**
+   * Guarda a assinatura de "mudou?" do tribunal (v0.72.0), DEPOIS de o retrato ser gravado: se a
+   * gravação do retrato falhar, a próxima rodada lê o tribunal de novo em vez de achar que nada mudou.
+   * Opcional: sem ela a varredura só não tem o atalho.
+   */
+  registrarAssinaturaDoTribunal?(
+    workspace: string,
+    numero: string,
+    assinatura: string,
+  ): Promise<void>;
+
   listarNovidades(workspace: string, filtro?: FiltroNovidades): Promise<Novidade[]>;
 
   contarNaoVistas(workspace: string): Promise<number>;

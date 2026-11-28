@@ -137,7 +137,11 @@ export class ServicoPecas {
   async listarDoProcesso(
     workspace: string,
     numeroProcesso: string,
-  ): Promise<{ pecas: Peca[]; movimentos: readonly Movimentacao[] }> {
+  ): Promise<{
+    pecas: Peca[];
+    movimentos: readonly Movimentacao[];
+    nivelSigiloDoProcesso?: number;
+  }> {
     const atos = await this.registrando(workspace, numeroProcesso, () =>
       this.listar.executar({ workspace, numeroProcesso }),
     );
@@ -153,6 +157,9 @@ export class ServicoPecas {
     return {
       pecas: herdarOrigemPorMovimento(atos.pecas),
       movimentos: atos.movimentos,
+      ...(atos.nivelSigiloDoProcesso !== undefined
+        ? { nivelSigiloDoProcesso: atos.nivelSigiloDoProcesso }
+        : {}),
     };
   }
 

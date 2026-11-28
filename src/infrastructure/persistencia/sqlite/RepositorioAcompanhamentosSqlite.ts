@@ -309,8 +309,8 @@ export class RepositorioAcompanhamentosSqlite implements RepositorioAcompanhamen
 
       const ins = this.db.prepare(
         `INSERT OR IGNORE INTO novidades
-           (workspace, numero, data, titulo, codigo_tpu, conteudo, tribunal, detectada_em)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+           (workspace, numero, data, titulo, codigo_tpu, conteudo, tribunal, detectada_em, fonte)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       );
       for (const m of novidades) {
         ins.run(
@@ -322,6 +322,7 @@ export class RepositorioAcompanhamentosSqlite implements RepositorioAcompanhamen
           m.conteudo ?? null,
           processo.tribunal,
           agora,
+          m.fonte ?? null,
         );
       }
       this.db.exec('COMMIT');
@@ -329,6 +330,19 @@ export class RepositorioAcompanhamentosSqlite implements RepositorioAcompanhamen
       this.db.exec('ROLLBACK');
       throw erro;
     }
+  }
+
+  async registrarAssinaturaDoTribunal(
+    workspace: string,
+    numero: string,
+    assinatura: string,
+  ): Promise<void> {
+    this.db
+      .prepare(
+        `UPDATE acompanhamentos SET tribunal_assinatura = ?
+          WHERE workspace = ? AND numero = ?`,
+      )
+      .run(assinatura.slice(0, 500), workspace, numero);
   }
 
   async registrarFalha(workspace: string, numero: string, erro: string): Promise<void> {
@@ -387,6 +401,7 @@ export class RepositorioAcompanhamentosSqlite implements RepositorioAcompanhamen
       ...(texto(l['conteudo']) ? { conteudo: String(l['conteudo']) } : {}),
       detectadaEm: new Date(String(l['detectada_em'])),
       ...(data(l['vista_em']) ? { vistaEm: data(l['vista_em']) as Date } : {}),
+      ...(texto(l['fonte']) ? { fonte: String(l['fonte']) } : {}),
     }));
   }
 
@@ -482,6 +497,9 @@ export class RepositorioAcompanhamentosSqlite implements RepositorioAcompanhamen
               por: texto(l['cumprido_por']) ?? '',
             },
           }
+        : {}),
+      ...(texto(l['tribunal_assinatura'])
+        ? { assinaturaDoTribunal: String(l['tribunal_assinatura']) }
         : {}),
     };
   }

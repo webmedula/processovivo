@@ -195,6 +195,9 @@ const schema = z.object({
   // Quantos processos a varredura verifica AO MESMO TEMPO (v0.49.3). Lida como TEXTO de propósito: valor inválido,
   // zero ou acima do máximo não derruba o servidor — cai no padrão (3) e o arranque registra um aviso.
   SYNC_CONCORRENCIA: z.string().optional(),
+  // v0.72.0: a varredura lê também o Projudi (MNI) das contas que cadastraram o acesso. LIGADA por padrão (decisão do
+  // dono, 28/11/2026); `false` volta a só DataJud + Diário sem novo deploy de código.
+  SYNC_PROJUDI_HABILITADO: booleano.default('true'),
 
   // --- HTTP ---------------------------------------------------------------
   // 0.0.0.0 e não 127.0.0.1: dentro de um contêiner, escutar só em loopback
@@ -413,6 +416,8 @@ export interface Config {
     readonly concorrencia: number;
     /** Preenchido quando `SYNC_CONCORRENCIA` veio inválida e o padrão foi usado: o arranque o põe no log. */
     readonly avisoDaConcorrencia?: string;
+    /** A varredura lê o Projudi das contas com acesso cadastrado (v0.72.0). Padrão `true`. */
+    readonly projudi: boolean;
   };
   readonly vigilancia: {
     readonly intervaloHoras: number;
@@ -692,6 +697,7 @@ export function carregarConfig(fonte: NodeJS.ProcessEnv = process.env): Config {
       intervaloHoras: env.SYNC_INTERVALO_HORAS,
       maximoPorVarredura: env.SYNC_MAXIMO_POR_VARREDURA,
       pausaMs: env.SYNC_PAUSA_MS,
+      projudi: env.SYNC_PROJUDI_HABILITADO,
       ...interpretarConcorrenciaDaSincronizacao(env.SYNC_CONCORRENCIA),
     },
     vigilancia: {
