@@ -20,6 +20,7 @@ import { SCRIPT_LOGIN_GOOGLE } from '../../src/main/http/ui/loginGoogle.js';
 import { SCRIPT_MENU } from '../../src/main/http/ui/menuLateral.js';
 import { SCRIPT_SEM_VERIFICACAO } from '../../src/main/http/ui/semVerificacao.js';
 import { SCRIPT_APLICATIVO } from '../../src/main/http/ui/aplicativo.js';
+import { SCRIPT_INSTALAR } from '../../src/main/http/ui/instalarAplicativo.js';
 
 /*
  * O console é JavaScript dentro de uma string.
@@ -64,6 +65,7 @@ describe.each([
   ['menu lateral', SCRIPT_MENU],
   ['processos sem verificação', SCRIPT_SEM_VERIFICACAO],
   ['aplicativo instalável (registro do worker)', SCRIPT_APLICATIVO],
+  ['instalar aplicativo (menu e aviso do celular)', SCRIPT_INSTALAR],
 ])('console web — o JavaScript da interface (%s)', (_nome, codigo) => {
   const linter = new Linter();
 
