@@ -18,6 +18,15 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 - **Coluna "Partes" de Meus processos e de Atualizações:** quando a conta já carregou as peças do processo, mostra a lista dos autos (com o executado); até lá, as partes do Diário, como antes. A lista fica guardada na tabela nova `partes_do_tribunal` (migração aditiva, sem retrocarga, por conta: só nome, polo, tipo e advogados, nunca CPF/CNPJ nem endereço). `GET /v1/acompanhamentos`, `GET /v1/novidades` e as rotas de "cumprido" passam a preferir essa lista; processo em segredo de justiça e leitura que falha ficam com as do Diário. Resposta do tribunal sem cabeçalho não apaga a lista guardada; processo que o tribunal declara sob sigilo a remove. Outra conta que acompanha o mesmo processo continua vendo as do Diário até carregar as peças com o próprio acesso.
 - **Não mudou:** o retrato gravado (as partes dos autos não entram nele), o e-mail, a busca por parte e a busca por OAB (continuam com as partes do Diário); nenhuma consulta nova ao tribunal.
 
+## [0.70.1] — 2026-11-28
+
+**Botão "Instalar aplicativo" do próprio sistema.** O convite do navegador quase não aparecia (no iPhone nem existe). Sem migração, sem dependência nova e sem variável de ambiente.
+
+- **No menu lateral**, no pé, logo acima de "Tema": "Instalar aplicativo". Segue as três formas do menu (por extenso, só o ícone com dica, e dentro da gaveta do celular). No Chrome, Edge e Samsung Internet (Android e computador) abre a janela de instalação do navegador; no iPhone e iPad abre um passo a passo curto (Compartilhar > Adicionar à Tela de Início > Adicionar). Onde o navegador não instala (Firefox no computador), não aparece.
+- **Na tela de entrada** (Entrar e Criar conta), em qualquer largura: "Instalar o aplicativo" logo abaixo do formulário, com a mesma ação do item do menu.
+- **No celular** (até 900 px), um aviso discreto preso embaixo depois de entrar: "Use o Processo Vivo como aplicativo", com "Instalar" (ou "Como instalar", no iPhone) e um X ("Agora não"). Depois de respondido não volta neste navegador (`localStorage` `processovivo.instalar`, só a palavra `dispensado`). Não toma o foco, sai da frente com a Pasta digital aberta e a página ganha espaço embaixo para nada ficar escondido.
+- **Já instalado: nada aparece. Sem sessão, só o botão da tela de entrada.** Módulo próprio `ui/instalarAplicativo.ts` (`window.__pvInstalar`); `script.ts` não cresceu. Nada fala com o servidor.
+
 ## [0.70.0] — 2026-11-26
 
 **O Processo Vivo pode ser instalado como aplicativo no celular e no computador (PWA, etapa 1).** No Chrome e no Edge aparece "Instalar"; no Android, "Adicionar à tela inicial" vira um aplicativo com ícone próprio; no iPhone, "Compartilhar > Adicionar à Tela de Início". Abre em tela cheia, sem a barra do navegador. Sem migração, sem dependência nova e sem variável de ambiente. Notificação push fica para a etapa 2.

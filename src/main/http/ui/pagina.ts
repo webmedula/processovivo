@@ -25,6 +25,7 @@ import { ESTILOS_SEM_VERIFICACAO, SCRIPT_SEM_VERIFICACAO } from './semVerificaca
 import { ESTILOS_PARTES, SCRIPT_PARTES } from './partesDoProcesso.js';
 import { SCRIPT_NAVEGACAO } from './navegacao.js';
 import { SCRIPT_APLICATIVO } from './aplicativo.js';
+import { ESTILOS_INSTALAR, SCRIPT_INSTALAR } from './instalarAplicativo.js';
 
 /**
  * Ícones da navegação: traço, sem preenchimento, na cor do texto
@@ -63,6 +64,9 @@ export const ICONES = {
   chave: icone('<circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6"/><path d="m15.5 7.5 3 3L22 7l-3-3"/>'),
   pessoa: icone('<circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 0 0-16 0"/>'),
   tema: icone('<circle cx="12" cy="12" r="9"/><path d="M12 3v18"/><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor"/>'),
+  instalar: icone(
+    '<rect x="6" y="2" width="12" height="20" rx="2.5"/><path d="M12 7v7"/><path d="m9 11 3 3 3-3"/><path d="M10.5 18.5h3"/>',
+  ),
   sair: icone('<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/>'),
 } as const;
 
@@ -97,7 +101,7 @@ export function paginaConsole(versao: string): string {
 <link rel="manifest" href="/manifest.webmanifest">
 <meta name="apple-mobile-web-app-title" content="Processo Vivo">
 <script>${SCRIPT_TEMA}</script>
-<style>${ESTILOS}${ESTILOS_MENU}${ESTILOS_PASTA}${ESTILOS_CALENDARIO}${ESTILOS_ATUALIZACOES}${ESTILOS_PROVIDENCIA}${ESTILOS_POLEGARES}${ESTILOS_ANALISE_IA}${ESTILOS_RESUMO_IA}${ESTILOS_ANALISE_PECA_IA}${ESTILOS_ANALISE_PROCESSO_IA}${ESTILOS_DRIVE}${ESTILOS_CUSTOS}${ESTILOS_CUSTOS_CLIENTE}${ESTILOS_PAGAMENTO}${ESTILOS_VERIFICACAO}${ESTILOS_SEM_VERIFICACAO}${ESTILOS_LOGIN_GOOGLE}${ESTILOS_PARTES}</style>
+<style>${ESTILOS}${ESTILOS_MENU}${ESTILOS_PASTA}${ESTILOS_CALENDARIO}${ESTILOS_ATUALIZACOES}${ESTILOS_PROVIDENCIA}${ESTILOS_POLEGARES}${ESTILOS_ANALISE_IA}${ESTILOS_RESUMO_IA}${ESTILOS_ANALISE_PECA_IA}${ESTILOS_ANALISE_PROCESSO_IA}${ESTILOS_DRIVE}${ESTILOS_CUSTOS}${ESTILOS_CUSTOS_CLIENTE}${ESTILOS_PAGAMENTO}${ESTILOS_VERIFICACAO}${ESTILOS_SEM_VERIFICACAO}${ESTILOS_LOGIN_GOOGLE}${ESTILOS_INSTALAR}${ESTILOS_PARTES}</style>
 </head>
 <body>
 
@@ -121,6 +125,7 @@ export function paginaConsole(versao: string): string {
       <button id="nav-conta" class="oculto">${ICONES.pessoa}<span>Minha conta</span></button>
     </nav>
     <div class="lateral-pe">
+      <button id="instalar-app" class="tema oculto" type="button">${ICONES.instalar}<span>Instalar aplicativo</span></button>
       <button id="tema" class="tema" type="button">${ICONES.tema}<span>Tema: automático</span></button>
       <div class="usuario">
         <span class="av" id="usuario-iniciais"></span>
@@ -158,6 +163,7 @@ export function paginaConsole(versao: string): string {
 <script>${SCRIPT_ATUALIZACOES}</script>
 <script>${SCRIPT_NAVEGACAO}</script>
 <script>${SCRIPT_APLICATIVO}</script>
+<script>${SCRIPT_INSTALAR}</script>
 </body>
 </html>`;
 }

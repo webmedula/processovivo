@@ -1604,3 +1604,5 @@ Para conferir depois do Deploy:
 6. Com o celular em modo avião, abra o app: aparece "Sem conexão com a internet" e "Tentar de novo".
 
 O worker não guarda dado nenhum no aparelho. Para desfazer num aparelho: desinstale o app (o login no navegador continua).
+
+**v0.70.1:** a tela de entrada mostra "Instalar o aplicativo" abaixo do formulário; depois de entrar, o menu lateral mostra "Instalar aplicativo" (acima de "Tema") e o celular mostra um aviso embaixo. No Android o botão abre a janela de instalação do Chrome; no iPhone, o passo a passo. Depois de instalado, os dois somem. Nada a configurar.
