@@ -176,7 +176,7 @@ describe.skipIf(sem)('Instalar aplicativo, no navegador', { timeout: 90_000 }, (
       .toBe('Instalar aplicativo');
   });
 
-  it('sem o navegador oferecer, sem sessão, ou já instalado, nada aparece', async () => {
+  it('sem o navegador oferecer ou já instalado nada aparece; sem sessão, nem o menu nem o aviso de baixo', async () => {
     await abrir(1920);
     expect(await visivel('#instalar-app')).toBe(false);
     await ctx.close();
@@ -186,6 +186,7 @@ describe.skipIf(sem)('Instalar aplicativo, no navegador', { timeout: 90_000 }, (
     await navegadorOfereceInstalar();
     expect(await visivel('#instalar-app')).toBe(false);
     expect(await visivel('#instalar-aviso')).toBe(false);
+    expect(await visivel('#instalar-entrada')).toBe(true);
     await ctx.close();
     await amb.encerrar();
 
@@ -294,6 +295,46 @@ describe.skipIf(sem)('Instalar aplicativo, no navegador', { timeout: 90_000 }, (
     expect(await visivel('#instalar-aviso')).toBe(false);
     await page.click('#pasta-fechar');
     await page.locator('#instalar-aviso').waitFor({ state: 'visible' });
+  });
+
+  for (const escuro of [false, true]) {
+    it(`na tela de entrada, "Instalar o aplicativo" fica abaixo do formulário e sobrevive a "Criar conta" (tema ${escuro ? 'escuro' : 'claro'})`, async () => {
+      await abrir(1366, { semChave: true, escuro });
+      expect(await visivel('#instalar-entrada')).toBe(false);
+      await navegadorOfereceInstalar();
+      const bt = page.getByRole('button', { name: 'Instalar o aplicativo' });
+      await bt.waitFor({ state: 'visible' });
+      const [form, b] = await Promise.all([
+        page.locator('#c-email').boundingBox(),
+        bt.boundingBox(),
+      ]);
+      expect(b!.y).toBeGreaterThan(form!.y);
+      expect(await axe('.entrada-caixa')).toEqual([]);
+      await page.click('[data-modo="criar"]');
+      await page.locator('#c-nome').waitFor();
+      await bt.waitFor({ state: 'visible' });
+      await bt.click();
+      expect(
+        await page.evaluate(() => (window as unknown as Janela).__promptChamado),
+      ).toBe(1);
+    });
+  }
+
+  it('na tela de entrada do iPhone o botão abre o passo a passo; já instalado, não aparece', async () => {
+    await abrir(390, { semChave: true, iphone: true });
+    await page.getByRole('button', { name: 'Instalar o aplicativo' }).click();
+    await page
+      .getByRole('dialog', { name: 'Instalar no iPhone' })
+      .waitFor({ state: 'visible' });
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth > innerWidth),
+    ).toBe(false);
+    await page.keyboard.press('Escape');
+    await ctx.close();
+    await amb.encerrar();
+
+    await abrir(390, { semChave: true, iphone: true, instalado: true });
+    expect(await page.locator('#instalar-entrada').count()).toBe(0);
   });
 
   for (const w of [1920, 1366, 1280, 1024, 768, 390]) {

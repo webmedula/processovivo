@@ -14,8 +14,9 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 **Botão "Instalar aplicativo" do próprio sistema.** O convite do navegador quase não aparecia (no iPhone nem existe). Sem migração, sem dependência nova e sem variável de ambiente.
 
 - **No menu lateral**, no pé, logo acima de "Tema": "Instalar aplicativo". Segue as três formas do menu (por extenso, só o ícone com dica, e dentro da gaveta do celular). No Chrome, Edge e Samsung Internet (Android e computador) abre a janela de instalação do navegador; no iPhone e iPad abre um passo a passo curto (Compartilhar > Adicionar à Tela de Início > Adicionar). Onde o navegador não instala (Firefox no computador), não aparece.
+- **Na tela de entrada** (Entrar e Criar conta), em qualquer largura: "Instalar o aplicativo" logo abaixo do formulário, com a mesma ação do item do menu.
 - **No celular** (até 900 px), um aviso discreto preso embaixo depois de entrar: "Use o Processo Vivo como aplicativo", com "Instalar" (ou "Como instalar", no iPhone) e um X ("Agora não"). Depois de respondido não volta neste navegador (`localStorage` `processovivo.instalar`, só a palavra `dispensado`). Não toma o foco, sai da frente com a Pasta digital aberta e a página ganha espaço embaixo para nada ficar escondido.
-- **Já instalado, ou sem sessão: nada aparece.** Módulo próprio `ui/instalarAplicativo.ts` (`window.__pvInstalar`); `script.ts` não cresceu. Nada fala com o servidor.
+- **Já instalado: nada aparece. Sem sessão, só o botão da tela de entrada.** Módulo próprio `ui/instalarAplicativo.ts` (`window.__pvInstalar`); `script.ts` não cresceu. Nada fala com o servidor.
 
 ## [0.70.0] — 2026-11-26
 

@@ -1,10 +1,11 @@
 /**
  * "Instalar aplicativo" (v0.70.1, decisão do dono: o convite do navegador quase não se via). Vive aqui e não em
- * `script.ts` (que não cresce). Duas peças, as duas só existem com a sessão aberta e só enquanto o sistema NÃO
- * está instalado:
+ * `script.ts` (que não cresce). Três peças, todas só enquanto o sistema NÃO está instalado:
  *
  * - **No menu lateral**, um item fixo no pé, ao lado do "Tema", com o mesmo desenho (então herda as três formas do
  *   menu: por extenso, só o ícone com dica, e dentro da gaveta).
+ * - **Na tela de entrada** (login, criar conta), um botão "Instalar o aplicativo" logo abaixo do formulário, em
+ *   qualquer largura (pedido do dono, 28/11/2026): é ali que a pessoa chega pelo navegador pela primeira vez.
  * - **No celular** (até 900 px), um aviso discreto preso embaixo, que some ao fechar ("Agora não") e não volta
  *   neste navegador. Não toma o foco, não aparece com a Pasta digital aberta e não cobre o conteúdo (a página
  *   ganha espaço embaixo enquanto ele está lá).
@@ -93,6 +94,23 @@ $('instalar-ios-ok').addEventListener('click',fecharPassoAPasso);
 /* Clique no fundo escurecido fecha (o dialog recebe o clique quando ele cai fora da caixa). */
 janela.addEventListener('click',function(ev){if(ev.target===janela)fecharPassoAPasso()});
 
+/* ---------- o botão da tela de entrada ---------- */
+var ICONE_CELULAR=botao.querySelector('svg')?botao.querySelector('svg').outerHTML:'';
+function pintarEntrada(){
+  var caixa=document.querySelector('#conteudo .entrada-caixa');
+  var bloco=$('instalar-entrada');
+  if(!caixa||logado()||!disponivel()){if(bloco)bloco.parentNode.removeChild(bloco);return}
+  if(bloco&&caixa.contains(bloco))return;
+  if(bloco)bloco.parentNode.removeChild(bloco);
+  bloco=document.createElement('div');
+  bloco.id='instalar-entrada';
+  bloco.innerHTML='<button type="button" class="bt2" id="instalar-entrada-bt">'+ICONE_CELULAR+
+    '<span>Instalar o aplicativo</span></button>'+
+    '<span class="inst-entrada-nota">Abra o Processo Vivo direto da tela inicial do celular ou do computador.</span>';
+  caixa.appendChild(bloco);
+  $('instalar-entrada-bt').addEventListener('click',instalar);
+}
+
 /* ---------- instalar ---------- */
 function instalar(){
   if(pedido){
@@ -114,6 +132,7 @@ $('instalar-aviso-nao').addEventListener('click',function(){dispensar();atualiza
 
 /* ---------- o que aparece ---------- */
 function atualizar(){
+  pintarEntrada();
   var pode=disponivel()&&logado();
   botao.classList.toggle('oculto',!pode);
   var sim=$('instalar-aviso-sim');
@@ -140,6 +159,9 @@ window.addEventListener('resize',function(){
 if(window.MutationObserver){
   new MutationObserver(atualizar).observe(lat,{attributes:true,attributeFilter:['class']});
   new MutationObserver(atualizar).observe(document.body,{attributes:true,attributeFilter:['class']});
+  /* A tela de entrada é redesenhada inteira (Entrar ↔ Criar conta): o botão volta a cada desenho. */
+  var conteudo=$('conteudo');
+  if(conteudo)new MutationObserver(pintarEntrada).observe(conteudo,{childList:true});
 }
 try{window.matchMedia('(display-mode: standalone)').addEventListener('change',atualizar)}catch(e){}
 atualizar();
@@ -165,6 +187,11 @@ export const ESTILOS_INSTALAR = `
 #instalar-aviso .inst-x:hover{background:rgba(255,255,255,.08);color:#fff}
 #instalar-aviso button:focus-visible{outline:2px solid #fff;outline-offset:2px}
 body.com-aviso-instalar .env{padding-bottom:150px}
+#instalar-entrada{margin-top:22px;padding-top:18px;border-top:1px solid var(--linha);display:flex;
+  flex-direction:column;align-items:center;gap:8px;text-align:center}
+#instalar-entrada .bt2{width:100%}
+#instalar-entrada .bt2 svg{width:18px;height:18px;flex:none}
+#instalar-entrada .inst-entrada-nota{font-size:13px;color:var(--tinta2);line-height:1.4}
 #instalar-ios{border:1px solid var(--linha);border-radius:14px;background:var(--papel);color:var(--tinta);
   padding:22px 22px 18px;width:min(420px,calc(100vw - 32px));box-sizing:border-box;
   box-shadow:0 18px 50px rgba(6,14,26,.35)}
