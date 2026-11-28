@@ -108,9 +108,11 @@ function montar(
     pecas: {
       listarDoProcesso: async () => {
         chamadas.listar++;
-        return opcoes.listar
-          ? opcoes.listar()
+        // As partes do cabeçalho (v0.73.0) não importam aqui: a varredura só lê os atos.
+        const r = opcoes.listar
+          ? await opcoes.listar()
           : { pecas: [], movimentos: [mni('2026-11-24', 1, 11010, 'Despacho')] };
+        return { ...r, partes: [] };
       },
     },
   });
