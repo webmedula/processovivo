@@ -23,6 +23,41 @@ import type {
 import { triar } from '../../../domain/entities/triagem.js';
 import { agruparNovidades } from '../../../domain/entities/agruparNovidades.js';
 import type { GrupoDeNovidades } from '../../../domain/entities/agruparNovidades.js';
+import type { Parte } from '../../../domain/entities/Parte.js';
+import type { RepositorioPartesDoTribunal } from '../../../domain/ports/RepositorioPartesDoTribunal.js';
+
+/**
+ * As partes que as colunas "Partes" mostram (v0.73.0): as do cabeçalho dos AUTOS quando a
+ * conta já carregou as peças do processo, senão as do retrato (o Diário, que só conhece quem
+ * foi intimado). Processo em segredo de justiça fica com o retrato: a lista guardada não
+ * entra em listagem de processo sigiloso.
+ */
+function partesDe(
+  a: {
+    readonly numero: string;
+    readonly processo?:
+      | { readonly segredoJustica?: boolean; readonly partes: readonly Parte[] }
+      | undefined;
+  },
+  doTribunal: ReadonlyMap<string, readonly Parte[]>,
+): readonly Parte[] {
+  const p = a.processo;
+  if (p?.segredoJustica) return p.partes;
+  return doTribunal.get(a.numero) ?? p?.partes ?? [];
+}
+
+/** Falha segura: sem a lista guardada (ou com o banco falhando), as partes do Diário. */
+async function partesDaConta(
+  repo: RepositorioPartesDoTribunal | undefined,
+  workspace: string,
+): Promise<ReadonlyMap<string, readonly Parte[]>> {
+  if (!repo) return new Map();
+  try {
+    return await repo.doWorkspace(workspace);
+  } catch {
+    return new Map();
+  }
+}
 
 /**
  * O workspace vem da chave de API, resolvido no plugin de autenticação. Estas
@@ -65,6 +100,7 @@ function resumoJson(
   a: AcompanhamentoResumido,
   pendenciaJanelaDias: number,
   agora: Date,
+  partes: readonly Parte[],
 ): Record<string, unknown> {
   const p = a.processo;
   return {
@@ -82,7 +118,8 @@ function resumoJson(
     // e numa carteira de centenas isso é o trabalho que o sistema existe para
     // fazer. Só nome e polo: advogados de cada parte ficam para a tela do
     // processo, senão a listagem cresce sem que a lista mostre isso.
-    partes: (p?.partes ?? []).map((parte) => ({
+    // (v0.73.0) Dos autos quando a conta já carregou as peças; senão, do Diário (`partesDe`).
+    partes: partes.map((parte) => ({
       nome: parte.nome,
       polo: parte.polo,
     })),
@@ -199,10 +236,11 @@ function infoDoProcesso(
   a: Acompanhamento & { readonly novidadesNaoVistas?: number },
   pendenciaJanelaDias: number,
   agora: Date,
+  partes: readonly Parte[],
 ): Record<string, unknown> {
   const p = a.processo;
   const nomes = (polo: 'ATIVO' | 'PASSIVO'): Record<string, unknown> => {
-    const todos = (p?.partes ?? []).filter((x) => x.polo === polo).map((x) => x.nome);
+    const todos = partes.filter((x) => x.polo === polo).map((x) => x.nome);
     return { nomes: todos.slice(0, MAX_NOMES_POR_POLO), total: todos.length };
   };
   const estado = estadoDaPasta(
@@ -388,6 +426,8 @@ export function rotasDeAcompanhamento(
   janelas: JanelasDasTelas,
   // Injetável: as janelas de dias se testam com relógio fixo, nunca com sleep.
   agora: () => Date = () => new Date(),
+  // (v0.73.0) Partes dos autos guardadas por conta; sem ele, as colunas usam as do Diário.
+  partesDoTribunal?: RepositorioPartesDoTribunal,
 ): FastifyPluginAsync {
   return async (servidor) => {
     servidor.get<{ Querystring: QueryLista }>('/v1/acompanhamentos', async (req) => {
@@ -404,6 +444,7 @@ export function rotasDeAcompanhamento(
           : {}),
         ...(q.ordem ? { ordem: q.ordem } : {}),
       });
+      const doTribunal = await partesDaConta(partesDoTribunal, workspaceDe(req));
       return {
         total: lista.length,
         // O total SEM filtro vai junto, sempre. É o que permite a tela dizer
@@ -412,7 +453,7 @@ export function rotasDeAcompanhamento(
         // o sistema tinha perdido processos.
         totalSemFiltro: await servico.contarAcompanhamentos(workspaceDe(req)),
         acompanhamentos: lista.map((a) =>
-          resumoJson(a, janelas.pendenciaJanelaDias, agora()),
+          resumoJson(a, janelas.pendenciaJanelaDias, agora(), partesDe(a, doTribunal)),
         ),
       };
     });
@@ -517,7 +558,15 @@ export function rotasDeAcompanhamento(
           chaveDoAto,
           req.identidadeDaChave ?? '',
         );
-        return { processo: infoDoProcesso(a, janelas.pendenciaJanelaDias, agora()) };
+        const doTribunal = await partesDaConta(partesDoTribunal, workspaceDe(req));
+        return {
+          processo: infoDoProcesso(
+            a,
+            janelas.pendenciaJanelaDias,
+            agora(),
+            partesDe(a, doTribunal),
+          ),
+        };
       },
     );
 
@@ -525,7 +574,15 @@ export function rotasDeAcompanhamento(
       '/v1/acompanhamentos/:numero/cumprido',
       async (req) => {
         const a = await servico.desfazerCumprido(workspaceDe(req), req.params.numero);
-        return { processo: infoDoProcesso(a, janelas.pendenciaJanelaDias, agora()) };
+        const doTribunal = await partesDaConta(partesDoTribunal, workspaceDe(req));
+        return {
+          processo: infoDoProcesso(
+            a,
+            janelas.pendenciaJanelaDias,
+            agora(),
+            partesDe(a, doTribunal),
+          ),
+        };
       },
     );
 
@@ -547,12 +604,18 @@ export function rotasDeAcompanhamento(
       // Sempre do workspace de quem pediu: a carteira de outro nunca entra aqui.
       const infoPorNumero = new Map<string, Record<string, unknown>>();
       const carteira = await servico.listar(ws);
+      const doTribunal = await partesDaConta(partesDoTribunal, ws);
       const retratoPorNumero = new Map<string, Acompanhamento>();
       for (const a of carteira) {
         retratoPorNumero.set(a.numero, a);
         infoPorNumero.set(
           a.numero,
-          infoDoProcesso(a, janelas.pendenciaJanelaDias, instante),
+          infoDoProcesso(
+            a,
+            janelas.pendenciaJanelaDias,
+            instante,
+            partesDe(a, doTribunal),
+          ),
         );
       }
       // Processos acompanhados SEM novidade nenhuma registrada (em qualquer data):

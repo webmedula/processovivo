@@ -9,6 +9,14 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.73.0] — 2026-11-28
+
+**As partes do processo passam a vir dos autos do tribunal, e não só do Diário.** Um cumprimento de sentença no TJGO aparecia só com o exequente (quem foi intimado na publicação), sem o executado nem o outro exequente. A causa: sem o DataJud (que não indexa partes), a tela montava as partes com os DESTINATÁRIOS das intimações do DJEN. A consulta ao tribunal que já trazia as peças (MNI, com o acesso do advogado) também traz o cabeçalho com todas as partes, e era jogado fora.
+
+- **`GET /v1/processos/:numero/pecas`** ganhou `partes` (aditivo): nome, polo (`ATIVO`/`PASSIVO`/`OUTROS`), tipo de pessoa e advogados (nome e OAB), lidos de `dadosBasicos > polo > parte` da MESMA resposta — nenhuma consulta a mais ao tribunal. **CPF/CNPJ e endereço, que o tribunal entrega sem máscara a quem tem procuração, não são lidos.** Vazio quando o tribunal não trouxe o cabeçalho.
+- **Cartão "Partes"** (`ui/partesDoProcesso.ts`): com o tribunal, as partes dos autos, com a frase "Conforme os autos no tribunal."; sem ele, as do Diário, com o aviso de que aparecem só as partes intimadas e a lista pode estar incompleta. A OAB só aparece quando a inscrição do tribunal é lida sem ambiguidade.
+- **Coluna "Partes" de Meus processos e de Atualizações:** quando a conta já carregou as peças do processo, mostra a lista dos autos (com o executado); até lá, as partes do Diário, como antes. A lista fica guardada na tabela nova `partes_do_tribunal` (migração aditiva, sem retrocarga, por conta: só nome, polo, tipo e advogados, nunca CPF/CNPJ nem endereço). `GET /v1/acompanhamentos`, `GET /v1/novidades` e as rotas de "cumprido" passam a preferir essa lista; processo em segredo de justiça e leitura que falha ficam com as do Diário. Resposta do tribunal sem cabeçalho não apaga a lista guardada; processo que o tribunal declara sob sigilo a remove. Outra conta que acompanha o mesmo processo continua vendo as do Diário até carregar as peças com o próprio acesso.
+- **Não mudou:** o retrato gravado (as partes dos autos não entram nele), o e-mail, a busca por parte e a busca por OAB (continuam com as partes do Diário); nenhuma consulta nova ao tribunal.
 ## [0.72.0] — 2026-11-28
 
 **As Atualizações passam a mostrar o que está no Projudi antes de sair no Diário.** Até aqui a verificação automática (a cada 12 horas) lia só o DataJud, que atualiza com atraso, e o Diário, que só traz o que foi publicado; o Projudi só era lido ao abrir o processo, e o que ele mostrava ficava na tela. Agora, para as contas que cadastraram o acesso ao tribunal (hoje, TJGO), a varredura lê também o Projudi. Migração só aditiva, sem dependência nova; variável nova `SYNC_PROJUDI_HABILITADO`, ligada por padrão (decisão do dono, 28/11/2026).

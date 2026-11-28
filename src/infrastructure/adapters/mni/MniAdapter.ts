@@ -38,6 +38,7 @@ import {
   extrairConteudosDoLote,
   extrairMovimentos,
   extrairNivelSigiloDoProcesso,
+  extrairPartes,
   extrairPecas,
   tribunalEntregouOConteudo,
 } from './mni.mapper.js';
@@ -271,6 +272,7 @@ export class MniAdapter implements ProvedorDePecas {
     const pecas = extrairPecas(resposta.conteudo, anexos);
     const movimentos = extrairMovimentos(resposta.conteudo);
     const nivelSigiloDoProcesso = extrairNivelSigiloDoProcesso(resposta.conteudo);
+    const partes = extrairPartes(resposta.conteudo);
     this.logger.debug('peças listadas', {
       numeroProcesso,
       pecas: pecas.length,
@@ -281,6 +283,7 @@ export class MniAdapter implements ProvedorDePecas {
       pecas,
       movimentos,
       ...(nivelSigiloDoProcesso !== undefined ? { nivelSigiloDoProcesso } : {}),
+      ...(partes.length > 0 ? { partes } : {}),
     };
   }
 

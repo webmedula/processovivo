@@ -1,3 +1,4 @@
+import type { Parte } from '../entities/Parte.js';
 import type { ConteudoPeca, Peca } from '../entities/Peca.js';
 import type { Movimentacao } from '../entities/Movimentacao.js';
 
@@ -143,6 +144,13 @@ export interface AtosDoProcesso {
    * justiça mesmo quando as fontes públicas não souberam dizer.
    */
   readonly nivelSigiloDoProcesso?: number;
+  /**
+   * As partes COMO O TRIBUNAL AS REGISTRA nos autos (cabeçalho da resposta), quando a fonte informa.
+   * Só nome, polo, tipo de pessoa e advogados: o documento (CPF/CNPJ) e o endereço que o tribunal
+   * entrega a quem tem procuração NÃO entram — a tela não precisa deles e o que não está aqui não
+   * vaza. Ausente = a fonte não trouxe cabeçalho com partes (nunca "o processo não tem partes").
+   */
+  readonly partes?: readonly Parte[];
 }
 
 /** O que voltou de um pedido em lote, peça por peça. */

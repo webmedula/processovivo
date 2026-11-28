@@ -1105,21 +1105,9 @@ function processoHtml(p,acomp,op){
   //    cresce no meio da página empurra o texto que está sendo lido.
   h+='<div id="pecas-resumo" style="min-height:96px"></div>';
 
-  // 3. Partes: quem está do outro lado importa mais que a data de distribuição.
-  h+='<div class="cartao"><h3 class="sec">Partes</h3>';
-  if(p.partes&&p.partes.length){
-    p.partes.forEach(function(pt){
-      h+='<div class="parte"><span class="selo">'+esc(pt.polo)+'</span> <strong>'+esc(pt.nome)+'</strong>';
-      if(pt.advogados&&pt.advogados.length)
-        h+='<div class="nota">'+pt.advogados.map(function(a){
-          return esc(a.nome)+(a.oab?' — OAB '+esc(a.oab)+'/'+esc(a.ufOab||''):'')}).join(' · ')+'</div>';
-      h+='</div>'});
-  }else{
-    h+='<div style="color:var(--tinta2)">Nenhuma parte informada. O DataJud publica só '+
-      'metadados, e o DJEN só conhece quem foi intimado em alguma publicação — um '+
-      'processo sem publicação recente no diário aparece sem partes.</div>';
-  }
-  h+='</div>';
+  // 3. Partes: quem está do outro lado importa mais que a data de distribuição. Dos autos quando o
+  //    tribunal as trouxe, do Diário (avisado) quando não — ui/partesDoProcesso.ts (v0.73.0).
+  h+=window.__pvPartes.cartao(p);
 
   // 4. A régua temporal.
   /* A régua só substitui a linha do tempo quando a espinha é a DO TRIBUNAL.
@@ -1385,7 +1373,7 @@ function carregarPecas(numero,forcar){
 
   api('/v1/processos/'+encodeURIComponent(numero)+'/pecas').then(function(r){
     var linha=r.linhaDoTempo||null;
-    regua={numero:numero,dados:linha,baixadas:r.jaBaixadas||[]};
+    regua={numero:numero,dados:linha,baixadas:r.jaBaixadas||[]};window.__pvPartes.pintar(numero,r.partes);
 
     /* Com a espinha do tribunal, a página inteira muda de forma: cada evento
        passa a entregar o documento dele. Redesenhar é o caminho — e o

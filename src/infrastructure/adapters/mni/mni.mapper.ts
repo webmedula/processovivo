@@ -2,6 +2,12 @@ import { XMLParser } from 'fast-xml-parser';
 import { Peca } from '../../../domain/entities/Peca.js';
 import type { PecaProps } from '../../../domain/entities/Peca.js';
 import type { Movimentacao } from '../../../domain/entities/Movimentacao.js';
+import type {
+  Advogado,
+  Parte,
+  PoloProcessual,
+  TipoPessoa,
+} from '../../../domain/entities/Parte.js';
 import type { AssinaturaDeMudanca } from '../../../domain/ports/ProvedorDePecas.js';
 import { resolverReferencia } from './mtom.js';
 import type { ParteMultipart } from './mtom.js';
@@ -301,6 +307,132 @@ export function contarPartes(conteudo: Registro): number {
     total += lista(registro(polo)?.['parte']).length;
   }
   return total;
+}
+
+/**
+ * As PARTES do cabeçalho (`dadosBasicos > polo > parte`, MNI 2.2.2), como o tribunal as registra.
+ *
+ * Por que existe (v0.73.0): sem o DataJud (que não indexa partes), a tela montava as partes só com
+ * os DESTINATÁRIOS das intimações do DJEN — um processo com uma publicação aparecia só com quem
+ * foi intimado, e o executado sumia. O cabeçalho do MNI é a lista dos autos e já vem na MESMA
+ * resposta da listagem de peças (`incluirCabecalho: true`): nenhuma consulta a mais.
+ *
+ * Só sai nome, polo, tipo de pessoa e advogados. `numeroDocumentoPrincipal`, `documento` e
+ * `endereco` existem na resposta (sem máscara, para quem tem procuração) e são ignorados de
+ * propósito. Parte sem nome é pulada; polo fora de AT/PA vira OUTROS (terceiro, fiscal da lei…).
+ */
+export function extrairPartes(conteudo: Registro): Parte[] {
+  const processo = registro(conteudo['processo']);
+  const dados = registro(processo?.['dadosBasicos']);
+  const partes: Parte[] = [];
+  const vistas = new Set<string>();
+  for (const poloBruto of lista(dados?.['polo'])) {
+    const polo = poloDoMni(atributo(poloBruto, 'polo'));
+    for (const parteBruta of lista(registro(poloBruto)?.['parte'])) {
+      const pessoa = registro(parteBruta)?.['pessoa'];
+      const nome = atributo(pessoa, 'nome');
+      if (!nome) continue;
+      const chave = `${polo}|${nome.toUpperCase()}`;
+      if (vistas.has(chave)) continue;
+      vistas.add(chave);
+      const advogados: Advogado[] = [];
+      for (const adv of lista(registro(parteBruta)?.['advogado'])) {
+        const nomeAdv = atributo(adv, 'nome');
+        if (!nomeAdv) continue;
+        advogados.push({ nome: nomeAdv, ...inscricaoDaOab(atributo(adv, 'inscricao')) });
+      }
+      partes.push({
+        nome,
+        polo,
+        tipoPessoa: tipoDePessoa(atributo(pessoa, 'tipoPessoa')),
+        advogados,
+      });
+    }
+  }
+  return partes;
+}
+
+function poloDoMni(valor: string | undefined): PoloProcessual {
+  const v = (valor ?? '').trim().toUpperCase();
+  if (v === 'AT') return 'ATIVO';
+  if (v === 'PA') return 'PASSIVO';
+  return 'OUTROS';
+}
+
+function tipoDePessoa(valor: string | undefined): TipoPessoa {
+  const v = (valor ?? '').trim().toLowerCase();
+  if (v === 'fisica') return 'FISICA';
+  if (v === 'juridica') return 'JURIDICA';
+  return 'DESCONHECIDO';
+}
+
+const UFS = new Set([
+  'AC',
+  'AL',
+  'AM',
+  'AP',
+  'BA',
+  'CE',
+  'DF',
+  'ES',
+  'GO',
+  'MA',
+  'MG',
+  'MS',
+  'MT',
+  'PA',
+  'PB',
+  'PE',
+  'PI',
+  'PR',
+  'RJ',
+  'RN',
+  'RO',
+  'RR',
+  'RS',
+  'SC',
+  'SE',
+  'SP',
+  'TO',
+]);
+
+/**
+ * `inscricao` do advogado: o XSD não fixa o formato, e cada tribunal escreve de um jeito. O TJGO
+ * manda número, letra da inscrição e UF separados por hífen (a captura real, anonimizada, é
+ * `00000-A-`); outros mandam "GO16537" ou "16537/GO". Lê UM número e, se houver, UMA sigla de UF
+ * válida; a letra solta (inscrição suplementar) é ignorada. Qualquer outra forma não arrisca: o
+ * advogado fica sem OAB — OAB errada na tela é pior que nenhuma.
+ */
+function inscricaoDaOab(valor: string | undefined): { oab?: string; ufOab?: string } {
+  if (!valor) return {};
+  const tokens = valor
+    .toUpperCase()
+    .split(/[\s./-]+/)
+    .filter(Boolean);
+  let numero: string | undefined;
+  let uf: string | undefined;
+  for (const token of tokens) {
+    const colado = /^([A-Z]{2})?(\d{1,8})([A-Z]{2})?$/.exec(token);
+    if (colado) {
+      const [, antes, digitos, depois] = colado;
+      if (numero || (antes && depois)) return {};
+      numero = digitos;
+      const sigla = antes ?? depois;
+      if (sigla) {
+        if (uf || !UFS.has(sigla)) return {};
+        uf = sigla;
+      }
+    } else if (/^[A-Z]$/.test(token)) {
+      continue;
+    } else if (UFS.has(token)) {
+      if (uf) return {};
+      uf = token;
+    } else {
+      return {};
+    }
+  }
+  if (!numero) return {};
+  return { oab: numero.replace(/^0+(?=\d)/, ''), ...(uf ? { ufOab: uf } : {}) };
 }
 
 /** Todos os ids de documento da resposta, anexos (`documentoVinculado`) incluídos, na ordem em que vieram. */

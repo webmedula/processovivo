@@ -23,6 +23,8 @@ import {
   batizarPeloCodigo,
   montarLinhaDoTempo,
 } from '../../domain/entities/linhaDoTempo.js';
+import type { Parte } from '../../domain/entities/Parte.js';
+import type { RepositorioPartesDoTribunal } from '../../domain/ports/RepositorioPartesDoTribunal.js';
 import type { LinhaDoTempo } from '../../domain/entities/linhaDoTempo.js';
 
 export interface OpcoesServicoPecas {
@@ -53,6 +55,14 @@ export interface OpcoesServicoPecas {
     numeroProcesso: string,
     atos: AtosDoProcesso,
   ) => Promise<void>;
+  /**
+   * Onde guardar as partes do cabeçalho dos autos (v0.73.0), para as colunas "Partes" da
+   * carteira e das Atualizações usarem sem ir ao tribunal. Opcional: sem ele as colunas
+   * seguem com as partes do Diário. Falha aqui nunca derruba a listagem.
+   */
+  readonly partesDoTribunal?: RepositorioPartesDoTribunal;
+  /** Injetável para teste; só carimba quando a lista de partes foi gravada. */
+  readonly agora?: () => Date;
 }
 
 /**
@@ -75,6 +85,8 @@ export class ServicoPecas {
   private readonly processos: BuscarProcessoPorNumero | undefined;
   private readonly baixadas: RepositorioPecasBaixadas | undefined;
   private readonly aoListar: OpcoesServicoPecas['aoListar'];
+  private readonly partesDoTribunal: RepositorioPartesDoTribunal | undefined;
+  private readonly agora: () => Date;
 
   constructor(opcoes: OpcoesServicoPecas) {
     this.listar = opcoes.listar;
@@ -84,6 +96,8 @@ export class ServicoPecas {
     this.processos = opcoes.processos;
     this.baixadas = opcoes.baixadas;
     this.aoListar = opcoes.aoListar;
+    this.partesDoTribunal = opcoes.partesDoTribunal;
+    this.agora = opcoes.agora ?? (() => new Date());
   }
 
   /**
@@ -98,16 +112,31 @@ export class ServicoPecas {
     workspace: string,
     numeroProcesso: string,
   ): Promise<LinhaDoTempo> {
+    return (await this.reguaDoProcesso(workspace, numeroProcesso)).linha;
+  }
+
+  /**
+   * A régua e, da MESMA resposta do tribunal, as partes como estão nos autos (v0.73.0). Sem
+   * consulta a mais: o cabeçalho já vinha na listagem. `partes` vazio = o tribunal não trouxe
+   * cabeçalho com partes, e a tela fica com as que já tinha.
+   */
+  async reguaDoProcesso(
+    workspace: string,
+    numeroProcesso: string,
+  ): Promise<{ linha: LinhaDoTempo; partes: readonly Parte[] }> {
     const [atos, publicas] = await Promise.all([
       this.listarDoProcesso(workspace, numeroProcesso),
       this.movimentacoesPublicas(numeroProcesso),
     ]);
 
-    return montarLinhaDoTempo({
-      movimentacoes: publicas,
-      movimentosDoTribunal: batizarPeloCodigo(atos.movimentos, publicas),
-      pecas: atos.pecas,
-    });
+    return {
+      linha: montarLinhaDoTempo({
+        movimentacoes: publicas,
+        movimentosDoTribunal: batizarPeloCodigo(atos.movimentos, publicas),
+        pecas: atos.pecas,
+      }),
+      partes: atos.partes,
+    };
   }
 
   private async movimentacoesPublicas(
@@ -140,6 +169,7 @@ export class ServicoPecas {
   ): Promise<{
     pecas: Peca[];
     movimentos: readonly Movimentacao[];
+    partes: readonly Parte[];
     nivelSigiloDoProcesso?: number;
   }> {
     const atos = await this.registrando(workspace, numeroProcesso, () =>
@@ -152,11 +182,13 @@ export class ServicoPecas {
         erro: erro instanceof Error ? erro.message : String(erro),
       });
     }
+    await this.guardarPartes(workspace, numeroProcesso, atos);
     // A dedução por movimento é sobre o CONJUNTO, não sobre uma peça — por isso
     // acontece aqui e não no mapper, que monta uma de cada vez.
     return {
       pecas: herdarOrigemPorMovimento(atos.pecas),
       movimentos: atos.movimentos,
+      partes: atos.partes ?? [],
       ...(atos.nivelSigiloDoProcesso !== undefined
         ? { nivelSigiloDoProcesso: atos.nivelSigiloDoProcesso }
         : {}),
@@ -278,6 +310,40 @@ export class ServicoPecas {
         });
       }
       throw erro;
+    }
+  }
+
+  /**
+   * Guarda as partes do cabeçalho para as colunas da carteira e das Atualizações (v0.73.0).
+   *
+   * Resposta sem partes não apaga a lista anterior: o tribunal só não trouxe o cabeçalho
+   * desta vez, e "não veio" não é "não existe". Processo que o tribunal declara sob sigilo
+   * tira a lista guardada — as listas seguem a regra do segredo, e quem é parte vê as partes
+   * na tela do processo. NUNCA lança: a tela do processo não cai por causa de uma coluna.
+   */
+  private async guardarPartes(
+    workspace: string,
+    numeroProcesso: string,
+    atos: AtosDoProcesso,
+  ): Promise<void> {
+    if (!this.partesDoTribunal) return;
+    try {
+      const numero = NumeroCNJ.criar(numeroProcesso).digitos;
+      if ((atos.nivelSigiloDoProcesso ?? 0) > 0) {
+        await this.partesDoTribunal.remover(workspace, numero);
+        return;
+      }
+      const partes = atos.partes ?? [];
+      if (partes.length === 0) return;
+      await this.partesDoTribunal.guardar(workspace, numero, partes, this.agora());
+    } catch (erro) {
+      // Só a mensagem do erro: nome de parte nunca vai ao log.
+      this.logger.warn(
+        'listagem entregue, mas as partes do tribunal não foram guardadas',
+        {
+          erro: erro instanceof Error ? erro.message : String(erro),
+        },
+      );
     }
   }
 }

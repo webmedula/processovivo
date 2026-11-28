@@ -55,6 +55,7 @@ import type { ProvedorDePecas } from '../../src/domain/ports/ProvedorDePecas.js'
 import { BaixarPecaDoProcesso } from '../../src/domain/usecases/BaixarPecaDoProcesso.js';
 import { ListarPecasDoProcesso } from '../../src/domain/usecases/ListarPecasDoProcesso.js';
 import { RepositorioPecasBaixadasSqlite } from '../../src/infrastructure/persistencia/sqlite/RepositorioPecasBaixadasSqlite.js';
+import { RepositorioPartesDoTribunalSqlite } from '../../src/infrastructure/persistencia/sqlite/RepositorioPartesDoTribunalSqlite.js';
 import { RepositorioCredenciaisSqlite } from '../../src/infrastructure/persistencia/sqlite/RepositorioCredenciaisSqlite.js';
 import { Cofre } from '../../src/infrastructure/seguranca/cofre.js';
 import type { Notificador } from '../../src/domain/ports/Notificador.js';
@@ -464,6 +465,7 @@ export function aplicacaoDeTeste(
   // A Pasta digital nasce junto do leitor, como no composition root; o serviço
   // de peças a avisa de cada listagem pela referência preenchida mais abaixo.
   let pasta: ServicoPasta | undefined;
+  const partesDoTribunal = new RepositorioPartesDoTribunalSqlite(db);
   const pecas = opcoes.provedorDePecas
     ? (() => {
         const provedor = opcoes.provedorDePecas as ProvedorDePecas;
@@ -479,6 +481,7 @@ export function aplicacaoDeTeste(
           aoListar: async (workspace, numero, atos) => {
             await pasta?.registrarListagem(workspace, numero, atos);
           },
+          partesDoTribunal,
         });
       })()
     : undefined;
@@ -898,6 +901,7 @@ export function aplicacaoDeTeste(
     orquestrador,
     provider: orquestrador,
     acompanhamento,
+    partesDoTribunal,
     vigilancia,
     notificacao,
     pecas,
