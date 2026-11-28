@@ -1,5 +1,5 @@
 /**
- * O cartão "Partes" da tela do processo (v0.71.0).
+ * O cartão "Partes" da tela do processo (v0.73.0).
  *
  * Antes, as partes vinham só do retrato das fontes públicas. O DataJud não indexa partes, então
  * quem as dava era o DJEN — e o DJEN só conhece os DESTINATÁRIOS das intimações. Num cumprimento

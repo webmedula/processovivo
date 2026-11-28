@@ -312,7 +312,7 @@ export function contarPartes(conteudo: Registro): number {
 /**
  * As PARTES do cabeçalho (`dadosBasicos > polo > parte`, MNI 2.2.2), como o tribunal as registra.
  *
- * Por que existe (v0.71.0): sem o DataJud (que não indexa partes), a tela montava as partes só com
+ * Por que existe (v0.73.0): sem o DataJud (que não indexa partes), a tela montava as partes só com
  * os DESTINATÁRIOS das intimações do DJEN — um processo com uma publicação aparecia só com quem
  * foi intimado, e o executado sumia. O cabeçalho do MNI é a lista dos autos e já vem na MESMA
  * resposta da listagem de peças (`incluirCabecalho: true`): nenhuma consulta a mais.

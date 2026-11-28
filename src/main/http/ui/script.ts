@@ -1106,7 +1106,7 @@ function processoHtml(p,acomp,op){
   h+='<div id="pecas-resumo" style="min-height:96px"></div>';
 
   // 3. Partes: quem está do outro lado importa mais que a data de distribuição. Dos autos quando o
-  //    tribunal as trouxe, do Diário (avisado) quando não — ui/partesDoProcesso.ts (v0.71.0).
+  //    tribunal as trouxe, do Diário (avisado) quando não — ui/partesDoProcesso.ts (v0.73.0).
   h+=window.__pvPartes.cartao(p);
 
   // 4. A régua temporal.

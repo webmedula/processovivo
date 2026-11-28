@@ -6,7 +6,7 @@ import {
 } from '../../src/infrastructure/adapters/mni/mni.mapper.js';
 
 /**
- * As partes do cabeçalho do MNI (v0.71.0).
+ * As partes do cabeçalho do MNI (v0.73.0).
  *
  * A FORMA é a da captura real do TJGO preservada em `mni-sem-habilitacao.spec.ts` (`polo polo="AT"`,
  * `parte > pessoa nome tipoPessoa numeroDocumentoPrincipal`, `advogado nome inscricao`); nomes,

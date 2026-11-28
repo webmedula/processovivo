@@ -21,7 +21,7 @@ import { numeroValido } from '../helpers/atualizacoesSinteticas.js';
 import { esperarConsolePronto } from './console.js';
 
 /*
- * v0.71.0 NUM NAVEGADOR: o cartão "Partes" usa as partes dos AUTOS quando a consulta ao tribunal
+ * v0.73.0 NUM NAVEGADOR: o cartão "Partes" usa as partes dos AUTOS quando a consulta ao tribunal
  * as traz, e diz que a lista do Diário pode estar incompleta quando não. O caso real que motivou:
  * cumprimento de sentença em que o Diário só trazia o exequente intimado e o executado sumia.
  * Servidor e console reais; nomes SINTÉTICOS (repositório público).

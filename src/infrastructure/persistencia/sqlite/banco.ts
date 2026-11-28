@@ -634,7 +634,7 @@ const ESQUEMA = [
      PRIMARY KEY (workspace, numero, posicao)
    )`,
 
-  // Partes que o TRIBUNAL informou no cabeçalho dos autos (v0.71.0), para as colunas
+  // Partes que o TRIBUNAL informou no cabeçalho dos autos (v0.73.0), para as colunas
   // "Partes" da carteira e das Atualizações. Tabela nova, sem retrocarga: a lista só
   // existe na resposta do MNI, e consultar o tribunal sem a pessoa pedir é o que a regra
   // do MNI proíbe — enche na próxima vez que a tela do processo carregar as peças; até
@@ -1205,6 +1205,15 @@ const COLUNAS_ACRESCENTADAS: ReadonlyArray<{
    * (`COALESCE`), que é exatamente a ordem de antes — então nada muda até o processo ser tentado de novo.
    */
   { tabela: 'acompanhamentos', coluna: 'tentado_em', tipo: 'TEXT' },
+  /*
+   * v0.72.0: o Projudi na varredura. SEM retrocarga, de propósito, nas duas:
+   * - `tribunal_assinatura` é a resposta de "mudou?" do tribunal na última leitura; NULL = nunca lido, e a primeira
+   *   rodada lê o tribunal inteiro, que é o certo.
+   * - `novidades.fonte` diz de onde veio a atualização (`mni` = lida no Projudi). NULL = fonte não registrada (as
+   *   anteriores à v0.72.0, todas das fontes públicas); a tela só marca o que é `mni`, então NULL não afirma nada.
+   */
+  { tabela: 'acompanhamentos', coluna: 'tribunal_assinatura', tipo: 'TEXT' },
+  { tabela: 'novidades', coluna: 'fonte', tipo: 'TEXT' },
 ];
 
 function migrarColunas(db: DatabaseSync): void {

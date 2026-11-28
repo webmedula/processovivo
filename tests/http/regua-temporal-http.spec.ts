@@ -137,7 +137,7 @@ function montar(provedor: ProvedorDePecas): {
   return { app, servidor: construirServidor(app, config()) };
 }
 
-/** O MNI de quem tem procuração: além das peças, o cabeçalho com as partes dos autos (v0.71.0). */
+/** O MNI de quem tem procuração: além das peças, o cabeçalho com as partes dos autos (v0.73.0). */
 class TribunalComPartes extends TribunalFalso {
   override async listarAtos(): Promise<AtosDoProcesso> {
     const base = await super.listarAtos();

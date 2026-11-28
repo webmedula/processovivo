@@ -120,6 +120,8 @@ export const ESTILOS_TABELA_ATUALIZACOES = `
   background:var(--novo);margin-right:7px;vertical-align:2px}
 .nvt-selos{display:inline-flex;flex-wrap:wrap;gap:2px 4px}
 .nvt-tabela .nvt-selos .selo{display:inline-block;margin:0;font-size:11px;line-height:16px;padding:0 7px}
+/* v0.72.0: "Projudi" — a atualização foi lida no sistema do tribunal. Do tamanho dos selos da linha, e não encolhe. */
+.nvt-tabela .nvt-pj{flex:none;height:auto;font-size:11px;line-height:16px;padding:0 7px}
 .c-data,.c-det{font-variant-numeric:tabular-nums;color:var(--tinta2)}
 
 /* Na TABELA (>= 1024 px) o "Abrir processo" não existe (v0.49.4, decisão do dono): o número do processo é um link e o ícone

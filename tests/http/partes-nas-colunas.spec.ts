@@ -15,7 +15,7 @@ import { ProviderFalso } from '../helpers/fabricas.js';
 import { numeroValido } from '../helpers/atualizacoesSinteticas.js';
 
 /*
- * v0.71.0: as colunas "Partes" da carteira (Meus processos) e das Atualizações usam as partes
+ * v0.73.0: as colunas "Partes" da carteira (Meus processos) e das Atualizações usam as partes
  * dos AUTOS quando a conta já carregou as peças do processo, e as do Diário até lá. O caso
  * real: cumprimento de sentença em que o Diário só trazia o exequente intimado e o executado
  * sumia da lista. Nomes SINTÉTICOS (repositório público).

@@ -1,7 +1,7 @@
 import type { Parte } from '../entities/Parte.js';
 
 /**
- * As partes que o TRIBUNAL informou no cabeçalho dos autos (v0.71.0), por processo e por conta.
+ * As partes que o TRIBUNAL informou no cabeçalho dos autos (v0.73.0), por processo e por conta.
  *
  * Existe porque o retrato das fontes públicas só tem as partes do Diário, e o DJEN só conhece
  * quem foi intimado: num cumprimento de sentença com uma publicação, a carteira e as

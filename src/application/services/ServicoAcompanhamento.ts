@@ -4,6 +4,9 @@ import {
   detectarNovidades,
 } from '../../domain/entities/Acompanhamento.js';
 import { triar } from '../../domain/entities/triagem.js';
+import { incorporarAtosDoTribunal } from '../../domain/entities/atosDoTribunalNoRetrato.js';
+import type { Processo } from '../../domain/entities/Processo.js';
+import type { FonteDoTribunalNaVarredura } from './consultaDoTribunalNaVarredura.js';
 import type { Acompanhamento, Novidade } from '../../domain/entities/Acompanhamento.js';
 import {
   AcompanhamentoNaoEncontradoError,
@@ -58,6 +61,12 @@ export interface OpcoesServicoAcompanhamento {
   readonly fontePrimaria?: string;
   /** Espera injetável: a pausa por item se testa sem tempo real. */
   readonly dormir?: (ms: number) => Promise<void>;
+  /**
+   * O sistema do tribunal (Projudi, pelo MNI) na varredura (v0.72.0). Ausente = só as fontes
+   * públicas, como antes. Também se liga depois de montado (`ligarFonteDoTribunal`): no composition
+   * root o serviço de peças nasce depois deste.
+   */
+  readonly fonteDoTribunal?: FonteDoTribunalNaVarredura;
 }
 
 /** O que a configuração usa quando a variável não diz nada (v0.49.3). */
@@ -141,6 +150,7 @@ export class ServicoAcompanhamento {
   private readonly concorrencia: number;
   private readonly fontePrimaria: string | undefined;
   private readonly dormirFn: (ms: number) => Promise<void>;
+  private fonteDoTribunal: FonteDoTribunalNaVarredura | undefined;
 
   constructor(opcoes: OpcoesServicoAcompanhamento) {
     this.repo = opcoes.repositorio;
@@ -158,6 +168,12 @@ export class ServicoAcompanhamento {
     );
     this.fontePrimaria = opcoes.fontePrimaria;
     this.dormirFn = opcoes.dormir ?? dormir;
+    this.fonteDoTribunal = opcoes.fonteDoTribunal;
+  }
+
+  /** Liga (ou desliga, com `undefined`) a leitura do tribunal na varredura. */
+  ligarFonteDoTribunal(fonte: FonteDoTribunalNaVarredura | undefined): void {
+    this.fonteDoTribunal = fonte;
   }
 
   /**
@@ -565,10 +581,12 @@ export class ServicoAcompanhamento {
   ): Promise<void> {
     const inicio = Date.now();
     try {
-      const atual = await this.provider.buscarPorNumero(item.numero);
+      const publico = await this.provider.buscarPorNumero(item.numero);
+      const { atual, assinatura } = await this.comAtosDoTribunal(item, publico);
       const novas = detectarNovidades(item.processo, atual);
 
       await this.repo.registrarSincronizacao(item.workspace, item.numero, atual, novas);
+      await this.guardarAssinatura(item, assinatura);
 
       contagem.verificados++;
       if (novas.length > 0) {
@@ -623,6 +641,77 @@ export class ServicoAcompanhamento {
       }
     } finally {
       this.concluirItem(item.workspace, item.numero);
+    }
+  }
+
+  /**
+   * O retrato público com os andamentos do tribunal (v0.72.0).
+   *
+   * Nada do tribunal derruba a verificação: o DataJud e o Diário já responderam, e trocar isso por
+   * uma falha porque o Projudi oscilou seria piorar o que funciona. Sem consulta nova (desligada,
+   * sem acesso, nada mudou, falha), os andamentos do tribunal do retrato anterior seguem — ver
+   * `incorporarAtosDoTribunal`.
+   */
+  private async comAtosDoTribunal(
+    item: Acompanhamento,
+    publico: Processo,
+  ): Promise<{ readonly atual: Processo; readonly assinatura?: string }> {
+    const fonte = this.fonteDoTribunal;
+    if (!fonte || publico.segredoJustica) {
+      return { atual: incorporarAtosDoTribunal(publico, undefined, item.processo) };
+    }
+    try {
+      const r = await fonte.consultar(
+        item.workspace,
+        item.numero,
+        item.assinaturaDoTribunal,
+      );
+      const atual = incorporarAtosDoTribunal(
+        publico,
+        r.situacao === 'atos' ? r.movimentos : undefined,
+        item.processo,
+      );
+      if (r.situacao === 'atos' || r.situacao === 'sem_atos') {
+        this.log.info('tribunal lido na varredura', {
+          numero: item.numero,
+          situacao: r.situacao,
+          ...(r.situacao === 'atos' ? { atos: r.movimentos.length } : {}),
+        });
+      }
+      return {
+        atual,
+        ...((r.situacao === 'atos' || r.situacao === 'sem_atos') && r.assinatura
+          ? { assinatura: r.assinatura }
+          : {}),
+      };
+    } catch (erro) {
+      this.log.warn('tribunal não lido na varredura; seguem as fontes públicas', {
+        numero: item.numero,
+        // Só o código: a mensagem de um erro do MNI pode trazer texto do tribunal, e nada aqui
+        // precisa dele para diagnosticar.
+        codigo: erro instanceof DomainError ? erro.codigo : 'inesperado',
+      });
+      return { atual: incorporarAtosDoTribunal(publico, undefined, item.processo) };
+    }
+  }
+
+  private async guardarAssinatura(
+    item: Acompanhamento,
+    assinatura: string | undefined,
+  ): Promise<void> {
+    if (!assinatura || !this.repo.registrarAssinaturaDoTribunal) return;
+    try {
+      await this.repo.registrarAssinaturaDoTribunal(
+        item.workspace,
+        item.numero,
+        assinatura,
+      );
+    } catch (erro) {
+      // Sem a assinatura, a próxima rodada só lê o tribunal inteiro de novo.
+      this.log.warn('assinatura do tribunal não gravada', {
+        numero: item.numero,
+        erro: descrever(erro),
+      });
     }
   }
 

@@ -56,7 +56,7 @@ export interface OpcoesServicoPecas {
     atos: AtosDoProcesso,
   ) => Promise<void>;
   /**
-   * Onde guardar as partes do cabeçalho dos autos (v0.71.0), para as colunas "Partes" da
+   * Onde guardar as partes do cabeçalho dos autos (v0.73.0), para as colunas "Partes" da
    * carteira e das Atualizações usarem sem ir ao tribunal. Opcional: sem ele as colunas
    * seguem com as partes do Diário. Falha aqui nunca derruba a listagem.
    */
@@ -116,7 +116,7 @@ export class ServicoPecas {
   }
 
   /**
-   * A régua e, da MESMA resposta do tribunal, as partes como estão nos autos (v0.71.0). Sem
+   * A régua e, da MESMA resposta do tribunal, as partes como estão nos autos (v0.73.0). Sem
    * consulta a mais: o cabeçalho já vinha na listagem. `partes` vazio = o tribunal não trouxe
    * cabeçalho com partes, e a tela fica com as que já tinha.
    */
@@ -170,6 +170,7 @@ export class ServicoPecas {
     pecas: Peca[];
     movimentos: readonly Movimentacao[];
     partes: readonly Parte[];
+    nivelSigiloDoProcesso?: number;
   }> {
     const atos = await this.registrando(workspace, numeroProcesso, () =>
       this.listar.executar({ workspace, numeroProcesso }),
@@ -188,6 +189,9 @@ export class ServicoPecas {
       pecas: herdarOrigemPorMovimento(atos.pecas),
       movimentos: atos.movimentos,
       partes: atos.partes ?? [],
+      ...(atos.nivelSigiloDoProcesso !== undefined
+        ? { nivelSigiloDoProcesso: atos.nivelSigiloDoProcesso }
+        : {}),
     };
   }
 
@@ -310,7 +314,7 @@ export class ServicoPecas {
   }
 
   /**
-   * Guarda as partes do cabeçalho para as colunas da carteira e das Atualizações (v0.71.0).
+   * Guarda as partes do cabeçalho para as colunas da carteira e das Atualizações (v0.73.0).
    *
    * Resposta sem partes não apaga a lista anterior: o tribunal só não trouxe o cabeçalho
    * desta vez, e "não veio" não é "não existe". Processo que o tribunal declara sob sigilo

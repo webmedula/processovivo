@@ -1,6 +1,7 @@
 import { ProcessoSearchService } from '../../application/services/ProcessoSearchService.js';
 import { ServicoAcompanhamento } from '../../application/services/ServicoAcompanhamento.js';
 import { ServicoNotificacao } from '../../application/services/ServicoNotificacao.js';
+import { ConsultaDoTribunalNaVarredura } from '../../application/services/consultaDoTribunalNaVarredura.js';
 import { ServicoPecas } from '../../application/services/ServicoPecas.js';
 import { GuardaDePecas } from '../../application/services/GuardaDePecas.js';
 import { ServicoLeitor } from '../../application/services/ServicoLeitor.js';
@@ -197,7 +198,7 @@ export interface Aplicacao {
   readonly provider: ProcessoProvider;
   readonly acompanhamento: ServicoAcompanhamento;
   /**
-   * Partes do cabeçalho dos autos guardadas por conta (v0.71.0): as colunas "Partes" da
+   * Partes do cabeçalho dos autos guardadas por conta (v0.73.0): as colunas "Partes" da
    * carteira e das Atualizações preferem estas às do Diário quando existem.
    */
   readonly partesDoTribunal: RepositorioPartesDoTribunal;
@@ -632,7 +633,7 @@ export function montarAplicacao(config: Config): Aplicacao {
   // não custa consulta nova quando a tela acabou de carregar o processo.
   const buscarProcessoPorNumero = new BuscarProcessoPorNumero(provider);
   const partesDoTribunal = new RepositorioPartesDoTribunalSqlite(db);
-  const { pecas, leitor, pasta, drive } = montarServicoPecas(
+  const { pecas, leitor, pasta, drive, fonteDoTribunal } = montarServicoPecas(
     config,
     db,
     logger,
@@ -640,6 +641,15 @@ export function montarAplicacao(config: Config): Aplicacao {
     assinaturas,
     partesDoTribunal,
   );
+  // v0.72.0: a varredura lê também o Projudi das contas com acesso cadastrado — pelo MESMO adapter
+  // (um balde, um disjuntor) e pelo MESMO serviço de peças da tela. Ligado depois de montado porque
+  // o serviço de peças nasce depois do acompanhamento.
+  if (fonteDoTribunal && config.sincronizacao.projudi) {
+    acompanhamento.ligarFonteDoTribunal(fonteDoTribunal);
+    logger.info('varredura lê o tribunal das contas com acesso cadastrado', {
+      tribunais: config.mni.tribunais,
+    });
+  }
 
   // O executor do leitor acorda a cada minuto para retomar job pausado por
   // bloqueio e pegar o que um redeploy interrompeu; o pedido novo não espera
@@ -1445,12 +1455,14 @@ function montarServicoPecas(
   leitor: ServicoLeitor | undefined;
   pasta: ServicoPasta | undefined;
   drive: ServicoDrive | undefined;
+  fonteDoTribunal: ConsultaDoTribunalNaVarredura | undefined;
 } {
   const nada = {
     pecas: undefined,
     leitor: undefined,
     pasta: undefined,
     drive: undefined,
+    fonteDoTribunal: undefined,
   };
   if (pareceValorDeExemplo(config.mni.chaveDoCofre)) {
     logger.warn(
@@ -1519,7 +1531,13 @@ function montarServicoPecas(
   });
 
   const drive = montarDrive(config, db, logger, cofre, assinaturas, montado);
-  return { pecas, leitor: montado?.leitor, pasta, drive };
+  const fonteDoTribunal = new ConsultaDoTribunalNaVarredura({
+    pecas,
+    provedor,
+    credenciais,
+    logger,
+  });
+  return { pecas, leitor: montado?.leitor, pasta, drive, fonteDoTribunal };
 }
 
 /**

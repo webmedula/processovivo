@@ -76,7 +76,7 @@ export function rotasDePecas(
         ];
 
         return {
-          // As partes como estão nos AUTOS, da mesma resposta do tribunal (v0.71.0). A tela as
+          // As partes como estão nos AUTOS, da mesma resposta do tribunal (v0.73.0). A tela as
           // prefere às do Diário, que só conhecem quem foi intimado. Só nome, polo, tipo de pessoa e
           // advogados — nunca CPF/CNPJ nem endereço. Vazio = o tribunal não trouxe o cabeçalho.
           partes: partesDoTribunal.map((p) => ({

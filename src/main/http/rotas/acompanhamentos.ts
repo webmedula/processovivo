@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { veioDoTribunal } from '../../../domain/entities/atosDoTribunalNoRetrato.js';
 import { WorkspaceNaoResolvidoError } from '../../../domain/errors/index.js';
 import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import type {
@@ -26,7 +27,7 @@ import type { Parte } from '../../../domain/entities/Parte.js';
 import type { RepositorioPartesDoTribunal } from '../../../domain/ports/RepositorioPartesDoTribunal.js';
 
 /**
- * As partes que as colunas "Partes" mostram (v0.71.0): as do cabeçalho dos AUTOS quando a
+ * As partes que as colunas "Partes" mostram (v0.73.0): as do cabeçalho dos AUTOS quando a
  * conta já carregou as peças do processo, senão as do retrato (o Diário, que só conhece quem
  * foi intimado). Processo em segredo de justiça fica com o retrato: a lista guardada não
  * entra em listagem de processo sigiloso.
@@ -117,7 +118,7 @@ function resumoJson(
     // e numa carteira de centenas isso é o trabalho que o sistema existe para
     // fazer. Só nome e polo: advogados de cada parte ficam para a tela do
     // processo, senão a listagem cresce sem que a lista mostre isso.
-    // (v0.71.0) Dos autos quando a conta já carregou as peças; senão, do Diário (`partesDe`).
+    // (v0.73.0) Dos autos quando a conta já carregou as peças; senão, do Diário (`partesDe`).
     partes: partes.map((parte) => ({
       nome: parte.nome,
       polo: parte.polo,
@@ -204,6 +205,8 @@ function novidadeJson(n: Novidade, chaveDoAto: string | null): Record<string, un
     codigoTpu: n.codigoTpu ?? null,
     conteudo: n.conteudo ?? null,
     detectadaEm: n.detectadaEm.toISOString(),
+    // (v0.72.0) Aditivo: lida no Projudi (pode ainda não ter sido publicada no Diário). Só marca.
+    doTribunal: veioDoTribunal(n),
     // Só MARCA. Nunca é critério de filtro nem de agrupamento (triagem ordena,
     // nunca esconde): a atualização anterior que pede providência continua
     // visível como tal depois de expandida.
@@ -374,6 +377,8 @@ function linhaSemNovidade(
           titulo: ultima.titulo,
           // (v0.38.0) Aditivo: a chave opaca do ato, para o botão "Analisar com IA".
           chaveDoAto: chaveDaMovimentacao(ultima),
+          // (v0.72.0) Aditivo: lida no Projudi.
+          doTribunal: veioDoTribunal(ultima),
           conteudo:
             !segredo && ultima.conteudo
               ? ultima.conteudo.slice(0, MAX_CONTEUDO_SEM_NOVIDADE)
@@ -421,7 +426,7 @@ export function rotasDeAcompanhamento(
   janelas: JanelasDasTelas,
   // Injetável: as janelas de dias se testam com relógio fixo, nunca com sleep.
   agora: () => Date = () => new Date(),
-  // (v0.71.0) Partes dos autos guardadas por conta; sem ele, as colunas usam as do Diário.
+  // (v0.73.0) Partes dos autos guardadas por conta; sem ele, as colunas usam as do Diário.
   partesDoTribunal?: RepositorioPartesDoTribunal,
 ): FastifyPluginAsync {
   return async (servidor) => {

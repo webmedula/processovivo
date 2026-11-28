@@ -37,6 +37,11 @@ export interface Acompanhamento {
   readonly processo?: Processo;
   /** "Cumpri o que este ato pedia" (v0.37.5). Ausente = nada marcado. */
   readonly cumprido?: CumpridoDoAcompanhamento;
+  /**
+   * Assinatura de "mudou?" do sistema do tribunal na última leitura da varredura (v0.72.0): igual na
+   * próxima rodada = nada mudou lá, e a listagem completa não sai. Opaca; nunca vai à API.
+   */
+  readonly assinaturaDoTribunal?: string;
 }
 
 /**
@@ -79,6 +84,8 @@ export interface Novidade {
   readonly detectadaEm: Date;
   /** Quando o usuário leu. Ausente = ainda não vista. */
   readonly vistaEm?: Date;
+  /** De onde veio (v0.72.0): `mni` = lida no Projudi. Ausente nas anteriores e nas sem registro. */
+  readonly fonte?: string;
 }
 
 /**

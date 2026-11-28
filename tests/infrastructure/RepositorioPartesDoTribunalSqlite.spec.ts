@@ -3,7 +3,7 @@ import { abrirBanco } from '../../src/infrastructure/persistencia/sqlite/banco.j
 import { RepositorioPartesDoTribunalSqlite } from '../../src/infrastructure/persistencia/sqlite/RepositorioPartesDoTribunalSqlite.js';
 import type { Parte } from '../../src/domain/entities/Parte.js';
 
-/** Partes do cabeçalho dos autos guardadas por conta (v0.71.0). Nomes e números inventados. */
+/** Partes do cabeçalho dos autos guardadas por conta (v0.73.0). Nomes e números inventados. */
 const NUMERO = '00000000000000000001';
 const PARTES: Parte[] = [
   {
