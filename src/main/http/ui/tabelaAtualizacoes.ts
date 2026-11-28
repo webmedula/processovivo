@@ -67,6 +67,8 @@ export interface ProcessoSemNovidade {
     readonly titulo: string;
     readonly conteudo: string | null;
     readonly chaveDoAto?: string | null;
+    /** (v0.72.0) Lida no Projudi. Ausente em servidor antigo. */
+    readonly doTribunal?: boolean;
   } | null;
 }
 
@@ -681,6 +683,7 @@ export function montarLinhas<G extends GrupoDaTabela>(
           detectadaEm: null,
           titulo: u ? u.titulo : '',
           conteudo: u ? u.conteudo : null,
+          doTribunal: Boolean(u && u.doTribunal),
           numero: p.numero,
           vista: true,
         },
@@ -695,6 +698,7 @@ export interface LinhaSemNovidade extends GrupoDaTabela {
   readonly maisRecente: GrupoDaTabela['maisRecente'] & {
     readonly titulo: string;
     readonly conteudo: string | null;
+    readonly doTribunal: boolean;
     readonly numero: string;
     readonly vista: boolean;
   };

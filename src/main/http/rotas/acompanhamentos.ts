@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { veioDoTribunal } from '../../../domain/entities/atosDoTribunalNoRetrato.js';
 import { WorkspaceNaoResolvidoError } from '../../../domain/errors/index.js';
 import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import type {
@@ -167,6 +168,8 @@ function novidadeJson(n: Novidade, chaveDoAto: string | null): Record<string, un
     codigoTpu: n.codigoTpu ?? null,
     conteudo: n.conteudo ?? null,
     detectadaEm: n.detectadaEm.toISOString(),
+    // (v0.72.0) Aditivo: lida no Projudi (pode ainda não ter sido publicada no Diário). Só marca.
+    doTribunal: veioDoTribunal(n),
     // Só MARCA. Nunca é critério de filtro nem de agrupamento (triagem ordena,
     // nunca esconde): a atualização anterior que pede providência continua
     // visível como tal depois de expandida.
@@ -336,6 +339,8 @@ function linhaSemNovidade(
           titulo: ultima.titulo,
           // (v0.38.0) Aditivo: a chave opaca do ato, para o botão "Analisar com IA".
           chaveDoAto: chaveDaMovimentacao(ultima),
+          // (v0.72.0) Aditivo: lida no Projudi.
+          doTribunal: veioDoTribunal(ultima),
           conteudo:
             !segredo && ultima.conteudo
               ? ultima.conteudo.slice(0, MAX_CONTEUDO_SEM_NOVIDADE)

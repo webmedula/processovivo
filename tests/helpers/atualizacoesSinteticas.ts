@@ -30,6 +30,8 @@ export interface NovidadeSintetica {
   vista: boolean;
   /** (v0.38.0) Chave opaca do ato, como a API a manda (botão "Analisar com IA"). */
   chaveDoAto: string | null;
+  /** (v0.72.0) Lida no Projudi. */
+  doTribunal?: boolean;
 }
 
 export interface AtoSintetico {
@@ -79,6 +81,7 @@ export interface SemNovidadeSintetico {
     titulo: string;
     conteudo: string | null;
     chaveDoAto?: string | null;
+    doTribunal?: boolean;
   } | null;
 }
 

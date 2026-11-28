@@ -188,7 +188,7 @@ function celulaSemNovidade(g){
      detectada" nos dois casos; "Última movimentação conhecida" (quando o ato da linha é só o último andamento) vai no
      title e em texto para leitor de tela, para o aviso caber numa linha. */
   h+='<div class="nvt-ato"><span class="nvt-tit" title="'+esc(a.rotulo)+'"><span class="nvt-tipo">'+esc(enxuto)+'</span>'+'</span>'+
-    selosDaLinha(g)+(a.daProvidencia?'<span class="nvt-sem" title="Sem atualização detectada">Sem atualização detectada</span>':
+    seloDoTribunal(n,a)+selosDaLinha(g)+(a.daProvidencia?'<span class="nvt-sem" title="Sem atualização detectada">Sem atualização detectada</span>':
       '<span class="nvt-sem" title="Última movimentação conhecida: o acompanhamento ainda não detectou atualização neste processo."><span class="nvt-sr">Última movimentação conhecida · </span>Sem atualização detectada</span>')+
     linkAbrir(n)+'</div>';
   if(g.segredoJustica)
@@ -202,7 +202,15 @@ function celulaAtualizacao(g){
   /* Só a exibição perde a repetição do tipo; o original fica no title. */
   var enxuto=descricaoDoAto(a.rotulo);
   return '<td class="c-atu" data-rotulo="Atualização"><div class="nvt-ato"><span class="nvt-tit'+(n.vista?'':' nl')+'" title="'+esc(a.rotulo)+'"><span class="nvt-tipo">'+esc(enxuto)+'</span>'+'</span>'+
-    selosDaLinha(g)+linkAbrir(n)+'</div>'+linhaUltimoAndamento(a)+'</td>';
+    seloDoTribunal(n,a)+selosDaLinha(g)+linkAbrir(n)+'</div>'+linhaUltimoAndamento(a)+'</td>';
+}
+
+/* v0.72.0: a atualização lida no Projudi (a varredura passou a ler o tribunal com o acesso do advogado). Só quando o ato
+   exibido é o da própria atualização: o ato da providência pode ser outro. O texto do title não fala em contagem de
+   tempo (a regra da tela de Atualizações): só diz de onde veio e que a publicação pode não ter saído. */
+function seloDoTribunal(n,a){
+  if(!n.doTribunal||!a.igualAAtualizacao)return '';
+  return '<span class="selo nvt-pj" title="Lida no Projudi. Pode ainda não ter sido publicada no Diário de Justiça.">Projudi</span>';
 }
 
 /* Os selos de OUTRA informação (v0.46.1): "Não lida" e "sem marca há mais de N dias" moravam na célula da coluna

@@ -44,6 +44,12 @@ export function comIndicadorDeDestinatario(
     listar: repositorio.listar.bind(repositorio),
     listarParaSincronizar: repositorio.listarParaSincronizar.bind(repositorio),
     registrarFalha: repositorio.registrarFalha.bind(repositorio),
+    ...(repositorio.registrarAssinaturaDoTribunal
+      ? {
+          registrarAssinaturaDoTribunal:
+            repositorio.registrarAssinaturaDoTribunal.bind(repositorio),
+        }
+      : {}),
     listarNovidades: repositorio.listarNovidades.bind(repositorio),
     contarNaoVistas: repositorio.contarNaoVistas.bind(repositorio),
     contarAcompanhamentos: repositorio.contarAcompanhamentos.bind(repositorio),

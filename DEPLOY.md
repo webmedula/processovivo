@@ -271,6 +271,10 @@ SYNC_PAUSA_MS=1500
 # Não altera o limite de requisições por fonte (DATAJUD_RATE_LIMIT_PER_MINUTE etc.): só tira a espera ociosa.
 # SYNC_PAUSA_MS vale por trabalhador, depois de cada processo.
 SYNC_CONCORRENCIA=3
+# v0.72.0: a varredura lê também o Projudi (MNI) das contas que cadastraram o acesso ao tribunal, e o que está
+# lá e ainda não foi publicado entra nas Atualizações com o selo "Projudi". LIGADA por padrão: não precisa criar a
+# variável. Para desligar sem mexer no código: SYNC_PROJUDI_HABILITADO=false e Deploy.
+# SYNC_PROJUDI_HABILITADO=true
 
 # Backup automático do banco. Ligado por padrão; 0 desliga.
 # As cópias vão para /dados/backups — dentro do MESMO volume. Leia a seção

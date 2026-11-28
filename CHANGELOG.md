@@ -9,6 +9,17 @@ na raiz do projeto, ou o campo `versao` na resposta de `GET /health`.
 
 ---
 
+## [0.72.0] — 2026-11-28
+
+**As Atualizações passam a mostrar o que está no Projudi antes de sair no Diário.** Até aqui a verificação automática (a cada 12 horas) lia só o DataJud, que atualiza com atraso, e o Diário, que só traz o que foi publicado; o Projudi só era lido ao abrir o processo, e o que ele mostrava ficava na tela. Agora, para as contas que cadastraram o acesso ao tribunal (hoje, TJGO), a varredura lê também o Projudi. Migração só aditiva, sem dependência nova; variável nova `SYNC_PROJUDI_HABILITADO`, ligada por padrão (decisão do dono, 28/11/2026).
+
+- **Do jeito mais econômico para a senha do advogado:** primeiro a pergunta barata "mudou alguma coisa?" (`consultarAlteracao`); a consulta completa só quando mudou, pelo MESMO serviço de peças da tela (um adapter, um balde de 30 por minuto, um disjuntor), uma de cada vez. Conta sem acesso, credencial já recusada, tribunal em pausa por bloqueio e processo sob sigilo: nada sai. Recusa de senha fica anotada na hora e a próxima rodada não insiste. A Pasta digital recebe a lista de peças nova de quebra.
+- **O ato que o Projudi e o DataJud contam fica uma vez só**, com a preferência do Projudi (mesma regra da linha do tempo da tela: a contagem de atos nunca diminui). Assim, quando o DataJud alcança o Projudi, o mesmo ato não vira atualização de novo. A publicação no Diário continua inteira, com o texto: a intimação, o "pede providência" e o "cumprido" não mudaram, e a publicação de um ato que já tinha aparecido pelo Projudi chega como atualização própria.
+- **Na primeira leitura, o histórico não vira avalanche:** só os atos do Projudi mais novos que o último que o sistema já conhecia viram atualização (a regra da v0.37.5).
+- **Selo "Projudi"** na célula Atualização quando ela foi lida no tribunal, com a explicação "Lida no Projudi. Pode ainda não ter sido publicada no Diário de Justiça." O e-mail de atualizações já leva só número, tipo do ato e data, e não mudou.
+- **Falha do Projudi nunca derruba a verificação:** DataJud e Diário valem, e os atos que o Projudi já tinha informado continuam no retrato.
+- **Dados:** colunas novas `acompanhamentos.tribunal_assinatura` (a resposta de "mudou?") e `novidades.fonte`, sem retrocarga. `GET /v1/novidades` ganhou `doTribunal` (aditivo) na atualização e na última movimentação do processo sem atualização.
+
 ## [0.70.1] — 2026-11-28
 
 **Botão "Instalar aplicativo" do próprio sistema.** O convite do navegador quase não aparecia (no iPhone nem existe). Sem migração, sem dependência nova e sem variável de ambiente.
